@@ -19,3 +19,4 @@ Registros:
 - 2026-01-15 | meta | done | Limpieza de variables duplicadas en Vercel (prefijo `oda_*` removido) y carga de credenciales Neon/Blob finales | Env set consolidado; pendiente acceso del autor correcto para deploy.
 - 2026-01-15 | meta | done | Deploy Vercel producción OK | https://oda-storefront-6ee5-hdg0yo8xc-alejingutierrezs-projects.vercel.app
 - 2026-01-15 | MC-002 | done | Docker compose local con web/scraper/worker, Postgres pgvector, Redis; healthchecks y puerto 3080 para web; envs alineadas con Vercel | `docker-compose up -d` exitoso; warning de NODE_ENV en Next pendiente de afinado pero servicio operativo.
+- 2026-01-15 | MC-003 | done | Esquema inicial + migración Prisma (brands, stores, products, variants, price/stock history, assets polimórficos, taxonomy_tags, users, events, announcements) con pgvector | Migración `20260115125012_init_schema` aplicada en DB local (pgvector habilitado); Prisma client generado.

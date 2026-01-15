@@ -1,7 +1,6 @@
 # Backlog
 
 ## Now (F0 – bootstrap E2E mínimo)
-- MC-003 | todo | P1 | Esquema Neon + migraciones | Core (brands, stores, products, variants, price/stock history, assets, taxonomy_tags, users, events) + pgvector.
 - MC-004 | todo | P0 | Conexión OpenAI GPT-5.2 JSON mode | Cliente, prompt v0, JSON Schema, reintentos, control de costos.
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.2, upsert DB, ficha en VSF + ISR.
 - MC-006 | todo | P1 | Autenticación y roles base | NextAuth/JWT, seeds admin, middleware RBAC mínimo.
@@ -39,6 +38,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-003 | done | P1 | Esquema Neon + migraciones | Prisma schema con brands/stores/products/variants/price&stock history/assets/events/taxonomy/announcements/users; pgvector habilitado; migración `20260115125012_init_schema`.
 - MC-002 | done | P1 | Docker compose local | Servicios web/scraper/worker, Postgres pgvector, Redis; healthchecks; puerto host 3080; `.env.example` alineado con Vercel; stack sube con `docker-compose up -d`.
 - MC-001 | done | P1 | Estructura base repo y convenciones | Next app TS/Tailwind en apps/web, estructura servicios scraper/worker, .gitignore, .env.example, docker-compose base, README creado.
 

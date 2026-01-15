@@ -26,14 +26,15 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Éxito de `docker-compose up`, tiempo de arranque, health status de servicios.
 - Estado: **done (2026-01-15)**.
 
-### MC-002 Docker compose local
-- Historia: Como dev, quiero levantar todo con `docker-compose up`, para reproducir entornos sin fricción.
-- Alcance: Servicios Next (front+BFF), scraper, worker, Neon local/PG, Redis, VSF; healthchecks; perfiles dev/test; `env_file` apuntando a `.env.example`.
-- CA: `docker-compose up` levanta todos los contenedores; endpoints /health responden 200; docs de cómo seedear DB; detención limpia.
-- Datos: Seeds mínimos de brands/stores dummy.
-- NF: Arranque <2 min en laptop típica; puertos no colisionan.
-- Riesgos: Config de red Apple/M1; mitigar con ajustes de plataforma en compose.
-- Métricas: Tasa de éxito de arranque local; tiempo promedio de bootstrap.
+### MC-003 Esquema Neon + migraciones
+- Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
+- Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.
+- CA: `prisma generate` exitoso; migración `20260115125012_init_schema` aplica sin errores; pgvector creada; constraints e índices según plan; columnas monetarias Decimal(12,2); arrays para tags/imagenes.
+- Datos: URL de conexión en env; sin seeds todavía.
+- NF: Migraciones reproducibles en local y listas para Neon; compatibilidad con Next/Vercel (Prisma 7).
+- Riesgos: Cliente Prisma en edge requiere pooler; mitigado usando pooler URL y dejando unpooled para cargas específicas.
+- Métricas: Migración aplica en <30s; verificación `\dt` y health de DB.
+- Estado: **done (2026-01-15)**.
 
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero migraciones reproducibles con tablas core y pgvector, para almacenar catálogo y embeddings.

@@ -40,6 +40,24 @@ docker-compose up
 ```
 Servicios: `web` (host 3080 → contenedor 3000), `db` (5432), `redis` (6379), `scraper`, `worker`.
 
+## Base de datos y Prisma
+- Esquema definido en `apps/web/prisma/schema.prisma`, cliente generado en `apps/web/src/generated/prisma`.
+- Migración inicial (`20260115125012_init_schema`) crea tablas core y habilita `pgvector`.
+- Comandos (con stack de docker levantado):
+  ```bash
+  cd apps/web
+  DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx prisma generate
+  DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx prisma migrate dev --name <nombre>
+  ```
+  Si tu host no ve el contenedor en `localhost`, puedes ejecutar sobre la red de compose:
+  ```bash
+  docker run --rm --network=oda_storefront_default \
+    -v "$(pwd)/apps/web":/app -w /app node:20 \
+    sh -c "npm install prisma @prisma/client --no-save >/dev/null && \
+           DATABASE_URL=postgres://postgres:postgres@db:5432/postgres npx prisma migrate dev --name <nombre>"
+  ```
+- Para inspeccionar DB local: `docker-compose exec db psql -U postgres -c "\dt"`.
+
 ## CI/CD y Git
 - Repositorio: git@github.com:alejingutierrez/oda_storefront.git
 - Pendiente: configurar GitHub Actions y Vercel pipeline.
