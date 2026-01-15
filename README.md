@@ -61,6 +61,12 @@ Servicios: `web` (host 3080 → contenedor 3000), `db` (5432), `redis` (6379), `
 ## Admin
 - Ruta `/admin` reservada para el panel interno (placeholder inicial). Aquí se listarán scrapers, normalizaciones y aprobaciones.
 
+## API interna (MC-004)
+- Endpoint: `POST /api/normalize` (runtime Node).
+- Autorización: header `Authorization: Bearer <NEXTAUTH_SECRET>` (temporal).
+- Payload: `{ productHtml: string, images: string[], sourceUrl?: string }`.
+- Respuesta: objeto `{ product, cost }` normalizado por GPT-5.2 (JSON mode).
+
 ## CI/CD y Git
 - Repositorio: git@github.com:alejingutierrez/oda_storefront.git
 - Pendiente: configurar GitHub Actions y Vercel pipeline.

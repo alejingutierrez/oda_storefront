@@ -46,7 +46,8 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const jsonSchema = {
+// Exported for potential validation in callers
+export const productJsonSchema: Record<string, unknown> = {
   type: "object",
   properties: {
     product: {
@@ -108,6 +109,7 @@ Eres un sistema de normalización de catálogo de moda colombiana. Devuelve SOLO
 - Completa campos faltantes con null cuando no haya evidencia.
 - Variants deben contener color, talla/size, fit, material, precio, stock_status si se infiere (in_stock/out_of_stock/preorder), imágenes.
 - No inventes enlaces: usa los que recibas.
+- Las tags deben ser listas (array) y texto en minúsculas.
 `;
 
 export async function normalizeProductWithOpenAI({
@@ -126,7 +128,7 @@ export async function normalizeProductWithOpenAI({
       const response = await client.chat.completions.create({
         model: OPENAI_MODEL,
         // json_schema no está tipado aún en el SDK; forzamos tipo
-        response_format: { type: "json_object" } as any,
+        response_format: { type: "json_object" } as unknown as { type: "json_object" },
         messages: [
           { role: "system", content: basePrompt },
           {

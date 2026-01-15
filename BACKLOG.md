@@ -1,7 +1,7 @@
 # Backlog
 
 ## Now (F0 – bootstrap E2E mínimo)
-- MC-004 | doing | P0 | Conexión OpenAI GPT-5.2 JSON mode | Cliente, prompt v0, JSON Schema, reintentos, control de costos + carpeta /admin base.
+- MC-004 | doing | P0 | Conexión OpenAI GPT-5.2 JSON mode | Cliente, prompt v0, JSON Schema, reintentos, control de costos + carpeta /admin base + endpoint protegido de normalización.
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.2, upsert DB, ficha en VSF + ISR.
 - MC-006 | todo | P1 | Autenticación y roles base | NextAuth/JWT, seeds admin, middleware RBAC mínimo.
 - MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build contenedores básicos.
