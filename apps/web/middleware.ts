@@ -2,7 +2,21 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const PROTECTED_PATHS = ["/admin", "/api/normalize"];
-const TOKEN = process.env.NEXTAUTH_SECRET || process.env.ADMIN_TOKEN;
+
+function isAuthorized(req: NextRequest) {
+  const candidates = [
+    process.env.ADMIN_TOKEN,
+    process.env.NEXTAUTH_SECRET, // fallback
+  ].filter(Boolean) as string[];
+
+  if (!candidates.length) return false;
+
+  const auth = req.headers.get("authorization");
+  const token = auth?.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return false;
+
+  return candidates.some((t) => t.length === token.length && t === token);
+}
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -10,10 +24,7 @@ export function middleware(req: NextRequest) {
 
   if (!shouldProtect) return NextResponse.next();
 
-  const auth = req.headers.get("authorization");
-  const token = auth?.replace(/^Bearer\s+/i, "").trim();
-
-  if (!TOKEN || !token || token !== TOKEN) {
+  if (!isAuthorized(req)) {
     return new NextResponse(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "content-type": "application/json" },

@@ -63,7 +63,7 @@ Servicios: `web` (host 3080 → contenedor 3000), `db` (5432), `redis` (6379), `
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).
-- Autorización: header `Authorization: Bearer <NEXTAUTH_SECRET>` (mismo token protege `/admin` y `/api/normalize` vía middleware).
+- Autorización: header `Authorization: Bearer <ADMIN_TOKEN>` (fallback a `NEXTAUTH_SECRET` si no se define). Middleware protege `/admin` y `/api/normalize`.
 - Payload: `{ productHtml: string, images: string[], sourceUrl?: string }`.
 - Respuesta: objeto `{ product, cost }` normalizado por GPT-5.2 (JSON mode).
 

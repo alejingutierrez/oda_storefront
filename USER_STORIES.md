@@ -38,12 +38,13 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 
 ### MC-004 Conexión OpenAI GPT-5.2 JSON mode
 - Historia: Como ingeniero de ingestión, quiero enviar HTML/imágenes y recibir JSON validado, para normalizar productos.
-- Alcance: Cliente con retries/backoff, prompt v0 versionado, JSON Schema, validación y manejo de errores, logging de costo/latencia.
-- CA: Llamada de prueba devuelve JSON válido; se registra prompt_version y cost; en fallo se reintenta y guarda error; tiempo medio <8s.
+- Alcance: Cliente con retries/backoff, prompt v0 versionado, JSON Schema, validación Zod, manejo de errores, logging de costo/latencia, endpoint `/api/normalize`, middleware Bearer (ADMIN_TOKEN/NEXTAUTH_SECRET), carpeta `/admin` base.
+- CA: Llamada de prueba devuelve JSON válido; validación pasa; se reintenta y registra error; tiempo medio <8s; endpoint protegido por token; build y lint verdes.
 - Datos: Esquema de producto/variante/tags según AGENTS.
 - NF: Idempotencia de requests; timeouts configurados.
 - Riesgos: Cambios de modelo; mitigación: versionado de prompt y schema.
 - Métricas: Tasa de éxito, costo por item, latencia P95.
+- Estado: **done (2026-01-15)**.
 
 ### MC-005 Primer scraper E2E
 - Historia: Como operador, quiero scrapear 1 marca desde su sitemap y ver el producto en el front, para validar el pipeline completo.
