@@ -1,4 +1,5 @@
 import { OpenAI } from "openai";
+import { z } from "zod";
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.2";
 const MAX_RETRIES = 3;
@@ -104,6 +105,54 @@ export const productJsonSchema: Record<string, unknown> = {
   required: ["product"],
 };
 
+export const normalizedProductSchema = z.object({
+  brand: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
+  subcategory: z.string().nullable().optional(),
+  style_tags: z.array(z.string()).default([]),
+  material_tags: z.array(z.string()).default([]),
+  pattern_tags: z.array(z.string()).default([]),
+  occasion_tags: z.array(z.string()).default([]),
+  gender: z.string().nullable().optional(),
+  season: z.string().nullable().optional(),
+  care: z.string().nullable().optional(),
+  origin: z.string().nullable().optional(),
+  status: z.string().nullable().optional(),
+  source_url: z.string().url().nullable().optional(),
+  image_cover_url: z.string().url().nullable().optional(),
+  variants: z
+    .array(
+      z.object({
+        sku: z.string().nullable().optional(),
+        color: z.string().nullable().optional(),
+        size: z.string().nullable().optional(),
+        fit: z.string().nullable().optional(),
+        material: z.string().nullable().optional(),
+        price: z.number().nullable().optional(),
+        currency: z.string().nullable().optional(),
+        stock: z.number().int().nullable().optional(),
+        stock_status: z.string().nullable().optional(),
+        images: z.array(z.string()).nullable().optional(),
+      }),
+    )
+    .min(1),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+const openAIResponseSchema = z.object({
+  product: normalizedProductSchema,
+  cost: z
+    .object({
+      prompt_tokens: z.number(),
+      completion_tokens: z.number(),
+      total_tokens: z.number(),
+      price_usd: z.number().optional(),
+    })
+    .optional(),
+});
+
 const basePrompt = `
 Eres un sistema de normalización de catálogo de moda colombiana. Devuelve SOLO JSON válido que siga exactamente el esquema indicado. No incluyas texto adicional.
 - Completa campos faltantes con null cuando no haya evidencia.
@@ -143,14 +192,25 @@ export async function normalizeProductWithOpenAI({
       const raw = response.choices[0]?.message?.content;
       if (raw) {
         const parsed = JSON.parse(raw) as OpenAIJsonResponse;
+        const validation = openAIResponseSchema.safeParse(parsed);
+        if (!validation.success) {
+          throw new Error(`JSON validation failed: ${validation.error.message}`);
+        }
+        const cost = {
+          prompt_tokens: response.usage?.prompt_tokens ?? 0,
+          completion_tokens: response.usage?.completion_tokens ?? 0,
+          total_tokens: response.usage?.total_tokens ?? 0,
+          price_usd: response.usage?.total_tokens ? (response.usage.total_tokens / 1_000_000) * 15 : undefined, // rough placeholder pricing
+        };
+        console.info("openai.normalize.success", {
+          total_tokens: cost.total_tokens,
+          prompt_tokens: cost.prompt_tokens,
+          completion_tokens: cost.completion_tokens,
+          price_usd: cost.price_usd,
+        });
         return {
-          product: parsed.product,
-          cost: {
-            prompt_tokens: response.usage?.prompt_tokens ?? 0,
-            completion_tokens: response.usage?.completion_tokens ?? 0,
-            total_tokens: response.usage?.total_tokens ?? 0,
-            price_usd: response.usage?.total_tokens ? (response.usage.total_tokens / 1_000_000) * 15 : undefined, // rough placeholder pricing
-          },
+          product: validation.data.product,
+          cost,
         };
       }
       throw new Error("Respuesta sin JSON parseable");
