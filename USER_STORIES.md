@@ -36,15 +36,6 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Migración aplica en <30s; verificación `\dt` y health de DB.
 - Estado: **done (2026-01-15)**.
 
-### MC-003 Esquema Neon + migraciones
-- Historia: Como ingeniero de datos, quiero migraciones reproducibles con tablas core y pgvector, para almacenar catálogo y embeddings.
-- Alcance: brands, stores, products, variants, price_history, stock_history, assets, taxonomy_tags, users, events; habilitar pgvector; índices/constraints.
-- CA: Migraciones aplican en limpio y sobre DB existente; índices en campos de búsqueda; claves foráneas íntegras; `pgvector` disponible.
-- Datos: Tipos y defaults claros (moneda, stock_status).
-- NF: Tiempo de migración <60s en stg; reversible (down).
-- Riesgos: Falta de extensión en Neon; mitigar con verificación previa y fallback.
-- Métricas: Duración de migraciones; fallos por constraint.
-
 ### MC-004 Conexión OpenAI GPT-5.2 JSON mode
 - Historia: Como ingeniero de ingestión, quiero enviar HTML/imágenes y recibir JSON validado, para normalizar productos.
 - Alcance: Cliente con retries/backoff, prompt v0 versionado, JSON Schema, validación y manejo de errores, logging de costo/latencia.

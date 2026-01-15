@@ -58,6 +58,9 @@ Servicios: `web` (host 3080 → contenedor 3000), `db` (5432), `redis` (6379), `
   ```
 - Para inspeccionar DB local: `docker-compose exec db psql -U postgres -c "\dt"`.
 
+## Admin
+- Ruta `/admin` reservada para el panel interno (placeholder inicial). Aquí se listarán scrapers, normalizaciones y aprobaciones.
+
 ## CI/CD y Git
 - Repositorio: git@github.com:alejingutierrez/oda_storefront.git
 - Pendiente: configurar GitHub Actions y Vercel pipeline.
