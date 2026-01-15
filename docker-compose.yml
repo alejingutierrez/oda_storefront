@@ -14,7 +14,7 @@ services:
       - VERCEL_BLOB_READ_WRITE_TOKEN=${VERCEL_BLOB_READ_WRITE_TOKEN}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-dev-secret}
     ports:
-      - "3000:3000"
+      - "3080:3000"
     depends_on:
       - db
       - redis

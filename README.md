@@ -36,7 +36,7 @@ npm run build
 docker-compose build
 docker-compose up
 ```
-Servicios: `web` (3000), `db` (5432), `redis` (6379), `scraper`, `worker`.
+Servicios: `web` (host 3080 → contenedor 3000), `db` (5432), `redis` (6379), `scraper`, `worker`.
 
 ## CI/CD y Git
 - Repositorio: git@github.com:alejingutierrez/oda_storefront.git
