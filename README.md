@@ -15,11 +15,13 @@ Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar cat√
 
 ## Variables de entorno
 Copiar `.env.example` a `.env`/`.env.local` y completar:
-- `OPENAI_API_KEY` (GPT-5.2), `VERCEL_TEAM_ID`, `VERCEL_TOKEN`
-- `NEON_DATABASE_URL` (prod/stg) y `DATABASE_URL` (local, apunta a `db` del compose)
-- `REDIS_URL`, `VERCEL_BLOB_READ_WRITE_TOKEN`
-- `WOMPI_PUBLIC_KEY`/`WOMPI_PRIVATE_KEY`
-- `SMTP_*`, `NEXTAUTH_SECRET`
+- Core: `OPENAI_API_KEY`, `NEXTAUTH_SECRET`, `VERCEL_TEAM_ID`, `VERCEL_TOKEN`.
+- Base de datos (Neon): `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `NEON_DATABASE_URL`, `PGHOST`, `PGHOST_UNPOOLED`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`, `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL_NO_SSL`, `POSTGRES_PRISMA_URL`, `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`.
+- Redis: `REDIS_URL`.
+- Storage: `VERCEL_BLOB_READ_WRITE_TOKEN`, `BLOB_READ_WRITE_TOKEN`.
+- Billing: `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY`.
+- Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`.
+- Scraper: `USER_AGENT`.
 No commitees credenciales reales.
 
 ## Comandos locales
