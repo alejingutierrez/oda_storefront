@@ -17,6 +17,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Estado: **done (2026-01-15)**.
 
 ### MC-002 Docker compose local
+- Historia: Como dev, quiero un `docker-compose` que levante web/BFF, scraper, worker, Postgres (pgvector) y Redis, para replicar el stack en local con un solo comando.
+- Alcance: Servicios web (Next start), scraper/worker stubs, Postgres con pgvector, Redis, healthchecks; mapeo de puertos accesible; `.env.example` alineado con Vercel.
+- CA: `docker-compose up -d` levanta todos los contenedores; healthchecks verdes; web accesible en host `http://localhost:3080`; DB en 5432, Redis en 6379; `.env.example` refleja todas las variables usadas.
+- Datos: URLs de conexión a Neon (pooler/unpooled) en env; tokens de Blob/Wompi/SMTP placeholders; OpenAI key requerida si se usa ingestión.
+- NF: Arranque <2 min en laptop típica; comandos reproducibles sin pasos manuales.
+- Riesgos: Puertos ocupados; mitigado cambiando host a 3080 y healthchecks para detectar caídas.
+- Métricas: Éxito de `docker-compose up`, tiempo de arranque, health status de servicios.
+- Estado: **done (2026-01-15)**.
+
+### MC-002 Docker compose local
 - Historia: Como dev, quiero levantar todo con `docker-compose up`, para reproducir entornos sin fricción.
 - Alcance: Servicios Next (front+BFF), scraper, worker, Neon local/PG, Redis, VSF; healthchecks; perfiles dev/test; `env_file` apuntando a `.env.example`.
 - CA: `docker-compose up` levanta todos los contenedores; endpoints /health responden 200; docs de cómo seedear DB; detención limpia.
