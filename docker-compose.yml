@@ -1,0 +1,81 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: ./Dockerfile
+    container_name: oda_web
+    env_file:
+      - .env
+      - .env.local
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@db:5432/postgres}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - VERCEL_BLOB_READ_WRITE_TOKEN=${VERCEL_BLOB_READ_WRITE_TOKEN}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-dev-secret}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+      - redis
+    command: "npm run start"
+
+  scraper:
+    build:
+      context: ./services/scraper
+      dockerfile: ./Dockerfile
+    container_name: oda_scraper
+    env_file:
+      - .env
+      - .env.local
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@db:5432/postgres}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - USER_AGENT=${USER_AGENT:-ODA-Storefront-Scraper/0.1}
+    depends_on:
+      - db
+      - redis
+
+  worker:
+    build:
+      context: ./services/worker
+      dockerfile: ./Dockerfile
+    container_name: oda_worker
+    env_file:
+      - .env
+      - .env.local
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@db:5432/postgres}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: ankane/pgvector:latest
+    container_name: oda_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: oda_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:

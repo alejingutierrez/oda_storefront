@@ -1,0 +1,166 @@
+# AGENTS · Plataforma ODA Storefront
+
+Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, alcance, arquitectura y operaciones del proyecto. Escríbelo en español neutro, prioriza precisión sobre brevedad. Mantenerlo sincronizado con decisiones reales.
+
+## 1) Visión y propósito
+- Construir el mejor agregador y recomendador de moda colombiana, indexando ~500 marcas locales y su catálogo completo (productos, variaciones, precios, stock, tallas, colores, fotos, descripciones, enlaces originales, datos de tienda física y digital).
+- Mantener la información siempre actualizada mediante scraping continuo + enriquecimiento con modelos de OpenAI (modelo principal **GPT-5.2** en JSON mode) que devuelvan JSON determinista y estable.
+- Entregar a los usuarios un descubrimiento guiado (recomendaciones proactivas), opciones de anuncios, y experiencias premium (try-on con IA y asesoría personalizada), llevando el tráfico a las tiendas oficiales.
+
+## 2) Modelo de negocio
+1) Ingresos por anuncios (catálogos patrocinados, placements en listados, banners contextuales).
+2) Algoritmo plus/proactivo (suscripción que desbloquea recomendaciones adelantadas, alertas de stock/precio, estilos curados y filtros avanzados).
+3) Try-on con IA + asesoría personalizada (upsell para usuarios pagos; prioridad en cola de procesamiento, outfits sugeridos, chat estilista asistido por IA).
+
+## 3) Alcance funcional
+- **Scraping & monitoreo**: rastrear catálogos y metadatos de tiendas (web, redes, datos de contacto, horarios, direcciones). Detectar cambios de stock/precio, nuevas colecciones, cierres temporales.
+- **Descubrimiento de URLs**: leer `robots.txt`, localizar y priorizar sitemaps XML/JSON/Atom; si no existen, crawler controlado (BFS/priority) con heurísticas para identificar páginas de producto; cachear y versionar sitemaps.
+- **Normalización asistida por IA**: extraer descripciones, materiales, patrones, siluetas, colores, estilo y ocasión; generar captions de imágenes; producir JSON estable para ingestión (GPT-5.2 JSON mode + validación de esquema).
+- **Catálogo unificado**: productos, variantes, imágenes, histórico de precios/stock, taxonomía uniforme (categoría, fit, material, patrón, ocasión, temporada), enlaces al ítem original.
+- **Recomendador**: modelos híbridos (contenido + comportamiento). Similaridad semántica de texto/imágenes y señales de clic/guardar/compra redirigida. Soporte para “proactividad” (alertas, drops, back-in-stock).
+- **Búsqueda y filtrado**: texto libre, filtros por categoría, talla, color, material, precio, disponibilidad, ubicación de la tienda, estilo.
+- **Admin**: gestión de marcas/tiendas, control de scrapers, revisión de calidad de datos, entrenamiento/versión del recomendador, gestión de usuarios (gratis/pago), billing Wompi, plantillas de correo (SMTP/SendGrid), features flags, auditoría.
+- **Try-on y asesoría**: pipeline para generar previews de outfits (API de tercero o modelo propio), guardar sesiones y recomendaciones resultantes.
+
+## 4) Arquitectura de alto nivel
+- **Front web**: Vue Storefront sobre Next.js (usando adaptadores de VSF; SSR/ISR en Vercel). UI pública + portal admin (rutas protegidas) + landing.
+- **BFF/API**: Next.js (app router, API routes o server actions) actuando como backend principal: autenticación, orquestación de catálogos, endpoints de búsqueda y recomendaciones, billing, webhooks.
+- **Middleware de orquestación**: capa de colas y workers (p.ej., Redis/Upstash + workers en contenedores) para scraping, ingestión IA, enriquecimiento y tareas programadas.
+- **Scraper service**: microservicio dockerizado con rotación de proxies, manejo de robots, parsers específicos por marca y fallback genérico; emite eventos de cambio (stock/precio/nuevos productos). Incluye módulo de descubrimiento de sitemap y crawler de respaldo.
+- **Ingestión IA**: jobs que envían HTML/JSON crudo + imágenes a OpenAI GPT-5.2 (JSON mode) para obtener objetos normalizados, captions y clasificación semántica; refuerzo con pocas tomas a modelos de visión para atributos visuales finos.
+- **Recomendador**: servicio que mantiene embeddings (texto/imágenes) y modelos colaborativos; expone API para similares, outfits sugeridos y re-rank personalizado.
+- **Storage**: Neon Postgres (rama prod/stg) para datos transaccionales; extensiones recomendadas: `pgvector` para embeddings, `postgis` opcional para geodatos. Vercel Blob para imágenes generadas/derivadas y assets de correo.
+- **CDN/Edge**: Vercel para caché de páginas y APIs con revalidación; headers de `stale-while-revalidate` para catálogo público.
+- **Observabilidad**: logging estructurado, métricas, trazas; panel de salud de scrapers y colas.
+- **Docker**: todos los servicios con `Dockerfile` y `docker-compose` para local. Deploy en Vercel para front/BFF; workers y scrapers pueden ir a contenedores en un runner dedicado (ej. Fly.io, ECS, Railway) con cron propio.
+
+### Diagrama textual de flujos
+1) Scheduler → Encola jobs de scraping por marca/endpoint (prioridad basada en frescura/rotación).
+2) Worker Scraper → Descubre sitemap/URLs → Descarga HTML/JSON → Parser marca → Publica payload crudo.
+3) Job Ingestión IA → Envía payload + imágenes a GPT-5.2 (JSON mode) → Recibe objeto normalizado + captions → Valida contra JSON Schema.
+4) Upsert en Postgres (productos, variantes, precios, stock, medios, metadatos de tienda) + guarda assets derivados en Vercel Blob.
+5) Indexación de embeddings (pgvector) → Recomendador/Búsqueda semántica.
+6) Front/Apps consumen API → Revalidación de ISR/Cache.
+7) Eventos de usuario (clic, guardar, redirección a tienda) → Feeds de entrenamiento del recomendador.
+8) Billing Wompi y control de features para usuarios pagos.
+
+## 5) Componentes y responsabilidades
+- **UI pública (Vue Storefront + Next)**: home inspiracional, listados, ficha de producto con variantes, store locator, recomendaciones, anuncios. Optimizar Core Web Vitals.
+- **Portal Admin**: CRUD marcas/tiendas, catálogos, reglas de scraping, aprobación de datos IA, configuración de recomendador, gestión de anuncios, gestión de usuarios/planes, monitoreo de colas.
+- **API/BFF**: autenticación JWT/NextAuth, límites de tasa, API de catálogo, búsqueda, recomendaciones, eventos de usuario, billing, webhooks (Wompi, email provider), endpoints para admin.
+- **Scrapers**: por marca/plantilla; detección de cambios; respeto de robots/cookies; rotación de user-agent/proxy; tolerancia a bloqueos; diff de DOM para minimizar llamadas.
+- **Ingestión IA**: prompts versionados; validación estricta de JSON; catálogos de taxonomías (categorías, materiales, patrones, fits); generación de captions y etiquetas de estilo; detección de stock-out por señales de texto/atributos y deltas históricos.
+- **Recomendador**: embeddings de texto/imágenes; similitud kNN; reglas de negocio (stock disponible, tallas del usuario, clima/lugar opcional); experimentos A/B para ranking.
+- **Datos de tienda**: teléfonos, sitio web, redes, horarios, direcciones; validación periódica; geocodificación opcional para store locator.
+- **Try-on/Asesoría**: manejo de imágenes del usuario (upload seguro a Blob), procesamiento asíncrono, expiración y borrado bajo petición.
+
+## 6) Datos y esquemas sugeridos
+- `brands(id, name, slug, site_url, description, logo_url, contact_phone, contact_email, instagram, tiktok, facebook, whatsapp, address, city, lat, lng, opening_hours, metadata, is_active)`
+- `stores(id, brand_id, name, address, lat, lng, phone, schedule, website, channel_links, metadata)`
+- `products(id, brand_id, external_id, name, description, category, subcategory, style_tags[], material_tags[], pattern_tags[], occasion_tags[], gender, season, care, origin, status, source_url, image_cover_url, metadata, created_at, updated_at)`
+- `variants(id, product_id, sku, color, size, fit, material, price, currency, stock, stock_status, images[], metadata)`
+- `price_history(id, variant_id, price, currency, captured_at)`
+- `stock_history(id, variant_id, stock, captured_at)`
+- `assets(id, owner_type, owner_id, url, blob_path, kind)`
+- `taxonomy_tags(id, type, value, synonyms[])`
+- `users(id, email, role, plan, preferences, created_at)`
+- `sessions/events` para comportamiento (click, view, save, outbound to brand, purchase-intent), usados para el recomendador.
+- `announcements/placements` para anuncios y su performance.
+- `billing_payments` y `webhook_logs` (Wompi).
+- `crawl_runs(id, brand_id, sitemap_url, depth, status, fetched_at, delta_hash, pages_seen, pages_changed)`
+- `ai_normalizations(id, brand_id, product_external_id, prompt_version, model='gpt-5.2', input_hash, output_schema_version, status, cost, created_at)`
+- `reco_models(id, version, type, metrics, activated_at, rollback_to)`
+
+## 7) Scraping & frescura
+- Frecuencia adaptativa: marcas con alta rotación → más polling; marcas estáticas → menos.
+- Respetar robots y términos; backoff exponencial en 4xx/5xx; manejo de captchas. Registrar excepciones legales/comerciales por marca.
+- Detección de deltas: hash de páginas/fragmentos para evitar reprocesar; sólo enviar cambios al pipeline IA. Priorizar sitemap `lastmod` si existe.
+- Observabilidad: métricas por marca (éxito, latencia, bloqueos, cambios detectados) y alarmas de staleness.
+- Lista de exclusión y límites diarios por dominio; rotación de proxies y user-agents.
+- Preferir fuentes estructuradas (sitemaps, feeds, APIs públicas) antes que crawling profundo; fallback headless sólo cuando sea necesario.
+
+## 8) Ingestión IA (OpenAI)
+- Modelo por defecto: **GPT-5.2** (JSON mode). Backups: 4.1/4.0 si hay degradación.
+- Usar JSON mode y esquemas versionados; validar con JSON Schema antes de persistir; rechazar y reintentar con prompt de reparación cuando falle.
+- Prompts que exijan: categorías normalizadas, materiales, patrones, silueta/fit, ocasión, temporada, tono/estilo, calidad de estampado, cierres, bolsillos, forro, instrucciones de cuidado.
+- Captioning de imágenes (visión) para enriquecer búsqueda y recomendaciones; extracción de rasgos finos (texturas, acabados, tipo de cuello/tirante, largo, calce).
+- Filtros de seguridad para datos no confiables; fallback a reglas manuales cuando IA falle.
+- Guardar `prompt_version` y `schema_version`; comparar salidas para detectar drift de modelo; registrar costo por item.
+
+## 9) Búsqueda y recomendaciones
+- Índice de texto + embeddings (pgvector). Campos clave: nombre, categoría, tags, materiales, estilo, captions.
+- Re-ranking con señales de comportamiento y disponibilidad en tiempo real.
+- Features premium: alertas de back-in-stock, drop early access, “encuéntrame algo parecido”, “arma el outfit”.
+
+## 10) Monetización y planes
+- Gratis: navegación, búsqueda básica, lista de deseos; anuncios visibles.
+- Pago (via Wompi): recomendaciones proactivas, alertas, filtros avanzados, try-on, menos/no anuncios. Control mediante flags en la API.
+- Advertiser: panel para campañas, reporting de CTR/CPA, control de presupuesto.
+
+## 11) Infra y despliegue
+- **Front/BFF**: Vercel (Next.js + Vue Storefront). ISR para catálogo; API Routes para endpoints rápidos.
+- **Workers/Scrapers**: contenedores dockerizados con scheduler propio (cron/Temporal/BullMQ). Separar de Vercel porque scrapers y procesamientos largos no caben en lambdas.
+- **Base de datos**: Neon Postgres; ramas `main` (prod) y `stg`; usar pooling (Neon Serverless Driver) y pgvector.
+- **Storage**: Vercel Blob para imágenes procesadas y uploads de usuarios (try-on). Cache CDN con expiración corta + revalidación en background.
+- **Mensajería**: Redis/Upstash para colas; opcional Kafka si crece el throughput.
+- **CI/CD**: GitHub Actions para lint/tests/build, push a Vercel y al registro de contenedores.
+- **Docker**: `docker-compose` para local (db, redis, scraper, api, admin-ui). Variables en `.env.local` no versionadas.
+- **FinOps**: límites diarios de tokens OpenAI por ambiente; tableros de costo por marca y por etapa (scrape → IA → upsert); caché de inferencias si no hay cambios.
+
+## 12) Seguridad y cumplimiento
+- Respetar términos de uso de cada sitio; honrar robots.txt cuando aplique; no almacenar PII sensible de usuarios finales; ofrecer borrado de datos (GDPR-like) y retención acotada.
+- Rate limiting por IP/token; WAF en endpoints públicos; sanitización de HTML; validación de entrada exhaustiva.
+- Credenciales en secrets (Vercel env, vault); rotar llaves; logging sin datos sensibles.
+- Control de acceso RBAC en admin; auditoría completa (quién editó qué y cuándo).
+- Borrado/anonimización de datos de try-on a solicitud; expiración automática de uploads de usuario.
+
+## 13) Observabilidad y calidad
+- Logs estructurados por servicio; trazas distribuidas; métricas: éxito scraping, frescura de catálogo, latencia API, tasa de errores IA, precisión del recomendador (CTR, conversion a click-out), uptime.
+- Alertas por staleness (>24h sin actualización por marca), picos de 4xx/5xx, fallas de webhooks Wompi.
+- Panel de calidad de datos: campos faltantes, duplicados, desviaciones de precio/stock, tasa de parseo fallido. Dashboard de salud de prompts (error rate, tiempo, costo).
+
+## 14) Roadmap sugerido
+- Fase 0: bootstrap repos, Docker compose, esquema inicial Postgres, conexión a OpenAI, primer scraper (1 marca), flujo E2E hasta mostrar producto en front.
+- Fase 1: taxonomía fija, pgvector, búsqueda básica, 10–20 marcas, admin mínimo, anuncios básicos, dashboards de scraping.
+- Fase 2: recomendaciones proactivas, alertas, Wompi planes, try-on MVP, 100+ marcas, observabilidad completa, versionado de prompts en producción.
+- Fase 3: 500 marcas, escalado de scraping, optimización de costos, experimentos A/B de ranking, segmentación por estilo/ocasión, acuerdos con marcas clave.
+
+## 15) Riesgos y mitigaciones
+- Bloqueos de scraping → rotación de proxies, backoff, acuerdos con marcas clave, prioridad a feeds/RSS/APIs si existen.
+- Datos inconsistentes → validación de esquema, reglas de negocio, QA asistido en admin, pruebas de regresión sobre parsers.
+- Costos de IA/infra → batching, deduplicación de cambios, límites diarios por marca, cache de inferencias, observabilidad de costos.
+- Límite de funciones serverless (Vercel) para tareas largas → mover scraping y procesamiento pesado a workers dedicados.
+- Cumplimiento legal → revisión de términos, respuesta a solicitudes de eliminación, transparencia sobre uso de datos y enlaces a tiendas originales.
+
+## 16) Entorno y configuración
+- Variables críticas: `OPENAI_API_KEY`, `NEON_DATABASE_URL`, `REDIS_URL`, `VERCEL_BLOB_READ_WRITE_TOKEN`, `WOMPI_PRIVATE_KEY`, `WOMPI_PUBLIC_KEY`, `SMTP_HOST/USER/PASS`, `NEXTAUTH_SECRET`, `ENCRYPTION_KEY`, `S3_PROXY` si aplica.
+- Feature flags para: try-on, anuncios, recomendaciones proactivas, scrapers experimentales, prompts IA versionados.
+- Separar variables por ambiente (local/stg/prod); política de rotación trimestral de llaves sensibles; exportar configuración de prompts/versiones en Git.
+
+## 17) Notas de estilo y UX
+- Enfocar en moda colombiana: lenguaje, imágenes y ejemplos locales.
+- Catálogo rico en facetas: material, fit, ocasión, clima, región, estética.
+- Admin con vista de salud por marca y panel de cola para reintentos manuales.
+
+## 18) Qué no está en alcance (por ahora)
+- Checkout propio (las compras se hacen en las tiendas originales).
+- Apps móviles nativas; foco inicial web responsive.
+- Moderación de UGC más allá de reseñas cortas (si se habilitan, moderar con OpenAI/filters).
+
+## 19) KPIs iniciales
+- Frescura de catálogo (<24h para top 100 marcas; <72h para el resto).
+- Cobertura: % de SKUs con tallas, color, material, price/stock vigente, captions de imagen.
+- CTR en recomendaciones y anuncios; tasa de click-out a tiendas; ratio de back-in-stock alert opt-ins satisfechos.
+- Latencia P95 de búsqueda y ficha de producto (<400ms desde edge cache; <900ms sin cache).
+
+Mantener este archivo actualizado a medida que se decidan tecnologías, proveedores y políticas definitivas.
+
+## 20) Protocolo obligatorio al trabajar historias de usuario
+Para cada historia (nueva o en curso) se debe:
+0) Pedir al solicitante requisitos previos: credenciales/API keys necesarias, definiciones o datos faltantes para contexto, accesos a Vercel/Neon/Wompi/Blob, y cualquier variable de entorno requerida.
+1) Rebuild de contenedores/docker tras los cambios.
+2) Escuchar la salida del rebuild y corregir errores si aparecen.
+3) Hacer push a la rama de trabajo.
+4) Esperar y revisar el build en Vercel hasta su finalización; si falla, diagnosticar y corregir.
+5) Actualizar el README del proyecto con cualquier cambio relevante (instalación, variables, comandos, decisiones).
+6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y registrarla también en `STATUS.md` (resumen global).
