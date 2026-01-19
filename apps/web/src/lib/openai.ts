@@ -45,7 +45,7 @@ type OpenAIJsonResponse = {
 
 let client: OpenAI | null = null;
 
-const getClient = () => {
+export const getOpenAIClient = () => {
   if (client) return client;
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -184,7 +184,7 @@ export async function normalizeProductWithOpenAI({
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const response = await getClient().chat.completions.create({
+      const response = await getOpenAIClient().chat.completions.create({
         model: OPENAI_MODEL,
         // json_schema no está tipado aún en el SDK; forzamos tipo
         response_format: { type: "json_object" } as unknown as { type: "json_object" },

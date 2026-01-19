@@ -50,9 +50,30 @@ model Brand {
   announcements  Announcement[]
   events         Event[]
   assets         Asset[]
+  scrapeJobs     BrandScrapeJob[]
 
   @@index([name])
   @@map("brands")
+}
+
+model BrandScrapeJob {
+  id         String   @id @default(uuid())
+  brandId    String
+  brand      Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  status     String   @default("queued") // queued | processing | completed | failed
+  batchId    String?
+  attempts   Int      @default(0)
+  lastError  String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  result     Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([brandId])
+  @@index([status, createdAt])
+  @@index([batchId])
+  @@map("brand_scrape_jobs")
 }
 
 model Store {

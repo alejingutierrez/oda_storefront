@@ -121,6 +121,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Ediciones destructivas; mitigar con confirmaciones y soft-delete.
 - Métricas: Tiempo de aprobación, % items aprobados/rechazados.
 
+### MC-035 Scraper de marcas (enriquecimiento OpenAI)
+- Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
+- Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape` y `/api/admin/brands/scrape/next`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping.
+- CA: Encolar marcas crea jobs; procesamiento secuencial actualiza campos estándar (city/category/market/scale/style) con valores válidos; logs visibles en admin; job queda en estado completed/failed.
+- Datos: `brand_scrape_jobs` para cola; metadata `brand_scrape` en `brands`.
+- NF: Un job por request; retries en OpenAI; timeout razonable por ejecución.
+- Riesgos: Respuesta inválida de IA o falta de evidencia; mitigar con validación Zod + fallback HTML; mantener valores existentes si no hay evidencia nueva.
+- Métricas: Tiempo por marca, tasa de éxito, campos actualizados por corrida.
+- Estado: **done (2026-01-19)**.
+
 ### MC-013 Anuncios básicos
 - Historia: Como advertiser, quiero colocar placements simples y medir clics, para validar el modelo de anuncios.
 - Alcance: Modelo placements; inventario de slots (home/listado/ficha); carga creativa (imagen/copy/link); tracking impresiones/clicks; reglas básicas (fechas, presupuesto).

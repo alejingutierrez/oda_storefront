@@ -15,7 +15,7 @@ Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar cat�
 
 ## Variables de entorno
 Copiar `.env.example` a `.env`/`.env.local` y completar:
-- Core: `OPENAI_API_KEY`, `NEXTAUTH_SECRET`, `VERCEL_TEAM_ID`, `VERCEL_TOKEN`.
+- Core: `OPENAI_API_KEY`, `OPENAI_MODEL` (opcional), `NEXTAUTH_SECRET`, `VERCEL_TEAM_ID`, `VERCEL_TOKEN`.
 - Base de datos (Neon): `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `NEON_DATABASE_URL`, `PGHOST`, `PGHOST_UNPOOLED`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`, `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL_NO_SSL`, `POSTGRES_PRISMA_URL`, `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`.
 - Redis: `REDIS_URL`.
 - Storage: `VERCEL_BLOB_READ_WRITE_TOKEN`, `BLOB_READ_WRITE_TOKEN`.
@@ -57,12 +57,18 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Ruta `/admin` con login embebido (correo/contraseña).
 - Configura `ADMIN_EMAIL` y `ADMIN_PASSWORD` en envs. Al autenticarse se crea un token de sesión (cookie HttpOnly) guardado en Neon.
 - `ADMIN_TOKEN` queda como bypass opcional para llamadas API (Bearer).
+- Nuevo panel `/admin/brands` para encolar y ejecutar scraping/enriquecimiento de marcas (1/5/10/25/50).
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).
 - Autorización: header `Authorization: Bearer <ADMIN_TOKEN>` (fallback a `NEXTAUTH_SECRET` si no se define). Middleware protege `/api/normalize`.
 - Payload: `{ productHtml: string, images: string[], sourceUrl?: string }`.
 - Respuesta: objeto `{ product, cost }` normalizado por GPT-5.2 (JSON mode).
+
+## API interna (scraper de marcas)
+- `GET /api/admin/brands/scrape`: estado de cola (requiere sesión admin o `ADMIN_TOKEN`).
+- `POST /api/admin/brands/scrape`: encola N marcas (`count` = 1,5,10,25,50).
+- `POST /api/admin/brands/scrape/next`: procesa el siguiente job (uno por request).
 
 ## CI/CD y Git
 - Repositorio: git@github.com:alejingutierrez/oda_storefront.git

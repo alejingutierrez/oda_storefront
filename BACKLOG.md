@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-035 | done | P1 | Scraper de marcas (enriquecimiento OpenAI) | Panel /admin/brands con cola 1/5/10/25/50; endpoints admin; OpenAI web search JSON mode + fallback HTML; actualización de tabla brands y metadata.
 - MC-006 | done | P1 | Autenticación y roles base | Login admin (email/password + cookie), ruta /admin sin /admin/login, seed admin en Neon, middleware sólo en /api/normalize.
 - MC-004 | done | P0 | Conexión OpenAI GPT-5.2 JSON mode | Helper con retries/validación Zod, endpoint `/api/normalize`, middleware Bearer (ADMIN_TOKEN/NEXTAUTH_SECRET), carpeta `/admin` base; README documentado.
 - MC-003 | done | P1 | Esquema Neon + migraciones | Prisma schema con brands/stores/products/variants/price&stock history/assets/events/taxonomy/announcements/users; pgvector habilitado; migración `20260115125012_init_schema`.

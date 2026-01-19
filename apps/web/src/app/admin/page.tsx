@@ -90,6 +90,14 @@ function AdminPanel() {
             <li>Panel de aprobaciones manuales de producto.</li>
           </ul>
         </div>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <a
+            href="/admin/brands"
+            className="rounded-full border border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+          >
+            Scraper de marcas
+          </a>
+        </div>
       </div>
     </main>
   );
