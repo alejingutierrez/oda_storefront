@@ -1,7 +1,6 @@
 # Backlog
 
 ## Now (F0 – bootstrap E2E mínimo)
-- MC-006 | doing | P1 | Autenticación y roles base | Login admin básico (email/password + cookie), middleware protegido y ruta /admin.
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.2, upsert DB, ficha en VSF + ISR.
 - MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build contenedores básicos.
 - MC-008 | todo | P1 | Observabilidad mínima | Logging estructurado, health checks, traces básicos; dashboard inicial de servicios.
@@ -37,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-006 | done | P1 | Autenticación y roles base | Login admin (email/password + cookie), ruta /admin sin /admin/login, seed admin en Neon, middleware sólo en /api/normalize.
 - MC-004 | done | P0 | Conexión OpenAI GPT-5.2 JSON mode | Helper con retries/validación Zod, endpoint `/api/normalize`, middleware Bearer (ADMIN_TOKEN/NEXTAUTH_SECRET), carpeta `/admin` base; README documentado.
 - MC-003 | done | P1 | Esquema Neon + migraciones | Prisma schema con brands/stores/products/variants/price&stock history/assets/events/taxonomy/announcements/users; pgvector habilitado; migración `20260115125012_init_schema`.
 - MC-002 | done | P1 | Docker compose local | Servicios web/scraper/worker, Postgres pgvector, Redis; healthchecks; puerto host 3080; `.env.example` alineado con Vercel; stack sube con `docker-compose up -d`.

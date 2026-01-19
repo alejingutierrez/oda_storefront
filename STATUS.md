@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-19 | MC-006 | doing | Login admin básico (email/password + cookie), middleware actualizado; script de importación Excel a Neon y carga de 781 marcas | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-hozkbivoe-alejingutierrezs-projects.vercel.app
+- 2026-01-19 | MC-006 | done | Login admin (email/password + cookie), seed admin en Neon, /admin directo, middleware sólo en /api/normalize; carga Excel a columnas (incluye ratings) | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-8wm8f249r-alejingutierrezs-projects.vercel.app
 - 2026-01-19 | meta | done | Sync repo con origin, fixes build Vercel (OpenAI lazy client + Node 22), docker compose healthy (web/worker/db/redis) | Vercel preview OK: https://oda-storefront-6ee5-o4pjm62bz-alejingutierrezs-projects.vercel.app
 - 2026-01-15 | MC-001 | done | Estructura base repo (Next TS/Tailwind), servicios scraper/worker stub, docker-compose, .env.example, README inicial; envs creadas en Vercel (prod/preview/dev) | Build local ok (lint/build); Vercel deploy productivo OK (https://oda-storefront-6ee5-hdg0yo8xc-alejingutierrezs-projects.vercel.app); stack docker corriendo en host puerto 3080.
 - 2026-01-15 | meta | done | Limpieza de variables duplicadas en Vercel (prefijo `oda_*` removido) y carga de credenciales Neon/Blob finales | Env set consolidado; pendiente acceso del autor correcto para deploy.

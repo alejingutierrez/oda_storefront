@@ -63,6 +63,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: Latencia login <400ms; tokens firmados con secreto rotado.
 - Riesgos: Config errónea de callback URLs en Vercel; mitigar con env por ambiente.
 - Métricas: Intentos fallidos de login; tiempo de sesión.
+- Estado: **done (2026-01-19)**.
 
 ### MC-007 CI lint/test smoke
 - Historia: Como equipo, quiero checks automáticos en PR, para evitar regresiones básicas.
