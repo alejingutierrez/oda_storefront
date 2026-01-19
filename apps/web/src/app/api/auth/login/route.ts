@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-
-const COOKIE_NAME = "admin_session";
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
+import { createAdminSession, ensureAdminUser, setAdminCookie, verifyAdminPassword } from "@/lib/auth";
 
 export async function POST(req: Request) {
   const contentType = req.headers.get("content-type") || "";
@@ -21,27 +19,26 @@ export async function POST(req: Request) {
 
   const adminEmail = process.env.ADMIN_EMAIL;
   const adminPassword = process.env.ADMIN_PASSWORD;
-  const adminToken = process.env.ADMIN_TOKEN;
 
-  if (!adminEmail || !adminPassword || !adminToken) {
+  if (!adminEmail || !adminPassword) {
     return NextResponse.json(
-      { error: "Missing ADMIN_EMAIL/ADMIN_PASSWORD/ADMIN_TOKEN" },
+      { error: "Missing ADMIN_EMAIL/ADMIN_PASSWORD" },
       { status: 500 },
     );
   }
 
-  if (email !== adminEmail || password !== adminPassword) {
+  if (email !== adminEmail) {
     return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
   }
 
-  const res = NextResponse.redirect(new URL("/admin", req.url));
-  res.cookies.set(COOKIE_NAME, adminToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: COOKIE_MAX_AGE,
-  });
+  await ensureAdminUser();
+  const valid = await verifyAdminPassword(email, password);
+  if (!valid) {
+    return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
+  }
 
-  return res;
+  const token = await createAdminSession(email);
+  await setAdminCookie(token);
+
+  return NextResponse.redirect(new URL("/admin", req.url));
 }

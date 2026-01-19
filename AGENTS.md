@@ -160,7 +160,9 @@ Para cada historia (nueva o en curso) se debe:
 0) Pedir al solicitante requisitos previos: credenciales/API keys necesarias, definiciones o datos faltantes para contexto, accesos a Vercel/Neon/Wompi/Blob, y cualquier variable de entorno requerida.
 1) Rebuild de contenedores/docker tras los cambios.
 2) Escuchar la salida del rebuild y corregir errores si aparecen.
-3) Hacer push a la rama de trabajo.
-4) Esperar y revisar el build en Vercel hasta su finalización; si falla, diagnosticar y corregir.
-5) Actualizar el README del proyecto con cualquier cambio relevante (instalación, variables, comandos, decisiones).
-6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y registrarla también en `STATUS.md` (resumen global).
+3) Revisar logs de Docker (web/scraper/worker) y confirmar que queden en estado saludable.
+4) Hacer push a la rama de trabajo.
+5) Esperar y revisar el build en Vercel hasta su finalización; si falla, diagnosticar y corregir.
+6) Revisar logs de Vercel del deploy resultante para confirmar que no hay errores en runtime.
+7) Actualizar el README del proyecto con cualquier cambio relevante (instalación, variables, comandos, decisiones).
+8) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y registrarla también en `STATUS.md` (resumen global).

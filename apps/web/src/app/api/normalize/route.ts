@@ -1,18 +1,12 @@
 import { NextResponse } from "next/server";
 import { normalizeProductWithOpenAI } from "@/lib/openai";
+import { validateAdminRequest } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-// Temporary auth: reuse NEXTAUTH_SECRET as bearer
-function isAuthorized(req: Request) {
-  const header = req.headers.get("authorization");
-  if (!header) return false;
-  const token = header.replace(/^Bearer\s+/i, "").trim();
-  return !!token && token === process.env.NEXTAUTH_SECRET;
-}
-
 export async function POST(req: Request) {
-  if (!isAuthorized(req)) {
+  const admin = await validateAdminRequest(req);
+  if (!admin) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

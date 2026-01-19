@@ -7,15 +7,18 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate --schema prisma/schema.prisma && next build",
     "start": "NODE_ENV=production next start",
     "lint": "eslint",
-    "db:import:brands": "node scripts/import-brands.mjs"
+    "db:import:brands": "node scripts/import-brands.mjs",
+    "db:seed:users": "node scripts/seed-users.mjs"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
-    "next": "16.1.2",
+    "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.5",
+    "next": "16.1.2",
     "openai": "^4.24.1",
     "pg": "^8.11.5",
     "prisma": "^7.2.0",
@@ -26,7 +29,9 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.2",
     "@types/node": "^20",
+    "@types/pg": "^8.16.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

@@ -81,19 +81,41 @@ const upsertSql = `
     "name",
     "slug",
     "siteUrl",
+    "category",
+    "productCategory",
+    "market",
+    "style",
+    "scale",
+    "avgPrice",
+    "reviewed",
+    "ratingStars",
+    "ratingScore",
     "instagram",
     "city",
+    "sourceSheet",
+    "sourceFile",
     "metadata",
     "isActive",
     "createdAt",
     "updatedAt"
   )
-  VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW(), NOW())
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NULL, true, NOW(), NOW())
   ON CONFLICT ("slug") DO UPDATE SET
     "name" = EXCLUDED."name",
     "siteUrl" = EXCLUDED."siteUrl",
+    "category" = EXCLUDED."category",
+    "productCategory" = EXCLUDED."productCategory",
+    "market" = EXCLUDED."market",
+    "style" = EXCLUDED."style",
+    "scale" = EXCLUDED."scale",
+    "avgPrice" = EXCLUDED."avgPrice",
+    "reviewed" = EXCLUDED."reviewed",
+    "ratingStars" = EXCLUDED."ratingStars",
+    "ratingScore" = EXCLUDED."ratingScore",
     "instagram" = EXCLUDED."instagram",
     "city" = EXCLUDED."city",
+    "sourceSheet" = EXCLUDED."sourceSheet",
+    "sourceFile" = EXCLUDED."sourceFile",
     "metadata" = EXCLUDED."metadata",
     "updatedAt" = NOW()
   RETURNING (xmax = 0) AS inserted;
@@ -125,33 +147,36 @@ try {
       const instagram = toString(getField(row, ["Instagram"]));
       const city = toString(getField(row, ["Ciudad", "City"]));
       const category = toString(getField(row, ["Categoría", "Categoria"]));
+      const productCategory = toString(getField(row, ["Categoría de Productos", "Categoria de Productos"]));
       const market = toString(getField(row, ["Mercado"]));
       const style = toString(getField(row, ["Estilo"]));
       const scale = toString(getField(row, ["Escala"]));
       const avgPrice = toNumber(getField(row, ["Promedio $", "Promedio", "Precio"]));
       const reviewed = toString(getField(row, ["Revisado"]));
+      const ratingStars = toString(getField(row, ["__EMPTY", "Rating", "Calificacion"]));
+      const ratingScoreRaw = toNumber(getField(row, ["__EMPTY_1", "Rating Score", "Calificacion Score"]));
+      const ratingScore = ratingScoreRaw === undefined ? undefined : Math.round(ratingScoreRaw);
 
       const slug = slugify(name);
-      const metadata = {
-        category,
-        market,
-        style,
-        scale,
-        avgPrice,
-        reviewed,
-        sheet: sheetName,
-        source: "Marcas colombianas.xlsx",
-      };
-
       const id = crypto.randomUUID();
       const result = await client.query(upsertSql, [
         id,
         name,
         slug,
         siteUrl ?? null,
+        category ?? null,
+        productCategory ?? null,
+        market ?? null,
+        style ?? null,
+        scale ?? null,
+        avgPrice ?? null,
+        reviewed ?? null,
+        ratingStars ?? null,
+        ratingScore ?? null,
         instagram ?? null,
         city ?? null,
-        JSON.stringify(metadata),
+        sheetName,
+        "Marcas colombianas.xlsx",
       ]);
 
       if (result.rows[0]?.inserted) {

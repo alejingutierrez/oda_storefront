@@ -32,6 +32,7 @@ npm run dev        # http://localhost:3000
 npm run lint
 npm run build
 npm run db:import:brands   # importa Marcas colombianas.xlsx a Neon
+npm run db:seed:users      # crea/actualiza usuario admin en Neon
 ```
 
 ### Docker Compose (stack completo)
@@ -39,33 +40,27 @@ npm run db:import:brands   # importa Marcas colombianas.xlsx a Neon
 docker-compose build
 docker-compose up
 ```
-Servicios: `web` (host 3080 → contenedor 3000), `db` (5432), `redis` (6379), `scraper`, `worker`.
+Servicios: `web` (host 3080 → contenedor 3000), `redis` (6379), `scraper`, `worker`.  
+La base de datos es **Neon** (no se levanta Postgres local en Compose).
 
 ## Base de datos y Prisma
-- Esquema definido en `apps/web/prisma/schema.prisma`, cliente generado en `apps/web/src/generated/prisma`.
+- Esquema definido en `apps/web/prisma/schema.prisma`, cliente generado en `@prisma/client` (adapter `@prisma/adapter-pg`).
 - Migración inicial (`20260115125012_init_schema`) crea tablas core y habilita `pgvector`.
-- Comandos (con stack de docker levantado):
+- Comandos (contra Neon):
   ```bash
   cd apps/web
-  DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx prisma generate
-  DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx prisma migrate dev --name <nombre>
+  DATABASE_URL=$DATABASE_URL npx prisma generate
+  DATABASE_URL=$DATABASE_URL npx prisma migrate dev --name <nombre>
   ```
-  Si tu host no ve el contenedor en `localhost`, puedes ejecutar sobre la red de compose:
-  ```bash
-  docker run --rm --network=oda_storefront_default \
-    -v "$(pwd)/apps/web":/app -w /app node:20 \
-    sh -c "npm install prisma @prisma/client --no-save >/dev/null && \
-           DATABASE_URL=postgres://postgres:postgres@db:5432/postgres npx prisma migrate dev --name <nombre>"
-  ```
-- Para inspeccionar DB local: `docker-compose exec db psql -U postgres -c "\dt"`.
 
 ## Admin
-- Ruta `/admin` reservada para el panel interno (placeholder inicial). Aquí se listarán scrapers, normalizaciones y aprobaciones.
-- Login básico en `/admin/login` con `ADMIN_EMAIL` y `ADMIN_PASSWORD` (cookie HttpOnly basada en `ADMIN_TOKEN`).
+- Ruta `/admin` con login embebido (correo/contraseña).
+- Configura `ADMIN_EMAIL` y `ADMIN_PASSWORD` en envs. Al autenticarse se crea un token de sesión (cookie HttpOnly) guardado en Neon.
+- `ADMIN_TOKEN` queda como bypass opcional para llamadas API (Bearer).
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).
-- Autorización: header `Authorization: Bearer <ADMIN_TOKEN>` (fallback a `NEXTAUTH_SECRET` si no se define). Middleware protege `/admin` y `/api/normalize`.
+- Autorización: header `Authorization: Bearer <ADMIN_TOKEN>` (fallback a `NEXTAUTH_SECRET` si no se define). Middleware protege `/api/normalize`.
 - Payload: `{ productHtml: string, images: string[], sourceUrl?: string }`.
 - Respuesta: objeto `{ product, cost }` normalizado por GPT-5.2 (JSON mode).
 
