@@ -8,6 +8,11 @@ import { loadBrandConstraints, type BrandConstraints } from "@/lib/brand-constra
 const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.2";
 const MAX_RETRIES = 3;
 const MAX_WEBSITE_PAGES = 4;
+const MIN_EVIDENCE_SOURCES = 7;
+const MAX_EVIDENCE_SOURCES = 10;
+const MAX_EVIDENCE_FETCHES = 14;
+const MAX_EVIDENCE_CHARS = 1200;
+const MAX_HTML_SLICE = 220_000;
 const SOCIAL_HOSTS = [
   "instagram.com",
   "facebook.com",
@@ -74,6 +79,7 @@ const brandResponseSchema = z.object({
 type BrandEnrichmentResponse = z.infer<typeof brandResponseSchema> & {
   raw?: string;
   searchSources?: Array<{ url: string; title?: string; source?: string }>;
+  evidenceSources?: Array<{ url: string; title?: string; excerpt?: string }>;
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
@@ -95,6 +101,12 @@ type WebsiteSignals = {
   lat?: number;
   lng?: number;
   address?: string;
+};
+
+type EvidenceSource = {
+  url: string;
+  title?: string;
+  excerpt?: string;
 };
 
 type BrandSnapshot = {
@@ -139,6 +151,39 @@ const normalizeUrl = (value: string | null | undefined) => {
   if (!trimmed) return null;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   return `https://${trimmed.replace(/^\/+/, "")}`;
+};
+
+const decodeEntities = (value: string) =>
+  value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+
+const htmlToText = (html: string) => {
+  let cleaned = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<\/h\d>/gi, "\n");
+  cleaned = cleaned.replace(/<[^>]+>/g, " ");
+  cleaned = decodeEntities(cleaned);
+  cleaned = cleaned.replace(/\s+/g, " ").replace(/\n\s+/g, "\n").trim();
+  return cleaned;
+};
+
+const extractTitleFromHtml = (html: string) => {
+  const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+  if (titleMatch?.[1]) return titleMatch[1].trim();
+  const metaTitle =
+    html.match(/<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1] ??
+    html.match(/<meta[^>]+name=["']twitter:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+  return metaTitle?.trim() ?? undefined;
 };
 
 const cleanHost = (value: string) => value.replace(/^www\./i, "").toLowerCase();
@@ -270,6 +315,7 @@ const buildPrompt = (
   context?: {
     websiteSignals?: WebsiteSignals | null;
     preSources?: Array<{ url: string; title?: string; source?: string }>;
+    evidenceSources?: EvidenceSource[];
   },
 ) => {
   const constraintPayload = {
@@ -322,6 +368,7 @@ Reglas estrictas:
 - Si la marca es solo online, usa un valor de city que exista en la lista (Online/On-line/etc.).
 - Si no encuentras evidencia nueva pero el valor actual parece consistente, conserva el valor actual.
 - Busca y devuelve al menos 10 resultados web (fuentes) para sustentar los datos.
+- Usa evidence_texts como evidencia principal y complementa con fuentes web cuando sea necesario.
 - Identifica logo_url y coordenadas (lat/lng) de la tienda principal si están disponibles en fuentes confiables.`;
 
   const contextPayload = {
@@ -342,6 +389,12 @@ Reglas estrictas:
         }
       : null,
     pre_sources: context?.preSources?.slice(0, 12).map((entry) => entry.url) ?? [],
+    evidence_texts:
+      context?.evidenceSources?.slice(0, MIN_EVIDENCE_SOURCES).map((entry) => ({
+        url: entry.url,
+        title: entry.title ?? null,
+        excerpt: entry.excerpt ?? null,
+      })) ?? [],
   };
 
   const userPrompt = `Marca a investigar: ${brand.name}
@@ -443,6 +496,7 @@ const collectWebSources = async (brand: Brand) => {
     const response = await client.responses.create({
       model: OPENAI_MODEL,
       tools: [{ type: "web_search" }],
+      tool_choice: { type: "web_search" },
       input: query,
       include: ["web_search_call.action.sources"],
     });
@@ -450,7 +504,7 @@ const collectWebSources = async (brand: Brand) => {
     sources.forEach((source) => {
       if (source.url && !collected.has(source.url)) collected.set(source.url, source);
     });
-    if (collected.size >= 10) break;
+    if (collected.size >= 12) break;
   }
 
   return Array.from(collected.values());
@@ -727,7 +781,7 @@ const fetchWebsiteSignals = async (url: string | null | undefined) => {
       });
       if (!response.ok) continue;
       const text = await response.text();
-      const signals = extractWebsiteSignals(text.slice(0, 200_000), response.url);
+      const signals = extractWebsiteSignals(text.slice(0, MAX_HTML_SLICE), response.url);
       aggregated = mergeWebsiteSignals(aggregated, signals);
       fetched += 1;
 
@@ -758,18 +812,112 @@ const fetchWebsiteSignals = async (url: string | null | undefined) => {
   return aggregated;
 };
 
+const buildEvidenceFromSources = async (
+  sources: Array<{ url: string; title?: string; source?: string }>,
+  brand: Brand,
+  preferredSiteUrl?: string | null,
+) => {
+  const brandSlug = slugify(brand.name).replace(/\s+/g, "");
+  const preferredHost = preferredSiteUrl ? new URL(preferredSiteUrl).hostname : null;
+  const ranked = sources
+    .map((entry) => {
+      let score = 0;
+      try {
+        const parsed = new URL(entry.url);
+        const host = parsed.hostname.toLowerCase();
+        if (preferredHost && isSameSite(preferredHost, host)) score += 5;
+        if (brandSlug && host.includes(brandSlug)) score += 2;
+        if (brandSlug && parsed.pathname.toLowerCase().includes(brandSlug)) score += 1;
+        if (/contact|tienda|store|ubicaci/i.test(parsed.pathname)) score += 1;
+        if (SOCIAL_HOSTS.some((domain) => host.includes(domain))) score -= 3;
+      } catch {
+        score -= 5;
+      }
+      return { ...entry, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const evidence: EvidenceSource[] = [];
+  const visited = new Set<string>();
+  let attempts = 0;
+
+  const tryFetch = async (entry: { url: string }) => {
+    if (attempts >= MAX_EVIDENCE_FETCHES) return;
+    attempts += 1;
+    if (visited.has(entry.url)) return;
+    visited.add(entry.url);
+    try {
+      const response = await fetch(entry.url, {
+        headers: {
+          "User-Agent": process.env.USER_AGENT ?? "ODA-Storefront-Scraper/0.1",
+          Accept: "text/html,application/xhtml+xml",
+        },
+      });
+      if (!response.ok) return;
+      const html = await response.text();
+      const sliced = html.slice(0, MAX_HTML_SLICE);
+      const title = extractTitleFromHtml(sliced);
+      const text = htmlToText(sliced);
+      const excerpt = text.slice(0, MAX_EVIDENCE_CHARS);
+      if (!excerpt && !title) return;
+      evidence.push({
+        url: entry.url,
+        title,
+        excerpt: excerpt || undefined,
+      });
+    } catch (error) {
+      console.warn("brand.scrape.evidence_failed", entry.url, error);
+    }
+  };
+
+  for (const entry of ranked) {
+    if (evidence.length >= MIN_EVIDENCE_SOURCES) break;
+    const host = (() => {
+      try {
+        return new URL(entry.url).hostname.toLowerCase();
+      } catch {
+        return "";
+      }
+    })();
+    if (SOCIAL_HOSTS.some((domain) => host.includes(domain))) continue;
+    await tryFetch(entry);
+  }
+
+  if (evidence.length < MIN_EVIDENCE_SOURCES) {
+    for (const entry of ranked) {
+      if (evidence.length >= MIN_EVIDENCE_SOURCES) break;
+      await tryFetch(entry);
+    }
+  }
+
+  if (evidence.length < MIN_EVIDENCE_SOURCES) {
+    for (const entry of ranked) {
+      if (evidence.length >= MIN_EVIDENCE_SOURCES) break;
+      if (evidence.some((item) => item.url === entry.url)) continue;
+      evidence.push({
+        url: entry.url,
+        title: entry.title,
+      });
+    }
+  }
+
+  return evidence.slice(0, MAX_EVIDENCE_SOURCES);
+};
+
 export async function enrichBrandWithOpenAI(
   brand: Brand,
   constraints: BrandConstraints,
   context?: {
     websiteSignals?: WebsiteSignals | null;
     preSources?: Array<{ url: string; title?: string; source?: string }>;
+    evidenceSources?: EvidenceSource[];
   },
 ) {
   const preSources = context?.preSources ?? (await collectWebSources(brand));
   const { systemPrompt, userPrompt } = buildPrompt(brand, constraints, {
     websiteSignals: context?.websiteSignals,
     preSources,
+    evidenceSources: context?.evidenceSources,
   });
   const client = getOpenAIClient() as any;
 
@@ -784,6 +932,7 @@ export async function enrichBrandWithOpenAI(
         const response = await client.responses.create({
           model: OPENAI_MODEL,
           tools,
+          tool_choice: tools ? { type: "web_search" } : undefined,
           input: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
@@ -807,6 +956,7 @@ export async function enrichBrandWithOpenAI(
           ...validation.data,
           raw,
           searchSources,
+          evidenceSources: context?.evidenceSources ?? [],
           usage: response?.usage,
         } as BrandEnrichmentResponse;
       } catch (error) {
@@ -907,9 +1057,17 @@ export async function runBrandScrapeJob(brandId: string) {
   const preSources = await collectWebSources(brand);
   const candidateSiteUrl = normalizeUrl(brand.siteUrl) ?? pickOfficialSiteUrl(preSources, brand);
   const initialSignals = await fetchWebsiteSignals(candidateSiteUrl);
+  const evidenceSources = await buildEvidenceFromSources(preSources, brand, candidateSiteUrl);
+  if (evidenceSources.length < MIN_EVIDENCE_SOURCES) {
+    console.warn("brand.scrape.evidence_insufficient", {
+      brandId: brand.id,
+      found: evidenceSources.length,
+    });
+  }
   const enrichment = await enrichBrandWithOpenAI(brand, constraints, {
     websiteSignals: initialSignals,
     preSources,
+    evidenceSources,
   });
 
   const normalized = normalizeBrandOutput(enrichment.brand, constraints);
@@ -983,6 +1141,7 @@ export async function runBrandScrapeJob(brandId: string) {
       usage: enrichment.usage ?? null,
       sources: enrichment.sources ?? null,
       search_sources: enrichment.searchSources ?? null,
+      evidence_sources: enrichment.evidenceSources ?? null,
       website_signals: websiteSignals ?? null,
     },
   } as Prisma.InputJsonValue;
