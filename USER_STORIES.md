@@ -123,10 +123,10 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
-- Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape` y `/api/admin/brands/scrape/next`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping.
-- CA: Encolar marcas crea jobs; procesamiento secuencial actualiza campos estándar (city/category/market/scale/style) con valores válidos; logs visibles en admin; job queda en estado completed/failed.
-- Datos: `brand_scrape_jobs` para cola; metadata `brand_scrape` en `brands`.
-- NF: Un job por request; retries en OpenAI; timeout razonable por ejecución.
+- Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.
+- CA: Encolar marcas crea jobs; procesamiento secuencial actualiza campos estándar (city/category/market/scale/style) con valores válidos; logs visibles en admin; jobs con diff de cambios; job queda en estado completed/failed.
+- Datos: `brand_scrape_jobs` para cola e histórico; metadata `brand_scrape` en `brands`; resultado con diff before/after.
+- NF: Un job por request; batch en cron limitado por tiempo; retries en OpenAI; timeout razonable por ejecución.
 - Riesgos: Respuesta inválida de IA o falta de evidencia; mitigar con validación Zod + fallback HTML; mantener valores existentes si no hay evidencia nueva.
 - Métricas: Tiempo por marca, tasa de éxito, campos actualizados por corrida.
 - Estado: **done (2026-01-19)**.

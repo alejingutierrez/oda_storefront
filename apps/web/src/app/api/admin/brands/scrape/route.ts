@@ -39,10 +39,20 @@ export async function GET(req: Request) {
     },
   });
 
+  const recent = await prisma.brandScrapeJob.findMany({
+    where: { status: { in: ["completed", "failed"] } },
+    orderBy: { finishedAt: "desc" },
+    take: 6,
+    include: {
+      brand: { select: { id: true, name: true, slug: true } },
+    },
+  });
+
   return NextResponse.json({
     counts: summary,
     queued,
     processing,
+    recent,
   });
 }
 

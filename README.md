@@ -15,13 +15,13 @@ Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar cat√
 
 ## Variables de entorno
 Copiar `.env.example` a `.env`/`.env.local` y completar:
-- Core: `OPENAI_API_KEY`, `OPENAI_MODEL` (opcional), `NEXTAUTH_SECRET`, `VERCEL_TEAM_ID`, `VERCEL_TOKEN`.
+- Core: `OPENAI_API_KEY`, `OPENAI_MODEL` (opcional), `OPENAI_WEB_SEARCH` (opcional), `NEXTAUTH_SECRET`, `VERCEL_TEAM_ID`, `VERCEL_TOKEN`.
 - Base de datos (Neon): `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `NEON_DATABASE_URL`, `PGHOST`, `PGHOST_UNPOOLED`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`, `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL_NO_SSL`, `POSTGRES_PRISMA_URL`, `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`.
 - Redis: `REDIS_URL`.
 - Storage: `VERCEL_BLOB_READ_WRITE_TOKEN`, `BLOB_READ_WRITE_TOKEN`.
 - Billing: `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY`.
 - Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`.
-- Scraper: `USER_AGENT`.
+- Scraper: `USER_AGENT`, `BRAND_SCRAPE_MAX_JOBS`, `BRAND_SCRAPE_MAX_RUNTIME_MS`.
 No commitees credenciales reales.
 
 ## Comandos locales
@@ -69,6 +69,11 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - `GET /api/admin/brands/scrape`: estado de cola (requiere sesi√≥n admin o `ADMIN_TOKEN`).
 - `POST /api/admin/brands/scrape`: encola N marcas (`count` = 1,5,10,25,50).
 - `POST /api/admin/brands/scrape/next`: procesa el siguiente job (uno por request).
+- `GET /api/admin/brands/scrape/cron`: procesa un batch corto para cron (usa `BRAND_SCRAPE_MAX_JOBS` y `BRAND_SCRAPE_MAX_RUNTIME_MS`).
+
+## Cron en Vercel
+- Configurado en `vercel.json` para ejecutar `/api/admin/brands/scrape/cron` cada 5 minutos.
+- El endpoint acepta invocaciones de cron (User-Agent `vercel-cron`) o `ADMIN_TOKEN` en `Authorization`.
 
 ## CI/CD y Git
 - Repositorio: git@github.com:alejingutierrez/oda_storefront.git

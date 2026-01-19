@@ -9,12 +9,17 @@ type QueueJob = {
   status: string;
   createdAt: string;
   brand?: { id: string; name: string; slug: string } | null;
+  result?: {
+    changes?: Array<{ field: string; before: unknown; after: unknown }>;
+  } | null;
+  finishedAt?: string | null;
 };
 
 type QueueStatus = {
   counts: QueueCounts;
   queued: QueueJob[];
   processing: QueueJob | null;
+  recent: QueueJob[];
 };
 
 const COUNTS = [1, 5, 10, 25, 50];
@@ -134,6 +139,18 @@ export default function BrandScrapePanel() {
     }
   };
 
+  const formatValue = (value: unknown) => {
+    if (value === null || value === undefined) return "null";
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
       <div className="mx-auto max-w-5xl px-6 py-12">
@@ -250,6 +267,42 @@ export default function BrandScrapePanel() {
                   <li className="text-slate-500">No hay jobs en cola.</li>
                 )}
               </ul>
+            </div>
+
+            <div className="mt-8">
+              <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Últimas ejecuciones
+              </h3>
+              <div className="mt-3 space-y-3 text-sm text-slate-700">
+                {status?.recent?.length ? (
+                  status.recent.map((job) => {
+                    const changeCount = job.result?.changes?.length ?? 0;
+                    return (
+                      <details
+                        key={job.id}
+                        className="rounded-xl border border-slate-200 px-3 py-2"
+                      >
+                        <summary className="cursor-pointer list-none font-medium text-slate-800">
+                          {job.brand?.name ?? "Marca"} · {job.status} · {changeCount} cambios
+                        </summary>
+                        <div className="mt-2 space-y-1 text-xs text-slate-600">
+                          {(job.result?.changes ?? []).length === 0 ? (
+                            <p>Sin cambios detectados.</p>
+                          ) : (
+                            job.result?.changes?.map((change, idx) => (
+                              <p key={`${job.id}-change-${idx}`}>
+                                {change.field}: {formatValue(change.before)} → {formatValue(change.after)}
+                              </p>
+                            ))
+                          )}
+                        </div>
+                      </details>
+                    );
+                  })
+                ) : (
+                  <p className="text-slate-500">Aún no hay ejecuciones.</p>
+                )}
+              </div>
             </div>
           </aside>
         </div>

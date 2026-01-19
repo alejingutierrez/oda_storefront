@@ -64,6 +64,33 @@ type WebsiteSignals = {
   links?: string[];
 };
 
+type BrandSnapshot = {
+  siteUrl: string | null;
+  description: string | null;
+  category: string | null;
+  productCategory: string | null;
+  market: string | null;
+  scale: string | null;
+  style: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  instagram: string | null;
+  tiktok: string | null;
+  facebook: string | null;
+  whatsapp: string | null;
+  address: string | null;
+  city: string | null;
+  lat: number | null;
+  lng: number | null;
+  openingHours: Record<string, unknown> | null;
+};
+
+type BrandChange = {
+  field: keyof BrandSnapshot;
+  before: BrandSnapshot[keyof BrandSnapshot];
+  after: BrandSnapshot[keyof BrandSnapshot];
+};
+
 const slugify = (value: string) =>
   value
     .normalize("NFD")
@@ -96,6 +123,32 @@ const normalizeWhatsApp = (value: string | null | undefined) => {
     return `https://wa.me/${digits}`;
   }
   return normalizeUrl(trimmed);
+};
+
+const toComparable = (value: unknown) => {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "number") return Number(value);
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return value;
+};
+
+const diffSnapshots = (before: BrandSnapshot, after: BrandSnapshot): BrandChange[] => {
+  const changes: BrandChange[] = [];
+  (Object.keys(before) as Array<keyof BrandSnapshot>).forEach((field) => {
+    const beforeValue = before[field];
+    const afterValue = after[field];
+    if (toComparable(beforeValue) !== toComparable(afterValue)) {
+      changes.push({ field, before: beforeValue, after: afterValue });
+    }
+  });
+  return changes;
 };
 
 const stripCitations = (value: string) =>
@@ -396,6 +449,56 @@ export async function runBrandScrapeJob(brandId: string) {
   const websiteSignals = await fetchWebsiteSignals(siteUrl);
   const merged = mergeBrandSignals(normalized, websiteSignals);
 
+  const before: BrandSnapshot = {
+    siteUrl: brand.siteUrl ?? null,
+    description: brand.description ?? null,
+    category: brand.category ?? null,
+    productCategory: brand.productCategory ?? null,
+    market: brand.market ?? null,
+    scale: brand.scale ?? null,
+    style: brand.style ?? null,
+    contactPhone: brand.contactPhone ?? null,
+    contactEmail: brand.contactEmail ?? null,
+    instagram: brand.instagram ?? null,
+    tiktok: brand.tiktok ?? null,
+    facebook: brand.facebook ?? null,
+    whatsapp: brand.whatsapp ?? null,
+    address: brand.address ?? null,
+    city: brand.city ?? null,
+    lat: brand.lat !== null && brand.lat !== undefined ? Number(brand.lat) : null,
+    lng: brand.lng !== null && brand.lng !== undefined ? Number(brand.lng) : null,
+    openingHours:
+      typeof brand.openingHours === "object" && brand.openingHours
+        ? (brand.openingHours as Record<string, unknown>)
+        : null,
+  };
+
+  const after: BrandSnapshot = {
+    siteUrl: merged.site_url ?? null,
+    description: merged.description ?? null,
+    category: merged.category ?? null,
+    productCategory: merged.product_category ?? null,
+    market: merged.market ?? null,
+    scale: merged.scale ?? null,
+    style: merged.style ?? null,
+    contactPhone: merged.contact_phone ?? null,
+    contactEmail: merged.contact_email ?? null,
+    instagram: merged.instagram ?? null,
+    tiktok: merged.tiktok ?? null,
+    facebook: merged.facebook ?? null,
+    whatsapp: merged.whatsapp ?? null,
+    address: merged.address ?? null,
+    city: merged.city ?? null,
+    lat: merged.lat ?? null,
+    lng: merged.lng ?? null,
+    openingHours:
+      merged.opening_hours && typeof merged.opening_hours === "object"
+        ? (merged.opening_hours as Record<string, unknown>)
+        : null,
+  };
+
+  const changes = diffSnapshots(before, after);
+
   const metadata = {
     ...(typeof brand.metadata === "object" && brand.metadata ? brand.metadata : {}),
     brand_scrape: {
@@ -438,5 +541,5 @@ export async function runBrandScrapeJob(brandId: string) {
     },
   });
 
-  return { updated, enrichment };
+  return { updated, enrichment, changes, before, after };
 }
