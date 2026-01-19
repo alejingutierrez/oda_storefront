@@ -33,14 +33,14 @@ export async function GET(req: Request) {
     }>
   >(
     `SELECT
-      (SELECT COUNT(*) FROM "brands" WHERE "isActive" = true) AS total,
-      (SELECT COUNT(*) FROM "brands" b WHERE b."isActive" = true AND NOT EXISTS (
+      (SELECT COUNT(*)::int FROM "brands" WHERE "isActive" = true) AS total,
+      (SELECT COUNT(*)::int FROM "brands" b WHERE b."isActive" = true AND NOT EXISTS (
         SELECT 1 FROM "brand_scrape_jobs" j WHERE j."brandId" = b.id AND j.status = 'completed'
       )) AS unprocessed,
-      (SELECT COUNT(*) FROM "brand_scrape_jobs" WHERE status = 'queued') AS queued,
-      (SELECT COUNT(*) FROM "brand_scrape_jobs" WHERE status = 'processing') AS processing,
-      (SELECT COUNT(*) FROM "brand_scrape_jobs" WHERE status = 'completed') AS completed,
-      (SELECT COUNT(*) FROM "brand_scrape_jobs" WHERE status = 'failed') AS failed
+      (SELECT COUNT(*)::int FROM "brand_scrape_jobs" WHERE status = 'queued') AS queued,
+      (SELECT COUNT(*)::int FROM "brand_scrape_jobs" WHERE status = 'processing') AS processing,
+      (SELECT COUNT(*)::int FROM "brand_scrape_jobs" WHERE status = 'completed') AS completed,
+      (SELECT COUNT(*)::int FROM "brand_scrape_jobs" WHERE status = 'failed') AS failed
     `,
   );
 
