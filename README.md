@@ -10,7 +10,7 @@ Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar cat�
 - `AGENTS.md`, `BACKLOG.md`, `USER_STORIES.md`, `STATUS.md` – Documentación y control operativo.
 
 ## Requisitos
-- Node 18/20, npm.
+- Node 22.x, npm.
 - Docker + Docker Compose (para entorno local).
 
 ## Variables de entorno

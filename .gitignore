@@ -3,6 +3,7 @@
 node_modules
 .env
 .env.local
+Marcas colombianas.xlsx
 # keep the template tracked
 !.env.example
 npm-debug.log*

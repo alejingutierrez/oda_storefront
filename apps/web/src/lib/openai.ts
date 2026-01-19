@@ -43,9 +43,19 @@ type OpenAIJsonResponse = {
   cost?: { prompt_tokens: number; completion_tokens: number; total_tokens: number; price_usd?: number };
 };
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let client: OpenAI | null = null;
+
+const getClient = () => {
+  if (client) return client;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "OPENAI_API_KEY is missing. Set it in the environment to enable normalization.",
+    );
+  }
+  client = new OpenAI({ apiKey });
+  return client;
+};
 
 // Exported for potential validation in callers
 export const productJsonSchema: Record<string, unknown> = {
@@ -174,7 +184,7 @@ export async function normalizeProductWithOpenAI({
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const response = await client.chat.completions.create({
+      const response = await getClient().chat.completions.create({
         model: OPENAI_MODEL,
         // json_schema no está tipado aún en el SDK; forzamos tipo
         response_format: { type: "json_object" } as unknown as { type: "json_object" },
