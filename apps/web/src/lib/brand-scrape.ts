@@ -11,6 +11,7 @@ const MAX_RETRIES = 3;
 const brandPayloadSchema = z.object({
   name: z.string(),
   site_url: z.string().nullable(),
+  logo_url: z.string().nullable(),
   description: z.string().nullable(),
   category: z.string().nullable(),
   product_category: z.string().nullable(),
@@ -45,6 +46,7 @@ const brandResponseSchema = z.object({
 
 type BrandEnrichmentResponse = z.infer<typeof brandResponseSchema> & {
   raw?: string;
+  searchSources?: Array<{ url: string; title?: string; source?: string }>;
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
@@ -62,10 +64,15 @@ type WebsiteSignals = {
   facebook?: string;
   whatsapp?: string;
   links?: string[];
+  logoUrl?: string;
+  lat?: number;
+  lng?: number;
+  address?: string;
 };
 
 type BrandSnapshot = {
   siteUrl: string | null;
+  logoUrl: string | null;
   description: string | null;
   category: string | null;
   productCategory: string | null;
@@ -123,6 +130,15 @@ const normalizeWhatsApp = (value: string | null | undefined) => {
     return `https://wa.me/${digits}`;
   }
   return normalizeUrl(trimmed);
+};
+
+const resolveUrl = (value: string | null | undefined, baseUrl?: string | null) => {
+  if (!value) return null;
+  try {
+    return baseUrl ? new URL(value, baseUrl).toString() : new URL(value).toString();
+  } catch {
+    return normalizeUrl(value);
+  }
 };
 
 const toComparable = (value: unknown) => {
@@ -202,6 +218,7 @@ const buildPrompt = (brand: Brand, constraints: BrandConstraints) => {
     brand: {
       name: brand.name,
       site_url: "https://...",
+      logo_url: "https://...",
       description: "...",
       category: null,
       product_category: null,
@@ -236,7 +253,9 @@ Reglas estrictas:
 - No inventes datos. Si no hay evidencia clara, devuelve null.
 - URLs siempre con esquema https.
 - Si la marca es solo online, usa un valor de city que exista en la lista (Online/On-line/etc.).
-- Si no encuentras evidencia nueva pero el valor actual parece consistente, conserva el valor actual.`;
+- Si no encuentras evidencia nueva pero el valor actual parece consistente, conserva el valor actual.
+- Busca y devuelve al menos 10 resultados web (fuentes) para sustentar los datos.
+- Identifica logo_url y coordenadas (lat/lng) de la tienda principal si están disponibles en fuentes confiables.`;
 
   const userPrompt = `Marca a investigar: ${brand.name}
 
@@ -244,6 +263,7 @@ Datos actuales (puedes corregirlos):
 ${JSON.stringify(
     {
       site_url: brand.siteUrl ?? null,
+      logo_url: brand.logoUrl ?? null,
       description: brand.description ?? null,
       category: brand.category ?? null,
       product_category: brand.productCategory ?? null,
@@ -286,6 +306,62 @@ const extractOutputText = (response: any) => {
   return content?.text ?? "";
 };
 
+const extractWebSources = (response: any) => {
+  const outputs = Array.isArray(response?.output) ? response.output : [];
+  const sources: Array<{ url: string; title?: string; source?: string }> = [];
+  for (const item of outputs) {
+    if (item?.type !== "web_search_call") continue;
+    const found = item?.action?.sources ?? [];
+    if (!Array.isArray(found)) continue;
+    found.forEach((entry: any) => {
+      if (typeof entry === "string") {
+        sources.push({ url: entry });
+        return;
+      }
+      if (entry?.url) {
+        sources.push({ url: entry.url, title: entry.title, source: entry.source });
+      }
+    });
+  }
+  const unique = new Map<string, { url: string; title?: string; source?: string }>();
+  sources.forEach((entry) => {
+    if (!entry.url) return;
+    if (!unique.has(entry.url)) unique.set(entry.url, entry);
+  });
+  return Array.from(unique.values());
+};
+
+const collectWebSources = async (brand: Brand) => {
+  if (process.env.OPENAI_WEB_SEARCH === "false") return [];
+  const client = getOpenAIClient() as any;
+  const queries = [
+    `${brand.name} marca moda Colombia`,
+    `${brand.name} tienda oficial`,
+    `${brand.name} instagram oficial`,
+    `${brand.name} direccion tienda`,
+    `${brand.name} logo marca`,
+    `${brand.name} facebook oficial`,
+    `${brand.name} sitio web`,
+  ];
+  const collected = new Map<string, { url: string; title?: string; source?: string }>();
+
+  for (const query of queries) {
+    const response = await client.responses.create({
+      model: OPENAI_MODEL,
+      tools: [{ type: "web_search" }],
+      input: query,
+      include: ["web_search_call.action.sources"],
+    });
+    const sources = extractWebSources(response);
+    sources.forEach((source) => {
+      if (source.url && !collected.has(source.url)) collected.set(source.url, source);
+    });
+    if (collected.size >= 10) break;
+  }
+
+  return Array.from(collected.values());
+};
+
 const safeJsonParse = (raw: string) => {
   try {
     return JSON.parse(raw);
@@ -296,7 +372,31 @@ const safeJsonParse = (raw: string) => {
   }
 };
 
-const extractWebsiteSignals = (html: string): WebsiteSignals => {
+const parseJsonLd = (html: string) => {
+  const scripts = Array.from(
+    html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi),
+  );
+  const objects: Array<Record<string, unknown>> = [];
+  for (const match of scripts) {
+    const raw = match[1]?.trim();
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((item) => {
+          if (item && typeof item === "object") objects.push(item as Record<string, unknown>);
+        });
+      } else if (parsed && typeof parsed === "object") {
+        objects.push(parsed as Record<string, unknown>);
+      }
+    } catch {
+      continue;
+    }
+  }
+  return objects;
+};
+
+const extractWebsiteSignals = (html: string, baseUrl?: string | null): WebsiteSignals => {
   const result: WebsiteSignals = {};
   const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
   if (titleMatch?.[1]) result.title = titleMatch[1].trim();
@@ -316,8 +416,8 @@ const extractWebsiteSignals = (html: string): WebsiteSignals => {
 
   const links = Array.from(html.matchAll(/href=["']([^"']+)["']/gi)).map((match) => match[1]);
   const absoluteLinks = links
-    .map((link) => link.trim())
-    .filter((link) => link.startsWith("http"));
+    .map((link) => resolveUrl(link.trim(), baseUrl))
+    .filter((link): link is string => !!link && link.startsWith("http"));
 
   result.links = Array.from(new Set(absoluteLinks));
 
@@ -328,6 +428,80 @@ const extractWebsiteSignals = (html: string): WebsiteSignals => {
   result.tiktok = findLink("tiktok.com");
   result.facebook = findLink("facebook.com");
   result.whatsapp = findLink("wa.me") ?? findLink("api.whatsapp.com");
+
+  const jsonLdObjects = parseJsonLd(html);
+  for (const obj of jsonLdObjects) {
+    const logo = obj.logo as string | undefined;
+    const image = obj.image as string | undefined;
+    const address = obj.address as Record<string, unknown> | string | undefined;
+    const geo = obj.geo as Record<string, unknown> | undefined;
+
+    if (!result.logoUrl && logo) {
+      result.logoUrl = resolveUrl(String(logo), baseUrl) ?? undefined;
+    }
+    if (!result.logoUrl && image) {
+      result.logoUrl = resolveUrl(String(image), baseUrl) ?? undefined;
+    }
+    if (address && typeof address === "object") {
+      const street = address.streetAddress ?? address.addressLocality ?? address.addressRegion;
+      const country = address.addressCountry;
+      if (!result.address && street) {
+        result.address = [street, country].filter(Boolean).join(", ");
+      }
+    } else if (typeof address === "string" && !result.address) {
+      result.address = address;
+    }
+    if (geo) {
+      const lat = geo.latitude ? Number(geo.latitude) : null;
+      const lng = geo.longitude ? Number(geo.longitude) : null;
+      if (lat && !Number.isNaN(lat)) result.lat = lat;
+      if (lng && !Number.isNaN(lng)) result.lng = lng;
+    }
+  }
+
+  const metaLogo =
+    html.match(/<meta[^>]+property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1] ??
+    html.match(/<meta[^>]+name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
+  if (!result.logoUrl && metaLogo) {
+    result.logoUrl = resolveUrl(metaLogo, baseUrl) ?? undefined;
+  }
+
+  const iconMatch = html.match(/<link[^>]+rel=["'](?:icon|shortcut icon)["'][^>]*href=["']([^"']+)["']/i);
+  if (!result.logoUrl && iconMatch?.[1]) {
+    result.logoUrl = resolveUrl(iconMatch[1], baseUrl) ?? undefined;
+  }
+
+  if (!result.logoUrl) {
+    const imgMatches = Array.from(html.matchAll(/<img[^>]+>/gi));
+    for (const match of imgMatches) {
+      const tag = match[0];
+      const isLogo = /logo/i.test(tag);
+      if (!isLogo) continue;
+      const srcMatch = tag.match(/src=["']([^"']+)["']/i);
+      if (srcMatch?.[1]) {
+        result.logoUrl = resolveUrl(srcMatch[1], baseUrl) ?? undefined;
+        break;
+      }
+    }
+  }
+
+  const mapUrlMatch = html.match(/https?:\/\/www\.google\.com\/maps[^\"'\\s>]+/i);
+  if (mapUrlMatch?.[0]) {
+    const mapUrl = mapUrlMatch[0];
+    const atMatch = mapUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const centerMatch = mapUrl.match(/[?&](?:center|q|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const pbMatch = mapUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    const coords =
+      (atMatch && [atMatch[1], atMatch[2]]) ||
+      (centerMatch && [centerMatch[1], centerMatch[2]]) ||
+      (pbMatch && [pbMatch[1], pbMatch[2]]);
+    if (coords) {
+      const lat = Number(coords[0]);
+      const lng = Number(coords[1]);
+      if (!Number.isNaN(lat)) result.lat = result.lat ?? lat;
+      if (!Number.isNaN(lng)) result.lng = result.lng ?? lng;
+    }
+  }
 
   return result;
 };
@@ -344,7 +518,7 @@ const fetchWebsiteSignals = async (url: string | null | undefined) => {
     });
     if (!response.ok) return null;
     const text = await response.text();
-    return extractWebsiteSignals(text.slice(0, 200_000));
+    return extractWebsiteSignals(text.slice(0, 200_000), response.url);
   } catch (error) {
     console.warn("brand.scrape.website_failed", normalized, error);
     return null;
@@ -354,6 +528,7 @@ const fetchWebsiteSignals = async (url: string | null | undefined) => {
 export async function enrichBrandWithOpenAI(brand: Brand, constraints: BrandConstraints) {
   const { systemPrompt, userPrompt } = buildPrompt(brand, constraints);
   const client = getOpenAIClient() as any;
+  const preSources = await collectWebSources(brand);
 
   let lastError: unknown = null;
   const toolChains = process.env.OPENAI_WEB_SEARCH === "false"
@@ -371,6 +546,7 @@ export async function enrichBrandWithOpenAI(brand: Brand, constraints: BrandCons
             { role: "user", content: userPrompt },
           ],
           text: { format: { type: "json_object" } },
+          include: ["web_search_call.action.sources"],
         });
 
         const raw = extractOutputText(response);
@@ -382,10 +558,15 @@ export async function enrichBrandWithOpenAI(brand: Brand, constraints: BrandCons
         if (!validation.success) {
           throw new Error(`JSON validation failed: ${validation.error.message}`);
         }
+        const searchSources = [
+          ...preSources,
+          ...extractWebSources(response),
+        ];
 
         return {
           ...validation.data,
           raw,
+          searchSources,
           usage: response?.usage,
         } as BrandEnrichmentResponse;
       } catch (error) {
@@ -409,6 +590,7 @@ const mergeBrandSignals = (
 
   return {
     ...base,
+    logo_url: base.logo_url ?? website.logoUrl ?? null,
     description: base.description ?? website.description ?? website.title ?? null,
     contact_email: base.contact_email ?? website.emails?.[0] ?? null,
     contact_phone: base.contact_phone ?? website.phones?.[0] ?? null,
@@ -416,6 +598,9 @@ const mergeBrandSignals = (
     tiktok: base.tiktok ?? website.tiktok ?? null,
     facebook: base.facebook ?? website.facebook ?? null,
     whatsapp: base.whatsapp ?? website.whatsapp ?? null,
+    address: base.address ?? website.address ?? null,
+    lat: base.lat ?? website.lat ?? null,
+    lng: base.lng ?? website.lng ?? null,
   };
 };
 
@@ -423,6 +608,7 @@ const normalizeBrandOutput = (output: BrandEnrichmentResponse["brand"], constrai
   return {
     ...output,
     site_url: normalizeUrl(output.site_url),
+    logo_url: normalizeUrl(output.logo_url),
     contact_email: normalizeEmail(output.contact_email),
     instagram: normalizeUrl(output.instagram),
     tiktok: normalizeUrl(output.tiktok),
@@ -451,6 +637,7 @@ export async function runBrandScrapeJob(brandId: string) {
 
   const before: BrandSnapshot = {
     siteUrl: brand.siteUrl ?? null,
+    logoUrl: brand.logoUrl ?? null,
     description: brand.description ?? null,
     category: brand.category ?? null,
     productCategory: brand.productCategory ?? null,
@@ -475,6 +662,7 @@ export async function runBrandScrapeJob(brandId: string) {
 
   const after: BrandSnapshot = {
     siteUrl: merged.site_url ?? null,
+    logoUrl: merged.logo_url ?? null,
     description: merged.description ?? null,
     category: merged.category ?? null,
     productCategory: merged.product_category ?? null,
@@ -507,6 +695,7 @@ export async function runBrandScrapeJob(brandId: string) {
       ran_at: new Date().toISOString(),
       usage: enrichment.usage ?? null,
       sources: enrichment.sources ?? null,
+      search_sources: enrichment.searchSources ?? null,
       website_signals: websiteSignals ?? null,
     },
   } as Prisma.InputJsonValue;
@@ -520,6 +709,7 @@ export async function runBrandScrapeJob(brandId: string) {
     where: { id: brandId },
     data: {
       siteUrl: merged.site_url,
+      logoUrl: merged.logo_url,
       description: merged.description,
       category: merged.category,
       productCategory: merged.product_category,

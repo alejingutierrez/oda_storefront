@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth";
 import BrandScrapePanel from "./BrandScrapePanel";
+import AdminShell from "../AdminShell";
 
 export const dynamic = "force-dynamic";
 
@@ -25,5 +26,9 @@ export default async function AdminBrandScrapePage() {
   const authed = await isAdminSession();
   if (!authed) redirect("/admin");
 
-  return <BrandScrapePanel />;
+  return (
+    <AdminShell title="Scraper de marcas" active="brand-scrape">
+      <BrandScrapePanel />
+    </AdminShell>
+  );
 }

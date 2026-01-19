@@ -44,6 +44,7 @@ export async function processNextBrandScrapeJob(): Promise<BrandScrapeResult> {
           before: result.before ?? null,
           after: result.after ?? null,
           sources: result.enrichment.sources ?? null,
+          searchSources: result.enrichment.searchSources ?? null,
           usage: result.enrichment.usage ?? null,
         } as Prisma.InputJsonValue,
       },
