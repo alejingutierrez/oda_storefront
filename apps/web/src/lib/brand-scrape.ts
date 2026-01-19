@@ -40,6 +40,32 @@ const CONTACT_KEYWORDS = [
   "faq",
 ];
 
+const openingHoursSchema = z.preprocess((value) => {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(value)) return null;
+  if (typeof value === "object") return value;
+  return null;
+}, z.record(z.unknown()).nullable());
+
+const numberSchema = z.preprocess((value) => {
+  if (value == null) return null;
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}, z.number().nullable());
+
 const brandPayloadSchema = z.object({
   name: z.string(),
   site_url: z.string().nullable(),
@@ -58,19 +84,27 @@ const brandPayloadSchema = z.object({
   whatsapp: z.string().nullable(),
   address: z.string().nullable(),
   city: z.string().nullable(),
-  lat: z.number().nullable(),
-  lng: z.number().nullable(),
-  opening_hours: z.record(z.unknown()).nullable(),
+  lat: numberSchema,
+  lng: numberSchema,
+  opening_hours: openingHoursSchema,
 });
+
+const sourceValueSchema = z.preprocess((value) => {
+  if (Array.isArray(value)) {
+    const first = value.find((entry) => typeof entry === "string");
+    return first ?? null;
+  }
+  return value;
+}, z.string().nullable().optional());
 
 const brandResponseSchema = z.object({
   brand: brandPayloadSchema,
   sources: z
     .object({
-      website: z.string().nullable().optional(),
-      instagram: z.string().nullable().optional(),
-      tiktok: z.string().nullable().optional(),
-      facebook: z.string().nullable().optional(),
+      website: sourceValueSchema,
+      instagram: sourceValueSchema,
+      tiktok: sourceValueSchema,
+      facebook: sourceValueSchema,
       other: z.array(z.string()).optional(),
     })
     .optional(),
@@ -296,6 +330,54 @@ const cleanStrings = <T>(input: T): T => {
   return input;
 };
 
+const coerceString = (value: unknown) => {
+  if (value == null) return value;
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    const first = value.find((entry) => typeof entry === "string");
+    return first ?? null;
+  }
+  return value;
+};
+
+const normalizeOpenAiPayload = (input: unknown) => {
+  if (!input || typeof input !== "object") return input;
+  const payload = input as Record<string, any>;
+  if (payload.brand && typeof payload.brand === "object") {
+    const brand = payload.brand as Record<string, unknown>;
+    const stringFields = [
+      "site_url",
+      "logo_url",
+      "description",
+      "category",
+      "product_category",
+      "market",
+      "scale",
+      "style",
+      "contact_phone",
+      "contact_email",
+      "instagram",
+      "tiktok",
+      "facebook",
+      "whatsapp",
+      "address",
+      "city",
+    ];
+    stringFields.forEach((field) => {
+      brand[field] = coerceString(brand[field]);
+    });
+    payload.brand = brand;
+  }
+  if (payload.sources && typeof payload.sources === "object") {
+    const sources = payload.sources as Record<string, unknown>;
+    ["website", "instagram", "tiktok", "facebook"].forEach((field) => {
+      sources[field] = coerceString(sources[field]);
+    });
+    payload.sources = sources;
+  }
+  return payload;
+};
+
 const normalizeEnumValue = (
   value: string | null | undefined,
   allowed: string[],
@@ -369,6 +451,8 @@ Reglas estrictas:
 - Si no encuentras evidencia nueva pero el valor actual parece consistente, conserva el valor actual.
 - Busca y devuelve al menos 10 resultados web (fuentes) para sustentar los datos.
 - Usa evidence_texts como evidencia principal y complementa con fuentes web cuando sea necesario.
+- opening_hours debe ser un objeto JSON o null (nunca string).
+- sources.website/instagram/tiktok/facebook deben ser un string único (no arrays).
 - Identifica logo_url y coordenadas (lat/lng) de la tienda principal si están disponibles en fuentes confiables.`;
 
   const contextPayload = {
@@ -945,7 +1029,8 @@ export async function enrichBrandWithOpenAI(
         if (!raw) throw new Error("Respuesta vacía de OpenAI");
 
         const parsed = safeJsonParse(raw);
-        const cleaned = cleanStrings(parsed);
+        const normalizedInput = normalizeOpenAiPayload(parsed);
+        const cleaned = cleanStrings(normalizedInput);
         const validation = brandResponseSchema.safeParse(cleaned);
         if (!validation.success) {
           throw new Error(`JSON validation failed: ${validation.error.message}`);
