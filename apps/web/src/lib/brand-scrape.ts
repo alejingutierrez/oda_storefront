@@ -224,16 +224,16 @@ const htmlToText = (html: string) => {
   cleaned = cleaned.replace(/<[^>]+>/g, " ");
   cleaned = decodeEntities(cleaned);
   cleaned = cleaned.replace(/\s+/g, " ").replace(/\n\s+/g, "\n").trim();
-  return cleaned;
+  return sanitizeUnicodeString(cleaned);
 };
 
 const extractTitleFromHtml = (html: string) => {
   const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-  if (titleMatch?.[1]) return titleMatch[1].trim();
+  if (titleMatch?.[1]) return sanitizeUnicodeString(titleMatch[1].trim());
   const metaTitle =
     html.match(/<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1] ??
     html.match(/<meta[^>]+name=["']twitter:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
-  return metaTitle?.trim() ?? undefined;
+  return metaTitle ? sanitizeUnicodeString(metaTitle.trim()) : undefined;
 };
 
 const cleanHost = (value: string) => value.replace(/^www\./i, "").toLowerCase();
@@ -322,6 +322,30 @@ const diffSnapshots = (before: BrandSnapshot, after: BrandSnapshot): BrandChange
   return changes;
 };
 
+const sanitizeUnicodeString = (value: string) => {
+  let result = "";
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        result += value[i] + value[i + 1];
+        i += 1;
+      }
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      continue;
+    }
+    if (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) {
+      result += " ";
+      continue;
+    }
+    result += value[i];
+  }
+  return result;
+};
+
 const stripCitations = (value: string) =>
   value
     .replace(/\s*\[\d+\]\s*/g, " ")
@@ -341,7 +365,7 @@ const cleanStrings = <T>(input: T): T => {
     return input;
   }
   if (typeof input === "string") {
-    return stripCitations(input) as T;
+    return stripCitations(sanitizeUnicodeString(input)) as T;
   }
   return input;
 };
