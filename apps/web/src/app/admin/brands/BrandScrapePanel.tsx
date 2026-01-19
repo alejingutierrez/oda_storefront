@@ -491,19 +491,32 @@ export default function BrandScrapePanel() {
                             <summary className="cursor-pointer text-xs font-semibold text-slate-700">
                               Ver diff ({changes.length})
                             </summary>
-                            <div className="mt-3 grid gap-4 text-xs text-slate-600 md:grid-cols-2">
-                              <div>
-                                <p className="text-[11px] uppercase tracking-[0.15em] text-slate-500">Antes</p>
-                                <pre className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-2">
-                                  {formatValue(brand.lastResult?.before ?? {})}
-                                </pre>
-                              </div>
-                              <div>
-                                <p className="text-[11px] uppercase tracking-[0.15em] text-slate-500">Después</p>
-                                <pre className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-2">
-                                  {formatValue(brand.lastResult?.after ?? {})}
-                                </pre>
-                              </div>
+                            <div className="mt-3 space-y-2 text-xs text-slate-600">
+                              {changes.map((change, idx) => (
+                                <div key={`${brand.id}-diff-${idx}`} className="rounded-md bg-slate-50 p-2">
+                                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                    {change.field}
+                                  </div>
+                                  <div className="mt-1 grid gap-2 md:grid-cols-2">
+                                    <div>
+                                      <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
+                                        Antes
+                                      </span>
+                                      <div className="mt-1 whitespace-pre-wrap text-slate-700">
+                                        {formatValue(change.before)}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
+                                        Después
+                                      </span>
+                                      <div className="mt-1 whitespace-pre-wrap font-medium text-slate-900">
+                                        {formatValue(change.after)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </details>
                         )}

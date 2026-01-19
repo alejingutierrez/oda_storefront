@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-19 | MC-035 | fix | Mejora UI de diff en admin: muestra solo campos cambiados con antes/después legible | Docker rebuild ok; Vercel pendiente tras push
 - 2026-01-19 | MC-035 | fix | Mejora calidad de datos de marcas: se agregan señales multi‑página (contacto/ubicación), parsing de JSON-LD @graph/sameAs, extracción de lat/lng en mapas/meta/data, prompt con evidencia y fallback a valores existentes | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-qbk546zju-alejingutierrezs-projects.vercel.app
 - 2026-01-19 | MC-035 | fix | Corrige 500 en `/api/admin/brands` por conteos BigInt (casts a int en summary) | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-kctrrzw34-alejingutierrezs-projects.vercel.app
 - 2026-01-19 | MC-035 | done | Scraper de marcas con cola (1/5/10/25/50), panel /admin/brands, endpoints admin + cron, tabla completa de marcas con diff antes/después y enriquecimiento OpenAI web search + fallback HTML, tabla brand_scrape_jobs | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-juzgjesbw-alejingutierrezs-projects.vercel.app
