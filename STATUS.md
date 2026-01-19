@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-19 | MC-035 | fix | Coerción de sources.other a strings (url/title) para evitar fallos de validación OpenAI | Docker rebuild ok; Vercel pendiente tras push
+- 2026-01-19 | MC-035 | fix | Coerción de sources.other a strings (url/title) para evitar fallos de validación OpenAI | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-gnw7hyy47-alejingutierrezs-projects.vercel.app
 - 2026-01-19 | MC-035 | fix | Normaliza payload OpenAI: coerce para opening_hours (string→obj/null), sources.website (array→string), y lat/lng desde string | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-iqrt6ftb5-alejingutierrezs-projects.vercel.app
 - 2026-01-19 | MC-035 | fix | Aumenta evidencia a 10k caracteres por fuente en enrichment de marcas | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-g11gbakrb-alejingutierrezs-projects.vercel.app
 - 2026-01-19 | MC-035 | fix | Evidencia web mínima 7 fuentes: fetch HTML de fuentes, extracción de texto/título, se pasa como evidence_texts a OpenAI y se guarda en metadata | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-a1v57ppob-alejingutierrezs-projects.vercel.app
