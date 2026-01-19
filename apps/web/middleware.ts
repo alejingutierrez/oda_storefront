@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const PROTECTED_PATHS = ["/admin", "/api/normalize"];
+const PUBLIC_PATHS = ["/admin/login", "/api/auth/login"];
 
 function isAuthorized(req: NextRequest) {
   const candidates = [
@@ -13,14 +14,18 @@ function isAuthorized(req: NextRequest) {
 
   const auth = req.headers.get("authorization");
   const token = auth?.replace(/^Bearer\s+/i, "").trim();
-  if (!token) return false;
+  const cookieToken = req.cookies.get("admin_session")?.value;
+  const effective = token || cookieToken;
+  if (!effective) return false;
 
-  return candidates.some((t) => t.length === token.length && t === token);
+  return candidates.some((t) => t.length === effective.length && t === effective);
 }
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const shouldProtect = PROTECTED_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const shouldProtect =
+    PROTECTED_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`)) &&
+    !PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   if (!shouldProtect) return NextResponse.next();
 

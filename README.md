@@ -31,6 +31,7 @@ npm install        # ya ejecutado en bootstrap
 npm run dev        # http://localhost:3000
 npm run lint
 npm run build
+npm run db:import:brands   # importa Marcas colombianas.xlsx a Neon
 ```
 
 ### Docker Compose (stack completo)
@@ -60,6 +61,7 @@ Servicios: `web` (host 3080 → contenedor 3000), `db` (5432), `redis` (6379), `
 
 ## Admin
 - Ruta `/admin` reservada para el panel interno (placeholder inicial). Aquí se listarán scrapers, normalizaciones y aprobaciones.
+- Login básico en `/admin/login` con `ADMIN_EMAIL` y `ADMIN_PASSWORD` (cookie HttpOnly basada en `ADMIN_TOKEN`).
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).

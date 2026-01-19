@@ -1,8 +1,8 @@
 # Backlog
 
 ## Now (F0 – bootstrap E2E mínimo)
+- MC-006 | doing | P1 | Autenticación y roles base | Login admin básico (email/password + cookie), middleware protegido y ruta /admin.
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.2, upsert DB, ficha en VSF + ISR.
-- MC-006 | todo | P1 | Autenticación y roles base | NextAuth/JWT, seeds admin, middleware RBAC mínimo.
 - MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build contenedores básicos.
 - MC-008 | todo | P1 | Observabilidad mínima | Logging estructurado, health checks, traces básicos; dashboard inicial de servicios.
 

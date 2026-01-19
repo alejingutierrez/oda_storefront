@@ -9,15 +9,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "NODE_ENV=production next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:import:brands": "node scripts/import-brands.mjs"
   },
   "dependencies": {
     "@prisma/client": "^7.2.0",
     "next": "16.1.2",
+    "dotenv": "^16.4.5",
     "openai": "^4.24.1",
+    "pg": "^8.11.5",
     "prisma": "^7.2.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "xlsx": "^0.18.5",
     "zod": "^3.22.4"
   },
   "devDependencies": {
