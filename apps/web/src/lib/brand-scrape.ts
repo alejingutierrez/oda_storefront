@@ -97,6 +97,22 @@ const sourceValueSchema = z.preprocess((value) => {
   return value;
 }, z.string().nullable().optional());
 
+const otherSourcesSchema = z.preprocess((value) => {
+  if (!Array.isArray(value)) return value;
+  const normalized = value
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object") {
+        const record = entry as Record<string, unknown>;
+        if (typeof record.url === "string") return record.url;
+        if (typeof record.title === "string") return record.title;
+      }
+      return null;
+    })
+    .filter((entry): entry is string => typeof entry === "string");
+  return normalized.length ? normalized : [];
+}, z.array(z.string()).optional());
+
 const brandResponseSchema = z.object({
   brand: brandPayloadSchema,
   sources: z
@@ -105,7 +121,7 @@ const brandResponseSchema = z.object({
       instagram: sourceValueSchema,
       tiktok: sourceValueSchema,
       facebook: sourceValueSchema,
-      other: z.array(z.string()).optional(),
+      other: otherSourcesSchema,
     })
     .optional(),
 });
@@ -373,6 +389,19 @@ const normalizeOpenAiPayload = (input: unknown) => {
     ["website", "instagram", "tiktok", "facebook"].forEach((field) => {
       sources[field] = coerceString(sources[field]);
     });
+    if (Array.isArray(sources.other)) {
+      sources.other = sources.other
+        .map((entry) => {
+          if (typeof entry === "string") return entry;
+          if (entry && typeof entry === "object") {
+            const record = entry as Record<string, unknown>;
+            if (typeof record.url === "string") return record.url;
+            if (typeof record.title === "string") return record.title;
+          }
+          return null;
+        })
+        .filter((entry): entry is string => typeof entry === "string");
+    }
     payload.sources = sources;
   }
   return payload;
