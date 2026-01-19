@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-19 | MC-035 | done | Scraper de marcas con cola (1/5/10/25/50), panel /admin/brands, endpoints admin + cron, tabla completa de marcas con diff antes/después y enriquecimiento OpenAI web search + fallback HTML, tabla brand_scrape_jobs | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-dzm27sagm-alejingutierrezs-projects.vercel.app
+- 2026-01-19 | MC-035 | done | Scraper de marcas con cola (1/5/10/25/50), panel /admin/brands, endpoints admin + cron, tabla completa de marcas con diff antes/después y enriquecimiento OpenAI web search + fallback HTML, tabla brand_scrape_jobs | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-6hccz3z57-alejingutierrezs-projects.vercel.app
 - 2026-01-19 | MC-006 | done | Login admin (email/password + cookie), seed admin en Neon, /admin directo, middleware sólo en /api/normalize; carga Excel a columnas (incluye ratings) | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-8wm8f249r-alejingutierrezs-projects.vercel.app
 - 2026-01-19 | meta | done | Sync repo con origin, fixes build Vercel (OpenAI lazy client + Node 22), docker compose healthy (web/worker/db/redis) | Vercel preview OK: https://oda-storefront-6ee5-o4pjm62bz-alejingutierrezs-projects.vercel.app
 - 2026-01-15 | MC-001 | done | Estructura base repo (Next TS/Tailwind), servicios scraper/worker stub, docker-compose, .env.example, README inicial; envs creadas en Vercel (prod/preview/dev) | Build local ok (lint/build); Vercel deploy productivo OK (https://oda-storefront-6ee5-hdg0yo8xc-alejingutierrezs-projects.vercel.app); stack docker corriendo en host puerto 3080.
