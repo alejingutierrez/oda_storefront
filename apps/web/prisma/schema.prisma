@@ -24,6 +24,7 @@ model Brand {
   scale          String?
   avgPrice       Decimal? @db.Decimal(12, 2)
   ecommercePlatform String?
+  manualReview   Boolean  @default(false)
   reviewed       String?
   ratingStars    String?
   ratingScore    Int?

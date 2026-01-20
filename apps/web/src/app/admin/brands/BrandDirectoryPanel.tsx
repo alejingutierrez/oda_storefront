@@ -18,6 +18,7 @@ type BrandRow = {
   scale: string | null;
   avgPrice: number | string | null;
   ecommercePlatform?: string | null;
+  manualReview?: boolean | null;
   contactEmail: string | null;
   contactPhone: string | null;
   isActive: boolean;
@@ -62,6 +63,7 @@ type BrandDetail = {
   scale: string | null;
   avgPrice: number | string | null;
   ecommercePlatform: string | null;
+  manualReview: boolean;
   reviewed: string | null;
   ratingStars: string | null;
   ratingScore: number | string | null;
@@ -109,6 +111,7 @@ type BrandFormState = {
   scale: string;
   avgPrice: string;
   ecommercePlatform: string;
+  manualReview: boolean;
   reviewed: string;
   ratingStars: string;
   ratingScore: string;
@@ -144,6 +147,7 @@ const EMPTY_FORM: BrandFormState = {
   scale: "",
   avgPrice: "",
   ecommercePlatform: "",
+  manualReview: false,
   reviewed: "",
   ratingStars: "",
   ratingScore: "",
@@ -276,6 +280,7 @@ export default function BrandDirectoryPanel() {
   const [formState, setFormState] = useState<BrandFormState>({ ...EMPTY_FORM });
   const [formError, setFormError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [manualReviewLoading, setManualReviewLoading] = useState(false);
   const [reEnrichState, setReEnrichState] = useState<
     Record<string, { status: "processing" | "completed" | "failed"; message?: string }>
   >({});
@@ -425,6 +430,7 @@ export default function BrandDirectoryPanel() {
           style: payload.brand.style ?? "",
           scale: payload.brand.scale ?? "",
           ecommercePlatform: payload.brand.ecommercePlatform ?? "",
+          manualReview: payload.brand.manualReview ?? false,
           avgPrice: payload.brand.avgPrice ? String(payload.brand.avgPrice) : "",
           reviewed: payload.brand.reviewed ?? "",
           ratingStars: payload.brand.ratingStars ?? "",
@@ -501,6 +507,7 @@ export default function BrandDirectoryPanel() {
       scale: formState.scale.trim() || null,
       ecommercePlatform: formState.ecommercePlatform.trim() || null,
       avgPrice: parseNumber(formState.avgPrice),
+      manualReview: formState.manualReview,
       reviewed: formState.reviewed.trim() || null,
       ratingStars: formState.ratingStars.trim() || null,
       ratingScore: parseNumber(formState.ratingScore),
@@ -571,6 +578,41 @@ export default function BrandDirectoryPanel() {
       setFormError(err instanceof Error ? err.message : "Error inesperado");
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const toggleManualReview = async () => {
+    if (!activeBrandId || !detail?.brand) return;
+    const nextValue = !detail.brand.manualReview;
+    setManualReviewLoading(true);
+    setFormError(null);
+    try {
+      const res = await fetch(`/api/admin/brands/${activeBrandId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ manualReview: nextValue }),
+      });
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => null);
+        throw new Error(errorPayload?.error ?? "No se pudo actualizar la revisión manual");
+      }
+      const payload = await res.json();
+      setDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              brand: {
+                ...prev.brand,
+                manualReview: payload.brand?.manualReview ?? nextValue,
+              },
+            }
+          : prev,
+      );
+      await fetchBrands();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Error inesperado");
+    } finally {
+      setManualReviewLoading(false);
     }
   };
 
@@ -688,21 +730,33 @@ export default function BrandDirectoryPanel() {
                       <p className="text-xs text-slate-500">{brand.slug}</p>
                     </div>
                   </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      statusLabel === "completed"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : statusLabel === "failed"
-                          ? "bg-rose-100 text-rose-700"
-                          : statusLabel === "processing"
-                            ? "bg-amber-100 text-amber-700"
-                            : statusLabel === "queued"
-                              ? "bg-indigo-100 text-indigo-700"
-                              : "bg-slate-200 text-slate-600"
-                    }`}
-                  >
-                    {isEnriched ? "Enriquecida" : displayStatus}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {brand.manualReview && (
+                      <span
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-blue-600"
+                        title="Revisada manualmente"
+                      >
+                        <svg viewBox="0 0 20 20" className="h-4 w-4 fill-current" aria-hidden="true">
+                          <path d="M8.1 13.4 4.7 10l1.4-1.4 2 2 5.7-5.7 1.4 1.4-7.1 7.1Z" />
+                        </svg>
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        statusLabel === "completed"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : statusLabel === "failed"
+                            ? "bg-rose-100 text-rose-700"
+                            : statusLabel === "processing"
+                              ? "bg-amber-100 text-amber-700"
+                              : statusLabel === "queued"
+                                ? "bg-indigo-100 text-indigo-700"
+                                : "bg-slate-200 text-slate-600"
+                      }`}
+                    >
+                      {isEnriched ? "Enriquecida" : displayStatus}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="mt-4 space-y-2 text-sm text-slate-600">
@@ -1039,12 +1093,16 @@ export default function BrandDirectoryPanel() {
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
                       <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Estado</p>
                       <div className="mt-3 grid gap-2 md:grid-cols-2">
                         <p>
                           <span className="font-semibold text-slate-800">Activo:</span>{" "}
                           {detail.brand.isActive ? "Sí" : "No"}
+                        </p>
+                        <p className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-800">Revisión manual:</span>{" "}
+                          {detail.brand.manualReview ? "Sí" : "No"}
                         </p>
                         <p>
                           <span className="font-semibold text-slate-800">Actualizado:</span>{" "}
@@ -1058,6 +1116,24 @@ export default function BrandDirectoryPanel() {
                           <span className="font-semibold text-slate-800">Revisión:</span>{" "}
                           {toText(detail.brand.reviewed)}
                         </p>
+                        <div className="md:col-span-2">
+                          <button
+                            type="button"
+                            onClick={toggleManualReview}
+                            disabled={manualReviewLoading}
+                            className={`rounded-full px-4 py-2 text-xs font-semibold ${
+                              detail.brand.manualReview
+                                ? "border border-slate-200 bg-white text-slate-600"
+                                : "bg-blue-600 text-white"
+                            } disabled:opacity-60`}
+                          >
+                            {manualReviewLoading
+                              ? "Actualizando..."
+                              : detail.brand.manualReview
+                                ? "Quitar revisión manual"
+                                : "Marcar revisada manualmente"}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1329,6 +1405,17 @@ export default function BrandDirectoryPanel() {
                       />
                       <label htmlFor="isActive" className="text-sm text-slate-600">
                         Marca activa
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2 pt-6">
+                      <input
+                        id="manualReview"
+                        type="checkbox"
+                        checked={formState.manualReview}
+                        onChange={(event) => handleFormChange("manualReview", event.target.checked)}
+                      />
+                      <label htmlFor="manualReview" className="text-sm text-slate-600">
+                        Revisión manual
                       </label>
                     </div>
                   </div>

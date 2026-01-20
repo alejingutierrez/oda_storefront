@@ -181,6 +181,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % marcas con tecnologia detectada, tasa de fallos por lote, tiempo medio por marca.
 - Estado: **done (2026-01-20)**.
 
+### MC-042 Revisión manual de marcas
+- Historia: Como admin, quiero marcar una marca como revisada manualmente desde el modal, para dejar trazabilidad de QA.
+- Alcance: Campo `brands.manualReview` (boolean), check azul en la card, toggle en modal de marca, persistido en DB.
+- CA: El toggle cambia el estado en UI y DB; las cards muestran el check azul cuando la marca fue revisada.
+- Datos: `brands.manualReview`.
+- NF: Cambios inmediatos sin recargar la pagina.
+- Riesgos: Estados inconsistentes si falla la API; mitigacion con mensajes de error.
+- Métricas: % de marcas revisadas manualmente, tiempo promedio de revisión por marca.
+- Estado: **done (2026-01-20)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.

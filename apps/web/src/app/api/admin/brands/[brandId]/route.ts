@@ -137,6 +137,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   if ("ecommercePlatform" in payload) {
     data.ecommercePlatform = normalizeString(payload.ecommercePlatform);
   }
+  if ("manualReview" in payload) {
+    const manualReview = normalizeBoolean(payload.manualReview);
+    if (manualReview === null) {
+      return NextResponse.json({ error: "manualReview_invalid" }, { status: 400 });
+    }
+    data.manualReview = manualReview;
+  }
   if ("avgPrice" in payload) data.avgPrice = normalizeNumber(payload.avgPrice);
   if ("reviewed" in payload) data.reviewed = normalizeString(payload.reviewed);
   if ("ratingStars" in payload) data.ratingStars = normalizeString(payload.ratingStars);

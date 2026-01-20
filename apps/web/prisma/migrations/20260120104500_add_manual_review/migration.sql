@@ -1,0 +1,1 @@
+ALTER TABLE "brands" ADD COLUMN "manualReview" BOOLEAN NOT NULL DEFAULT false;

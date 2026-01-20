@@ -61,6 +61,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/brands` (directorio):
   - Cards 3×5 por página, modal con detalle completo, CRUD (crear/editar/desactivar).
   - Acciones por marca: **Re‑enriquecer** (método 2 con 14 fuentes y 20k chars por fuente).
+  - Check azul cuando una marca tiene revisión manual (guardado en `brands.manualReview`).
 - Panel `/admin/brands/scrape` (scraping):
   - Encolado y ejecución de scraping/enriquecimiento de marcas (1/5/10/25/50).
   - Auto‑resume tras recarga y recuperación de jobs atascados.
