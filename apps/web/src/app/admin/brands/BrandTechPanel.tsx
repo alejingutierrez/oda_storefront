@@ -89,7 +89,7 @@ export default function BrandTechPanel() {
         }
 
         if (!res.ok) {
-          appendLog(\"⚠️ Error inesperado al procesar marca.\");
+          appendLog("⚠️ Error inesperado al procesar marca.");
           setFailed((prev) => prev + 1);
           setProcessed((prev) => prev + 1);
           continue;
