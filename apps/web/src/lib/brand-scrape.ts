@@ -8,6 +8,7 @@ import { loadBrandConstraints, type BrandConstraints } from "@/lib/brand-constra
 const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.2";
 const MAX_RETRIES = 3;
 const MAX_WEBSITE_PAGES = 4;
+const MAX_SEARCH_ATTEMPTS = 2;
 const MIN_EVIDENCE_SOURCES = 7;
 const MAX_EVIDENCE_SOURCES = 10;
 const MAX_EVIDENCE_FETCHES = 14;
@@ -39,6 +40,15 @@ const CONTACT_KEYWORDS = [
   "ayuda",
   "faq",
 ];
+
+const WEB_SEARCH_TOOL = {
+  type: "web_search",
+  user_location: {
+    type: "approximate",
+    country: "CO",
+  },
+  search_context_size: "high",
+} as const;
 
 const openingHoursSchema = z.preprocess((value) => {
   if (value == null) return null;
@@ -614,25 +624,13 @@ const extractWebSources = (response: any) => {
 const collectWebSources = async (brand: Brand) => {
   if (process.env.OPENAI_WEB_SEARCH === "false") return [];
   const client = getOpenAIClient() as any;
-  const queries = [
-    `${brand.name} marca moda Colombia`,
-    `${brand.name} tienda oficial`,
-    `${brand.name} instagram oficial`,
-    `${brand.name} direccion tienda`,
-    `${brand.name} logo marca`,
-    `${brand.name} facebook oficial`,
-    `${brand.name} sitio web`,
-    `${brand.name} ubicacion tienda`,
-    `${brand.name} contacto`,
-    `${brand.name} direccion Colombia`,
-    `${brand.name} tienda Bogota`,
-  ];
+  const query = `${brand.name} marca moda Colombia instagram`;
   const collected = new Map<string, { url: string; title?: string; source?: string }>();
 
-  for (const query of queries) {
+  for (let attempt = 0; attempt < MAX_SEARCH_ATTEMPTS; attempt += 1) {
     const response = await client.responses.create({
       model: OPENAI_MODEL,
-      tools: [{ type: "web_search" }],
+      tools: [WEB_SEARCH_TOOL],
       tool_choice: { type: "web_search" },
       input: query,
       include: ["web_search_call.action.sources"],
@@ -641,7 +639,14 @@ const collectWebSources = async (brand: Brand) => {
     sources.forEach((source) => {
       if (source.url && !collected.has(source.url)) collected.set(source.url, source);
     });
-    if (collected.size >= 12) break;
+    if (collected.size >= 10) break;
+  }
+
+  if (collected.size < 10) {
+    console.warn("brand.scrape.search_insufficient", {
+      brandId: brand.id,
+      found: collected.size,
+    });
   }
 
   return Array.from(collected.values());
@@ -1061,7 +1066,7 @@ export async function enrichBrandWithOpenAI(
   let lastError: unknown = null;
   const toolChains = process.env.OPENAI_WEB_SEARCH === "false"
     ? [undefined]
-    : [[{ type: "web_search" }], undefined];
+    : [[WEB_SEARCH_TOOL], undefined];
 
   for (const tools of toolChains) {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
