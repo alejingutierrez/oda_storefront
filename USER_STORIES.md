@@ -141,6 +141,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: tiempo medio de recuperación de cola, cantidad de jobs re‑encolados.
 - Estado: **done (2026-01-20)**.
 
+### MC-038 Layout admin con sidebar anclado
+- Historia: Como admin, quiero un menú lateral fijo a la izquierda para maximizar el espacio de trabajo.
+- Alcance: Sidebar anclado en desktop, layout full‑width en admin, navegación intacta.
+- CA: Sidebar permanece a la izquierda; el contenido principal usa mayor ancho; comportamiento responsivo mantiene acceso a navegación.
+- Datos: N/A.
+- NF: Sin saltos de layout; scroll independiente del contenido.
+- Riesgos: Menú demasiado ancho en pantallas pequeñas; mitigación con layout responsivo.
+- Métricas: Tiempo de navegación y visibilidad de paneles.
+- Estado: **done (2026-01-20)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.
