@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-045 | done | P1 | Progreso extractor productos | Barra de progreso informativa + reanudación por tandas + hardening OpenAI.
 - MC-044 | done | P1 | Directorio de productos admin | Cards con detalle, filtros por marca, endpoints productos.
 - MC-043 | done | P1 | Catalog extractor por tecnología | Adaptadores Shopify/Woo/Magento/VTEX/Custom, normalización OpenAI, imágenes a Blob, panel admin.
 - MC-042 | done | P2 | Revisión manual de marcas | Check azul en cards + toggle en modal, persistido en DB.

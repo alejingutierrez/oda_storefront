@@ -211,6 +211,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: productos visualizados por sesión, tiempo de carga de página.
 - Estado: **done (2026-01-20)**.
 
+### MC-045 Progreso extractor de productos
+- Historia: Como admin, quiero una barra de progreso informativa al correr el extractor para saber cuánto falta y detectar fallos.
+- Alcance: Barra de progreso con completados/fallidos/pendientes, estado de run; resumen más informativo en `/admin/catalog-extractor`.
+- CA: La UI muestra % completado, conteos y estado; si falla OpenAI, el sistema no marca el producto como completo.
+- Datos: `brands.metadata.catalog_extract`.
+- NF: No afecta el throughput; actualiza al finalizar cada batch.
+- Riesgos: Runs largos; mitigación con `max_runtime_ms` y reanudación.
+- Métricas: % completado por batch, tasa de fallos OpenAI/Blob.
+- Estado: **done (2026-01-20)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.

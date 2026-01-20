@@ -419,7 +419,7 @@ export const extractCatalogForBrand = async (brandId: string, limit = 20): Promi
   const itemStates = Object.values(state.items ?? {});
   const completedCount = itemStates.filter((item) => item.status === "completed").length;
   const failedCount = itemStates.filter((item) => item.status === "failed").length;
-  const pendingCount = refs.length - completedCount;
+  const pendingCount = Math.max(0, refs.length - completedCount - failedCount);
   const remainingEligible = refs.filter((ref) => {
     const entry = state.items[ref.url];
     if (!entry) return true;

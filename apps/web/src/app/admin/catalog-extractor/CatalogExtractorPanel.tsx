@@ -35,6 +35,24 @@ export default function CatalogExtractorPanel() {
   const [summary, setSummary] = useState<ExtractSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const progress = useMemo(() => {
+    if (!summary) {
+      return {
+        total: 0,
+        completed: 0,
+        failed: 0,
+        pending: 0,
+        percent: 0,
+      };
+    }
+    const total = summary.total ?? summary.discovered ?? 0;
+    const failed = summary.failed ?? 0;
+    const pending = summary.pending ?? Math.max(0, total - (summary.processed ?? 0));
+    const completed = Math.max(0, total - pending - failed);
+    const percent = total ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, failed, pending, percent };
+  }, [summary]);
+
   const fetchBrands = useCallback(async () => {
     setLoadingBrands(true);
     try {
@@ -148,6 +166,37 @@ export default function CatalogExtractorPanel() {
 
       {summary && (
         <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="md:col-span-3 rounded-2xl border border-slate-200 bg-white px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+              <p className="uppercase tracking-[0.2em]">Progreso</p>
+              <p>
+                {progress.completed}/{progress.total} completados · {progress.failed} fallidos ·{" "}
+                {progress.pending} pendientes
+              </p>
+            </div>
+            <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-slate-100">
+              <div className="flex h-full w-full">
+                <div
+                  className="h-full bg-emerald-500"
+                  style={{ width: `${progress.total ? (progress.completed / progress.total) * 100 : 0}%` }}
+                />
+                <div
+                  className="h-full bg-rose-500"
+                  style={{ width: `${progress.total ? (progress.failed / progress.total) * 100 : 0}%` }}
+                />
+                <div
+                  className="h-full bg-slate-300"
+                  style={{ width: `${progress.total ? (progress.pending / progress.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+              <p className="font-semibold text-slate-900">{progress.percent}% completado</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                Estado: {summary.status ?? "—"}
+              </p>
+            </div>
+          </div>
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Descubiertos</p>
             <p className="mt-2 text-lg font-semibold text-slate-900">{summary.discovered}</p>
