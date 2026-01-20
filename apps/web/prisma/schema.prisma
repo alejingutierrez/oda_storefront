@@ -23,6 +23,7 @@ model Brand {
   style          String?
   scale          String?
   avgPrice       Decimal? @db.Decimal(12, 2)
+  ecommercePlatform String?
   reviewed       String?
   ratingStars    String?
   ratingScore    Int?

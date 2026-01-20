@@ -171,6 +171,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % re‑enriquecimientos exitosos, tiempo medio por marca.
 - Estado: **done (2026-01-20)**.
 
+### MC-041 Tech profiler de marcas
+- Historia: Como admin, quiero identificar la tecnologia ecommerce de cada marca para mejorar el scraping y la calidad de datos.
+- Alcance: Campo `brands.ecommercePlatform`, perfilador con señales (headers/cookies/scripts/paths), probes por plataforma (Shopify/Woo/Magento/VTEX) y fallback OpenAI; panel `/admin/brands/tech` con lotes 5/10/25/50/100; detalle visible en modal de marca.
+- CA: Ejecutar un lote actualiza `ecommercePlatform` y guarda evidencia en `brands.metadata.tech_profile`; modal de marca muestra tecnologia; endpoints admin protegidos.
+- Datos: `brands.ecommercePlatform`, `brands.metadata.tech_profile`.
+- NF: Ejecucion en serie para evitar bloqueos; timeouts razonables.
+- Riesgos: Sitios con anti‑bot o JS pesado; mitigacion con probes y fallback HTML.
+- Métricas: % marcas con tecnologia detectada, tasa de fallos por lote, tiempo medio por marca.
+- Estado: **done (2026-01-20)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.

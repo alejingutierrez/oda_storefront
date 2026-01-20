@@ -134,6 +134,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   if ("market" in payload) data.market = normalizeString(payload.market);
   if ("style" in payload) data.style = normalizeString(payload.style);
   if ("scale" in payload) data.scale = normalizeString(payload.scale);
+  if ("ecommercePlatform" in payload) {
+    data.ecommercePlatform = normalizeString(payload.ecommercePlatform);
+  }
   if ("avgPrice" in payload) data.avgPrice = normalizeNumber(payload.avgPrice);
   if ("reviewed" in payload) data.reviewed = normalizeString(payload.reviewed);
   if ("ratingStars" in payload) data.ratingStars = normalizeString(payload.ratingStars);

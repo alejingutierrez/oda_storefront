@@ -17,6 +17,7 @@ type BrandRow = {
   style: string | null;
   scale: string | null;
   avgPrice: number | string | null;
+  ecommercePlatform?: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
   isActive: boolean;
@@ -60,6 +61,7 @@ type BrandDetail = {
   style: string | null;
   scale: string | null;
   avgPrice: number | string | null;
+  ecommercePlatform: string | null;
   reviewed: string | null;
   ratingStars: string | null;
   ratingScore: number | string | null;
@@ -106,6 +108,7 @@ type BrandFormState = {
   style: string;
   scale: string;
   avgPrice: string;
+  ecommercePlatform: string;
   reviewed: string;
   ratingStars: string;
   ratingScore: string;
@@ -140,6 +143,7 @@ const EMPTY_FORM: BrandFormState = {
   style: "",
   scale: "",
   avgPrice: "",
+  ecommercePlatform: "",
   reviewed: "",
   ratingStars: "",
   ratingScore: "",
@@ -203,6 +207,13 @@ const formatMoney = (value: number | string | null) => {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed)) return String(value);
   return `$ ${new Intl.NumberFormat("es-CO").format(parsed)}`;
+};
+
+const formatPlatform = (value: string | null) => {
+  if (!value) return "—";
+  if (value === "unknown") return "Desconocida";
+  if (value === "custom") return "Custom";
+  return value;
 };
 
 const jsonToText = (value: unknown) => {
@@ -413,6 +424,7 @@ export default function BrandDirectoryPanel() {
           market: payload.brand.market ?? "",
           style: payload.brand.style ?? "",
           scale: payload.brand.scale ?? "",
+          ecommercePlatform: payload.brand.ecommercePlatform ?? "",
           avgPrice: payload.brand.avgPrice ? String(payload.brand.avgPrice) : "",
           reviewed: payload.brand.reviewed ?? "",
           ratingStars: payload.brand.ratingStars ?? "",
@@ -487,6 +499,7 @@ export default function BrandDirectoryPanel() {
       market: formState.market.trim() || null,
       style: formState.style.trim() || null,
       scale: formState.scale.trim() || null,
+      ecommercePlatform: formState.ecommercePlatform.trim() || null,
       avgPrice: parseNumber(formState.avgPrice),
       reviewed: formState.reviewed.trim() || null,
       ratingStars: formState.ratingStars.trim() || null,
@@ -921,6 +934,10 @@ export default function BrandDirectoryPanel() {
                             {toText(detail.brand.scale)}
                           </p>
                           <p>
+                            <span className="font-semibold text-slate-800">Tecnología ecommerce:</span>{" "}
+                            {formatPlatform(detail.brand.ecommercePlatform)}
+                          </p>
+                          <p>
                             <span className="font-semibold text-slate-800">Precio promedio:</span>{" "}
                             {formatMoney(detail.brand.avgPrice)}
                           </p>
@@ -1133,6 +1150,16 @@ export default function BrandDirectoryPanel() {
                         className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                         value={formState.scale}
                         onChange={(event) => handleFormChange("scale", event.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-wide text-slate-500">
+                        Tecnología ecommerce
+                      </label>
+                      <input
+                        className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        value={formState.ecommercePlatform}
+                        onChange={(event) => handleFormChange("ecommercePlatform", event.target.value)}
                       />
                     </div>
                     <div>

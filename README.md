@@ -64,6 +64,9 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/brands/scrape` (scraping):
   - Encolado y ejecución de scraping/enriquecimiento de marcas (1/5/10/25/50).
   - Auto‑resume tras recarga y recuperación de jobs atascados.
+- Panel `/admin/brands/tech` (tech profiler):
+  - Ejecuta perfilado de tecnología ecommerce (Shopify/Woo/Magento/VTEX/custom).
+  - Actualiza `brands.ecommercePlatform` y guarda detalle en `brands.metadata.tech_profile`.
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).
@@ -85,6 +88,10 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - `PATCH /api/admin/brands/:id`: editar campos de marca.
 - `DELETE /api/admin/brands/:id`: desactiva la marca (`isActive=false`).
 - `POST /api/admin/brands/:id/re-enrich`: re‑enriquecimiento individual con método 2 (14 fuentes, 20k chars).
+
+## API interna (tech profiler)
+- `GET /api/admin/brands/tech`: estado de marcas con sitio (total/procesadas/pendientes).
+- `POST /api/admin/brands/tech/next`: procesa la siguiente marca pendiente y actualiza su tecnología.
 
 ## Cron en Vercel
 - Configurado en `vercel.json` para ejecutar `/api/admin/brands/scrape/cron` cada 5 minutos.

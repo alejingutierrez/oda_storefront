@@ -152,6 +152,7 @@ export async function GET(req: Request) {
       style: string | null;
       scale: string | null;
       avgPrice: number | null;
+      ecommercePlatform: string | null;
       contactEmail: string | null;
       contactPhone: string | null;
       isActive: boolean;
@@ -183,6 +184,7 @@ export async function GET(req: Request) {
         b.style,
         b.scale,
         b."avgPrice",
+        b."ecommercePlatform",
         b."contactEmail",
         b."contactPhone",
         b."isActive",
@@ -243,6 +245,7 @@ export async function POST(req: Request) {
     market: normalizeString(payload.market),
     style: normalizeString(payload.style),
     scale: normalizeString(payload.scale),
+    ecommercePlatform: normalizeString(payload.ecommercePlatform),
     avgPrice: normalizeNumber(payload.avgPrice),
     reviewed: normalizeString(payload.reviewed),
     ratingStars: normalizeString(payload.ratingStars),
