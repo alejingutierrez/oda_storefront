@@ -4,7 +4,6 @@
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.2, upsert DB, ficha en VSF + ISR.
 - MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build contenedores básicos.
 - MC-008 | todo | P1 | Observabilidad mínima | Logging estructurado, health checks, traces básicos; dashboard inicial de servicios.
-- MC-041 | doing | P1 | Tech profiler de marcas | Campo ecommercePlatform, perfilado Shopify/Woo/Magento/VTEX, panel /admin/brands/tech.
 
 ## Next (F1 – primeras capacidades)
 - MC-009 | todo | P1 | Taxonomía fija y catálogos | Categorías, materiales, patrones, fits, estilo/ocasión; publicación para IA y front.
@@ -37,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-041 | done | P1 | Tech profiler de marcas | Campo ecommercePlatform, perfilado Shopify/Woo/Magento/VTEX, panel /admin/brands/tech.
 - MC-035 | done | P1 | Scraper de marcas (enriquecimiento OpenAI) | Panel /admin/brands con cola 1/5/10/25/50; endpoints admin + cron; OpenAI web search JSON mode + fallback HTML; diff de cambios en historial; actualización de tabla brands y metadata.
 - MC-006 | done | P1 | Autenticación y roles base | Login admin (email/password + cookie), ruta /admin sin /admin/login, seed admin en Neon, middleware sólo en /api/normalize.
 - MC-004 | done | P0 | Conexión OpenAI GPT-5.2 JSON mode | Helper con retries/validación Zod, endpoint `/api/normalize`, middleware Bearer (ADMIN_TOKEN/NEXTAUTH_SECRET), carpeta `/admin` base; README documentado.
