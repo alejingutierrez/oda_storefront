@@ -231,6 +231,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % productos con moneda definida, % precios parseados correctamente.
 - Estado: **done (2026-01-20)**.
 
+### MC-047 Cambiar modelo OpenAI a gpt-5-mini
+- Historia: Como operador, quiero bajar costos de inferencia cambiando el modelo por defecto a gpt-5-mini.
+- Alcance: Actualizar default de `OPENAI_MODEL` en scrapers (marcas, tech, catálogo) y docs.
+- CA: En ausencia de `OPENAI_MODEL`, se usa `gpt-5-mini`.
+- Datos: Configuración de entorno.
+- NF: Sin cambios funcionales en flujos.
+- Riesgos: Posible degradación leve de calidad; mitigación con validación JSON estricta.
+- Métricas: Costo promedio por run.
+- Estado: **done (2026-01-20)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.

@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-047 | done | P1 | Cambiar modelo OpenAI a gpt-5-mini | Reduce costos en scrapers (marcas, tech, catálogo).
 - MC-046 | done | P1 | Reglas de moneda + reset catálogo | Parsing precios, currency en productos, truncate products/variants.
 - MC-045 | done | P1 | Progreso extractor productos | Barra de progreso informativa + reanudación por tandas + hardening OpenAI.
 - MC-044 | done | P1 | Directorio de productos admin | Cards con detalle, filtros por marca, endpoints productos.

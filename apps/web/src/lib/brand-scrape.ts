@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getOpenAIClient } from "@/lib/openai";
 import { loadBrandConstraints, type BrandConstraints } from "@/lib/brand-constraints";
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.2";
+const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5-mini";
 const MAX_RETRIES = 3;
 const MAX_WEBSITE_PAGES = 4;
 const MAX_SEARCH_ATTEMPTS = 2;

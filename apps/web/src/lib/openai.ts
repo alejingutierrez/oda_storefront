@@ -1,7 +1,7 @@
 import { OpenAI } from "openai";
 import { z } from "zod";
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.2";
+const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5-mini";
 const MAX_RETRIES = 3;
 
 export type NormalizedVariant = {
