@@ -92,6 +92,7 @@ export async function GET(req: Request) {
       origin: product.origin,
       status: product.status,
       sourceUrl: product.sourceUrl,
+      currency: product.currency,
       imageCoverUrl: product.imageCoverUrl,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,

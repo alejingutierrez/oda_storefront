@@ -1,10 +1,9 @@
 import type { AdapterContext, CatalogAdapter, ProductRef, RawProduct } from "@/lib/catalog/types";
-import { fetchText, normalizeUrl, safeOrigin } from "@/lib/catalog/utils";
+import { fetchText, normalizeUrl, parsePriceValue, safeOrigin } from "@/lib/catalog/utils";
 
 const parsePrice = (value: unknown, minorUnit = 2) => {
-  if (value === null || value === undefined) return null;
-  const num = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(num)) return null;
+  const num = parsePriceValue(value);
+  if (num === null) return null;
   if (minorUnit > 0) {
     return Math.round(num) / Math.pow(10, minorUnit);
   }

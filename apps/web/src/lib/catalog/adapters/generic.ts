@@ -1,5 +1,5 @@
 import type { AdapterContext, CatalogAdapter, ProductRef, RawProduct } from "@/lib/catalog/types";
-import { discoverFromSitemap, fetchText, normalizeUrl, safeOrigin } from "@/lib/catalog/utils";
+import { discoverFromSitemap, fetchText, normalizeUrl, parsePriceValue, safeOrigin } from "@/lib/catalog/utils";
 
 const extractJsonLd = (html: string) => {
   const regex = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
@@ -164,7 +164,11 @@ export const genericAdapter: CatalogAdapter = {
       variants: [
         {
           sku: product?.sku ?? null,
-          price: offers?.price ? Number(offers.price) : meta["product:price:amount"] ? Number(meta["product:price:amount"]) : null,
+          price: offers?.price
+            ? parsePriceValue(offers.price)
+            : meta["product:price:amount"]
+              ? parsePriceValue(meta["product:price:amount"])
+              : null,
           currency: offers?.currency ?? meta["product:price:currency"] ?? meta["og:price:currency"] ?? "COP",
           available: offers?.availability
             ? !String(offers.availability).toLowerCase().includes("outofstock")

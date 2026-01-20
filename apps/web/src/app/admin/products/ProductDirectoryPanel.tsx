@@ -24,6 +24,7 @@ type ProductRow = {
   origin: string | null;
   status: string | null;
   sourceUrl: string | null;
+  currency: string | null;
   imageCoverUrl: string | null;
   createdAt: string;
   updatedAt: string;
@@ -116,13 +117,14 @@ const renderLink = (value: string | null, label?: string) => {
   );
 };
 
-const formatPriceRange = (minPrice: number | null, maxPrice: number | null) => {
+const formatPriceRange = (minPrice: number | null, maxPrice: number | null, currency: string | null) => {
+  const currencyLabel = currency ?? "COP";
   if (minPrice === null && maxPrice === null) return "—";
   if (minPrice !== null && maxPrice !== null && minPrice !== maxPrice) {
-    return `${minPrice.toLocaleString("es-CO")} – ${maxPrice.toLocaleString("es-CO")} COP`;
+    return `${minPrice.toLocaleString("es-CO")} – ${maxPrice.toLocaleString("es-CO")} ${currencyLabel}`;
   }
   const price = (minPrice ?? maxPrice ?? 0).toLocaleString("es-CO");
-  return `${price} COP`;
+  return `${price} ${currencyLabel}`;
 };
 
 const renderTags = (label: string, tags: string[]) => {
@@ -295,7 +297,7 @@ export default function ProductDirectoryPanel() {
                 </button>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
-                <span>Precio: {formatPriceRange(product.minPrice, product.maxPrice)}</span>
+                <span>Precio: {formatPriceRange(product.minPrice, product.maxPrice, product.currency)}</span>
                 <span>
                   Variantes: {product.variantCount} · Stock: {product.inStockCount}
                 </span>

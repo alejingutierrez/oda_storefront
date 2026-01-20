@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getOpenAIClient } from "@/lib/openai";
+import { guessCurrency } from "@/lib/catalog/utils";
 import type { CanonicalProduct, RawProduct } from "@/lib/catalog/types";
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.2";
@@ -79,6 +80,8 @@ Eres un sistema de normalizacion de catalogo de moda colombiana. Devuelve SOLO J
   }
 }
 - No inventes precios, stock ni variantes: usa los valores provistos en raw_product.
+- Si un precio viene con separador de miles (ej: 160.000), interpretalo como 160000.
+- Si no hay currency, asume USD para precios <= 999 y COP para precios >= 10000.
 - Si falta un dato, usa null o listas vacias.
 - style_tags, material_tags, pattern_tags, occasion_tags deben ser arrays en minusculas.
 - source_url debe ser la URL externa original del producto si existe.
@@ -149,7 +152,15 @@ export const normalizeCatalogProductWithOpenAI = async (rawProduct: RawProduct) 
       if (!validation.success) {
         throw new Error(`JSON validation failed: ${validation.error.message}`);
       }
-      return validation.data.product as CanonicalProduct;
+      const product = validation.data.product as CanonicalProduct;
+      if (Array.isArray(product.variants)) {
+        product.variants = product.variants.map((variant) => {
+          const price = typeof variant.price === "number" ? variant.price : null;
+          const currency = guessCurrency(price, variant.currency ?? null);
+          return { ...variant, currency: currency ?? variant.currency ?? null };
+        });
+      }
+      return product;
     } catch (error) {
       lastError = error;
       const backoff = Math.pow(2, attempt) * 200;

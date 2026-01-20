@@ -117,6 +117,7 @@ model Product {
   care              String?
   origin            String?
   status            String?   // active, archived, etc.
+  currency          String?   // COP, USD, etc.
   sourceUrl         String?
   imageCoverUrl     String?
   metadata          Json?

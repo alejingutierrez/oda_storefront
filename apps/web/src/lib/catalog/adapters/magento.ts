@@ -1,5 +1,5 @@
 import type { AdapterContext, CatalogAdapter, ProductRef, RawProduct } from "@/lib/catalog/types";
-import { fetchText, normalizeUrl, safeOrigin } from "@/lib/catalog/utils";
+import { fetchText, normalizeUrl, parsePriceValue, safeOrigin } from "@/lib/catalog/utils";
 
 const graphqlQuery = `query Products($pageSize:Int!, $currentPage:Int!){
   products(pageSize:$pageSize, currentPage:$currentPage){
@@ -82,8 +82,8 @@ const extractPrice = (priceRange: any) => {
   const regular = minimum.regular_price ?? {};
   const final = minimum.final_price ?? {};
   return {
-    price: final.value ?? null,
-    compareAtPrice: regular.value ?? null,
+    price: parsePriceValue(final.value) ?? null,
+    compareAtPrice: parsePriceValue(regular.value) ?? null,
     currency: final.currency ?? regular.currency ?? "COP",
   };
 };

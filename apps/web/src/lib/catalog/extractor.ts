@@ -4,13 +4,9 @@ import type { AdapterContext, ExtractSummary, RawProduct, RawVariant } from "@/l
 import { getCatalogAdapter } from "@/lib/catalog/registry";
 import { normalizeCatalogProductWithOpenAI } from "@/lib/catalog/normalizer";
 import { uploadImagesToBlob } from "@/lib/catalog/blob";
-import { normalizeSize, pickOption } from "@/lib/catalog/utils";
+import { guessCurrency, normalizeSize, parsePriceValue, pickOption } from "@/lib/catalog/utils";
 
-const toNumber = (value: unknown) => {
-  if (value === null || value === undefined) return null;
-  const num = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(num) ? num : null;
-};
+const toNumber = (value: unknown) => parsePriceValue(value);
 
 const resolveStockStatus = (variant: RawVariant) => {
   if (variant.available === false) return "out_of_stock";
@@ -117,6 +113,12 @@ const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, 
       })
     : null;
 
+  const samplePrice = toNumber(raw.variants?.[0]?.price ?? normalized?.variants?.[0]?.price ?? null);
+  const currencyValue = guessCurrency(
+    samplePrice,
+    raw.currency ?? normalized?.variants?.[0]?.currency ?? raw.variants?.[0]?.currency ?? null,
+  );
+
   const data = {
     brandId,
     externalId: raw.externalId ?? null,
@@ -133,6 +135,7 @@ const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, 
     care: normalized.care ?? null,
     origin: normalized.origin ?? null,
     status: normalized.status ?? null,
+    currency: currencyValue ?? null,
     sourceUrl: raw.sourceUrl ?? null,
     imageCoverUrl,
     metadata: {
@@ -355,14 +358,19 @@ export const extractCatalogForBrand = async (brandId: string, limit = 20): Promi
         const color = options.color ?? normalizedVariant?.color ?? null;
         const size = options.size ?? normalizedVariant?.size ?? null;
         const variantImages = buildVariantImages(rawVariant, imageMapping, fallbackImages);
+        const priceValue = toNumber(rawVariant.price) ?? toNumber(normalizedVariant?.price) ?? 0;
+        const currencyValue = guessCurrency(
+          priceValue,
+          rawVariant.currency ?? normalizedVariant?.currency ?? raw.currency ?? null,
+        );
         const variantPayload = {
           sku,
           color,
           size,
           fit: normalizedVariant?.fit ?? null,
           material: normalizedVariant?.material ?? null,
-          price: toNumber(rawVariant.price) ?? toNumber(normalizedVariant?.price) ?? 0,
-          currency: rawVariant.currency ?? normalizedVariant?.currency ?? raw.currency ?? "COP",
+          price: priceValue,
+          currency: currencyValue ?? "COP",
           stock: typeof rawVariant.stock === "number" ? rawVariant.stock : null,
           stock_status: resolveStockStatus(rawVariant),
           images: variantImages,

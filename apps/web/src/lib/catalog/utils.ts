@@ -114,3 +114,42 @@ export const normalizeSize = (value: string | null) => {
   }
   return value;
 };
+
+export const parsePriceValue = (value: unknown) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  let raw = String(value).trim();
+  if (!raw) return null;
+  raw = raw.replace(/[^0-9,\.]/g, "");
+  if (!raw) return null;
+  const hasDot = raw.includes(".");
+  const hasComma = raw.includes(",");
+
+  if (hasDot && hasComma) {
+    // Assume dot thousands, comma decimal
+    raw = raw.replace(/\./g, "").replace(",", ".");
+  } else if (hasDot && !hasComma) {
+    const parts = raw.split(".");
+    if (parts.length === 2 && parts[1].length === 3) {
+      raw = parts.join("");
+    }
+  } else if (!hasDot && hasComma) {
+    const parts = raw.split(",");
+    if (parts.length === 2 && parts[1].length === 3) {
+      raw = parts.join("");
+    } else {
+      raw = raw.replace(",", ".");
+    }
+  }
+
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
+};
+
+export const guessCurrency = (value: number | null, fallback?: string | null) => {
+  if (fallback && fallback.trim()) return fallback.trim();
+  if (value === null || value === undefined) return null;
+  if (value <= 999) return "USD";
+  if (value >= 10000) return "COP";
+  return "COP";
+};

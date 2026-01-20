@@ -1,5 +1,5 @@
 import type { AdapterContext, CatalogAdapter, ProductRef, RawProduct } from "@/lib/catalog/types";
-import { fetchText, normalizeUrl, safeOrigin } from "@/lib/catalog/utils";
+import { fetchText, normalizeUrl, parsePriceValue, safeOrigin } from "@/lib/catalog/utils";
 
 const mapAvailability = (available: number | null | undefined) => {
   if (available === null || available === undefined) return null;
@@ -79,8 +79,8 @@ export const vtexAdapter: CatalogAdapter = {
                   return acc;
                 }, {})
               : undefined,
-            price: offer.Price ?? null,
-            compareAtPrice: offer.ListPrice ?? null,
+            price: parsePriceValue(offer.Price) ?? null,
+            compareAtPrice: parsePriceValue(offer.ListPrice) ?? null,
             currency: offer.CurrencyCode ?? "COP",
             available: mapAvailability(offer.AvailableQuantity),
             stock: offer.AvailableQuantity ?? null,

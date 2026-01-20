@@ -73,6 +73,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/catalog-extractor` (catalog extractor):
   - Ejecuta extracción de productos por tecnología y normaliza con OpenAI.
   - Sube imágenes a Vercel Blob y guarda productos/variantes en Neon.
+  - Moneda se infiere por regla (<=999 USD, >=10000 COP) si no viene explícita.
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).

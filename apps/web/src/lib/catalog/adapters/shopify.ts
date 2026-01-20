@@ -1,10 +1,9 @@
 import type { AdapterContext, CatalogAdapter, ProductRef, RawProduct } from "@/lib/catalog/types";
-import { discoverFromSitemap, fetchText, normalizeUrl, safeOrigin } from "@/lib/catalog/utils";
+import { discoverFromSitemap, fetchText, normalizeUrl, parsePriceValue, safeOrigin } from "@/lib/catalog/utils";
 
 const normalizePrice = (value: unknown) => {
-  if (value === null || value === undefined) return null;
-  const num = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(num)) return null;
+  const num = parsePriceValue(value);
+  if (num === null) return null;
   if (Number.isInteger(num)) return Math.round(num) / 100;
   return num;
 };
