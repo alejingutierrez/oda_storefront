@@ -81,9 +81,15 @@ export default function BrandTechPanel() {
         });
 
         const payload = (await res.json()) as TechRunResult;
-        if (!res.ok || payload.status === "failed") {
-          const message = payload.status === "failed" ? payload.error : "Sin detalle";
-          appendLog(`⚠️ ${payload.brandName ?? "Marca"}: ${message ?? "error"}`);
+        if (payload.status === "failed") {
+          appendLog(`⚠️ ${payload.brandName ?? "Marca"}: ${payload.error ?? "error"}`);
+          setFailed((prev) => prev + 1);
+          setProcessed((prev) => prev + 1);
+          continue;
+        }
+
+        if (!res.ok) {
+          appendLog(\"⚠️ Error inesperado al procesar marca.\");
           setFailed((prev) => prev + 1);
           setProcessed((prev) => prev + 1);
           continue;
