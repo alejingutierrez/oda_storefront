@@ -247,7 +247,7 @@ const extractSitemapsFromRobots = (robotsText: string) => {
   const urls = lines
     .map((line) => line.trim())
     .filter((line) => /^sitemap:/i.test(line))
-    .map((line) => line.split(/:/i).slice(1).join(\":\").trim())
+    .map((line) => line.split(/:/i).slice(1).join(":").trim())
     .filter(Boolean);
   return unique(urls);
 };
