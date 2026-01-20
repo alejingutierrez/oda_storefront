@@ -151,6 +151,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Tiempo de navegación y visibilidad de paneles.
 - Estado: **done (2026-01-20)**.
 
+### MC-039 Mejoras cards marcas (logo + URLs clicables)
+- Historia: Como admin, quiero ver el logo de la marca en el card y poder abrir URLs desde el modal para validar datos rápidamente.
+- Alcance: Render de logo en cards si existe; campos URL en modal como enlaces clicables.
+- CA: Cards muestran logo cuando existe; URLs (sitio, redes, logo) abren en nueva pestaña.
+- Datos: `brands.logoUrl`, `siteUrl`, `instagram`, `tiktok`, `facebook`, `whatsapp`.
+- NF: Fallback a iniciales si el logo falla.
+- Riesgos: URLs sin esquema; mitigación con normalización `https://`.
+- Métricas: Tiempo de verificación por marca.
+- Estado: **done (2026-01-20)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.

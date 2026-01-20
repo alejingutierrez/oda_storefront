@@ -179,6 +179,25 @@ const formatDate = (value: string | null | undefined) => {
   return new Date(value).toLocaleString("es-CO");
 };
 
+const normalizeLink = (value: string | null) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed.replace(/^\/+/, "")}`;
+};
+
+const renderLink = (value: string | null, label?: string) => {
+  const href = normalizeLink(value);
+  if (!href) return "—";
+  const text = label ?? value ?? href;
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+      {text}
+    </a>
+  );
+};
+
 const formatMoney = (value: number | string | null) => {
   if (value === null || value === undefined || value === "") return "—";
   const parsed = typeof value === "number" ? value : Number(value);
@@ -213,6 +232,25 @@ const getInitials = (name: string) =>
     .join("");
 
 const toText = (value: string | null) => value ?? "—";
+
+function BrandAvatar({ name, logoUrl }: { name: string; logoUrl: string | null }) {
+  const [error, setError] = useState(false);
+  if (logoUrl && !error) {
+    return (
+      <img
+        src={logoUrl}
+        alt={name}
+        className="h-12 w-12 rounded-2xl border border-slate-200 object-cover"
+        onError={() => setError(true)}
+      />
+    );
+  }
+  return (
+    <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700">
+      {getInitials(name)}
+    </div>
+  );
+}
 
 export default function BrandDirectoryPanel() {
   const [brandData, setBrandData] = useState<BrandListResponse | null>(null);
@@ -575,9 +613,7 @@ export default function BrandDirectoryPanel() {
               <article key={brand.id} className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700">
-                      {getInitials(brand.name)}
-                    </div>
+                    <BrandAvatar name={brand.name} logoUrl={brand.logoUrl} />
                     <div>
                       <p className="text-base font-semibold text-slate-900">{brand.name}</p>
                       <p className="text-xs text-slate-500">{brand.slug}</p>
@@ -772,7 +808,7 @@ export default function BrandDirectoryPanel() {
                           </p>
                           <p>
                             <span className="font-semibold text-slate-800">Logo:</span>{" "}
-                            {toText(detail.brand.logoUrl)}
+                            {renderLink(detail.brand.logoUrl, "Ver logo")}
                           </p>
                         </div>
                       </div>
@@ -813,7 +849,7 @@ export default function BrandDirectoryPanel() {
                         <div className="mt-3 space-y-2 text-sm text-slate-700">
                           <p>
                             <span className="font-semibold text-slate-800">Sitio:</span>{" "}
-                            {toText(detail.brand.siteUrl)}
+                            {renderLink(detail.brand.siteUrl)}
                           </p>
                           <p>
                             <span className="font-semibold text-slate-800">Email:</span>{" "}
@@ -825,19 +861,19 @@ export default function BrandDirectoryPanel() {
                           </p>
                           <p>
                             <span className="font-semibold text-slate-800">Instagram:</span>{" "}
-                            {toText(detail.brand.instagram)}
+                            {renderLink(detail.brand.instagram)}
                           </p>
                           <p>
                             <span className="font-semibold text-slate-800">TikTok:</span>{" "}
-                            {toText(detail.brand.tiktok)}
+                            {renderLink(detail.brand.tiktok)}
                           </p>
                           <p>
                             <span className="font-semibold text-slate-800">Facebook:</span>{" "}
-                            {toText(detail.brand.facebook)}
+                            {renderLink(detail.brand.facebook)}
                           </p>
                           <p>
                             <span className="font-semibold text-slate-800">WhatsApp:</span>{" "}
-                            {toText(detail.brand.whatsapp)}
+                            {renderLink(detail.brand.whatsapp)}
                           </p>
                         </div>
                       </div>
