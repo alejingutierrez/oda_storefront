@@ -27,7 +27,7 @@ export default async function AdminBrandScrapePage() {
   if (!authed) redirect("/admin");
 
   return (
-    <AdminShell title="Scraper de marcas" active="brand-scrape">
+    <AdminShell title="Marcas" active="brand-scrape">
       <BrandScrapePanel />
     </AdminShell>
   );

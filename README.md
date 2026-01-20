@@ -57,7 +57,9 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Ruta `/admin` con login embebido (correo/contraseña).
 - Configura `ADMIN_EMAIL` y `ADMIN_PASSWORD` en envs. Al autenticarse se crea un token de sesión (cookie HttpOnly) guardado en Neon.
 - `ADMIN_TOKEN` queda como bypass opcional para llamadas API (Bearer).
-- Nuevo panel `/admin/brands` para encolar y ejecutar scraping/enriquecimiento de marcas (1/5/10/25/50).
+- Panel `/admin/brands`:
+  - Encolado y ejecución de scraping/enriquecimiento de marcas (1/5/10/25/50).
+  - Directorio de marcas en cards (3×5 por página), modal con detalle completo, CRUD (crear/editar/desactivar).
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).
@@ -71,6 +73,13 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - `POST /api/admin/brands/scrape/next`: procesa el siguiente job (uno por request).
 - `GET /api/admin/brands/scrape/cron`: procesa un batch corto para cron (usa `BRAND_SCRAPE_MAX_JOBS` y `BRAND_SCRAPE_MAX_RUNTIME_MS`).
 - El enriquecimiento usa `web_search` + fetch HTML (sin Playwright) para extraer señales del sitio oficial y evidencia textual de **mínimo 7 fuentes** (hasta 10k caracteres por fuente, guardado en `brands.metadata.brand_scrape`).
+
+## API interna (brands CRUD)
+- `GET /api/admin/brands`: listado paginado con filtros (`filter=processed|unprocessed|all`).
+- `POST /api/admin/brands`: crear marca (slug autogenerado si no se envía).
+- `GET /api/admin/brands/:id`: detalle completo de marca + último job.
+- `PATCH /api/admin/brands/:id`: editar campos de marca.
+- `DELETE /api/admin/brands/:id`: desactiva la marca (`isActive=false`).
 
 ## Cron en Vercel
 - Configurado en `vercel.json` para ejecutar `/api/admin/brands/scrape/cron` cada 5 minutos.

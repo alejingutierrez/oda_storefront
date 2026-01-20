@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 const navItems = [
-  { key: "brand-scrape", label: "Scraper de marcas", href: "/admin/brands" },
+  { key: "brand-scrape", label: "Marcas", href: "/admin/brands" },
   { key: "dashboard", label: "Dashboard", href: "/admin" },
 ];
 

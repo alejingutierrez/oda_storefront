@@ -121,6 +121,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Ediciones destructivas; mitigar con confirmaciones y soft-delete.
 - Métricas: Tiempo de aprobación, % items aprobados/rechazados.
 
+### MC-036 Directorio de marcas admin (grid + CRUD)
+- Historia: Como admin, quiero revisar la calidad de datos de marcas en un directorio visual y poder crear/editar/eliminar, para asegurar catálogo confiable.
+- Alcance: `/admin/brands` con grid 3×5 por página, filtros procesadas/pendientes, modal con detalle completo, formulario de creación/edición y eliminación con soft-delete; endpoints CRUD `/api/admin/brands` y `/api/admin/brands/:id`.
+- CA: Ver 15 marcas por página en cards; botón “Ver más” abre modal con toda la data; crear marca queda como pendiente de scraping; editar persiste cambios; eliminar desactiva (`isActive=false`).
+- Datos: `brands`, `brand_scrape_jobs`, `products`.
+- NF: Paginación estable y respuesta <700ms para listados.
+- Riesgos: `metadata` muy grande; mitigación: visor con scroll en modal.
+- Métricas: Completitud de campos clave y tiempo de revisión por marca.
+- Estado: **in progress (2026-01-20)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.
