@@ -68,6 +68,9 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/brands/tech` (tech profiler):
   - Ejecuta perfilado de tecnología ecommerce (Shopify/Woo/Magento/VTEX/custom).
   - Actualiza `brands.ecommercePlatform` y guarda detalle en `brands.metadata.tech_profile`.
+- Panel `/admin/catalog-extractor` (catalog extractor):
+  - Ejecuta extracción de productos por tecnología y normaliza con OpenAI.
+  - Sube imágenes a Vercel Blob y guarda productos/variantes en Neon.
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).
@@ -93,6 +96,10 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 ## API interna (tech profiler)
 - `GET /api/admin/brands/tech`: estado de marcas con sitio (total/procesadas/pendientes).
 - `POST /api/admin/brands/tech/next`: procesa la siguiente marca pendiente y actualiza su tecnología.
+
+## API interna (catalog extractor)
+- `GET /api/admin/catalog-extractor/brands`: lista marcas con `ecommercePlatform`.
+- `POST /api/admin/catalog-extractor/run`: ejecuta extracción de catálogo para una marca (body: `{ brandId, limit }`).
 
 ## Cron en Vercel
 - Configurado en `vercel.json` para ejecutar `/api/admin/brands/scrape/cron` cada 5 minutos.

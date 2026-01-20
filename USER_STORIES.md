@@ -191,6 +191,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % de marcas revisadas manualmente, tiempo promedio de revisión por marca.
 - Estado: **done (2026-01-20)**.
 
+### MC-043 Catalog extractor por tecnología
+- Historia: Como admin, quiero extraer el catálogo de productos por tecnología (Shopify/Woo/Magento/VTEX/Custom) para poblar productos/variantes con precios, tallas, colores y disponibilidad.
+- Alcance: Adaptadores por plataforma con discovery + fetch; normalización con OpenAI (JSON schema) a modelo canónico; subida de imágenes a Vercel Blob; upsert en `products` y `variants`; panel `/admin/catalog-extractor` para pruebas con límite de productos.
+- CA: Seleccionar marca con `ecommercePlatform` y ejecutar extracción guarda productos/variantes; URLs externas de producto se guardan; imágenes quedan en Blob y se registran en DB; errores se muestran en el panel.
+- Datos: `products`, `variants`, `assets` (opcional), `brands.ecommercePlatform`.
+- NF: Ejecución secuencial y límite configurable por run; logging de errores por producto.
+- Riesgos: Catálogos grandes o endpoints bloqueados; mitigación con límites y fallback genérico.
+- Métricas: productos extraídos por run, tasa de error por producto, % variantes con stock_status.
+- Estado: **done (2026-01-20)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.

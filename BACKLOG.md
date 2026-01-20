@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-043 | done | P1 | Catalog extractor por tecnología | Adaptadores Shopify/Woo/Magento/VTEX/Custom, normalización OpenAI, imágenes a Blob, panel admin.
 - MC-042 | done | P2 | Revisión manual de marcas | Check azul en cards + toggle en modal, persistido en DB.
 - MC-041 | done | P1 | Tech profiler de marcas | Campo ecommercePlatform, perfilado Shopify/Woo/Magento/VTEX, panel /admin/brands/tech.
 - MC-035 | done | P1 | Scraper de marcas (enriquecimiento OpenAI) | Panel /admin/brands con cola 1/5/10/25/50; endpoints admin + cron; OpenAI web search JSON mode + fallback HTML; diff de cambios en historial; actualización de tabla brands y metadata.
