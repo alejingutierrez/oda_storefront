@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import BrandDirectoryPanel from "./BrandDirectoryPanel";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type QueueCounts = Record<string, number>;
 
 type QueueJob = {
   id: string;
   status: string;
+  batchId?: string | null;
   createdAt: string;
   brand?: { id: string; name: string; slug: string } | null;
   result?: {
@@ -21,16 +21,47 @@ type QueueStatus = {
   queued: QueueJob[];
   processing: QueueJob | null;
   recent: QueueJob[];
+  recoveredStale?: number;
+  batchId?: string | null;
+  batchCounts?: Record<string, number> | null;
 };
 
 const COUNTS = [1, 5, 10, 25, 50];
+const STORAGE_KEY = "oda_brand_scrape_state";
+
+const readStoredState = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { autoRun?: boolean; batchId?: string | null };
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const persistState = (state: { autoRun: boolean; batchId?: string | null }) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+};
+
+const clearStoredState = () => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(STORAGE_KEY);
+};
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function BrandScrapePanel() {
   const [count, setCount] = useState(5);
   const [status, setStatus] = useState<QueueStatus | null>(null);
   const [running, setRunning] = useState(false);
+  const [autoRun, setAutoRun] = useState(false);
+  const [batchId, setBatchId] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const resumeRef = useRef(false);
 
   const queuedTotal = useMemo(() => {
     if (!status?.counts) return 0;
@@ -44,19 +75,37 @@ export default function BrandScrapePanel() {
     });
   }, []);
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/brands/scrape", { cache: "no-store" });
-      if (!res.ok) throw new Error("No se pudo cargar el estado de la cola");
-      const payload = (await res.json()) as QueueStatus;
-      setStatus(payload);
-    } catch (err) {
-      console.warn(err);
-    }
-  }, []);
+  const fetchStatus = useCallback(
+    async (targetBatchId?: string | null) => {
+      try {
+        const params = new URLSearchParams();
+        const activeBatch = targetBatchId ?? batchId;
+        if (activeBatch) params.set("batchId", activeBatch);
+        const res = await fetch(`/api/admin/brands/scrape?${params.toString()}`, { cache: "no-store" });
+        if (!res.ok) throw new Error("No se pudo cargar el estado de la cola");
+        const payload = (await res.json()) as QueueStatus;
+        setStatus(payload);
+        if ((payload.recoveredStale ?? 0) > 0) {
+          appendLog(`Se re-encolaron ${payload.recoveredStale} jobs atascados.`);
+        }
+        return payload;
+      } catch (err) {
+        console.warn(err);
+        return null;
+      }
+    },
+    [appendLog, batchId],
+  );
 
   useEffect(() => {
-    fetchStatus();
+    const stored = readStoredState();
+    const storedBatchId = stored?.batchId ?? null;
+    if (storedBatchId) setBatchId(storedBatchId);
+    if (stored?.autoRun) setAutoRun(true);
+    if (stored?.autoRun) {
+      resumeRef.current = true;
+    }
+    fetchStatus(storedBatchId);
     const interval = setInterval(fetchStatus, 10000);
     return () => clearInterval(interval);
   }, [fetchStatus]);
@@ -75,7 +124,7 @@ export default function BrandScrapePanel() {
       }
       const payload = await res.json();
       appendLog(`Cola creada: ${payload.enqueued} marcas (batch ${payload.batchId})`);
-      await fetchStatus();
+      await fetchStatus(payload.batchId ?? null);
       return payload;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
@@ -83,14 +132,62 @@ export default function BrandScrapePanel() {
     }
   };
 
-  const processNext = async () => {
-    const res = await fetch("/api/admin/brands/scrape/next", { method: "POST" });
+  const processNext = useCallback(async (targetBatchId?: string | null) => {
+    const res = await fetch("/api/admin/brands/scrape/next", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ batchId: targetBatchId ?? null }),
+    });
     if (!res.ok) {
       const payload = await res.json().catch(() => null);
       throw new Error(payload?.error ?? "Fallo procesando job");
     }
     return res.json();
-  };
+  }, []);
+
+  const stopAutoRun = useCallback(() => {
+    setAutoRun(false);
+    setBatchId(null);
+    clearStoredState();
+  }, []);
+
+  const runBatch = useCallback(
+    async (targetBatchId?: string | null) => {
+      let processed = 0;
+      while (true) {
+        const payload = await fetchStatus(targetBatchId ?? null);
+        if (payload?.processing) {
+          await sleep(1500);
+          continue;
+        }
+
+        const batchCounts = payload?.batchCounts ?? null;
+        const queuedCount = batchCounts?.queued ?? (payload?.counts?.queued ?? 0);
+        if (!queuedCount) {
+          appendLog("Cola vacía. Listo.");
+          break;
+        }
+
+        const result = await processNext(targetBatchId ?? null);
+        if (result.status === "empty") {
+          appendLog("Cola vacía. Listo.");
+          break;
+        }
+        if (result.status === "completed") {
+          const changeCount = Array.isArray(result.changes) ? result.changes.length : 0;
+          appendLog(`✅ ${result.brandName ?? "Marca"} actualizada (${changeCount} cambios)`);
+        }
+        if (result.status === "failed") {
+          appendLog(`⚠️ Error en job: ${result.error ?? "sin detalle"}`);
+          break;
+        }
+        processed += 1;
+      }
+
+      return processed;
+    },
+    [appendLog, fetchStatus, processNext],
+  );
 
   const runQueue = async () => {
     if (running) return;
@@ -103,24 +200,14 @@ export default function BrandScrapePanel() {
         return;
       }
 
-      let processed = 0;
-      while (true) {
-        const result = await processNext();
-        if (result.status === "empty") {
-          appendLog("Cola vacía. Listo.");
-          break;
-        }
-        if (result.status === "completed") {
-          const changeCount = Array.isArray(result.changes) ? result.changes.length : 0;
-          appendLog(`✅ ${result.brandName ?? "Marca"} actualizada (${changeCount} cambios)`);
-        }
-        processed += 1;
-        if (processed >= enqueueResult.enqueued) {
-          appendLog(`Batch completado (${processed}/${enqueueResult.enqueued}).`);
-          break;
-        }
-        await fetchStatus();
-      }
+      const newBatchId = enqueueResult.batchId ?? null;
+      setBatchId(newBatchId);
+      setAutoRun(true);
+      persistState({ autoRun: true, batchId: newBatchId });
+
+      const processed = await runBatch(newBatchId);
+      appendLog(`Batch completado (${processed}/${enqueueResult.enqueued}).`);
+      stopAutoRun();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
     } finally {
@@ -133,14 +220,14 @@ export default function BrandScrapePanel() {
     setRunning(true);
     setError(null);
     try {
-      const result = await processNext();
+      const result = await processNext(batchId);
       if (result.status === "empty") {
         appendLog("Cola vacía. Nada para procesar.");
       } else if (result.status === "completed") {
         const changeCount = Array.isArray(result.changes) ? result.changes.length : 0;
         appendLog(`✅ ${result.brandName ?? "Marca"} actualizada (${changeCount} cambios)`);
       }
-      await fetchStatus();
+      await fetchStatus(batchId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
     } finally {
@@ -159,6 +246,33 @@ export default function BrandScrapePanel() {
       return String(value);
     }
   };
+
+  useEffect(() => {
+    if (!resumeRef.current || running) return;
+    if (!autoRun) return;
+    resumeRef.current = false;
+
+    const resume = async () => {
+      setRunning(true);
+      try {
+        const payload = await fetchStatus(batchId);
+        const queuedCount = payload?.batchCounts?.queued ?? 0;
+        if (!queuedCount) {
+          stopAutoRun();
+          return;
+        }
+        appendLog("Reanudando procesamiento pendiente...");
+        await runBatch(batchId);
+        stopAutoRun();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error inesperado");
+      } finally {
+        setRunning(false);
+      }
+    };
+
+    resume();
+  }, [autoRun, batchId, fetchStatus, running, appendLog, runBatch, stopAutoRun]);
 
   return (
     <div className="space-y-8">
@@ -202,6 +316,15 @@ export default function BrandScrapePanel() {
               >
                 {running ? "Procesando..." : "Encolar y ejecutar"}
               </button>
+              {autoRun && (
+                <button
+                  type="button"
+                  onClick={stopAutoRun}
+                  className="rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-semibold text-slate-600"
+                >
+                  Pausar auto-ejecución
+                </button>
+              )}
               <button
                 type="button"
                 onClick={runNextOnly}
@@ -246,6 +369,19 @@ export default function BrandScrapePanel() {
                 ))}
             </div>
 
+            {batchId && (
+              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Batch activo</p>
+                <p className="mt-2 text-xs font-semibold">{batchId}</p>
+                <div className="mt-3 space-y-1 text-xs text-slate-600">
+                  <p>En cola: {status?.batchCounts?.queued ?? 0}</p>
+                  <p>Procesando: {status?.batchCounts?.processing ?? 0}</p>
+                  <p>Completados: {status?.batchCounts?.completed ?? 0}</p>
+                  <p>Fallidos: {status?.batchCounts?.failed ?? 0}</p>
+                </div>
+              </div>
+            )}
+
             <div className="mt-6">
               <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Procesando</h3>
               <p className="mt-2 text-sm text-slate-700">
@@ -277,10 +413,7 @@ export default function BrandScrapePanel() {
                   status.recent.map((job) => {
                     const changeCount = job.result?.changes?.length ?? 0;
                     return (
-                      <details
-                        key={job.id}
-                        className="rounded-xl border border-slate-200 px-3 py-2"
-                      >
+                      <details key={job.id} className="rounded-xl border border-slate-200 px-3 py-2">
                         <summary className="cursor-pointer list-none font-medium text-slate-800">
                           {job.brand?.name ?? "Marca"} · {job.status} · {changeCount} cambios
                         </summary>
@@ -306,7 +439,6 @@ export default function BrandScrapePanel() {
           </aside>
         </div>
       </section>
-      <BrandDirectoryPanel />
     </div>
   );
 }

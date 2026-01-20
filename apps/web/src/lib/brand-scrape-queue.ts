@@ -11,9 +11,40 @@ export type BrandScrapeResult = {
   error?: string;
 };
 
-export async function processNextBrandScrapeJob(): Promise<BrandScrapeResult> {
+const getStaleThreshold = () => {
+  const rawMinutes = Number(process.env.BRAND_SCRAPE_STALE_MINUTES ?? 20);
+  const minutes = Number.isFinite(rawMinutes) && rawMinutes > 0 ? rawMinutes : 20;
+  return new Date(Date.now() - minutes * 60 * 1000);
+};
+
+export async function recoverStaleBrandScrapeJobs() {
+  const threshold = getStaleThreshold();
+  const result = await prisma.brandScrapeJob.updateMany({
+    where: {
+      status: "processing",
+      OR: [{ startedAt: { lt: threshold } }, { startedAt: null }],
+    },
+    data: {
+      status: "queued",
+      startedAt: null,
+      finishedAt: null,
+      lastError: "stale_reset",
+    },
+  });
+
+  return result.count;
+}
+
+export async function processNextBrandScrapeJob(
+  batchId?: string | null,
+): Promise<BrandScrapeResult> {
+  await recoverStaleBrandScrapeJobs();
+
   const job = await prisma.brandScrapeJob.findFirst({
-    where: { status: "queued" },
+    where: {
+      status: "queued",
+      ...(batchId ? { batchId } : {}),
+    },
     orderBy: { createdAt: "asc" },
   });
 

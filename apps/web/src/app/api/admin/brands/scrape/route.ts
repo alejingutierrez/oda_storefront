@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
+import { recoverStaleBrandScrapeJobs } from "@/lib/brand-scrape-queue";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,11 @@ export async function GET(req: Request) {
   if (!admin) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const url = new URL(req.url);
+  const batchId = url.searchParams.get("batchId");
+
+  const recoveredStale = await recoverStaleBrandScrapeJobs();
+
   const counts = await prisma.brandScrapeJob.groupBy({
     by: ["status"],
     _count: true,
@@ -48,11 +54,27 @@ export async function GET(req: Request) {
     },
   });
 
+  let batchCounts: Record<string, number> | null = null;
+  if (batchId) {
+    const batchRows = await prisma.brandScrapeJob.groupBy({
+      by: ["status"],
+      where: { batchId },
+      _count: true,
+    });
+    batchCounts = batchRows.reduce<Record<string, number>>((acc, row) => {
+      acc[row.status] = row._count;
+      return acc;
+    }, {});
+  }
+
   return NextResponse.json({
     counts: summary,
     queued,
     processing,
     recent,
+    recoveredStale,
+    batchId,
+    batchCounts,
   });
 }
 

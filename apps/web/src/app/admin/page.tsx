@@ -92,13 +92,21 @@ function AdminPanel() {
       </section>
       <aside className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="text-sm font-semibold text-slate-800">Accesos rápidos</h3>
-        <p className="mt-2 text-sm text-slate-600">Inicia el flujo de scraping desde el panel dedicado.</p>
-        <a
-          href="/admin/brands"
-          className="mt-4 inline-flex rounded-full border border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-        >
-          Ir a Scraper de marcas
-        </a>
+        <p className="mt-2 text-sm text-slate-600">Gestiona marcas y ejecuta scraping bajo demanda.</p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <a
+            href="/admin/brands"
+            className="inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+          >
+            Ver directorio de marcas
+          </a>
+          <a
+            href="/admin/brands/scrape"
+            className="inline-flex rounded-full border border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+          >
+            Ir a scraping
+          </a>
+        </div>
       </aside>
     </div>
   );

@@ -2,8 +2,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth";
-import AdminShell from "../AdminShell";
-import BrandDirectoryPanel from "./BrandDirectoryPanel";
+import AdminShell from "../../AdminShell";
+import BrandScrapePanel from "../BrandScrapePanel";
 
 export const dynamic = "force-dynamic";
 
@@ -22,13 +22,13 @@ async function isAdminSession() {
   return !!admin;
 }
 
-export default async function AdminBrandsPage() {
+export default async function AdminBrandScrapePage() {
   const authed = await isAdminSession();
   if (!authed) redirect("/admin");
 
   return (
-    <AdminShell title="Directorio de marcas" active="brands">
-      <BrandDirectoryPanel />
+    <AdminShell title="Scraping de marcas" active="brand-scrape">
+      <BrandScrapePanel />
     </AdminShell>
   );
 }

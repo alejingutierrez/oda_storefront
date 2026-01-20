@@ -22,6 +22,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Billing: `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY`.
 - Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`.
 - Scraper: `USER_AGENT`, `BRAND_SCRAPE_MAX_JOBS`, `BRAND_SCRAPE_MAX_RUNTIME_MS`.
+- Scraper: `BRAND_SCRAPE_STALE_MINUTES` (re-encola jobs en `processing` con más de N minutos).
 No commitees credenciales reales.
 
 ## Comandos locales
@@ -57,9 +58,11 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Ruta `/admin` con login embebido (correo/contraseña).
 - Configura `ADMIN_EMAIL` y `ADMIN_PASSWORD` en envs. Al autenticarse se crea un token de sesión (cookie HttpOnly) guardado en Neon.
 - `ADMIN_TOKEN` queda como bypass opcional para llamadas API (Bearer).
-- Panel `/admin/brands`:
+- Panel `/admin/brands` (directorio):
+  - Cards 3×5 por página, modal con detalle completo, CRUD (crear/editar/desactivar).
+- Panel `/admin/brands/scrape` (scraping):
   - Encolado y ejecución de scraping/enriquecimiento de marcas (1/5/10/25/50).
-  - Directorio de marcas en cards (3×5 por página), modal con detalle completo, CRUD (crear/editar/desactivar).
+  - Auto‑resume tras recarga y recuperación de jobs atascados.
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).

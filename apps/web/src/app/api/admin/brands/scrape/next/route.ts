@@ -10,7 +10,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const result = await processNextBrandScrapeJob();
+  const body = await req.json().catch(() => null);
+  const batchId = typeof body?.batchId === "string" ? body.batchId : null;
+
+  const result = await processNextBrandScrapeJob(batchId);
 
   if (result.status === "failed") {
     return NextResponse.json(result, { status: 500 });

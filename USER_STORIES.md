@@ -131,6 +131,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Completitud de campos clave y tiempo de revisión por marca.
 - Estado: **done (2026-01-20)**.
 
+### MC-037 Resiliencia scraping admin + separación de vistas
+- Historia: Como admin, quiero que el scraping no se pierda al recargar y que las vistas estén separadas, para operar sin interrupciones.
+- Alcance: Re-encolar jobs atascados (processing > N minutos), auto‑resume de batch tras recarga, mover scraping a `/admin/brands/scrape`, dejar directorio en `/admin/brands`, navegación lateral.
+- CA: Jobs atascados vuelven a `queued`; al recargar, se reanuda el batch si estaba activo; menú lateral muestra entradas separadas; scraping y directorio en páginas distintas.
+- Datos: `brand_scrape_jobs`.
+- NF: Operación segura sin duplicar jobs; límite de re‑encolado configurable por env.
+- Riesgos: Concurrencia de ejecuciones paralelas; mitigación con espera si hay job `processing`.
+- Métricas: tiempo medio de recuperación de cola, cantidad de jobs re‑encolados.
+- Estado: **done (2026-01-20)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.
