@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-20 | MC-042 | done | Revisión manual de marcas (check azul en cards + toggle en modal, persistido en DB) | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5.vercel.app
 - 2026-01-20 | MC-041 | done | Tech profiler de marcas (campo ecommercePlatform, panel /admin/brands/tech, API tech profiler) | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5.vercel.app
 - 2026-01-20 | MC-040 | done | Re‑enriquecer por marca (método 2: 14 fuentes, 20k chars) + mini progreso en card | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5.vercel.app
 - 2026-01-20 | MC-039 | done | Cards muestran logo cuando existe y URLs clicables en modal de marca | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5.vercel.app
