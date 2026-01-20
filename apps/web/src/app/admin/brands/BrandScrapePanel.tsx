@@ -167,6 +167,7 @@ export default function BrandScrapePanel() {
         return;
       }
 
+      let processed = 0;
       while (true) {
         const result = await processNext();
         if (result.status === "empty") {
@@ -176,6 +177,11 @@ export default function BrandScrapePanel() {
         if (result.status === "completed") {
           const changeCount = Array.isArray(result.changes) ? result.changes.length : 0;
           appendLog(`✅ ${result.brandName ?? "Marca"} actualizada (${changeCount} cambios)`);
+        }
+        processed += 1;
+        if (processed >= enqueueResult.enqueued) {
+          appendLog(`Batch completado (${processed}/${enqueueResult.enqueued}).`);
+          break;
         }
         await fetchStatus();
         await fetchBrands();

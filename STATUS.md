@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-19 | MC-035 | fix | Ajusta botón "Encolar y ejecutar": ahora procesa solo la cantidad encolada (evita drenar cola completa) | Docker rebuild: TLS handshake timeout con docker.io; Vercel pendiente tras push
 - 2026-01-19 | MC-035 | fix | Ajusta web_search: query única con instagram, tool config CO/high y alerta si <10 fuentes | Docker rebuild: error Docker API 500; Vercel prod OK: https://oda-storefront-6ee5-8er10tg0o-alejingutierrezs-projects.vercel.app
 - 2026-01-19 | MC-035 | fix | Sanitiza texto para evitar Unicode inválido en metadata (surrogates/control chars) | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-435cz194p-alejingutierrezs-projects.vercel.app
 - 2026-01-19 | MC-035 | fix | Coerción de sources.other a strings (url/title) para evitar fallos de validación OpenAI | Docker rebuild ok; Vercel prod OK: https://oda-storefront-6ee5-gnw7hyy47-alejingutierrezs-projects.vercel.app
