@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
 
@@ -66,16 +66,16 @@ const ensureUniqueSlug = async (base: string, currentId?: string | null) => {
 };
 
 type RouteParams = {
-  params: { brandId: string };
+  params: Promise<{ brandId: string }>;
 };
 
-export async function GET(req: Request, { params }: RouteParams) {
+export async function GET(req: NextRequest, { params }: RouteParams) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const brandId = params.brandId;
+  const { brandId } = await params;
   if (!brandId) {
     return NextResponse.json({ error: "missing_brand" }, { status: 400 });
   }
@@ -93,13 +93,13 @@ export async function GET(req: Request, { params }: RouteParams) {
   return NextResponse.json({ brand, lastJob });
 }
 
-export async function PATCH(req: Request, { params }: RouteParams) {
+export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const brandId = params.brandId;
+  const { brandId } = await params;
   if (!brandId) {
     return NextResponse.json({ error: "missing_brand" }, { status: 400 });
   }
@@ -171,13 +171,13 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   return NextResponse.json({ brand });
 }
 
-export async function DELETE(req: Request, { params }: RouteParams) {
+export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const brandId = params.brandId;
+  const { brandId } = await params;
   if (!brandId) {
     return NextResponse.json({ error: "missing_brand" }, { status: 400 });
   }
