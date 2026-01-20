@@ -19,6 +19,11 @@ type ExtractSummary = {
   created: number;
   updated: number;
   errors: Array<{ url: string; error: string }>;
+  status?: string;
+  runId?: string;
+  pending?: number;
+  failed?: number;
+  total?: number;
 };
 
 export default function CatalogExtractorPanel() {
@@ -156,6 +161,20 @@ export default function CatalogExtractorPanel() {
             <p className="mt-2 text-lg font-semibold text-slate-900">
               {summary.created} / {summary.updated}
             </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Pendientes / Fallidos</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">
+              {summary.pending ?? "—"} / {summary.failed ?? "—"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Estado</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">{summary.status ?? "—"}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Run ID</p>
+            <p className="mt-2 text-xs font-mono text-slate-700">{summary.runId ?? "—"}</p>
           </div>
           <div className="md:col-span-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Errores</p>

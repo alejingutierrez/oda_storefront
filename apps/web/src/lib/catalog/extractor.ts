@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import type { AdapterContext, ExtractSummary, RawProduct, RawVariant } from "@/lib/catalog/types";
 import { getCatalogAdapter } from "@/lib/catalog/registry";
@@ -18,6 +19,59 @@ const resolveStockStatus = (variant: RawVariant) => {
     return variant.stock > 0 ? "in_stock" : "out_of_stock";
   }
   return null;
+};
+
+type CatalogItemState = {
+  status: "pending" | "in_progress" | "completed" | "failed";
+  attempts: number;
+  lastError?: string | null;
+  updatedAt?: string | null;
+  completedAt?: string | null;
+};
+
+type CatalogRunState = {
+  runId: string;
+  status: "processing" | "paused" | "completed" | "blocked";
+  cursor: number;
+  batchSize: number;
+  refs: Array<{ url: string; externalId?: string | null; handle?: string | null }>;
+  items: Record<string, CatalogItemState>;
+  startedAt: string;
+  updatedAt: string;
+  lastError?: string | null;
+  blockReason?: string | null;
+};
+
+const CATALOG_STATE_KEY = "catalog_extract";
+const MAX_ATTEMPTS = 3;
+
+const isBlobTokenError = (message: string) => {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("blob") &&
+    (normalized.includes("access denied") || normalized.includes("missing blob_read_write_token"))
+  );
+};
+
+const getBrandMetadata = (brand: { metadata: unknown }) =>
+  brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
+    ? (brand.metadata as Record<string, unknown>)
+    : {};
+
+const readRunState = (metadata: Record<string, unknown>) => {
+  const state = metadata[CATALOG_STATE_KEY];
+  if (!state || typeof state !== "object" || Array.isArray(state)) return null;
+  return state as CatalogRunState;
+};
+
+const persistRunState = async (
+  brandId: string,
+  metadata: Record<string, unknown>,
+  state: CatalogRunState,
+) => {
+  const nextMetadata = { ...metadata, [CATALOG_STATE_KEY]: state };
+  await prisma.brand.update({ where: { id: brandId }, data: { metadata: nextMetadata } });
+  return nextMetadata;
 };
 
 const buildVariantSku = (variant: RawVariant, fallback: string) => {
@@ -151,7 +205,50 @@ export const extractCatalogForBrand = async (brandId: string, limit = 20): Promi
     },
   };
 
-  const refs = await adapter.discoverProducts(ctx, limit);
+  const metadata = getBrandMetadata(brand);
+  const existingState = readRunState(metadata);
+  const batchSize = Math.max(1, Math.min(limit, 200));
+  const discoveryLimit = Math.max(
+    batchSize,
+    Math.min(Number(process.env.CATALOG_EXTRACT_DISCOVERY_LIMIT ?? batchSize * 5), 500),
+  );
+  const startTime = Date.now();
+  const maxRuntimeMs = Math.max(
+    30000,
+    Number(process.env.CATALOG_EXTRACT_MAX_RUNTIME_MS ?? 240000),
+  );
+
+  let state: CatalogRunState;
+  let refs: CatalogRunState["refs"] = [];
+
+  if (existingState && existingState.status !== "completed" && existingState.refs?.length) {
+    state = {
+      ...existingState,
+      batchSize,
+      updatedAt: new Date().toISOString(),
+    };
+    refs = state.refs;
+  } else {
+    refs = await adapter.discoverProducts(ctx, discoveryLimit);
+    const now = new Date().toISOString();
+    state = {
+      runId: crypto.randomUUID(),
+      status: "processing",
+      cursor: 0,
+      batchSize,
+      refs,
+      items: Object.fromEntries(
+        refs.map((ref) => [
+          ref.url,
+          { status: "pending", attempts: 0, updatedAt: now } as CatalogItemState,
+        ]),
+      ),
+      startedAt: now,
+      updatedAt: now,
+    };
+    await persistRunState(brand.id, metadata, state);
+  }
+
   const summary: ExtractSummary = {
     brandId: brand.id,
     platform: adapter.platform,
@@ -160,12 +257,49 @@ export const extractCatalogForBrand = async (brandId: string, limit = 20): Promi
     created: 0,
     updated: 0,
     errors: [],
+    status: state.status,
+    runId: state.runId,
+    pending: 0,
+    failed: 0,
+    total: refs.length,
   };
 
-  for (const ref of refs) {
+  let processedThisBatch = 0;
+  let cursor = state.cursor ?? 0;
+  let iterations = 0;
+
+  const shouldStopForTime = () => Date.now() - startTime > maxRuntimeMs;
+
+  while (processedThisBatch < batchSize && iterations < refs.length * 2) {
+    if (shouldStopForTime()) {
+      state.status = "paused";
+      state.updatedAt = new Date().toISOString();
+      state.lastError = "time_budget_exceeded";
+      await persistRunState(brand.id, metadata, state);
+      summary.status = state.status;
+      break;
+    }
+
+    if (!refs.length) break;
+    const ref = refs[cursor % refs.length];
+    cursor = (cursor + 1) % refs.length;
+    iterations += 1;
+    const itemState = state.items[ref.url] ?? { status: "pending", attempts: 0 };
+    if (itemState.status === "completed") continue;
+    if (itemState.attempts >= MAX_ATTEMPTS) continue;
+
     try {
+      state.items[ref.url] = {
+        ...itemState,
+        status: "in_progress",
+        updatedAt: new Date().toISOString(),
+      };
+      await persistRunState(brand.id, metadata, state);
+
       const raw = await adapter.fetchProduct(ctx, ref);
-      if (!raw) continue;
+      if (!raw) {
+        throw new Error("No se pudo obtener producto (raw vacío)");
+      }
 
       const allImages = Array.from(
         new Set([
@@ -181,6 +315,9 @@ export const extractCatalogForBrand = async (brandId: string, limit = 20): Promi
       const blobImages = raw.images
         .map((url) => imageMapping.get(url)?.url)
         .filter(Boolean) as string[];
+      if (!blobImages.length) {
+        throw new Error("Blob upload produjo 0 imágenes");
+      }
       const coverImage = blobImages[0] ?? null;
 
       const normalized = await normalizeCatalogProductWithOpenAI({
@@ -243,13 +380,59 @@ export const extractCatalogForBrand = async (brandId: string, limit = 20): Promi
       summary.processed += 1;
       if (created) summary.created += 1;
       if (!created && createdVariants === 0) summary.updated += 1;
+
+      state.items[ref.url] = {
+        status: "completed",
+        attempts: itemState.attempts + 1,
+        updatedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      };
+      state.updatedAt = new Date().toISOString();
+      await persistRunState(brand.id, metadata, state);
+      processedThisBatch += 1;
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       summary.errors.push({
         url: ref.url,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       });
+      state.items[ref.url] = {
+        status: "failed",
+        attempts: itemState.attempts + 1,
+        lastError: message,
+        updatedAt: new Date().toISOString(),
+      };
+      state.updatedAt = new Date().toISOString();
+      state.lastError = message;
+      if (isBlobTokenError(message)) {
+        state.status = "blocked";
+        state.blockReason = message;
+        await persistRunState(brand.id, metadata, state);
+        summary.status = state.status;
+        break;
+      }
+      await persistRunState(brand.id, metadata, state);
+      processedThisBatch += 1;
     }
   }
+
+  const itemStates = Object.values(state.items ?? {});
+  const completedCount = itemStates.filter((item) => item.status === "completed").length;
+  const failedCount = itemStates.filter((item) => item.status === "failed").length;
+  const pendingCount = refs.length - completedCount;
+
+  state.cursor = cursor;
+  if (completedCount === refs.length && refs.length > 0) {
+    state.status = "completed";
+  } else if (state.status !== "blocked" && state.status !== "paused") {
+    state.status = "processing";
+  }
+  state.updatedAt = new Date().toISOString();
+  await persistRunState(brand.id, metadata, state);
+
+  summary.status = state.status;
+  summary.pending = pendingCount;
+  summary.failed = failedCount;
 
   return summary;
 };

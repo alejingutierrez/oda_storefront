@@ -3,6 +3,10 @@ import { put } from "@vercel/blob";
 import { hashBuffer } from "@/lib/catalog/utils";
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+const DEFAULT_TIMEOUT_MS = 12000;
+const DEFAULT_CONCURRENCY = 4;
+let blobUploadsDisabled = false;
+let blobDisableReason: string | null = null;
 
 const getExtension = (url: string, contentType?: string | null) => {
   if (contentType) {
@@ -15,14 +19,31 @@ const getExtension = (url: string, contentType?: string | null) => {
   return ext && ext.length <= 5 ? ext : ".jpg";
 };
 
-export const uploadImageToBlob = async (url: string, prefix: string) => {
+const resolveBlobToken = () =>
+  process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN || "";
+
+const isAccessDenied = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes("access denied") || message.includes("401");
+};
+
+const fetchWithTimeout = async (url: string, timeoutMs: number) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+export const uploadImageToBlob = async (url: string, prefix: string, token: string, timeoutMs: number) => {
   const normalizedUrl = url.startsWith("//") ? `https:${url}` : url;
-  const token = process.env.VERCEL_BLOB_READ_WRITE_TOKEN;
   if (!token) {
-    throw new Error("Missing VERCEL_BLOB_READ_WRITE_TOKEN");
+    throw new Error("Missing BLOB_READ_WRITE_TOKEN");
   }
 
-  const res = await fetch(normalizedUrl);
+  const res = await fetchWithTimeout(normalizedUrl, timeoutMs);
   if (!res.ok) {
     throw new Error(`Image fetch failed: ${res.status} ${normalizedUrl}`);
   }
@@ -50,15 +71,49 @@ export const uploadImageToBlob = async (url: string, prefix: string) => {
 export const uploadImagesToBlob = async (urls: string[], prefix: string) => {
   const unique = Array.from(new Set(urls.filter(Boolean)));
   const mapping = new Map<string, { url: string; blobPath: string; sourceUrl: string }>();
+  const token = resolveBlobToken();
+  if (!token) {
+    blobUploadsDisabled = true;
+    blobDisableReason = "Missing BLOB_READ_WRITE_TOKEN";
+  }
+  if (blobUploadsDisabled) {
+    throw new Error(blobDisableReason ?? "Blob uploads disabled");
+  }
 
-  for (const url of unique) {
-    if (mapping.has(url)) continue;
-    try {
-      const uploaded = await uploadImageToBlob(url, prefix);
-      mapping.set(url, uploaded);
-    } catch (error) {
-      console.warn("blob.upload.failed", url, error instanceof Error ? error.message : error);
+  const concurrency = Math.max(1, Number(process.env.BLOB_UPLOAD_CONCURRENCY ?? DEFAULT_CONCURRENCY));
+  const timeoutMs = Math.max(3000, Number(process.env.BLOB_UPLOAD_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS));
+  let cursor = 0;
+  const failures: string[] = [];
+
+  const worker = async () => {
+    while (cursor < unique.length && !blobUploadsDisabled) {
+      const url = unique[cursor];
+      cursor += 1;
+      if (mapping.has(url)) continue;
+      try {
+        const uploaded = await uploadImageToBlob(url, prefix, token, timeoutMs);
+        mapping.set(url, uploaded);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn("blob.upload.failed", url, message);
+        if (isAccessDenied(error)) {
+          blobUploadsDisabled = true;
+          blobDisableReason = "Access denied: invalid blob token";
+        } else {
+          failures.push(url);
+        }
+      }
     }
+  };
+
+  const workers = Array.from({ length: Math.min(concurrency, unique.length) }, () => worker());
+  await Promise.all(workers);
+
+  if (blobUploadsDisabled) {
+    throw new Error(blobDisableReason ?? "Blob uploads disabled");
+  }
+  if (failures.length) {
+    throw new Error(`Blob upload failed for ${failures.length} images`);
   }
 
   return mapping;

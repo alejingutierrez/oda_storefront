@@ -88,4 +88,9 @@ export type ExtractSummary = {
   created: number;
   updated: number;
   errors: Array<{ url: string; error: string }>;
+  status?: string;
+  runId?: string;
+  pending?: number;
+  failed?: number;
+  total?: number;
 };
