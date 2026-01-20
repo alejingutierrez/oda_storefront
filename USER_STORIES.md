@@ -129,7 +129,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: Paginación estable y respuesta <700ms para listados.
 - Riesgos: `metadata` muy grande; mitigación: visor con scroll en modal.
 - Métricas: Completitud de campos clave y tiempo de revisión por marca.
-- Estado: **in progress (2026-01-20)**.
+- Estado: **done (2026-01-20)**.
 
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.

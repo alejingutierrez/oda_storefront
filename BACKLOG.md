@@ -4,7 +4,6 @@
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.2, upsert DB, ficha en VSF + ISR.
 - MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build contenedores básicos.
 - MC-008 | todo | P1 | Observabilidad mínima | Logging estructurado, health checks, traces básicos; dashboard inicial de servicios.
-- MC-036 | doing | P1 | Directorio de marcas admin | Grid 3x5, modal detalle, CRUD marcas, filtros/paginación en /admin/brands.
 
 ## Next (F1 – primeras capacidades)
 - MC-009 | todo | P1 | Taxonomía fija y catálogos | Categorías, materiales, patrones, fits, estilo/ocasión; publicación para IA y front.
@@ -43,6 +42,7 @@
 - MC-003 | done | P1 | Esquema Neon + migraciones | Prisma schema con brands/stores/products/variants/price&stock history/assets/events/taxonomy/announcements/users; pgvector habilitado; migración `20260115125012_init_schema`.
 - MC-002 | done | P1 | Docker compose local | Servicios web/scraper/worker, Postgres pgvector, Redis; healthchecks; puerto host 3080; `.env.example` alineado con Vercel; stack sube con `docker-compose up -d`.
 - MC-001 | done | P1 | Estructura base repo y convenciones | Next app TS/Tailwind en apps/web, estructura servicios scraper/worker, .gitignore, .env.example, docker-compose base, README creado.
+- MC-036 | done | P1 | Directorio de marcas admin | Grid 3x5, modal detalle, CRUD marcas, filtros/paginación en /admin/brands; endpoints CRUD en /api/admin/brands.
 
 ---
 **Instrucción operativa**: al abordar cualquier historia de este backlog: (0) pedir requisitos previos (credenciales/API keys, definiciones faltantes), (1) rebuild docker, (2) revisar salida y corregir errores, (3) push a la rama, (4) esperar y revisar build en Vercel hasta que finalice bien, (5) actualizar README con cambios relevantes, (6) marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en `STATUS.md`.
