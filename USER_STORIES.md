@@ -201,6 +201,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: productos extraídos por run, tasa de error por producto, % variantes con stock_status.
 - Estado: **done (2026-01-20)**.
 
+### MC-044 Directorio de productos admin
+- Historia: Como admin, quiero ver los productos scrapeados en un grid con filtros por marca y detalle completo para auditar calidad.
+- Alcance: Panel `/admin/products` con cards, modal de detalle y paginación; filtro por marca; endpoints para listado, marcas y detalle.
+- CA: Cards muestran imagen, nombre, rango de precios, variantes y stock; modal muestra atributos, tags y variantes; filtro por marca funciona.
+- Datos: `products`, `variants`, `brands`.
+- NF: Paginación 3x5 (15 por página), orden por `updatedAt`.
+- Riesgos: Muchos productos; mitigación con paginación y agregados.
+- Métricas: productos visualizados por sesión, tiempo de carga de página.
+- Estado: **done (2026-01-20)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.

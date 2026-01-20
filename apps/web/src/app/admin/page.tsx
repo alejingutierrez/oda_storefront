@@ -113,6 +113,12 @@ function AdminPanel() {
             Tech profiler
           </a>
           <a
+            href="/admin/products"
+            className="inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+          >
+            Ver productos
+          </a>
+          <a
             href="/admin/catalog-extractor"
             className="inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
           >

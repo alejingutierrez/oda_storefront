@@ -43,7 +43,41 @@ const openAiResponseSchema = z.object({
 });
 
 const basePrompt = `
-Eres un sistema de normalizacion de catalogo de moda colombiana. Devuelve SOLO JSON valido que siga exactamente el esquema indicado.
+Eres un sistema de normalizacion de catalogo de moda colombiana. Devuelve SOLO JSON valido y estrictamente en este formato:
+{
+  "product": {
+    "name": "string",
+    "description": "string|null",
+    "category": "string|null",
+    "subcategory": "string|null",
+    "style_tags": ["string"],
+    "material_tags": ["string"],
+    "pattern_tags": ["string"],
+    "occasion_tags": ["string"],
+    "gender": "string|null",
+    "season": "string|null",
+    "care": "string|null",
+    "origin": "string|null",
+    "status": "string|null",
+    "source_url": "string|null",
+    "image_cover_url": "string|null",
+    "variants": [
+      {
+        "sku": "string|null",
+        "color": "string|null",
+        "size": "string|null",
+        "fit": "string|null",
+        "material": "string|null",
+        "price": "number|null",
+        "currency": "string|null",
+        "stock": "number|null",
+        "stock_status": "string|null",
+        "images": ["string"]
+      }
+    ],
+    "metadata": {}
+  }
+}
 - No inventes precios, stock ni variantes: usa los valores provistos en raw_product.
 - Si falta un dato, usa null o listas vacias.
 - style_tags, material_tags, pattern_tags, occasion_tags deben ser arrays en minusculas.
@@ -58,6 +92,30 @@ const extractOutputText = (response: any) => {
     : null;
   const content = message?.content?.find((item: any) => item.type === "output_text" || item.type === "text");
   return content?.text ?? "";
+};
+
+const safeJsonParse = (raw: string) => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      const sliced = raw.slice(start, end + 1);
+      return JSON.parse(sliced);
+    }
+    throw new Error("JSON parse failed");
+  }
+};
+
+const coerceProductWrapper = (parsed: any) => {
+  if (!parsed || typeof parsed !== "object") return parsed;
+  if (parsed.product && typeof parsed.product === "object") return parsed;
+  const hasProductShape = parsed.name && parsed.variants;
+  if (hasProductShape) {
+    return { product: parsed };
+  }
+  return parsed;
 };
 
 export const normalizeCatalogProductWithOpenAI = async (rawProduct: RawProduct) => {
@@ -86,7 +144,7 @@ export const normalizeCatalogProductWithOpenAI = async (rawProduct: RawProduct) 
 
       const raw = extractOutputText(response);
       if (!raw) throw new Error("Respuesta vacia de OpenAI");
-      const parsed = JSON.parse(raw);
+      const parsed = coerceProductWrapper(safeJsonParse(raw));
       const validation = openAiResponseSchema.safeParse(parsed);
       if (!validation.success) {
         throw new Error(`JSON validation failed: ${validation.error.message}`);

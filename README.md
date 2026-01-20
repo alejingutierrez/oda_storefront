@@ -68,6 +68,8 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/brands/tech` (tech profiler):
   - Ejecuta perfilado de tecnología ecommerce (Shopify/Woo/Magento/VTEX/custom).
   - Actualiza `brands.ecommercePlatform` y guarda detalle en `brands.metadata.tech_profile`.
+- Panel `/admin/products` (productos):
+  - Directorio de productos scrapeados con cards, modal de detalle y filtros por marca.
 - Panel `/admin/catalog-extractor` (catalog extractor):
   - Ejecuta extracción de productos por tecnología y normaliza con OpenAI.
   - Sube imágenes a Vercel Blob y guarda productos/variantes en Neon.
@@ -100,6 +102,11 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 ## API interna (catalog extractor)
 - `GET /api/admin/catalog-extractor/brands`: lista marcas con `ecommercePlatform`.
 - `POST /api/admin/catalog-extractor/run`: ejecuta extracción de catálogo para una marca (body: `{ brandId, limit }`).
+
+## API interna (productos)
+- `GET /api/admin/products`: listado paginado de productos (query: `page`, `pageSize`, `brandId`).
+- `GET /api/admin/products/brands`: listado de marcas con conteo de productos.
+- `GET /api/admin/products/:id`: detalle de producto con variantes.
 
 ## Cron en Vercel
 - Configurado en `vercel.json` para ejecutar `/api/admin/brands/scrape/cron` cada 5 minutos.

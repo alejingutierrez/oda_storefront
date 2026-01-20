@@ -420,12 +420,18 @@ export const extractCatalogForBrand = async (brandId: string, limit = 20): Promi
   const completedCount = itemStates.filter((item) => item.status === "completed").length;
   const failedCount = itemStates.filter((item) => item.status === "failed").length;
   const pendingCount = refs.length - completedCount;
+  const remainingEligible = refs.filter((ref) => {
+    const entry = state.items[ref.url];
+    if (!entry) return true;
+    if (entry.status === "completed") return false;
+    return entry.attempts < MAX_ATTEMPTS;
+  }).length;
 
   state.cursor = cursor;
   if (completedCount === refs.length && refs.length > 0) {
     state.status = "completed";
   } else if (state.status !== "blocked" && state.status !== "paused") {
-    state.status = "processing";
+    state.status = remainingEligible === 0 ? "paused" : "processing";
   }
   state.updatedAt = new Date().toISOString();
   await persistRunState(brand.id, metadata, state);
