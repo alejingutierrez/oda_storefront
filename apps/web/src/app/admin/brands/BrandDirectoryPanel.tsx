@@ -265,6 +265,9 @@ export default function BrandDirectoryPanel() {
   const [formState, setFormState] = useState<BrandFormState>({ ...EMPTY_FORM });
   const [formError, setFormError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [reEnrichState, setReEnrichState] = useState<
+    Record<string, { status: "processing" | "completed" | "failed"; message?: string }>
+  >({});
 
   const fetchBrands = useCallback(async () => {
     setBrandsLoading(true);
@@ -300,6 +303,50 @@ export default function BrandDirectoryPanel() {
       setDetailLoading(false);
     }
   }, []);
+
+  const setReEnrichStatus = useCallback(
+    (brandId: string, status: "processing" | "completed" | "failed", message?: string) => {
+      setReEnrichState((prev) => ({
+        ...prev,
+        [brandId]: { status, message },
+      }));
+    },
+    [],
+  );
+
+  const clearReEnrichStatus = useCallback((brandId: string, delayMs = 5000) => {
+    window.setTimeout(() => {
+      setReEnrichState((prev) => {
+        const next = { ...prev };
+        delete next[brandId];
+        return next;
+      });
+    }, delayMs);
+  }, []);
+
+  const triggerReEnrich = useCallback(
+    async (brandId: string) => {
+      setReEnrichStatus(brandId, "processing");
+      try {
+        const res = await fetch(`/api/admin/brands/${brandId}/re-enrich`, { method: "POST" });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => null);
+          throw new Error(payload?.error ?? "No se pudo re-enriquecer");
+        }
+        setReEnrichStatus(brandId, "completed");
+        clearReEnrichStatus(brandId);
+        await fetchBrands();
+      } catch (err) {
+        setReEnrichStatus(
+          brandId,
+          "failed",
+          err instanceof Error ? err.message : "Error inesperado",
+        );
+        clearReEnrichStatus(brandId, 7000);
+      }
+    },
+    [clearReEnrichStatus, fetchBrands, setReEnrichStatus],
+  );
 
   useEffect(() => {
     fetchBrands();
@@ -609,6 +656,15 @@ export default function BrandDirectoryPanel() {
             ];
             const filled = qualityFields.filter((item) => item && String(item).trim()).length;
             const totalFields = qualityFields.length;
+            const reEnrich = reEnrichState[brand.id];
+            const reEnrichLabel =
+              reEnrich?.status === "processing"
+                ? "Re-enriqueciendo..."
+                : reEnrich?.status === "completed"
+                  ? "Re-enriquecida"
+                  : reEnrich?.status === "failed"
+                    ? "Error al re-enriquecer"
+                    : null;
             return (
               <article key={brand.id} className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
@@ -707,12 +763,41 @@ export default function BrandDirectoryPanel() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => triggerReEnrich(brand.id)}
+                    disabled={reEnrich?.status === "processing"}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 disabled:opacity-60"
+                  >
+                    Re-enriquecer
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => openEdit(brand.id)}
                     className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
                   >
                     Editar
                   </button>
                 </div>
+
+                {(reEnrichLabel || brand.lastStatus === "processing") && (
+                  <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        reEnrich?.status === "failed"
+                          ? "bg-rose-500"
+                          : reEnrich?.status === "completed"
+                            ? "bg-emerald-500"
+                            : "animate-pulse bg-amber-500"
+                      }`}
+                    />
+                    <span>{reEnrichLabel ?? "Procesando..."}</span>
+                  </div>
+                )}
+
+                {reEnrich?.status === "failed" && reEnrich.message && (
+                  <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                    {reEnrich.message}
+                  </div>
+                )}
               </article>
             );
           })

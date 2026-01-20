@@ -14,6 +14,7 @@ const MAX_EVIDENCE_SOURCES = 10;
 const MAX_EVIDENCE_FETCHES = 14;
 const MAX_EVIDENCE_CHARS = 10000;
 const MAX_HTML_SLICE = 220_000;
+const DEFAULT_MIN_WEB_SOURCES = 10;
 const SOCIAL_HOSTS = [
   "instagram.com",
   "facebook.com",
@@ -40,6 +41,27 @@ const CONTACT_KEYWORDS = [
   "ayuda",
   "faq",
 ];
+
+type BrandScrapeLimits = {
+  minEvidenceSources: number;
+  maxEvidenceSources: number;
+  maxEvidenceFetches: number;
+  maxEvidenceChars: number;
+  minWebSources: number;
+};
+
+const DEFAULT_LIMITS: BrandScrapeLimits = {
+  minEvidenceSources: MIN_EVIDENCE_SOURCES,
+  maxEvidenceSources: MAX_EVIDENCE_SOURCES,
+  maxEvidenceFetches: MAX_EVIDENCE_FETCHES,
+  maxEvidenceChars: MAX_EVIDENCE_CHARS,
+  minWebSources: DEFAULT_MIN_WEB_SOURCES,
+};
+
+const buildLimits = (overrides?: Partial<BrandScrapeLimits>): BrandScrapeLimits => ({
+  ...DEFAULT_LIMITS,
+  ...(overrides ?? {}),
+});
 
 const WEB_SEARCH_TOOL = {
   type: "web_search",
@@ -461,8 +483,10 @@ const buildPrompt = (
     websiteSignals?: WebsiteSignals | null;
     preSources?: Array<{ url: string; title?: string; source?: string }>;
     evidenceSources?: EvidenceSource[];
+    limits?: Partial<BrandScrapeLimits>;
   },
 ) => {
+  const limits = buildLimits(context?.limits);
   const constraintPayload = {
     category: constraints.category,
     product_category: constraints.productCategory,
@@ -512,7 +536,7 @@ Reglas estrictas:
 - URLs siempre con esquema https.
 - Si la marca es solo online, usa un valor de city que exista en la lista (Online/On-line/etc.).
 - Si no encuentras evidencia nueva pero el valor actual parece consistente, conserva el valor actual.
-- Busca y devuelve al menos 10 resultados web (fuentes) para sustentar los datos.
+- Busca y devuelve al menos ${limits.minWebSources} resultados web (fuentes) para sustentar los datos.
 - Usa evidence_texts como evidencia principal y complementa con fuentes web cuando sea necesario.
 - opening_hours debe ser un objeto JSON o null (nunca string).
 - sources.website/instagram/tiktok/facebook deben ser un string único (no arrays).
@@ -537,7 +561,7 @@ Reglas estrictas:
       : null,
     pre_sources: context?.preSources?.slice(0, 12).map((entry) => entry.url) ?? [],
     evidence_texts:
-      context?.evidenceSources?.slice(0, MIN_EVIDENCE_SOURCES).map((entry) => ({
+      context?.evidenceSources?.slice(0, limits.minEvidenceSources).map((entry) => ({
         url: entry.url,
         title: entry.title ?? null,
         excerpt: entry.excerpt ?? null,
@@ -621,7 +645,7 @@ const extractWebSources = (response: any) => {
   return Array.from(unique.values());
 };
 
-const collectWebSources = async (brand: Brand) => {
+const collectWebSources = async (brand: Brand, minSources = DEFAULT_MIN_WEB_SOURCES) => {
   if (process.env.OPENAI_WEB_SEARCH === "false") return [];
   const client = getOpenAIClient() as any;
   const query = `${brand.name} marca moda Colombia instagram`;
@@ -639,13 +663,14 @@ const collectWebSources = async (brand: Brand) => {
     sources.forEach((source) => {
       if (source.url && !collected.has(source.url)) collected.set(source.url, source);
     });
-    if (collected.size >= 10) break;
+    if (collected.size >= minSources) break;
   }
 
-  if (collected.size < 10) {
+  if (collected.size < minSources) {
     console.warn("brand.scrape.search_insufficient", {
       brandId: brand.id,
       found: collected.size,
+      target: minSources,
     });
   }
 
@@ -958,7 +983,9 @@ const buildEvidenceFromSources = async (
   sources: Array<{ url: string; title?: string; source?: string }>,
   brand: Brand,
   preferredSiteUrl?: string | null,
+  limitOverrides?: Partial<BrandScrapeLimits>,
 ) => {
+  const limits = buildLimits(limitOverrides);
   const brandSlug = slugify(brand.name).replace(/\s+/g, "");
   const preferredHost = preferredSiteUrl ? new URL(preferredSiteUrl).hostname : null;
   const ranked = sources
@@ -984,7 +1011,7 @@ const buildEvidenceFromSources = async (
   let attempts = 0;
 
   const tryFetch = async (entry: { url: string }) => {
-    if (attempts >= MAX_EVIDENCE_FETCHES) return;
+    if (attempts >= limits.maxEvidenceFetches) return;
     attempts += 1;
     if (visited.has(entry.url)) return;
     visited.add(entry.url);
@@ -1000,7 +1027,7 @@ const buildEvidenceFromSources = async (
       const sliced = html.slice(0, MAX_HTML_SLICE);
       const title = extractTitleFromHtml(sliced);
       const text = htmlToText(sliced);
-      const excerpt = text.slice(0, MAX_EVIDENCE_CHARS);
+      const excerpt = text.slice(0, limits.maxEvidenceChars);
       if (!excerpt && !title) return;
       evidence.push({
         url: entry.url,
@@ -1013,7 +1040,7 @@ const buildEvidenceFromSources = async (
   };
 
   for (const entry of ranked) {
-    if (evidence.length >= MIN_EVIDENCE_SOURCES) break;
+    if (evidence.length >= limits.minEvidenceSources) break;
     const host = (() => {
       try {
         return new URL(entry.url).hostname.toLowerCase();
@@ -1025,16 +1052,16 @@ const buildEvidenceFromSources = async (
     await tryFetch(entry);
   }
 
-  if (evidence.length < MIN_EVIDENCE_SOURCES) {
+  if (evidence.length < limits.minEvidenceSources) {
     for (const entry of ranked) {
-      if (evidence.length >= MIN_EVIDENCE_SOURCES) break;
+      if (evidence.length >= limits.minEvidenceSources) break;
       await tryFetch(entry);
     }
   }
 
-  if (evidence.length < MIN_EVIDENCE_SOURCES) {
+  if (evidence.length < limits.minEvidenceSources) {
     for (const entry of ranked) {
-      if (evidence.length >= MIN_EVIDENCE_SOURCES) break;
+      if (evidence.length >= limits.minEvidenceSources) break;
       if (evidence.some((item) => item.url === entry.url)) continue;
       evidence.push({
         url: entry.url,
@@ -1043,7 +1070,7 @@ const buildEvidenceFromSources = async (
     }
   }
 
-  return evidence.slice(0, MAX_EVIDENCE_SOURCES);
+  return evidence.slice(0, limits.maxEvidenceSources);
 };
 
 export async function enrichBrandWithOpenAI(
@@ -1053,6 +1080,7 @@ export async function enrichBrandWithOpenAI(
     websiteSignals?: WebsiteSignals | null;
     preSources?: Array<{ url: string; title?: string; source?: string }>;
     evidenceSources?: EvidenceSource[];
+    limits?: Partial<BrandScrapeLimits>;
   },
 ) {
   const preSources = context?.preSources ?? (await collectWebSources(brand));
@@ -1060,6 +1088,7 @@ export async function enrichBrandWithOpenAI(
     websiteSignals: context?.websiteSignals,
     preSources,
     evidenceSources: context?.evidenceSources,
+    limits: context?.limits,
   });
   const client = getOpenAIClient() as any;
 
@@ -1192,25 +1221,31 @@ const normalizeBrandOutput = (output: BrandEnrichmentResponse["brand"], constrai
   };
 };
 
-export async function runBrandScrapeJob(brandId: string) {
+const runBrandScrapeJobWithLimits = async (
+  brandId: string,
+  limitOverrides?: Partial<BrandScrapeLimits>,
+) => {
+  const limits = buildLimits(limitOverrides);
   const brand = await prisma.brand.findUnique({ where: { id: brandId } });
   if (!brand) throw new Error("Brand not found");
 
   const constraints = await loadBrandConstraints();
-  const preSources = await collectWebSources(brand);
+  const preSources = await collectWebSources(brand, limits.minWebSources);
   const candidateSiteUrl = normalizeUrl(brand.siteUrl) ?? pickOfficialSiteUrl(preSources, brand);
   const initialSignals = await fetchWebsiteSignals(candidateSiteUrl);
-  const evidenceSources = await buildEvidenceFromSources(preSources, brand, candidateSiteUrl);
-  if (evidenceSources.length < MIN_EVIDENCE_SOURCES) {
+  const evidenceSources = await buildEvidenceFromSources(preSources, brand, candidateSiteUrl, limits);
+  if (evidenceSources.length < limits.minEvidenceSources) {
     console.warn("brand.scrape.evidence_insufficient", {
       brandId: brand.id,
       found: evidenceSources.length,
+      target: limits.minEvidenceSources,
     });
   }
   const enrichment = await enrichBrandWithOpenAI(brand, constraints, {
     websiteSignals: initialSignals,
     preSources,
     evidenceSources,
+    limits,
   });
 
   const normalized = normalizeBrandOutput(enrichment.brand, constraints);
@@ -1321,4 +1356,17 @@ export async function runBrandScrapeJob(brandId: string) {
   });
 
   return { updated, enrichment, changes, before, after };
+};
+
+export async function runBrandScrapeJob(brandId: string) {
+  return runBrandScrapeJobWithLimits(brandId);
+}
+
+export async function runBrandScrapeJobV2(brandId: string) {
+  return runBrandScrapeJobWithLimits(brandId, {
+    minEvidenceSources: 14,
+    maxEvidenceSources: 14,
+    maxEvidenceChars: 20000,
+    minWebSources: 14,
+  });
 }

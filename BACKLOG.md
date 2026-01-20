@@ -46,6 +46,7 @@
 - MC-037 | done | P1 | Resiliencia scraping admin | Re‑encolar jobs atascados, auto‑resume tras recarga, separación de /admin/brands y /admin/brands/scrape con menú lateral.
 - MC-038 | done | P2 | Admin layout anclado | Sidebar anclado a la izquierda para maximizar el canvas de contenido.
 - MC-039 | done | P2 | Mejoras cards marcas | Mostrar logo en card y URLs cliqueables en modal.
+- MC-040 | done | P1 | Re‑enriquecimiento por marca | Método 2 (14 fuentes, 20k chars) desde card con progreso mini.
 
 ---
 **Instrucción operativa**: al abordar cualquier historia de este backlog: (0) pedir requisitos previos (credenciales/API keys, definiciones faltantes), (1) rebuild docker, (2) revisar salida y corregir errores, (3) push a la rama, (4) esperar y revisar build en Vercel hasta que finalice bien, (5) actualizar README con cambios relevantes, (6) marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en `STATUS.md`.

@@ -60,6 +60,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - `ADMIN_TOKEN` queda como bypass opcional para llamadas API (Bearer).
 - Panel `/admin/brands` (directorio):
   - Cards 3×5 por página, modal con detalle completo, CRUD (crear/editar/desactivar).
+  - Acciones por marca: **Re‑enriquecer** (método 2 con 14 fuentes y 20k chars por fuente).
 - Panel `/admin/brands/scrape` (scraping):
   - Encolado y ejecución de scraping/enriquecimiento de marcas (1/5/10/25/50).
   - Auto‑resume tras recarga y recuperación de jobs atascados.
@@ -83,6 +84,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - `GET /api/admin/brands/:id`: detalle completo de marca + último job.
 - `PATCH /api/admin/brands/:id`: editar campos de marca.
 - `DELETE /api/admin/brands/:id`: desactiva la marca (`isActive=false`).
+- `POST /api/admin/brands/:id/re-enrich`: re‑enriquecimiento individual con método 2 (14 fuentes, 20k chars).
 
 ## Cron en Vercel
 - Configurado en `vercel.json` para ejecutar `/api/admin/brands/scrape/cron` cada 5 minutos.

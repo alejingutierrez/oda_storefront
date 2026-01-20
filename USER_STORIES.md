@@ -161,6 +161,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Tiempo de verificación por marca.
 - Estado: **done (2026-01-20)**.
 
+### MC-040 Re‑enriquecimiento por marca (método 2)
+- Historia: Como admin, quiero re‑enriquecer una marca con un método más potente desde la card, para mejorar calidad puntual.
+- Alcance: Botón “Re‑enriquecer” por marca, endpoint dedicado, método 2 con 14 fuentes y 20k chars, mini‑progreso en card.
+- CA: Ejecuta solo para una marca; no modifica el método base; muestra estado en la card.
+- Datos: `brand_scrape_jobs`, `brands`.
+- NF: Sin bloquear otros jobs; valida conflicto si hay job en cola.
+- Riesgos: Requests largos; mitigación: registro en jobs y estado visible.
+- Métricas: % re‑enriquecimientos exitosos, tiempo medio por marca.
+- Estado: **done (2026-01-20)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.
