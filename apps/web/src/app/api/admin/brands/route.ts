@@ -263,7 +263,7 @@ export async function POST(req: Request) {
     lng: normalizeNumber(payload.lng),
     openingHours: normalizeJson(payload.openingHours),
     metadata: normalizeJson(payload.metadata),
-    isActive: normalizeBoolean(payload.isActive, true),
+    isActive: normalizeBoolean(payload.isActive, true) ?? true,
   };
 
   const brand = await prisma.brand.create({ data });
