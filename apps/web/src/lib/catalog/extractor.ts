@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { AdapterContext, ExtractSummary, RawProduct, RawVariant } from "@/lib/catalog/types";
 import { getCatalogAdapter } from "@/lib/catalog/registry";
@@ -120,7 +121,10 @@ export const stopCatalogRun = async (brandId: string) => {
   if (!(CATALOG_STATE_KEY in metadata)) return true;
   const nextMetadata = { ...metadata };
   delete nextMetadata[CATALOG_STATE_KEY];
-  await prisma.brand.update({ where: { id: brandId }, data: { metadata: nextMetadata } });
+  await prisma.brand.update({
+    where: { id: brandId },
+    data: { metadata: nextMetadata as Prisma.InputJsonValue },
+  });
   return true;
 };
 
