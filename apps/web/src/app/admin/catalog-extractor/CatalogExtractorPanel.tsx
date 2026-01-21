@@ -45,9 +45,14 @@ type ExtractSummary = {
 };
 
 const buildProgress = (state?: RunState | ExtractSummary | null) => {
-  const total = state?.total ?? state?.discovered ?? 0;
-  const failed = state?.failed ?? 0;
-  const pending = state?.pending ?? Math.max(0, total - (state?.processed ?? 0));
+  if (!state) {
+    return { total: 0, completed: 0, failed: 0, pending: 0, percent: 0 };
+  }
+  const isSummary = "discovered" in state;
+  const total = isSummary ? state.total ?? state.discovered ?? 0 : state.total ?? 0;
+  const processed = isSummary ? state.processed ?? 0 : 0;
+  const failed = state.failed ?? 0;
+  const pending = state.pending ?? Math.max(0, total - processed);
   const completed = Math.max(0, total - pending - failed);
   const percent = total ? Math.round((completed / total) * 100) : 0;
   return { total, completed, failed, pending, percent };
