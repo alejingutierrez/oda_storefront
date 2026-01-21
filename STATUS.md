@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-21 | MC-053 | done | VTEX: linkText desde URL en sitemap + error con plataforma/URL | Docker rebuild: falló (daemon apagado); Vercel prod: pendiente
+- 2026-01-21 | MC-053 | done | VTEX: linkText desde URL en sitemap + error con plataforma/URL | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5-9pube0ap3-alejingutierrezs-projects.vercel.app
 - 2026-01-21 | MC-052 | done | Panel catalog extractor ahora muestra errores y bloqueos | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5-6o0cbizja-alejingutierrezs-projects.vercel.app
 - 2026-01-21 | MC-051 | done | Catalog extractor por tecnologia: play/pausa/detener, auto‑avance y sitemap‑first con reanudación | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5-dfx8rvjsp-alejingutierrezs-projects.vercel.app
 - 2026-01-21 | MC-050 | done | Tech profiler sanitiza Unicode y parseo JSON tolerante para evitar 500 por escapes inválidos | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5-8nelw4f1b-alejingutierrezs-projects.vercel.app
