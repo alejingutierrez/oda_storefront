@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-049 | done | P1 | Volver a modelo OpenAI gpt-5.2 | Default en scrapers/normalizer y env example/documentación.
 - MC-048 | done | P1 | Evidencia textual limpia en scraper de marcas | Limpieza de HTML→texto, prioriza líneas relevantes y reduce ruido en evidencia OpenAI.
 - MC-047 | done | P1 | Cambiar modelo OpenAI a gpt-5-mini | Reduce costos en scrapers (marcas, tech, catálogo).
 - MC-046 | done | P1 | Reglas de moneda + reset catálogo | Parsing precios, currency en productos, truncate products/variants.

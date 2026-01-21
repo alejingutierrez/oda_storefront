@@ -251,6 +251,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Tasa de validación de OpenAI y % campos completos por marca.
 - Estado: **done (2026-01-21)**.
 
+### MC-049 Volver a modelo OpenAI gpt-5.2
+- Historia: Como operador, quiero volver al modelo gpt-5.2 para maximizar calidad del enriquecimiento y normalización.
+- Alcance: Default `OPENAI_MODEL` a `gpt-5.2` en scrapers/normalizer, `.env.example` y documentación.
+- CA: Si no se define `OPENAI_MODEL`, se usa `gpt-5.2` en marcas, tech profiler y catálogo.
+- Datos: Variables de entorno.
+- NF: Sin cambios funcionales en flujos; impacto solo en costo/calidad.
+- Riesgos: Costo mayor; mitigación con límites de fuentes y evidencia limpia.
+- Métricas: Tasa de validación y completitud por marca/producto.
+- Estado: **done (2026-01-21)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.
