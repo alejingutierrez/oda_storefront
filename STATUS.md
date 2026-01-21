@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-21 | MC-049 | done | Default OpenAI vuelve a gpt-5.2 en scrapers/normalizer y docs | Docker rebuild: pendiente; Vercel prod: pendiente
+- 2026-01-21 | MC-049 | done | Default OpenAI vuelve a gpt-5.2 en scrapers/normalizer y docs | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5-olwwqrgqy-alejingutierrezs-projects.vercel.app
 - 2026-01-21 | MC-048 | done | Limpieza de evidencia: HTML→texto, filtrado de líneas y priorización por señales relevantes para OpenAI | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5-ilgipaww5-alejingutierrezs-projects.vercel.app
 - 2026-01-20 | MC-047 | done | Cambia modelo OpenAI por defecto a gpt-5-mini para scrapers | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5.vercel.app
 - 2026-01-20 | MC-046 | done | Reglas de moneda (USD/COP), parseo de precios, currency en productos + reset catálogo (truncate products/variants) | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5.vercel.app
