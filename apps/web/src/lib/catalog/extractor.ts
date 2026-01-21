@@ -4,7 +4,14 @@ import type { AdapterContext, ExtractSummary, RawProduct, RawVariant } from "@/l
 import { getCatalogAdapter } from "@/lib/catalog/registry";
 import { normalizeCatalogProductWithOpenAI } from "@/lib/catalog/normalizer";
 import { uploadImagesToBlob } from "@/lib/catalog/blob";
-import { guessCurrency, normalizeSize, parsePriceValue, pickOption } from "@/lib/catalog/utils";
+import {
+  discoverFromSitemap,
+  guessCurrency,
+  normalizeSize,
+  normalizeUrl,
+  parsePriceValue,
+  pickOption,
+} from "@/lib/catalog/utils";
 
 const toNumber = (value: unknown) => parsePriceValue(value);
 
@@ -27,7 +34,7 @@ type CatalogItemState = {
 
 type CatalogRunState = {
   runId: string;
-  status: "processing" | "paused" | "completed" | "blocked";
+  status: "processing" | "paused" | "completed" | "blocked" | "stopped";
   cursor: number;
   batchSize: number;
   refs: Array<{ url: string; externalId?: string | null; handle?: string | null }>;
@@ -40,6 +47,7 @@ type CatalogRunState = {
 
 const CATALOG_STATE_KEY = "catalog_extract";
 const MAX_ATTEMPTS = 3;
+const PRODUCT_TOKENS = ["/products", "/product", "/producto", "/productos", "/p/", "/shop", "/tienda"];
 
 const isBlobTokenError = (message: string) => {
   const normalized = message.toLowerCase();
@@ -54,10 +62,30 @@ const getBrandMetadata = (brand: { metadata: unknown }) =>
     ? (brand.metadata as Record<string, unknown>)
     : {};
 
-const readRunState = (metadata: Record<string, unknown>) => {
+export const readCatalogRunState = (metadata: Record<string, unknown>) => {
   const state = metadata[CATALOG_STATE_KEY];
   if (!state || typeof state !== "object" || Array.isArray(state)) return null;
   return state as CatalogRunState;
+};
+
+export const summarizeCatalogRunState = (state: CatalogRunState | null) => {
+  if (!state) return null;
+  const itemStates = Object.values(state.items ?? {});
+  const completed = itemStates.filter((item) => item.status === "completed").length;
+  const failed = itemStates.filter((item) => item.status === "failed").length;
+  const total = state.refs?.length ?? 0;
+  const pending = Math.max(0, total - completed - failed);
+  return {
+    status: state.status,
+    runId: state.runId,
+    cursor: state.cursor,
+    total,
+    completed,
+    failed,
+    pending,
+    lastError: state.lastError ?? null,
+    blockReason: state.blockReason ?? null,
+  };
 };
 
 const persistRunState = async (
@@ -68,6 +96,42 @@ const persistRunState = async (
   const nextMetadata = { ...metadata, [CATALOG_STATE_KEY]: state };
   await prisma.brand.update({ where: { id: brandId }, data: { metadata: nextMetadata } });
   return nextMetadata;
+};
+
+export const pauseCatalogRun = async (brandId: string) => {
+  const brand = await prisma.brand.findUnique({ where: { id: brandId } });
+  if (!brand) return null;
+  const metadata = getBrandMetadata(brand);
+  const state = readCatalogRunState(metadata);
+  if (!state) return null;
+  const nextState = {
+    ...state,
+    status: "paused" as const,
+    updatedAt: new Date().toISOString(),
+  };
+  await persistRunState(brand.id, metadata, nextState);
+  return summarizeCatalogRunState(nextState);
+};
+
+export const stopCatalogRun = async (brandId: string) => {
+  const brand = await prisma.brand.findUnique({ where: { id: brandId } });
+  if (!brand) return false;
+  const metadata = getBrandMetadata(brand);
+  if (!(CATALOG_STATE_KEY in metadata)) return true;
+  const nextMetadata = { ...metadata };
+  delete nextMetadata[CATALOG_STATE_KEY];
+  await prisma.brand.update({ where: { id: brandId }, data: { metadata: nextMetadata } });
+  return true;
+};
+
+const discoverRefsFromSitemap = async (siteUrl: string, limit: number) => {
+  const normalized = normalizeUrl(siteUrl);
+  if (!normalized) return [];
+  const urls = await discoverFromSitemap(normalized, limit);
+  if (!urls.length) return [];
+  const filtered = urls.filter((url) => PRODUCT_TOKENS.some((token) => url.includes(token)));
+  const selected = filtered.length ? filtered : urls;
+  return selected.map((url) => ({ url }));
 };
 
 const buildVariantSku = (variant: RawVariant, fallback: string) => {
@@ -191,7 +255,11 @@ const upsertVariant = async (productId: string, variant: any) => {
   return { variant: created, created: true };
 };
 
-export const extractCatalogForBrand = async (brandId: string, limit = 20): Promise<ExtractSummary> => {
+export const extractCatalogForBrand = async (
+  brandId: string,
+  limit = 20,
+  options: { forceSitemap?: boolean } = {},
+): Promise<ExtractSummary> => {
   const brand = await prisma.brand.findUnique({ where: { id: brandId } });
   if (!brand || !brand.siteUrl) {
     throw new Error("Marca sin sitio web configurado");
@@ -209,11 +277,15 @@ export const extractCatalogForBrand = async (brandId: string, limit = 20): Promi
   };
 
   const metadata = getBrandMetadata(brand);
-  const existingState = readRunState(metadata);
+  const existingState = readCatalogRunState(metadata);
   const batchSize = Math.max(1, Math.min(limit, 200));
   const discoveryLimit = Math.max(
     batchSize,
     Math.min(Number(process.env.CATALOG_EXTRACT_DISCOVERY_LIMIT ?? batchSize * 5), 500),
+  );
+  const sitemapLimit = Math.max(
+    discoveryLimit,
+    Math.min(Number(process.env.CATALOG_EXTRACT_SITEMAP_LIMIT ?? 5000), 20000),
   );
   const startTime = Date.now();
   const maxRuntimeMs = Math.max(
@@ -224,15 +296,26 @@ export const extractCatalogForBrand = async (brandId: string, limit = 20): Promi
   let state: CatalogRunState;
   let refs: CatalogRunState["refs"] = [];
 
-  if (existingState && existingState.status !== "completed" && existingState.refs?.length) {
+  if (
+    existingState &&
+    existingState.status !== "completed" &&
+    existingState.status !== "stopped" &&
+    existingState.refs?.length
+  ) {
     state = {
       ...existingState,
+      status: existingState.status === "paused" ? "processing" : existingState.status,
       batchSize,
       updatedAt: new Date().toISOString(),
     };
     refs = state.refs;
   } else {
-    refs = await adapter.discoverProducts(ctx, discoveryLimit);
+    const sitemapRefs = options.forceSitemap
+      ? await discoverRefsFromSitemap(brand.siteUrl, sitemapLimit)
+      : [];
+    refs = sitemapRefs.length
+      ? sitemapRefs
+      : await adapter.discoverProducts(ctx, discoveryLimit);
     const now = new Date().toISOString();
     state = {
       runId: crypto.randomUUID(),
@@ -273,7 +356,29 @@ export const extractCatalogForBrand = async (brandId: string, limit = 20): Promi
 
   const shouldStopForTime = () => Date.now() - startTime > maxRuntimeMs;
 
+  const shouldAbortExternally = async () => {
+    const latest = await prisma.brand.findUnique({
+      where: { id: brand.id },
+      select: { metadata: true },
+    });
+    if (!latest) return false;
+    const latestState = readCatalogRunState(getBrandMetadata(latest));
+    if (!latestState) {
+      summary.status = "stopped";
+      return true;
+    }
+    if (latestState.status === "paused" || latestState.status === "stopped") {
+      state.status = latestState.status;
+      state.updatedAt = new Date().toISOString();
+      await persistRunState(brand.id, metadata, state);
+      summary.status = state.status;
+      return true;
+    }
+    return false;
+  };
+
   while (processedThisBatch < batchSize && iterations < refs.length * 2) {
+    if (await shouldAbortExternally()) break;
     if (shouldStopForTime()) {
       state.status = "paused";
       state.updatedAt = new Date().toISOString();
@@ -436,6 +541,11 @@ export const extractCatalogForBrand = async (brandId: string, limit = 20): Promi
   }).length;
 
   state.cursor = cursor;
+  if (summary.status === "stopped") {
+    summary.pending = pendingCount;
+    summary.failed = failedCount;
+    return summary;
+  }
   if (completedCount === refs.length && refs.length > 0) {
     state.status = "completed";
   } else if (state.status !== "blocked" && state.status !== "paused") {

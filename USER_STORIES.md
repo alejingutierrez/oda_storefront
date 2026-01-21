@@ -271,6 +271,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % tech profiler exitoso y tasa de errores 500.
 - Estado: **done (2026-01-21)**.
 
+### MC-051 Catalog extractor por tecnologia (play/pause/stop + resume)
+- Historia: Como admin, quiero ejecutar el extractor por tecnologia con controles de play/pausa/detener y reanudación automática para revisar catálogos sin perder progreso.
+- Alcance: Selección por plataforma, auto‑selección de marca siguiente, sitemap‑first, pausa/stop vía API, reanudación por cursor guardado en metadata.
+- CA: El panel permite elegir tecnología; el extractor procesa marca actual producto a producto; pausar/detener funciona; tras fallo o recarga reanuda desde el cursor.
+- Datos: `brands.metadata.catalog_extract`.
+- NF: Sin duplicar productos; reanudación determinística.
+- Riesgos: Sitemaps incompletos; mitigación con fallback a discovery adapter.
+- Métricas: % runs reanudables, tiempo medio por producto.
+- Estado: **done (2026-01-21)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.

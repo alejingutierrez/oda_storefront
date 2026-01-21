@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { validateAdminRequest } from "@/lib/auth";
-import { extractCatalogForBrand } from "@/lib/catalog/extractor";
+import { pauseCatalogRun } from "@/lib/catalog/extractor";
 
 export const runtime = "nodejs";
 
@@ -12,23 +12,14 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : null;
-  const batchSize = Number(body?.batchSize ?? body?.limit ?? 1);
-
   if (!brandId) {
     return NextResponse.json({ error: "missing_brand" }, { status: 400 });
   }
 
-  try {
-    const summary = await extractCatalogForBrand(
-      brandId,
-      Number.isFinite(batchSize) ? batchSize : 1,
-      { forceSitemap: true },
-    );
-    return NextResponse.json({ summary });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "unknown_error" },
-      { status: 500 },
-    );
+  const state = await pauseCatalogRun(brandId);
+  if (!state) {
+    return NextResponse.json({ error: "run_not_found" }, { status: 404 });
   }
+
+  return NextResponse.json({ state });
 }
