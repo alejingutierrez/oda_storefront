@@ -9,12 +9,12 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5-mini";
 const MAX_RETRIES = 3;
 const MAX_WEBSITE_PAGES = 4;
 const MAX_SEARCH_ATTEMPTS = 2;
-const MIN_EVIDENCE_SOURCES = 7;
-const MAX_EVIDENCE_SOURCES = 10;
-const MAX_EVIDENCE_FETCHES = 14;
-const MAX_EVIDENCE_CHARS = 10000;
+const MIN_EVIDENCE_SOURCES = 15;
+const MAX_EVIDENCE_SOURCES = 15;
+const MAX_EVIDENCE_FETCHES = 20;
+const MAX_EVIDENCE_CHARS = 20000;
 const MAX_HTML_SLICE = 220_000;
-const DEFAULT_MIN_WEB_SOURCES = 10;
+const DEFAULT_MIN_WEB_SOURCES = 15;
 const SOCIAL_HOSTS = [
   "instagram.com",
   "facebook.com",
@@ -532,7 +532,7 @@ const buildPrompt = (
 Devuelve SOLO JSON válido siguiendo exactamente el esquema. No incluyas texto adicional.
 Reglas estrictas:
 - Usa EXCLUSIVAMENTE los valores permitidos para category, product_category, market, scale, style y city. Si no hay match exacto, devuelve null.
-- No inventes datos. Si no hay evidencia clara, devuelve null.
+- No inventes datos. Si hay evidencia parcial pero consistente en varias fuentes, puedes completar el valor más probable; si la evidencia es débil o aislada, devuelve null.
 - URLs siempre con esquema https.
 - Si la marca es solo online, usa un valor de city que exista en la lista (Online/On-line/etc.).
 - Si no encuentras evidencia nueva pero el valor actual parece consistente, conserva el valor actual.
@@ -1102,6 +1102,7 @@ export async function enrichBrandWithOpenAI(
       try {
         const response = await client.responses.create({
           model: OPENAI_MODEL,
+          reasoning: { effort: "medium" },
           tools,
           tool_choice: tools ? { type: "web_search" } : undefined,
           input: [
@@ -1364,9 +1365,9 @@ export async function runBrandScrapeJob(brandId: string) {
 
 export async function runBrandScrapeJobV2(brandId: string) {
   return runBrandScrapeJobWithLimits(brandId, {
-    minEvidenceSources: 14,
-    maxEvidenceSources: 14,
+    minEvidenceSources: 15,
+    maxEvidenceSources: 15,
     maxEvidenceChars: 20000,
-    minWebSources: 14,
+    minWebSources: 15,
   });
 }
