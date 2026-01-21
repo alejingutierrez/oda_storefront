@@ -241,6 +241,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Costo promedio por run.
 - Estado: **done (2026-01-20)**.
 
+### MC-048 Evidencia textual limpia en scraper de marcas
+- Historia: Como admin, quiero que la evidencia enviada a OpenAI sea texto limpio y no HTML ruidoso, para mejorar consistencia y reducir ruido.
+- Alcance: Limpieza HTML→texto con preservación de saltos, filtrado de líneas cortas, priorización por señales (contacto/redes/ubicación) y deduplicación.
+- CA: `evidence_texts` no contiene HTML; líneas relevantes aparecen primero; se mantiene mínimo de fuentes configurado.
+- Datos: `brands.metadata.brand_scrape.evidence_sources`.
+- NF: No aumentar latencia de scraping; comportamiento determinístico.
+- Riesgos: Filtrar demasiado contenido útil; mitigación con fallback a líneas no prioritarias.
+- Métricas: Tasa de validación de OpenAI y % campos completos por marca.
+- Estado: **done (2026-01-21)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.

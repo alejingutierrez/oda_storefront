@@ -255,8 +255,50 @@ const htmlToText = (html: string) => {
     .replace(/<\/h\d>/gi, "\n");
   cleaned = cleaned.replace(/<[^>]+>/g, " ");
   cleaned = decodeEntities(cleaned);
-  cleaned = cleaned.replace(/\s+/g, " ").replace(/\n\s+/g, "\n").trim();
+  cleaned = cleaned
+    .replace(/\r/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s+/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
   return sanitizeUnicodeString(cleaned);
+};
+
+const compactEvidenceText = (text: string, brandName: string) => {
+  if (!text) return "";
+  const normalized = text.replace(/\r/g, "").trim();
+  const lines = normalized
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return "";
+
+  const brandSlug = slugify(brandName);
+  const importantRegex =
+    /(contacto|contact|tienda|store|direccion|address|ubicacion|location|horario|hours|instagram|facebook|tiktok|whatsapp|correo|email|telefono|phone|nosotros|about|faq)/i;
+  const seen = new Set<string>();
+  const prioritized: string[] = [];
+  const rest: string[] = [];
+
+  for (const line of lines) {
+    if (line.length < 20) continue;
+    const wordCount = line.split(/\s+/).length;
+    if (wordCount < 3) continue;
+    const key = line.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const lineSlug = slugify(line);
+    const hasBrand = brandSlug && lineSlug.includes(brandSlug);
+    const isImportant = hasBrand || importantRegex.test(line);
+    if (isImportant) {
+      prioritized.push(line);
+    } else {
+      rest.push(line);
+    }
+  }
+
+  return [...prioritized, ...rest].join("\n");
 };
 
 const extractTitleFromHtml = (html: string) => {
@@ -1026,7 +1068,7 @@ const buildEvidenceFromSources = async (
       const html = await response.text();
       const sliced = html.slice(0, MAX_HTML_SLICE);
       const title = extractTitleFromHtml(sliced);
-      const text = htmlToText(sliced);
+      const text = compactEvidenceText(htmlToText(sliced), brand.name);
       const excerpt = text.slice(0, limits.maxEvidenceChars);
       if (!excerpt && !title) return;
       evidence.push({
