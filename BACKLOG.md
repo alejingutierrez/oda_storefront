@@ -1,7 +1,6 @@
 # Backlog
 
 ## Now (F0 – bootstrap E2E mínimo)
-- MC-054 | doing | P1 | Sitemap scan completo + fallbacks Woo/VTEX | Descubrimiento product-aware, gzip/index, límite de sitemaps y smoke test por tecnología.
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.2, upsert DB, ficha en VSF + ISR.
 - MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build contenedores básicos.
 - MC-008 | todo | P1 | Observabilidad mínima | Logging estructurado, health checks, traces básicos; dashboard inicial de servicios.
@@ -37,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-054 | done | P1 | Sitemap scan completo + fallbacks Woo/VTEX | Descubrimiento product-aware, gzip/index, límite de sitemaps y smoke test; Vercel pendiente (sin token).
 - MC-053 | done | P1 | Fix VTEX linkText en sitemap + error más claro | Deriva linkText desde URL y mejora mensaje cuando raw es vacío.
 - MC-052 | done | P1 | Errores visibles en catalog extractor | Muestra último error, bloqueos y errores recientes en panel.
 - MC-051 | done | P1 | Catalog extractor por tecnologia con play/pause/stop | Seleccion por plataforma, auto‑avance de marcas, sitemap-first y reanudacion por cursor.
