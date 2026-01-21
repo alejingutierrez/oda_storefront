@@ -7,6 +7,21 @@ const mapAvailability = (available: number | null | undefined) => {
   return true;
 };
 
+const extractLinkText = (url: string) => {
+  try {
+    const { pathname } = new URL(url);
+    const parts = pathname.split("/").filter(Boolean);
+    if (!parts.length) return null;
+    const last = parts[parts.length - 1];
+    if (last === "p" && parts.length >= 2) {
+      return parts[parts.length - 2] ?? null;
+    }
+    return last ?? null;
+  } catch {
+    return null;
+  }
+};
+
 export const vtexAdapter: CatalogAdapter = {
   platform: "vtex",
   discoverProducts: async (ctx: AdapterContext, limit = 200) => {
@@ -45,7 +60,7 @@ export const vtexAdapter: CatalogAdapter = {
     const baseUrl = normalizeUrl(ctx.brand.siteUrl);
     if (!baseUrl) return null;
     const origin = safeOrigin(baseUrl);
-    const linkText = ref.handle ?? null;
+    const linkText = ref.handle ?? extractLinkText(ref.url);
     if (!linkText) return null;
     const url = new URL(`/api/catalog_system/pub/products/search/${linkText}/p`, origin).toString();
     const response = await fetchText(url);

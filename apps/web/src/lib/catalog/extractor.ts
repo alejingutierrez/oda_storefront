@@ -411,7 +411,7 @@ export const extractCatalogForBrand = async (
 
       const raw = await adapter.fetchProduct(ctx, ref);
       if (!raw) {
-        throw new Error("No se pudo obtener producto (raw vacío)");
+        throw new Error(`No se pudo obtener producto (${adapter.platform}) para ${ref.url}`);
       }
 
       const allImages = Array.from(
