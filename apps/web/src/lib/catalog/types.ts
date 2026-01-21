@@ -93,4 +93,6 @@ export type ExtractSummary = {
   pending?: number;
   failed?: number;
   total?: number;
+  lastError?: string | null;
+  blockReason?: string | null;
 };

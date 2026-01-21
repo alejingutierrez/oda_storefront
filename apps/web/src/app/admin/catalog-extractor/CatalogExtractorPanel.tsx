@@ -42,6 +42,8 @@ type ExtractSummary = {
   pending?: number;
   failed?: number;
   total?: number;
+  lastError?: string | null;
+  blockReason?: string | null;
 };
 
 const buildProgress = (state?: RunState | ExtractSummary | null) => {
@@ -87,6 +89,20 @@ export default function CatalogExtractorPanel() {
   );
 
   const progress = useMemo(() => buildProgress(currentState), [currentState]);
+  const errorDetails = useMemo(() => {
+    if (error) return { title: "Fallo al ejecutar", message: error };
+    if (currentState?.blockReason) {
+      return { title: "Proceso bloqueado", message: currentState.blockReason };
+    }
+    if (currentState?.lastError) {
+      return { title: "Último error", message: currentState.lastError };
+    }
+    if (summary?.errors?.length) {
+      const last = summary.errors[summary.errors.length - 1];
+      return { title: "Error de producto", message: `${last.url} — ${last.error}` };
+    }
+    return null;
+  }, [error, currentState, summary]);
 
   const updateBrandRunState = useCallback((brandId: string, nextState: RunState) => {
     setBrands((prev) =>
@@ -213,6 +229,8 @@ export default function CatalogExtractorPanel() {
           completed: buildProgress(nextSummary).completed,
           failed: nextSummary.failed ?? 0,
           pending: nextSummary.pending ?? 0,
+          lastError: nextSummary.lastError ?? null,
+          blockReason: nextSummary.blockReason ?? null,
         });
       }
     } catch (err) {
@@ -363,9 +381,10 @@ export default function CatalogExtractorPanel() {
         </div>
       )}
 
-      {error && (
+      {errorDetails && (
         <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
+          <p className="text-xs uppercase tracking-[0.2em] text-rose-500">{errorDetails.title}</p>
+          <p className="mt-2">{errorDetails.message}</p>
         </div>
       )}
 
@@ -404,6 +423,17 @@ export default function CatalogExtractorPanel() {
           </div>
         </div>
       )}
+
+      {summary?.errors?.length ? (
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Errores recientes</p>
+          <div className="mt-2 space-y-2 text-xs text-slate-600">
+            {summary.errors.slice(-5).map((item) => (
+              <p key={`${item.url}-${item.error}`}>{item.url} — {item.error}</p>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {brands.length > 0 && (
         <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-4">

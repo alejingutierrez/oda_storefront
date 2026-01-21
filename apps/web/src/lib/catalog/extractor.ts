@@ -323,7 +323,7 @@ export const extractCatalogForBrand = async (
     const now = new Date().toISOString();
     state = {
       runId: crypto.randomUUID(),
-      status: "processing",
+      status: refs.length ? "processing" : "paused",
       cursor: 0,
       batchSize,
       refs,
@@ -335,6 +335,7 @@ export const extractCatalogForBrand = async (
       ),
       startedAt: now,
       updatedAt: now,
+      lastError: refs.length ? null : "no_products_discovered",
     };
     await persistRunState(brand.id, metadata, state);
   }
@@ -546,6 +547,8 @@ export const extractCatalogForBrand = async (
 
   state.cursor = cursor;
   if (summary.status === "stopped") {
+    summary.lastError = state.lastError ?? null;
+    summary.blockReason = state.blockReason ?? null;
     summary.pending = pendingCount;
     summary.failed = failedCount;
     return summary;
@@ -559,6 +562,8 @@ export const extractCatalogForBrand = async (
   await persistRunState(brand.id, metadata, state);
 
   summary.status = state.status;
+  summary.lastError = state.lastError ?? null;
+  summary.blockReason = state.blockReason ?? null;
   summary.pending = pendingCount;
   summary.failed = failedCount;
 

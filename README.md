@@ -74,6 +74,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.
   - Controles Play/Pausar/Detener, reanudación automática y sitemap‑first.
   - Sube imágenes a Vercel Blob y guarda productos/variantes en Neon.
+  - Muestra último error y errores recientes para diagnosticar fallas.
   - Moneda se infiere por regla (<=999 USD, >=10000 COP) si no viene explícita.
 
 ## API interna (MC-004)

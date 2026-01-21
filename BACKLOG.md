@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-052 | done | P1 | Errores visibles en catalog extractor | Muestra último error, bloqueos y errores recientes en panel.
 - MC-051 | done | P1 | Catalog extractor por tecnologia con play/pause/stop | Seleccion por plataforma, auto‑avance de marcas, sitemap-first y reanudacion por cursor.
 - MC-050 | done | P1 | Fix Unicode tech profiler | Sanitiza Unicode y parseo JSON para evitar errores de escape al guardar metadata.
 - MC-049 | done | P1 | Volver a modelo OpenAI gpt-5.2 | Default en scrapers/normalizer y env example/documentación.

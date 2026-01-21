@@ -281,6 +281,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % runs reanudables, tiempo medio por producto.
 - Estado: **done (2026-01-21)**.
 
+### MC-052 Errores visibles en catalog extractor
+- Historia: Como admin, quiero ver claramente por qué falló el extractor para poder corregirlo rápido.
+- Alcance: Mostrar último error, bloqueos y errores recientes en el panel `/admin/catalog-extractor`.
+- CA: Al fallar, el panel muestra mensaje y URL/razón; bloqueos por Blob aparecen como “Proceso bloqueado”.
+- Datos: `brands.metadata.catalog_extract`, `summary.errors`.
+- NF: UI ligera, sin afectar performance.
+- Riesgos: Mensajes muy largos; mitigación con truncado/últimos 5.
+- Métricas: Tiempo de diagnóstico y tasa de resolución.
+- Estado: **done (2026-01-21)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.
