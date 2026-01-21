@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
+import { promisify } from "node:util";
+import { gunzip } from "node:zlib";
 
 export const DEFAULT_TIMEOUT_MS = 15000;
+const gunzipAsync = promisify(gunzip);
 
 export const normalizeUrl = (value: string) => {
   const trimmed = value.trim();
@@ -42,13 +45,13 @@ export const fetchText = async (
   }
 };
 
-export const extractSitemapUrls = (xml: string, limit = 200) => {
+export const extractSitemapUrls = (xml: string, limit?: number) => {
   const regex = /<loc>([^<]+)<\/loc>/gi;
   const urls: string[] = [];
   let match: RegExpExecArray | null;
   while ((match = regex.exec(xml))) {
     urls.push(match[1]);
-    if (urls.length >= limit) break;
+    if (limit !== undefined && urls.length >= limit) break;
   }
   return urls;
 };
@@ -64,33 +67,148 @@ const extractSitemapsFromRobots = (robotsText: string) => {
   return Array.from(new Set(urls));
 };
 
-export const discoverFromSitemap = async (baseUrl: string, limit = 200) => {
+export const discoverFromSitemap = async (
+  baseUrl: string,
+  limit = 200,
+  options?: { productAware?: boolean },
+) => {
   const origin = safeOrigin(baseUrl);
   const robotsUrl = new URL("/robots.txt", origin).toString();
   const robots = await fetchText(robotsUrl);
   const sitemaps = extractSitemapsFromRobots(robots.text || "");
-  const fallback = new URL("/sitemap.xml", origin).toString();
-  const sitemapCandidates = Array.from(new Set([...sitemaps, fallback])).slice(0, 3);
+  const fallbackCandidates = [
+    new URL("/sitemap.xml", origin).toString(),
+    new URL("/sitemap_index.xml", origin).toString(),
+    new URL("/sitemap.xml.gz", origin).toString(),
+    new URL("/sitemap_index.xml.gz", origin).toString(),
+  ];
+  const sitemapCandidates = Array.from(new Set([...sitemaps, ...fallbackCandidates]));
 
-  let sitemapText = "";
-  for (const url of sitemapCandidates) {
-    const res = await fetchText(url);
-    if (!res.text) continue;
-    sitemapText = res.text;
-    if (sitemapText.includes("<sitemapindex")) {
-      const children = extractSitemapUrls(sitemapText, 5);
-      for (const child of children) {
-        const childRes = await fetchText(child);
-        if (!childRes.text) continue;
-        sitemapText = childRes.text;
-        break;
-      }
+  const scoreSitemap = (url: string) => {
+    const lower = url.toLowerCase();
+    let score = 0;
+    if (lower.includes("product")) score += 5;
+    if (lower.includes("productos")) score += 4;
+    if (lower.includes("sitemap")) score += 1;
+    if (lower.endsWith(".xml") || lower.endsWith(".xml.gz")) score += 1;
+    return score;
+  };
+
+  const queue = sitemapCandidates.sort((a, b) => scoreSitemap(b) - scoreSitemap(a));
+  const visited = new Set<string>();
+  const urls = new Set<string>();
+  const productUrls = new Set<string>();
+  const maxSitemaps = Math.max(
+    5,
+    Math.min(Number(process.env.CATALOG_EXTRACT_SITEMAP_MAX_FILES ?? 200), 1000),
+  );
+
+  const isProductSitemap = (url: string) => {
+    const lower = url.toLowerCase();
+    return (
+      lower.includes("product") ||
+      lower.includes("products") ||
+      lower.includes("producto") ||
+      lower.includes("productos")
+    );
+  };
+
+  const fetchSitemapText = async (url: string) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        redirect: "follow",
+        headers: {
+          "user-agent": "ODA-CatalogExtractor/1.0",
+          accept: "application/xml,application/x-gzip,text/xml,text/plain;q=0.9,*/*;q=0.8",
+        },
+        signal: controller.signal,
+      });
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      const contentEncoding = response.headers.get("content-encoding")?.toLowerCase() ?? "";
+      const shouldGunzip =
+        contentEncoding.includes("gzip") ||
+        contentType.includes("gzip") ||
+        contentType.includes("x-gzip") ||
+        url.toLowerCase().endsWith(".gz");
+      const text = shouldGunzip
+        ? await gunzipAsync(buffer).then((out) => out.toString("utf-8")).catch(() => buffer.toString("utf-8"))
+        : buffer.toString("utf-8");
+      return { status: response.status, text, finalUrl: response.url || url };
+    } catch {
+      return { status: 0, text: "", finalUrl: url };
+    } finally {
+      clearTimeout(timeout);
     }
-    break;
+  };
+
+  const shouldContinue = () =>
+    queue.length &&
+    visited.size < maxSitemaps &&
+    (options?.productAware ? productUrls.size < limit : urls.size < limit);
+
+  while (shouldContinue()) {
+    const sitemapUrl = queue.shift();
+    if (!sitemapUrl || visited.has(sitemapUrl)) continue;
+    visited.add(sitemapUrl);
+
+    const res = await fetchSitemapText(sitemapUrl);
+    if (!res.text) continue;
+
+    const sitemapText = res.text;
+    if (/<sitemapindex/i.test(sitemapText)) {
+      const children = extractSitemapUrls(sitemapText);
+      const orderedChildren = Array.from(new Set(children)).sort(
+        (a, b) => scoreSitemap(b) - scoreSitemap(a),
+      );
+      orderedChildren.forEach((child) => {
+        if (!visited.has(child) && visited.size + queue.length < maxSitemaps) {
+          queue.push(child);
+        }
+      });
+      continue;
+    }
+
+    const remaining = Math.max(
+      0,
+      limit - (options?.productAware ? productUrls.size : urls.size),
+    );
+    const entries = extractSitemapUrls(sitemapText, remaining || undefined);
+    const allowAllFromSitemap = options?.productAware && isProductSitemap(sitemapUrl);
+    for (const entry of entries) {
+      if (urls.size < limit) urls.add(entry);
+      if (options?.productAware) {
+        if (allowAllFromSitemap || isLikelyProductUrl(entry)) {
+          productUrls.add(entry);
+          if (productUrls.size >= limit) break;
+        }
+        continue;
+      }
+      if (urls.size >= limit) break;
+    }
   }
 
-  if (!sitemapText) return [];
-  return extractSitemapUrls(sitemapText, limit);
+  if (options?.productAware && productUrls.size) {
+    return Array.from(productUrls).slice(0, limit);
+  }
+  return Array.from(urls).slice(0, limit);
+};
+
+export const isLikelyProductUrl = (url: string) => {
+  try {
+    const { pathname } = new URL(url);
+    if (/\/products?\//i.test(pathname)) return true;
+    if (/\/producto(s)?\//i.test(pathname)) return true;
+    if (/\/tienda\//i.test(pathname)) return true;
+    if (/\/shop\//i.test(pathname)) return true;
+    if (/\/catalog\/product\/view/i.test(pathname)) return true;
+    if (/\/p\/?$/i.test(pathname)) return true;
+    return false;
+  } catch {
+    return false;
+  }
 };
 
 export const hashBuffer = (buffer: Buffer) =>

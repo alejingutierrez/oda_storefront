@@ -23,6 +23,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`.
 - Scraper: `USER_AGENT`, `BRAND_SCRAPE_MAX_JOBS`, `BRAND_SCRAPE_MAX_RUNTIME_MS`.
 - Scraper: `BRAND_SCRAPE_STALE_MINUTES` (re-encola jobs en `processing` con más de N minutos).
+- Catalog extractor: `CATALOG_EXTRACT_SITEMAP_LIMIT`, `CATALOG_EXTRACT_SITEMAP_MAX_FILES`, `CATALOG_EXTRACT_DISCOVERY_LIMIT`, `CATALOG_EXTRACT_MAX_RUNTIME_MS`.
 No commitees credenciales reales.
 
 ## Comandos locales
@@ -34,6 +35,7 @@ npm run lint
 npm run build
 npm run db:import:brands   # importa Marcas colombianas.xlsx a Neon
 npm run db:seed:users      # crea/actualiza usuario admin en Neon
+npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/smoke-catalog-adapters.ts  # smoke test por tecnología
 ```
 
 ### Docker Compose (stack completo)

@@ -1,4 +1,5 @@
 import type { AdapterContext, CatalogAdapter, ProductRef, RawProduct } from "@/lib/catalog/types";
+import { genericAdapter } from "@/lib/catalog/adapters/generic";
 import { fetchText, normalizeUrl, parsePriceValue, safeOrigin } from "@/lib/catalog/utils";
 
 const parsePrice = (value: unknown, minorUnit = 2) => {
@@ -84,12 +85,28 @@ export const wooCommerceAdapter: CatalogAdapter = {
       : ref.url;
 
     const response = await fetchText(url);
-    if (response.status >= 400) return null;
+    const fallback = async () => {
+      if (!ref.url) return null;
+      const raw = await genericAdapter.fetchProduct(ctx, { url: ref.url });
+      if (!raw) return null;
+      return {
+        ...raw,
+        metadata: {
+          ...(raw.metadata ?? {}),
+          platform: "woocommerce",
+          fallback: "html",
+        },
+      } as RawProduct;
+    };
+
+    if (response.status >= 400) {
+      return fallback();
+    }
     let data: any;
     try {
       data = JSON.parse(response.text);
     } catch {
-      return null;
+      return fallback();
     }
 
     const images = Array.isArray(data.images)

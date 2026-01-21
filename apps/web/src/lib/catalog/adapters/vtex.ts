@@ -1,4 +1,5 @@
 import type { AdapterContext, CatalogAdapter, ProductRef, RawProduct } from "@/lib/catalog/types";
+import { genericAdapter } from "@/lib/catalog/adapters/generic";
 import { fetchText, normalizeUrl, parsePriceValue, safeOrigin } from "@/lib/catalog/utils";
 
 const mapAvailability = (available: number | null | undefined) => {
@@ -64,15 +65,31 @@ export const vtexAdapter: CatalogAdapter = {
     if (!linkText) return null;
     const url = new URL(`/api/catalog_system/pub/products/search/${linkText}/p`, origin).toString();
     const response = await fetchText(url);
-    if (response.status >= 400) return null;
+    const fallback = async () => {
+      if (!ref.url) return null;
+      const raw = await genericAdapter.fetchProduct(ctx, { url: ref.url });
+      if (!raw) return null;
+      return {
+        ...raw,
+        metadata: {
+          ...(raw.metadata ?? {}),
+          platform: "vtex",
+          fallback: "html",
+        },
+      } as RawProduct;
+    };
+
+    if (response.status >= 400) {
+      return fallback();
+    }
     let data: any[] = [];
     try {
       data = JSON.parse(response.text) as any[];
     } catch {
-      return null;
+      return fallback();
     }
     const product = Array.isArray(data) ? data[0] : null;
-    if (!product) return null;
+    if (!product) return fallback();
 
     const images: string[] = [];
     const variants = Array.isArray(product.items)

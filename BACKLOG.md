@@ -1,6 +1,7 @@
 # Backlog
 
 ## Now (F0 – bootstrap E2E mínimo)
+- MC-054 | doing | P1 | Sitemap scan completo + fallbacks Woo/VTEX | Descubrimiento product-aware, gzip/index, límite de sitemaps y smoke test por tecnología.
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.2, upsert DB, ficha en VSF + ISR.
 - MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build contenedores básicos.
 - MC-008 | todo | P1 | Observabilidad mínima | Logging estructurado, health checks, traces básicos; dashboard inicial de servicios.

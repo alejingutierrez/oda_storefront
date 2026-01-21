@@ -1,5 +1,12 @@
 import type { AdapterContext, CatalogAdapter, ProductRef, RawProduct } from "@/lib/catalog/types";
-import { discoverFromSitemap, fetchText, normalizeUrl, parsePriceValue, safeOrigin } from "@/lib/catalog/utils";
+import {
+  discoverFromSitemap,
+  fetchText,
+  isLikelyProductUrl,
+  normalizeUrl,
+  parsePriceValue,
+  safeOrigin,
+} from "@/lib/catalog/utils";
 
 const extractJsonLd = (html: string) => {
   const regex = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
@@ -17,16 +24,24 @@ const extractJsonLd = (html: string) => {
   return blocks;
 };
 
+const isProductType = (value: any) => {
+  if (!value) return false;
+  if (Array.isArray(value)) {
+    return value.some((entry) => String(entry).toLowerCase().includes("product"));
+  }
+  return String(value).toLowerCase().includes("product");
+};
+
 const findProductJsonLd = (blocks: any[]) => {
   for (const block of blocks) {
     if (!block) continue;
     if (Array.isArray(block)) {
-      const found = block.find((item: any) => item?.["@type"] === "Product" || (Array.isArray(item?.["@type"]) && item["@type"].includes("Product")));
+      const found = block.find((item: any) => isProductType(item?.["@type"]));
       if (found) return found;
     }
-    if (block["@type"] === "Product" || (Array.isArray(block["@type"]) && block["@type"].includes("Product"))) return block;
+    if (isProductType(block["@type"])) return block;
     if (Array.isArray(block["@graph"])) {
-      const found = block["@graph"].find((item: any) => item?.["@type"] === "Product" || (Array.isArray(item?.["@type"]) && item["@type"].includes("Product")));
+      const found = block["@graph"].find((item: any) => isProductType(item?.["@type"]));
       if (found) return found;
     }
   }
@@ -96,8 +111,16 @@ const extractOffers = (offers: any) => {
   if (!offers) return null;
   const list = Array.isArray(offers) ? offers : [offers];
   const first = list[0] ?? {};
-  const price = first.price ?? first?.priceSpecification?.price ?? null;
-  const currency = first.priceCurrency ?? first?.priceSpecification?.priceCurrency ?? null;
+  const price =
+    first.price ??
+    first.lowPrice ??
+    first.highPrice ??
+    first?.priceSpecification?.price ??
+    null;
+  const currency =
+    first.priceCurrency ??
+    first?.priceSpecification?.priceCurrency ??
+    null;
   const availability = first.availability ?? null;
   return { price, currency, availability };
 };
@@ -108,9 +131,8 @@ export const genericAdapter: CatalogAdapter = {
     const baseUrl = normalizeUrl(ctx.brand.siteUrl);
     if (!baseUrl) return [];
     const origin = safeOrigin(baseUrl);
-    const urls = await discoverFromSitemap(baseUrl, limit * 3);
-    const productTokens = ["/product", "/products", "/p/", "/producto", "/productos", "/tienda", "/shop"];
-    const filtered = urls.filter((url) => productTokens.some((token) => url.includes(token)));
+    const urls = await discoverFromSitemap(baseUrl, limit * 3, { productAware: true });
+    const filtered = urls.filter(isLikelyProductUrl);
     if (filtered.length) return filtered.slice(0, limit).map((url) => ({ url }));
     if (urls.length) return urls.slice(0, limit).map((url) => ({ url }));
 
@@ -123,9 +145,7 @@ export const genericAdapter: CatalogAdapter = {
       const page = await fetchText(pageUrl);
       if (!page.text) continue;
       const links = extractLinksFromHtml(page.text, origin);
-      links
-        .filter((url) => productTokens.some((token) => url.includes(token)))
-        .forEach((url) => candidates.add(url));
+      links.filter(isLikelyProductUrl).forEach((url) => candidates.add(url));
     }
 
     return Array.from(candidates).slice(0, limit).map((url) => ({ url }));

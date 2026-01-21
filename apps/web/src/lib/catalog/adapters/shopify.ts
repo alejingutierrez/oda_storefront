@@ -24,7 +24,7 @@ export const shopifyAdapter: CatalogAdapter = {
   discoverProducts: async (ctx: AdapterContext, limit = 200) => {
     const baseUrl = normalizeUrl(ctx.brand.siteUrl);
     if (!baseUrl) return [];
-    const urls = await discoverFromSitemap(baseUrl, limit * 3);
+    const urls = await discoverFromSitemap(baseUrl, limit * 3, { productAware: true });
     const filtered = urls.filter((url) => url.includes("/products/"));
     return filtered.slice(0, limit).map((url) => ({ url }));
   },

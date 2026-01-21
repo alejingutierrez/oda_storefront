@@ -8,6 +8,7 @@ import { uploadImagesToBlob } from "@/lib/catalog/blob";
 import {
   discoverFromSitemap,
   guessCurrency,
+  isLikelyProductUrl,
   normalizeSize,
   normalizeUrl,
   parsePriceValue,
@@ -48,8 +49,6 @@ type CatalogRunState = {
 
 const CATALOG_STATE_KEY = "catalog_extract";
 const MAX_ATTEMPTS = 3;
-const PRODUCT_TOKENS = ["/products", "/product", "/producto", "/productos", "/p/", "/shop", "/tienda"];
-
 const isBlobTokenError = (message: string) => {
   const normalized = message.toLowerCase();
   return (
@@ -131,9 +130,9 @@ export const stopCatalogRun = async (brandId: string) => {
 const discoverRefsFromSitemap = async (siteUrl: string, limit: number) => {
   const normalized = normalizeUrl(siteUrl);
   if (!normalized) return [];
-  const urls = await discoverFromSitemap(normalized, limit);
+  const urls = await discoverFromSitemap(normalized, limit, { productAware: true });
   if (!urls.length) return [];
-  const filtered = urls.filter((url) => PRODUCT_TOKENS.some((token) => url.includes(token)));
+  const filtered = urls.filter(isLikelyProductUrl);
   const selected = filtered.length ? filtered : urls;
   return selected.map((url) => ({ url }));
 };

@@ -55,6 +55,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Anti-bot; mitigar con user-agent y backoff.
 - Métricas: Tasa de éxito scrape→DB, frescura horas.
 
+### MC-054 Sitemap scan completo + fallbacks Woo/VTEX
+- Historia: Como operador, quiero que el extractor lea sitemaps completos (index/gz) y tenga fallback HTML, para no perder productos en Woo/VTEX/custom.
+- Alcance: Descubrimiento product-aware con sitemap index/gz, límite de sitemaps por corrida, heurísticas de URL producto y fallback HTML cuando API falla.
+- CA: Sitemaps index/gz se procesan; product URLs detectadas aunque no tengan tokens; Woo/VTEX devuelven raw desde HTML si la API falla; smoke test por tecnología sin escribir en DB.
+- Datos: Variables `CATALOG_EXTRACT_SITEMAP_LIMIT` y `CATALOG_EXTRACT_SITEMAP_MAX_FILES`.
+- NF: Discovery con tiempo controlado; no bloquea el extractor.
+- Riesgos: Sitemaps masivos; mitigación con límite de archivos y límites de tiempo.
+- Métricas: % product URLs detectadas y tasa de fetch ok por tecnología.
+- Estado: **done (2026-01-21)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.
