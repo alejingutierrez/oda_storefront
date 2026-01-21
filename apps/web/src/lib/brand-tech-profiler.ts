@@ -98,6 +98,60 @@ const extractOutputText = (response: any) => {
   return content?.text ?? "";
 };
 
+const sanitizeUnicodeString = (value: string) => {
+  let result = "";
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      if (i + 1 < value.length) {
+        const next = value.charCodeAt(i + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          result += value[i] + value[i + 1];
+          i += 1;
+          continue;
+        }
+      }
+      result += " ";
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      result += " ";
+      continue;
+    }
+    result += value[i];
+  }
+  return result;
+};
+
+const sanitizeUnicodeValue = (value: unknown): unknown => {
+  if (typeof value === "string") return sanitizeUnicodeString(value);
+  if (Array.isArray(value)) return value.map((item) => sanitizeUnicodeValue(item));
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(record).map(([key, entry]) => [key, sanitizeUnicodeValue(entry)]),
+    );
+  }
+  return value;
+};
+
+const sanitizeUnicodeEscapes = (raw: string) =>
+  raw
+    .replace(/\\uD[89AB][0-9A-Fa-f]{2}(?!\\uD[CD][0-9A-Fa-f]{2})/g, "")
+    .replace(/(?<!\\uD[89AB][0-9A-Fa-f]{2})\\uD[CD][0-9A-Fa-f]{2}/g, "");
+
+const safeJsonParse = (raw: string) => {
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    const cleaned = sanitizeUnicodeEscapes(raw);
+    if (cleaned !== raw) return JSON.parse(cleaned);
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw error;
+    return JSON.parse(sanitizeUnicodeEscapes(match[0]));
+  }
+};
+
 const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
 
 const splitCookies = (raw: string) =>
@@ -528,7 +582,7 @@ const maybeUseOpenAi = async (
 
     const raw = extractOutputText(response);
     if (!raw) return current;
-    const parsed = llmDecisionSchema.safeParse(JSON.parse(raw));
+    const parsed = llmDecisionSchema.safeParse(safeJsonParse(raw));
     if (!parsed.success) return current;
 
     return {
@@ -746,5 +800,5 @@ export async function profileBrandTechnology(brand: Brand): Promise<TechProfile>
 
   const profile = await maybeUseOpenAi(features, probes, baseProfile);
 
-  return profile;
+  return sanitizeUnicodeValue(profile) as TechProfile;
 }

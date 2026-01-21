@@ -261,6 +261,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Tasa de validación y completitud por marca/producto.
 - Estado: **done (2026-01-21)**.
 
+### MC-050 Fix Unicode en tech profiler
+- Historia: Como admin, quiero que el profiler de tecnología no falle por caracteres Unicode inválidos para poder procesar todas las marcas.
+- Alcance: Sanitizar Unicode en perfiles/evidencia, y parseo JSON tolerante para respuestas OpenAI.
+- CA: `/api/admin/brands/tech/next` no responde 500 por "unsupported Unicode escape sequence"; metadata se guarda sin errores.
+- Datos: `brands.metadata.tech_profile`.
+- NF: Sin pérdida crítica de evidencia; procesamiento estable.
+- Riesgos: Sanitizado excesivo de strings; mitigación con reemplazo mínimo de surrogates inválidos.
+- Métricas: % tech profiler exitoso y tasa de errores 500.
+- Estado: **done (2026-01-21)**.
+
 ### MC-035 Scraper de marcas (enriquecimiento OpenAI)
 - Historia: Como admin, quiero enriquecer datos de marcas con búsqueda web y actualizar Neon, para mantener redes/website/contacto consistentes.
 - Alcance: Panel `/admin/brands` con selección 1/5/10/25/50; cola secuencial; endpoints `/api/admin/brands/scrape`, `/api/admin/brands/scrape/next` y `/api/admin/brands/scrape/cron`; OpenAI GPT‑5.2 JSON mode con `web_search`; fallback HTML fetch sin Playwright; actualización de tabla `brands` y metadata de scraping; cron en Vercel cada 5 minutos.
