@@ -85,6 +85,22 @@ export const discoverFromSitemap = async (
     new URL("/sitemap_index.xml", origin).toString(),
     new URL("/sitemap.xml.gz", origin).toString(),
     new URL("/sitemap_index.xml.gz", origin).toString(),
+    new URL("/wp-sitemap.xml", origin).toString(),
+    new URL("/sitemap_products_1.xml", origin).toString(),
+    new URL("/sitemap_products_1.xml.gz", origin).toString(),
+    new URL("/sitemap_products.xml", origin).toString(),
+    new URL("/sitemap_products.xml.gz", origin).toString(),
+    new URL("/sitemap-product.xml", origin).toString(),
+    new URL("/sitemap-product.xml.gz", origin).toString(),
+    new URL("/sitemap-products.xml", origin).toString(),
+    new URL("/sitemap-products.xml.gz", origin).toString(),
+    new URL("/sitemap_product.xml", origin).toString(),
+    new URL("/sitemap_product.xml.gz", origin).toString(),
+    new URL("/sitemap/product.xml", origin).toString(),
+    new URL("/sitemap/products.xml", origin).toString(),
+    new URL("/product-sitemap.xml", origin).toString(),
+    new URL("/products-sitemap.xml", origin).toString(),
+    new URL("/store-products-sitemap.xml", origin).toString(),
   ];
   const sitemapCandidates = Array.from(new Set([...sitemaps, ...fallbackCandidates]));
 
@@ -93,6 +109,8 @@ export const discoverFromSitemap = async (
     let score = 0;
     if (lower.includes("product")) score += 5;
     if (lower.includes("productos")) score += 4;
+    if (lower.includes("wp-sitemap")) score += 2;
+    if (lower.includes("store-products")) score += 4;
     if (lower.includes("sitemap")) score += 1;
     if (lower.endsWith(".xml") || lower.endsWith(".xml.gz")) score += 1;
     return score;
@@ -113,7 +131,8 @@ export const discoverFromSitemap = async (
       lower.includes("product") ||
       lower.includes("products") ||
       lower.includes("producto") ||
-      lower.includes("productos")
+      lower.includes("productos") ||
+      lower.includes("store-products")
     );
   };
 

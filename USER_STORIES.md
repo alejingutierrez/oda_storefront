@@ -125,6 +125,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Menos listados marcados como producto en unknown.
 - Estado: **done (2026-01-22)**.
 
+### MC-061 Unknown: sitemaps extra + inferencia rápida de plataforma
+- Historia: Como operador, quiero mejorar la detección de productos en marcas unknown con mejores sitemaps y una inferencia rápida de plataforma sin LLM, para aumentar cobertura sin subir costos.
+- Alcance: Ampliar candidatos de sitemap (WP/Products/Store), inferir plataforma desde señales de home (scripts/meta/headers) y guardar resultado en metadata; aceptar microdata de precio como pista en custom.
+- CA: Se prueban sitemaps adicionales (incluye `wp-sitemap.xml` y variantes de products); cuando se infiere plataforma con alta confianza se registra en `brands.metadata.catalog_extract_inferred_platform`; PDPs con `itemprop=price` cuentan como producto.
+- Datos: `brands.metadata.catalog_extract_inferred_platform`.
+- NF: Detección ligera sin llamadas a OpenAI.
+- Riesgos: Falsos positivos de plataforma; mitigación con umbral de confianza y evidencia mínima.
+- Métricas: Mayor tasa de descubrimiento de URLs producto en unknown; reducción de runs bloqueados por “no products”.
+- Estado: **done (2026-01-22)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

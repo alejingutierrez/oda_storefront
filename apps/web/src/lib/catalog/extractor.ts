@@ -5,6 +5,7 @@ import type { AdapterContext, ExtractSummary, RawProduct, RawVariant } from "@/l
 import { getCatalogAdapter } from "@/lib/catalog/registry";
 import { normalizeCatalogProductWithOpenAI } from "@/lib/catalog/normalizer";
 import { uploadImagesToBlob } from "@/lib/catalog/blob";
+import { inferCatalogPlatform } from "@/lib/catalog/platform-detect";
 import {
   discoverFromSitemap,
   guessCurrency,
@@ -277,19 +278,59 @@ export const extractCatalogForBrand = async (
     throw new Error("Marca sin sitio web configurado");
   }
 
-  const adapter = getCatalogAdapter(brand.ecommercePlatform);
+  const metadata = getBrandMetadata(brand);
+  const existingState = readCatalogRunState(metadata);
+  const storedInference =
+    metadata.catalog_extract_inferred_platform &&
+    typeof metadata.catalog_extract_inferred_platform === "object" &&
+    !Array.isArray(metadata.catalog_extract_inferred_platform)
+      ? (metadata.catalog_extract_inferred_platform as Record<string, unknown>)
+      : null;
+
+  let platformForRun = brand.ecommercePlatform ?? null;
+  if (
+    (!platformForRun || platformForRun.toLowerCase() === "unknown") &&
+    storedInference?.platform &&
+    typeof storedInference.platform === "string"
+  ) {
+    platformForRun = storedInference.platform;
+  }
+
+  let inferredPlatform: { platform: string; confidence: number; evidence: string[] } | null = null;
+  if (
+    (!existingState || !existingState.refs?.length) &&
+    (!platformForRun || platformForRun.toLowerCase() === "unknown")
+  ) {
+    inferredPlatform = await inferCatalogPlatform(brand.siteUrl);
+    if (inferredPlatform?.platform) {
+      platformForRun = inferredPlatform.platform;
+    }
+  }
+
+  const adapter = getCatalogAdapter(platformForRun);
   const ctx: AdapterContext = {
     brand: {
       id: brand.id,
       name: brand.name,
       slug: brand.slug,
       siteUrl: brand.siteUrl,
-      ecommercePlatform: brand.ecommercePlatform,
+      ecommercePlatform: platformForRun ?? brand.ecommercePlatform,
     },
   };
 
-  const metadata = getBrandMetadata(brand);
-  const existingState = readCatalogRunState(metadata);
+  const metadataForRun =
+    inferredPlatform?.platform && inferredPlatform.confidence >= 0.6
+      ? {
+          ...metadata,
+          catalog_extract_inferred_platform: {
+            platform: inferredPlatform.platform,
+            confidence: inferredPlatform.confidence,
+            evidence: inferredPlatform.evidence.slice(0, 5),
+            detectedAt: new Date().toISOString(),
+          },
+        }
+      : metadata;
+
   const batchSize = Math.max(1, Math.min(limit, 200));
   const discoveryLimit = Math.max(
     batchSize,
@@ -349,7 +390,7 @@ export const extractCatalogForBrand = async (
         blockReason: reason,
       };
       const nextMetadata = {
-        ...metadata,
+        ...metadataForRun,
         [CATALOG_STATE_KEY]: state,
         catalog_extract_review: {
           reason,
@@ -382,7 +423,7 @@ export const extractCatalogForBrand = async (
         updatedAt: now,
         lastError: null,
       };
-      await persistRunState(brand.id, metadata, state);
+      await persistRunState(brand.id, metadataForRun, state);
     }
   }
 
@@ -430,7 +471,7 @@ export const extractCatalogForBrand = async (
     if (latestState.status === "paused" || latestState.status === "stopped") {
       state.status = latestState.status;
       state.updatedAt = new Date().toISOString();
-      await persistRunState(brand.id, metadata, state);
+      await persistRunState(brand.id, metadataForRun, state);
       summary.status = state.status;
       return true;
     }
@@ -443,7 +484,7 @@ export const extractCatalogForBrand = async (
       state.status = "paused";
       state.updatedAt = new Date().toISOString();
       state.lastError = "time_budget_exceeded";
-      await persistRunState(brand.id, metadata, state);
+      await persistRunState(brand.id, metadataForRun, state);
       summary.status = state.status;
       break;
     }
@@ -580,11 +621,11 @@ export const extractCatalogForBrand = async (
       if (isBlobTokenError(message)) {
         state.status = "blocked";
         state.blockReason = message;
-        await persistRunState(brand.id, metadata, state);
+        await persistRunState(brand.id, metadataForRun, state);
         summary.status = state.status;
         break;
       }
-      await persistRunState(brand.id, metadata, state);
+      await persistRunState(brand.id, metadataForRun, state);
       processedThisBatch += 1;
     }
   }
@@ -614,7 +655,7 @@ export const extractCatalogForBrand = async (
     state.status = remainingEligible === 0 ? "paused" : "processing";
   }
   state.updatedAt = new Date().toISOString();
-  await persistRunState(brand.id, metadata, state);
+  await persistRunState(brand.id, metadataForRun, state);
 
   summary.status = state.status;
   summary.lastError = state.lastError ?? null;

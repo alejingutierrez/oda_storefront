@@ -204,7 +204,10 @@ export const genericAdapter: CatalogAdapter = {
     const hasPriceMeta = Boolean(meta["product:price:amount"] || meta["og:price:amount"]);
     const hasGenericOgType = ogType === "website" || ogType === "article";
     const hasAddToCart = /add to cart|agregar al carrito|comprar ahora|buy now|comprar/i.test(html);
-    const hasPriceHint = /\\$\\s?\\d|\\bCOP\\b|\\bUSD\\b|\\bEUR\\b|\\bMXN\\b|\\bARS\\b|\\bCLP\\b/.test(html);
+    const hasPriceHint =
+      /\\$\\s?\\d|\\bCOP\\b|\\bUSD\\b|\\bEUR\\b|\\bMXN\\b|\\bARS\\b|\\bCLP\\b/.test(html) ||
+      /itemprop=["']price["']/i.test(html) ||
+      /itemprop=["']pricecurrency["']/i.test(html);
     const hasImageMeta = Boolean(meta["og:image"] || meta["twitter:image"]);
     const inferredTitle = product?.name ?? meta["og:title"] ?? meta["title"] ?? extractH1(html);
     const hasTitle = Boolean(inferredTitle);

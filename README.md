@@ -75,6 +75,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/catalog-extractor` (catalog extractor):
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.
   - Controles Play/Pausar/Detener, reanudación automática y sitemap‑first.
+  - Para `unknown`, intenta inferencia rápida de plataforma (sin LLM) desde la home y guarda `catalog_extract_inferred_platform` en `brands.metadata`.
   - Sube imágenes a Vercel Blob y guarda productos/variantes en Neon.
   - Muestra último error y errores recientes para diagnosticar fallas.
   - Moneda se infiere por regla (<=999 USD, >=10000 COP) si no viene explícita.
