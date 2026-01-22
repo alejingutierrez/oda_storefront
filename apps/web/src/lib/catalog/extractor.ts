@@ -13,6 +13,7 @@ import {
   normalizeUrl,
   parsePriceValue,
   pickOption,
+  safeOrigin,
 } from "@/lib/catalog/utils";
 
 const toNumber = (value: unknown) => parsePriceValue(value);
