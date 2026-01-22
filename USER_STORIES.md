@@ -145,6 +145,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Reducción de errores “No se pudo obtener producto (custom)”.
 - Estado: **done (2026-01-22)**.
 
+### MC-063 Blob: retry con referer/UA
+- Historia: Como operador, quiero reducir fallos al subir imágenes que bloquean hotlinking, para que el catálogo avance aunque los CDN restrinjan requests.
+- Alcance: Reintento de fetch de imagen con `referer` y `user-agent` antes de fallar el upload; mensaje de error incluye sample de URLs fallidas.
+- CA: URLs de Wix/static/CDN que requieren referer se suben sin error; cuando falla se reporta muestra de URLs.
+- Datos: N/A.
+- NF: Reintento ligero, sin aumentar demasiado el tiempo.
+- Riesgos: Sitios que bloquean por rate limit; mitigación con timeout y concurrencia existente.
+- Métricas: Disminución de errores “Blob upload failed”.
+- Estado: **done (2026-01-22)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

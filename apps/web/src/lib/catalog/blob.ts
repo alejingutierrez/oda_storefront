@@ -27,11 +27,11 @@ const isAccessDenied = (error: unknown) => {
   return message.toLowerCase().includes("access denied") || message.includes("401");
 };
 
-const fetchWithTimeout = async (url: string, timeoutMs: number) => {
+const fetchWithTimeout = async (url: string, timeoutMs: number, headers?: Record<string, string>) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { signal: controller.signal });
+    return await fetch(url, { signal: controller.signal, headers });
   } finally {
     clearTimeout(timeout);
   }
@@ -43,7 +43,18 @@ export const uploadImageToBlob = async (url: string, prefix: string, token: stri
     throw new Error("Missing BLOB_READ_WRITE_TOKEN");
   }
 
-  const res = await fetchWithTimeout(normalizedUrl, timeoutMs);
+  const defaultHeaders = {
+    "user-agent": "ODA-CatalogExtractor/1.0",
+    accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+  };
+  let res = await fetchWithTimeout(normalizedUrl, timeoutMs, defaultHeaders);
+  if (!res.ok) {
+    const origin = new URL(normalizedUrl).origin;
+    res = await fetchWithTimeout(normalizedUrl, timeoutMs, {
+      ...defaultHeaders,
+      referer: origin,
+    });
+  }
   if (!res.ok) {
     throw new Error(`Image fetch failed: ${res.status} ${normalizedUrl}`);
   }
@@ -113,7 +124,10 @@ export const uploadImagesToBlob = async (urls: string[], prefix: string) => {
     throw new Error(blobDisableReason ?? "Blob uploads disabled");
   }
   if (failures.length) {
-    throw new Error(`Blob upload failed for ${failures.length} images`);
+    const sample = failures.slice(0, 3).join(", ");
+    throw new Error(
+      `Blob upload failed for ${failures.length} images (sample: ${sample})`,
+    );
   }
 
   return mapping;
