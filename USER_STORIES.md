@@ -73,6 +73,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: Sin degradar performance de discovery.
 - Riesgos: Custom con URLs no estándar; mitigación: fallback al discovery del adapter.
 - Métricas: Disminución de errores “No se pudo obtener producto (vtex)”.
+- Estado: **done (2026-01-22)**.
 
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
