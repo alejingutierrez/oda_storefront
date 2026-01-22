@@ -80,7 +80,14 @@ export const uploadImageToBlob = async (url: string, prefix: string, token: stri
 };
 
 export const uploadImagesToBlob = async (urls: string[], prefix: string) => {
-  const unique = Array.from(new Set(urls.filter(Boolean)));
+  const unique = Array.from(
+    new Set(
+      urls
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
   const mapping = new Map<string, { url: string; blobPath: string; sourceUrl: string }>();
   const token = resolveBlobToken();
   if (!token) {

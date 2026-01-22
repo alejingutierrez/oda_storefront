@@ -10,6 +10,7 @@ import {
   discoverFromSitemap,
   guessCurrency,
   isLikelyProductUrl,
+  normalizeImageUrls,
   normalizeSize,
   normalizeUrl,
   parsePriceValue,
@@ -510,13 +511,22 @@ export const extractCatalogForBrand = async (
         throw new Error(`No se pudo obtener producto (${adapter.platform}) para ${ref.url}`);
       }
 
+      const normalizedProductImages = normalizeImageUrls(raw.images);
+      const normalizedVariants = raw.variants.map((variant) => {
+        const variantImages = normalizeImageUrls([variant.image, ...(variant.images ?? [])]);
+        return {
+          ...variant,
+          image: variantImages[0] ?? null,
+          images: variantImages,
+        };
+      });
+      raw.images = normalizedProductImages;
+      raw.variants = normalizedVariants;
+
       const allImages = Array.from(
         new Set([
-          ...raw.images,
-          ...raw.variants.flatMap((variant) => [
-            variant.image ?? "",
-            ...(variant.images ?? []),
-          ]),
+          ...normalizedProductImages,
+          ...normalizedVariants.flatMap((variant) => [variant.image ?? "", ...(variant.images ?? [])]),
         ].filter(Boolean)),
       );
       const imagePrefix = `catalog/${brand.slug}/${raw.externalId ?? "product"}`;

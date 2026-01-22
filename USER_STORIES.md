@@ -155,6 +155,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Disminución de errores “Blob upload failed”.
 - Estado: **done (2026-01-22)**.
 
+### MC-064 Normalizar ImageObject antes de subir a Blob
+- Historia: Como operador, quiero que el extractor convierta objetos `ImageObject` a URLs antes de subir, para evitar fallos por tipos no válidos.
+- Alcance: Normalización de `raw.images` y `variant.images` para extraer `contentUrl`/`thumbnail` y convertir a strings.
+- CA: No aparecen errores `startsWith is not a function`; upload falla sólo por red/tamaño.
+- Datos: N/A.
+- NF: Conversión ligera y determinística.
+- Riesgos: URLs faltantes en JSON-LD; mitigación: fallback a arrays existentes.
+- Métricas: Reducción de “Blob upload failed” por objetos.
+- Estado: **done (2026-01-22)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

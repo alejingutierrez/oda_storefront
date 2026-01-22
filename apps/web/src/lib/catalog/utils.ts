@@ -299,6 +299,37 @@ export const parsePriceValue = (value: unknown) => {
   return Number.isFinite(num) ? num : null;
 };
 
+export const normalizeImageUrls = (input: unknown) => {
+  const urls: string[] = [];
+  const push = (value: unknown) => {
+    if (!value) return;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed) urls.push(trimmed);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(push);
+      return;
+    }
+    if (typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      push(record.url);
+      push(record.contentUrl);
+      push(record.src);
+      push(record.image);
+      push(record.image_url);
+      if (record.thumbnail && typeof record.thumbnail === "object") {
+        const thumb = record.thumbnail as Record<string, unknown>;
+        push(thumb.contentUrl);
+        push(thumb.url);
+      }
+    }
+  };
+  push(input);
+  return Array.from(new Set(urls.filter(Boolean)));
+};
+
 export const guessCurrency = (value: number | null, fallback?: string | null) => {
   if (fallback && fallback.trim()) return fallback.trim();
   if (value === null || value === undefined) return null;
