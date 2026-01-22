@@ -68,7 +68,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Encolado y ejecución de scraping/enriquecimiento de marcas (1/5/10/25/50).
   - Auto‑resume tras recarga y recuperación de jobs atascados.
 - Panel `/admin/brands/tech` (tech profiler):
-  - Ejecuta perfilado de tecnología ecommerce (Shopify/Woo/Magento/VTEX/custom).
+  - Ejecuta perfilado de tecnología ecommerce (Shopify/Woo/Magento/VTEX/Tiendanube/Wix/custom).
   - Actualiza `brands.ecommercePlatform` y guarda detalle en `brands.metadata.tech_profile`.
 - Panel `/admin/products` (productos):
   - Directorio de productos scrapeados con cards, modal de detalle y filtros por marca.

@@ -217,6 +217,8 @@ const formatPlatform = (value: string | null) => {
   if (!value) return "—";
   if (value === "unknown") return "Desconocida";
   if (value === "custom") return "Custom";
+  if (value === "tiendanube") return "Tiendanube";
+  if (value === "wix") return "Wix";
   return value;
 };
 

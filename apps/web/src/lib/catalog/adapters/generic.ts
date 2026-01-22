@@ -1,6 +1,7 @@
 import type { AdapterContext, CatalogAdapter, ProductRef, RawProduct } from "@/lib/catalog/types";
 import {
   discoverFromSitemap,
+  extractSitemapUrls,
   fetchText,
   isLikelyProductUrl,
   normalizeUrl,
@@ -135,6 +136,16 @@ export const genericAdapter: CatalogAdapter = {
     const filtered = urls.filter(isLikelyProductUrl);
     if (filtered.length) return filtered.slice(0, limit).map((url) => ({ url }));
     if (urls.length) return urls.slice(0, limit).map((url) => ({ url }));
+
+    if (ctx.brand.ecommercePlatform?.toLowerCase() === "wix") {
+      const wixSitemapUrl = new URL("/store-products-sitemap.xml", origin).toString();
+      const wixSitemap = await fetchText(wixSitemapUrl);
+      if (wixSitemap.text) {
+        const wixUrls = extractSitemapUrls(wixSitemap.text, limit * 3);
+        const wixProducts = wixUrls.filter(isLikelyProductUrl);
+        if (wixProducts.length) return wixProducts.slice(0, limit).map((url) => ({ url }));
+      }
+    }
 
     const pagesToProbe = ["/", "/tienda", "/shop", "/productos", "/producto", "/store", "/catalogo", "/catalog"];
     const candidates = new Set<string>();

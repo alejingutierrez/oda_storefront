@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-058 | done | P1 | Mejoras unknown: tech profiler + custom discovery | Tiendanube/Wix + parked/unreachable; patrones /product-page y /product-.
 - MC-057 | done | P1 | Marcar manualReview cuando no hay productos | Bloquea runs sin productos y setea manualReview + metadata de revisión.
 - MC-056 | done | P1 | Filtrar sitemap a mismo dominio | Evita URLs externas en VTEX y reduce raw vacío.
 - MC-055 | done | P1 | Fallback a API si sitemap no trae productos | Evita URLs no-producto en VTEX; usa discovery del adapter.

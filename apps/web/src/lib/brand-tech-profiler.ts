@@ -8,7 +8,15 @@ const MAX_HTML_CHARS = 200_000;
 const MAX_HELPER_CHARS = 250_000;
 const MAX_SITEMAP_URLS = 40;
 
-export type TechPlatform = "shopify" | "woocommerce" | "magento" | "vtex" | "custom" | "unknown";
+export type TechPlatform =
+  | "shopify"
+  | "woocommerce"
+  | "magento"
+  | "vtex"
+  | "tiendanube"
+  | "wix"
+  | "custom"
+  | "unknown";
 
 export type TechEvidence = {
   type: string;
@@ -65,7 +73,7 @@ type FeatureSet = {
 };
 
 const llmDecisionSchema = z.object({
-  platform: z.enum(["shopify", "woocommerce", "magento", "vtex", "custom", "unknown"]),
+  platform: z.enum(["shopify", "woocommerce", "magento", "vtex", "tiendanube", "wix", "custom", "unknown"]),
   confidence: z.number().min(0).max(1),
   recommended_strategy: z.object({
     mode: z.enum(["platform_api", "public_json", "html", "headless"]),
@@ -312,6 +320,8 @@ const scoreSignals = (features: FeatureSet) => {
     woocommerce: 0,
     magento: 0,
     vtex: 0,
+    tiendanube: 0,
+    wix: 0,
     custom: 0,
     unknown: 0,
   };
@@ -320,6 +330,8 @@ const scoreSignals = (features: FeatureSet) => {
     woocommerce: [],
     magento: [],
     vtex: [],
+    tiendanube: [],
+    wix: [],
     custom: [],
     unknown: [],
   };
@@ -399,6 +411,36 @@ const scoreSignals = (features: FeatureSet) => {
   }
   if (features.linkPaths.some((path) => path.includes("/api/catalog_system"))) {
     addEvidence("vtex", "url_pattern", "catalog_system", 0.5);
+  }
+
+  if (
+    scriptsLower.some(
+      (host) =>
+        host.includes("tiendanube") || host.includes("nuvemshop") || host.includes("mitiendanube"),
+    )
+  ) {
+    addEvidence("tiendanube", "script_src", "tiendanube cdn", 0.9);
+  }
+  if (features.htmlLower.includes("tiendanube") || features.htmlLower.includes("nuvemshop")) {
+    addEvidence("tiendanube", "html_marker", "tiendanube", 0.6);
+  }
+
+  if (
+    scriptsLower.some(
+      (host) =>
+        host.includes("wixstatic") ||
+        host.includes("parastorage") ||
+        host.includes("wixsite") ||
+        host.endsWith(".wix.com"),
+    )
+  ) {
+    addEvidence("wix", "script_src", "wix", 0.9);
+  }
+  if (metaLower.some((value) => value.includes("wix.com"))) {
+    addEvidence("wix", "meta_generator", "Wix.com", 0.9);
+  }
+  if (features.htmlLower.includes("wix.com") || features.htmlLower.includes("wixsite")) {
+    addEvidence("wix", "html_marker", "wixsite", 0.6);
   }
 
   return { scores, evidence };
@@ -524,6 +566,12 @@ const recommendedStrategyFor = (platform: TechPlatform, probeSuccess: boolean) =
         : "No se confirmo endpoint; usar HTML o headless si es necesario.",
     } as const;
   }
+  if (["tiendanube", "wix"].includes(platform)) {
+    return {
+      mode: "html",
+      notes: "Usar JSON-LD/HTML + sitemap; fallback headless si el contenido es dinamico.",
+    } as const;
+  }
   return {
     mode: "html",
     notes: "Usar HTML y fallback headless si el contenido es dinamico.",
@@ -532,10 +580,29 @@ const recommendedStrategyFor = (platform: TechPlatform, probeSuccess: boolean) =
 
 const collectRisks = (features: FeatureSet) => {
   const risks: string[] = [];
+  const parkedMarkers = [
+    "parking-lander",
+    "parkingcrew",
+    "domain for sale",
+    "domain is for sale",
+    "this domain is for sale",
+    "domain parked",
+    "sedoparking",
+    "afternic",
+    "buy this domain",
+  ];
+  const scriptMarkers = ["parking-lander", "parkingcrew", "sedoparking"];
   if (features.status && [403, 429].includes(features.status)) risks.push("bot_protection");
+  if (features.status === null) risks.push("unreachable");
   if (!features.sitemapUrls.length) risks.push("no_sitemap");
   const serverHeader = features.headers["server"] ?? "";
   if (serverHeader.toLowerCase().includes("cloudflare")) risks.push("cloudflare");
+  if (
+    parkedMarkers.some((marker) => features.htmlLower.includes(marker)) ||
+    features.scriptHosts.some((host) => scriptMarkers.some((marker) => host.includes(marker)))
+  ) {
+    risks.push("parked_domain");
+  }
   if (!features.scripts.length && !features.linkPaths.length) risks.push("minimal_signals");
   return unique(risks);
 };
@@ -558,7 +625,7 @@ const maybeUseOpenAi = async (
         {
           role: "system",
           content:
-            "Eres un clasificador de tecnologia ecommerce. Decide la plataforma mas probable y devuelve SOLO JSON con {platform, confidence, recommended_strategy:{mode, notes}, risks}. Se conservador: usa unknown si la evidencia es debil.",
+            "Eres un clasificador de tecnologia ecommerce. Decide la plataforma mas probable y devuelve SOLO JSON con {platform, confidence, recommended_strategy:{mode, notes}, risks}. Plataformas posibles: shopify, woocommerce, magento, vtex, tiendanube, wix, custom, unknown. Se conservador: usa unknown si la evidencia es debil.",
         },
         {
           role: "user",
@@ -633,7 +700,15 @@ const buildFeatureSet = async (brand: Brand): Promise<FeatureSet> => {
     };
   }
 
-  const baseFetch = await fetchWithMeta(normalized, { method: "GET" }, DEFAULT_TIMEOUT_MS, MAX_HTML_CHARS);
+  let baseFetch = await fetchWithMeta(normalized, { method: "GET" }, DEFAULT_TIMEOUT_MS, MAX_HTML_CHARS);
+  if (baseFetch.status === null && normalized.startsWith("https://")) {
+    const httpFallback = normalized.replace(/^https:\/\//i, "http://");
+    const fallbackFetch = await fetchWithMeta(httpFallback, { method: "GET" }, DEFAULT_TIMEOUT_MS, MAX_HTML_CHARS);
+    if (fallbackFetch.status !== null || fallbackFetch.body) {
+      baseFetch = fallbackFetch;
+    }
+  }
+
   const finalUrl = baseFetch.finalUrl || normalized;
   const origin = (() => {
     try {
@@ -731,6 +806,17 @@ export async function profileBrandTechnology(brand: Brand): Promise<TechProfile>
       probes: [],
       recommended_strategy: { mode: "html", notes: "No hay sitio configurado para la marca." },
       risks: ["missing_site_url"],
+    };
+  }
+
+  if (features.status === null && !features.htmlLower) {
+    return {
+      platform: "unknown",
+      confidence: 0,
+      evidence: [],
+      probes: [],
+      recommended_strategy: { mode: "html", notes: "No se pudo acceder al sitio (sin respuesta)." },
+      risks: ["unreachable"],
     };
   }
 

@@ -23,7 +23,7 @@ if (!databaseUrl) {
 
 const client = new pg.Client({ connectionString: databaseUrl });
 
-const platforms = ["shopify", "woocommerce", "magento", "vtex", "custom"] as const;
+const platforms = ["shopify", "woocommerce", "magento", "vtex", "tiendanube", "wix", "custom"] as const;
 
 const pickBrand = async (platform: typeof platforms[number]) => {
   if (platform === "custom") {

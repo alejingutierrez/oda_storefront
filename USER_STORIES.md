@@ -95,6 +95,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Conteo de marcas con manual review por catálogo.
 - Estado: **done (2026-01-22)**.
 
+### MC-058 Mejoras de detección en plataformas unknown
+- Historia: Como operador, quiero identificar mejor tecnologías desconocidas (Tiendanube/Wix) y marcar dominios inválidos, para reducir fallos en scraping y priorizar revisión manual.
+- Alcance: Heurísticas nuevas en tech profiler (Tiendanube/Wix), detección de dominios parked/unreachable, manualReview automático para casos inválidos, patrones de URLs de producto adicionales (`/product-page/`, `/product-`) y scan ampliado de sitemaps.
+- CA: Marcas Tiendanube/Wix se clasifican sin quedar en unknown; dominios “parked” o inalcanzables quedan en manualReview; discovery identifica URLs de producto de Wix/Derek; sitemaps grandes no pierden productos tempranos.
+- Datos: `brands.ecommercePlatform`, `brands.metadata.tech_profile`, `brands.manualReview`, variables `CATALOG_EXTRACT_SITEMAP_SCAN_MAX_URLS`.
+- NF: Heurísticas determinísticas sin llamadas extra a LLM.
+- Riesgos: Falsos positivos por hosts similares; mitigación: reglas específicas por host y meta generator.
+- Métricas: Reducción de “unknown” en tech profiler y tasa de descubrimiento de productos en custom.
+- Estado: **done (2026-01-22)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

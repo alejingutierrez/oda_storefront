@@ -41,12 +41,16 @@ export async function POST(req: Request) {
         capturedAt: new Date().toISOString(),
       },
     };
+    const shouldManualReview = profile.risks?.some((risk) =>
+      ["parked_domain", "unreachable", "missing_site_url"].includes(risk),
+    );
 
     await prisma.brand.update({
       where: { id: brand.id },
       data: {
         ecommercePlatform: profile.platform,
         metadata: nextMetadata,
+        manualReview: shouldManualReview ? true : brand.manualReview,
       },
     });
 

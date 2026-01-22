@@ -73,6 +73,10 @@ export const discoverFromSitemap = async (
   options?: { productAware?: boolean },
 ) => {
   const origin = safeOrigin(baseUrl);
+  const sitemapScanLimit = Math.max(
+    limit * 5,
+    Math.min(Number(process.env.CATALOG_EXTRACT_SITEMAP_SCAN_MAX_URLS ?? 5000), 20000),
+  );
   const robotsUrl = new URL("/robots.txt", origin).toString();
   const robots = await fetchText(robotsUrl);
   const sitemaps = extractSitemapsFromRobots(robots.text || "");
@@ -175,7 +179,8 @@ export const discoverFromSitemap = async (
       0,
       limit - (options?.productAware ? productUrls.size : urls.size),
     );
-    const entries = extractSitemapUrls(sitemapText, remaining || undefined);
+    const scanLimit = options?.productAware ? sitemapScanLimit : remaining || undefined;
+    const entries = extractSitemapUrls(sitemapText, scanLimit || undefined);
     const allowAllFromSitemap = options?.productAware && isProductSitemap(sitemapUrl);
     for (const entry of entries) {
       if (urls.size < limit) urls.add(entry);
@@ -199,8 +204,10 @@ export const discoverFromSitemap = async (
 export const isLikelyProductUrl = (url: string) => {
   try {
     const { pathname } = new URL(url);
-    if (/\/products?\//i.test(pathname)) return true;
-    if (/\/producto(s)?\//i.test(pathname)) return true;
+    if (/\/products?\/[^/]+/i.test(pathname)) return true;
+    if (/\/producto(s)?\/[^/]+/i.test(pathname)) return true;
+    if (/\/product-page\/[^/]+/i.test(pathname)) return true;
+    if (/\/product-[^/]+/i.test(pathname)) return true;
     if (/\/tienda\//i.test(pathname)) return true;
     if (/\/shop\//i.test(pathname)) return true;
     if (/\/catalog\/product\/view/i.test(pathname)) return true;
