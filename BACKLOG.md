@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-060 | done | P1 | Custom: excluir listados por og:type/rutas | Negativos blog/collections + og:type website sin price meta.
 - MC-059 | done | P1 | Custom: omitir listados y detectar producto por pistas | Ajusta heurísticas /tienda y /shop; acepta product hints cuando no hay JSON-LD.
 - MC-058 | done | P1 | Mejoras unknown: tech profiler + custom discovery | Tiendanube/Wix + parked/unreachable; patrones /product-page y /product-.
 - MC-057 | done | P1 | Marcar manualReview cuando no hay productos | Bloquea runs sin productos y setea manualReview + metadata de revisión.

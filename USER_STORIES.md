@@ -115,6 +115,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % de PDPs válidos en unknown y reducción de errores “raw vacío”.
 - Estado: **done (2026-01-22)**.
 
+### MC-060 Custom adapter: excluir listados por og:type/rutas
+- Historia: Como operador, quiero filtrar páginas editoriales/listados aunque tengan CTAs, para no contaminar el catálogo con contenido no‑producto.
+- Alcance: Exclusiones por rutas no‑producto (blog/collections/etc.) y regla adicional: si `og:type` es `website`/`article` y no hay price meta, se omite la URL.
+- CA: Páginas de contenido quedan fuera; PDPs reales mantienen extracción (si hay price meta o JSON‑LD).
+- Datos: N/A.
+- NF: Sin headless, solo heurísticas ligeras.
+- Riesgos: Falsos negativos en sitios con og:type genérico; mitigación con price meta.
+- Métricas: Menos listados marcados como producto en unknown.
+- Estado: **done (2026-01-22)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

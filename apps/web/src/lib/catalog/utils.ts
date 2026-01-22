@@ -204,6 +204,14 @@ export const discoverFromSitemap = async (
 export const isLikelyProductUrl = (url: string) => {
   try {
     const { pathname } = new URL(url);
+    const lower = pathname.toLowerCase();
+    if (
+      /\/(blog|journal|news|press|about|nosotros|quienes-somos|contacto|contact|faq|ayuda)\b/.test(lower) ||
+      /\/(category|categories|categoria|categorias|collection|collections|tag|tags)\b/.test(lower) ||
+      /\/(search|busqueda|cart|checkout|account|login|register|policies|privacy|terms|legal)\b/.test(lower)
+    ) {
+      return false;
+    }
     if (/\/products?\/[^/]+/i.test(pathname)) return true;
     if (/\/producto(s)?\/[^/]+/i.test(pathname)) return true;
     if (/\/product-page\/[^/]+/i.test(pathname)) return true;

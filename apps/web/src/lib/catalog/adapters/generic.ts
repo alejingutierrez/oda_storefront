@@ -101,6 +101,27 @@ const extractLinksFromHtml = (html: string, origin: string) => {
   return Array.from(links);
 };
 
+const countProductLinks = (html: string, origin: string, threshold = 3) => {
+  const regex = /<a[^>]+href=(["'])(.*?)\1/gi;
+  let match: RegExpExecArray | null;
+  let count = 0;
+  while ((match = regex.exec(html))) {
+    const href = match[2]?.trim();
+    if (!href || href.startsWith("#")) continue;
+    try {
+      const url = href.startsWith("http") ? new URL(href) : new URL(href, origin);
+      if (url.origin !== origin) continue;
+      if (isLikelyProductUrl(url.toString())) {
+        count += 1;
+        if (count >= threshold) return count;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return count;
+};
+
 const extractH1 = (html: string) => {
   const match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
   if (!match) return null;
@@ -180,6 +201,8 @@ export const genericAdapter: CatalogAdapter = {
         meta["product:availability"] ||
         meta["product:price:currency"],
     );
+    const hasPriceMeta = Boolean(meta["product:price:amount"] || meta["og:price:amount"]);
+    const hasGenericOgType = ogType === "website" || ogType === "article";
     const hasAddToCart = /add to cart|agregar al carrito|comprar ahora|buy now|comprar/i.test(html);
     const hasPriceHint = /\\$\\s?\\d|\\bCOP\\b|\\bUSD\\b|\\bEUR\\b|\\bMXN\\b|\\bARS\\b|\\bCLP\\b/.test(html);
     const hasImageMeta = Boolean(meta["og:image"] || meta["twitter:image"]);
@@ -189,6 +212,15 @@ export const genericAdapter: CatalogAdapter = {
 
     if (!product && !hasProductMeta && !hasProductHints) {
       return null;
+    }
+    if (!product && hasGenericOgType && !hasPriceMeta) {
+      return null;
+    }
+    if (!product) {
+      const productLinkCount = countProductLinks(html, origin);
+      if (productLinkCount >= 3) {
+        return null;
+      }
     }
 
     const images = (() => {
