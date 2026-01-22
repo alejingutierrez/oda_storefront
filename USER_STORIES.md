@@ -135,6 +135,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Mayor tasa de descubrimiento de URLs producto en unknown; reducción de runs bloqueados por “no products”.
 - Estado: **done (2026-01-22)**.
 
+### MC-062 Custom: evitar URLs no‑producto desde sitemap
+- Historia: Como operador, quiero evitar que páginas de portafolio/listado se traten como productos cuando el sitemap no tiene PDPs, para reducir errores y ruido en unknown.
+- Alcance: Excluir `/portafolio`/`/portfolio` en heurística y no usar URLs no‑producto como fallback del sitemap en adapter custom.
+- CA: Si no hay URLs de producto detectables en sitemap, el custom adapter no procesa páginas genéricas; se marca manual review en lugar de fallar PDPs.
+- Datos: N/A.
+- NF: No aumenta tiempos de discovery.
+- Riesgos: Sitios con URLs de producto no estándar quedarán en manual review hasta crear recipe.
+- Métricas: Reducción de errores “No se pudo obtener producto (custom)”.
+- Estado: **done (2026-01-22)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

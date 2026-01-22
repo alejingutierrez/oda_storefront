@@ -156,7 +156,6 @@ export const genericAdapter: CatalogAdapter = {
     const urls = await discoverFromSitemap(baseUrl, limit * 3, { productAware: true });
     const filtered = urls.filter(isLikelyProductUrl);
     if (filtered.length) return filtered.slice(0, limit).map((url) => ({ url }));
-    if (urls.length) return urls.slice(0, limit).map((url) => ({ url }));
 
     if (ctx.brand.ecommercePlatform?.toLowerCase() === "wix") {
       const wixSitemapUrl = new URL("/store-products-sitemap.xml", origin).toString();

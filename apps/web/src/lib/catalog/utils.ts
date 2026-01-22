@@ -227,7 +227,8 @@ export const isLikelyProductUrl = (url: string) => {
     if (
       /\/(blog|journal|news|press|about|nosotros|quienes-somos|contacto|contact|faq|ayuda)\b/.test(lower) ||
       /\/(category|categories|categoria|categorias|collection|collections|tag|tags)\b/.test(lower) ||
-      /\/(search|busqueda|cart|checkout|account|login|register|policies|privacy|terms|legal)\b/.test(lower)
+      /\/(search|busqueda|cart|checkout|account|login|register|policies|privacy|terms|legal)\b/.test(lower) ||
+      /\/(portfolio|portafolio)\b/.test(lower)
     ) {
       return false;
     }
