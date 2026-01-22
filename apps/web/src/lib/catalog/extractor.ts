@@ -328,24 +328,62 @@ export const extractCatalogForBrand = async (
     refs = sitemapRefs.length
       ? sitemapRefs
       : await adapter.discoverProducts(ctx, discoveryLimit);
+
     const now = new Date().toISOString();
-    state = {
-      runId: crypto.randomUUID(),
-      status: refs.length ? "processing" : "paused",
-      cursor: 0,
-      batchSize,
-      refs,
-      items: Object.fromEntries(
-        refs.map((ref) => [
-          ref.url,
-          { status: "pending", attempts: 0, updatedAt: now } as CatalogItemState,
-        ]),
-      ),
-      startedAt: now,
-      updatedAt: now,
-      lastError: refs.length ? null : "no_products_discovered",
-    };
-    await persistRunState(brand.id, metadata, state);
+    const hasRefs = refs.length > 0;
+    if (!hasRefs) {
+      const reason =
+        adapter.platform === "vtex"
+          ? "manual_review_vtex_no_products"
+          : "manual_review_no_products";
+      state = {
+        runId: crypto.randomUUID(),
+        status: "blocked",
+        cursor: 0,
+        batchSize,
+        refs: [],
+        items: {},
+        startedAt: now,
+        updatedAt: now,
+        lastError: reason,
+        blockReason: reason,
+      };
+      const nextMetadata = {
+        ...metadata,
+        [CATALOG_STATE_KEY]: state,
+        catalog_extract_review: {
+          reason,
+          detectedAt: now,
+          platform: adapter.platform,
+          siteUrl: brand.siteUrl,
+        },
+      };
+      await prisma.brand.update({
+        where: { id: brand.id },
+        data: {
+          metadata: nextMetadata as Prisma.InputJsonValue,
+          manualReview: true,
+        },
+      });
+    } else {
+      state = {
+        runId: crypto.randomUUID(),
+        status: "processing",
+        cursor: 0,
+        batchSize,
+        refs,
+        items: Object.fromEntries(
+          refs.map((ref) => [
+            ref.url,
+            { status: "pending", attempts: 0, updatedAt: now } as CatalogItemState,
+          ]),
+        ),
+        startedAt: now,
+        updatedAt: now,
+        lastError: null,
+      };
+      await persistRunState(brand.id, metadata, state);
+    }
   }
 
   const summary: ExtractSummary = {
@@ -362,6 +400,15 @@ export const extractCatalogForBrand = async (
     failed: 0,
     total: refs.length,
   };
+
+  if (state.status === "blocked") {
+    summary.status = state.status;
+    summary.lastError = state.lastError ?? null;
+    summary.blockReason = state.blockReason ?? null;
+    summary.pending = 0;
+    summary.failed = 0;
+    return summary;
+  }
 
   let processedThisBatch = 0;
   let cursor = state.cursor ?? 0;

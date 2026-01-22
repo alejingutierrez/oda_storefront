@@ -85,6 +85,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Menos errores de “raw vacío” por URLs externas.
 - Estado: **done (2026-01-22)**.
 
+### MC-057 Marcar manualReview cuando no hay productos
+- Historia: Como operador, quiero marcar marcas sin productos detectables como “manual review”, para revisarlas o deshabilitarlas.
+- Alcance: Cuando no se descubren productos (sitemap + adapter), bloquear el run, guardar reason en metadata y activar `manualReview`.
+- CA: Estado `blocked` con `blockReason` y `lastError`, y `brands.manualReview = true` cuando no hay productos.
+- Datos: `metadata.catalog_extract_review` con razón/fecha/plataforma.
+- NF: Sin cambios de esquema.
+- Riesgos: Falsos positivos en sitios con productos ocultos; mitigación: revisión manual.
+- Métricas: Conteo de marcas con manual review por catálogo.
+- Estado: **done (2026-01-22)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.
