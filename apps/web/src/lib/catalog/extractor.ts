@@ -133,8 +133,8 @@ const discoverRefsFromSitemap = async (siteUrl: string, limit: number) => {
   const urls = await discoverFromSitemap(normalized, limit, { productAware: true });
   if (!urls.length) return [];
   const filtered = urls.filter(isLikelyProductUrl);
-  const selected = filtered.length ? filtered : urls;
-  return selected.map((url) => ({ url }));
+  if (!filtered.length) return [];
+  return filtered.map((url) => ({ url }));
 };
 
 const buildVariantSku = (variant: RawVariant, fallback: string) => {

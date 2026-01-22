@@ -65,6 +65,15 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % product URLs detectadas y tasa de fetch ok por tecnología.
 - Estado: **done (2026-01-21)**.
 
+### MC-055 Fallback a API si sitemap no trae productos
+- Historia: Como operador, quiero que si el sitemap no contiene URLs de producto, el extractor use el discovery del adapter, para evitar fallas en VTEX.
+- Alcance: Filtrar URLs de producto en sitemap; si quedan 0, pasar a discovery por plataforma (API) en vez de intentar páginas no‑producto.
+- CA: En VTEX con sitemaps genéricos no se intenta scrapear URLs de categoría/home; usa API `/api/catalog_system/pub/products/search` y reduce errores “raw vacío”.
+- Datos: metadata de `catalog_extract` con errores claros por URL.
+- NF: Sin degradar performance de discovery.
+- Riesgos: Custom con URLs no estándar; mitigación: fallback al discovery del adapter.
+- Métricas: Disminución de errores “No se pudo obtener producto (vtex)”.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.
