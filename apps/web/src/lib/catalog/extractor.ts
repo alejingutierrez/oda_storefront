@@ -132,7 +132,15 @@ const discoverRefsFromSitemap = async (siteUrl: string, limit: number) => {
   if (!normalized) return [];
   const urls = await discoverFromSitemap(normalized, limit, { productAware: true });
   if (!urls.length) return [];
-  const filtered = urls.filter(isLikelyProductUrl);
+  const origin = safeOrigin(normalized);
+  const filtered = urls.filter((url) => {
+    if (!isLikelyProductUrl(url)) return false;
+    try {
+      return new URL(url).origin === origin;
+    } catch {
+      return false;
+    }
+  });
   if (!filtered.length) return [];
   return filtered.map((url) => ({ url }));
 };

@@ -75,6 +75,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Disminución de errores “No se pudo obtener producto (vtex)”.
 - Estado: **done (2026-01-22)**.
 
+### MC-056 Filtrar sitemap a mismo dominio
+- Historia: Como operador, quiero descartar URLs externas en sitemaps para no intentar scrapear productos fuera del sitio.
+- Alcance: Filtrar URLs del sitemap por mismo `origin` del sitio antes de procesar productos.
+- CA: Sitemaps con URLs externas no generan refs inválidos; VTEX no intenta scrapear dominios ajenos.
+- Datos: Sin cambios de esquema.
+- NF: Filtro simple sin impacto notable.
+- Riesgos: Sitemaps con subdominios legítimos; mitigar ajustando `siteUrl` a dominio correcto.
+- Métricas: Menos errores de “raw vacío” por URLs externas.
+- Estado: **done (2026-01-22)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.
