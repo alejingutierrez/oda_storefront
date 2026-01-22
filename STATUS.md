@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-22 | MC-060 | done | Custom adapter filtra listados por og:type/rutas | Docker rebuild: falló (daemon apagado); pruebas unknown con PDPs OK (Derek, Lyenzo, Zuahaza); Vercel pendiente post-push.
+- 2026-01-22 | MC-060 | done | Custom adapter filtra listados por og:type/rutas | Docker rebuild: falló (daemon apagado); pruebas unknown con PDPs OK (Derek, Lyenzo, Zuahaza); Vercel prod OK: https://oda-storefront-6ee5-ftk42wddb-alejingutierrezs-projects.vercel.app.
 - 2026-01-22 | MC-059 | done | Custom adapter evita listados y acepta pistas de PDP sin JSON-LD | Docker rebuild: falló (daemon apagado); ejecución batch tech profiler completada; Vercel prod OK: https://oda-storefront-6ee5-inhkc67k2-alejingutierrezs-projects.vercel.app (logs sin eventos).
 - 2026-01-22 | MC-058 | done | Mejoras unknown: tech profiler Tiendanube/Wix + parked/unreachable + patrones de producto | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5-eh4orhbg9-alejingutierrezs-projects.vercel.app (logs sin eventos).
 - 2026-01-22 | MC-057 | done | Marca manualReview cuando no hay productos detectables | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5-836cmfy95-alejingutierrezs-projects.vercel.app
