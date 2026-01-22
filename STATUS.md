@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-22 | MC-063 | done | Blob retry con referer/UA | Docker rebuild: falló (daemon apagado); Vercel pendiente.
+- 2026-01-22 | MC-063 | done | Blob retry con referer/UA | Docker rebuild: ok; Vercel prod OK: https://oda-storefront-6ee5-bcdhvfxlm-alejingutierrezs-projects.vercel.app (logs sin eventos).
 - 2026-01-22 | MC-062 | done | Custom: omite sitemap sin PDPs + excluye /portafolio | Docker rebuild: falló (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5.vercel.app (alias).
 - 2026-01-22 | MC-061 | done | Unknown: sitemaps extra + inferencia rápida plataforma sin LLM | Docker rebuild: falló (daemon apagado); pruebas rápidas con tsx no ejecutables por alias `@/` fuera de tsconfig; Vercel prod OK: https://oda-storefront-6ee5-bv62sxd1m-alejingutierrezs-projects.vercel.app (logs sin eventos).
 - 2026-01-22 | MC-060 | done | Custom adapter filtra listados por og:type/rutas | Docker rebuild: falló (daemon apagado); pruebas unknown con PDPs OK (Derek, Lyenzo, Zuahaza); Vercel prod OK: https://oda-storefront-6ee5-38wsp1vwl-alejingutierrezs-projects.vercel.app.
