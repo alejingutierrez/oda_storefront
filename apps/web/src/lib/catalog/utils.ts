@@ -208,8 +208,8 @@ export const isLikelyProductUrl = (url: string) => {
     if (/\/producto(s)?\/[^/]+/i.test(pathname)) return true;
     if (/\/product-page\/[^/]+/i.test(pathname)) return true;
     if (/\/product-[^/]+/i.test(pathname)) return true;
-    if (/\/tienda\//i.test(pathname)) return true;
-    if (/\/shop\//i.test(pathname)) return true;
+    if (/\/tienda\/[^/]+/i.test(pathname)) return true;
+    if (/\/shop\/[^/]+/i.test(pathname)) return true;
     if (/\/catalog\/product\/view/i.test(pathname)) return true;
     if (/\/p\/?$/i.test(pathname)) return true;
     return false;

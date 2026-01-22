@@ -172,6 +172,24 @@ export const genericAdapter: CatalogAdapter = {
     const product = findProductJsonLd(blocks);
     const meta = extractMetaTags(html);
     const offers = extractOffers(product?.offers);
+    const ogType = meta["og:type"]?.toLowerCase() ?? null;
+    const hasProductMeta = Boolean(
+      (ogType && ogType.includes("product")) ||
+        meta["product:price:amount"] ||
+        meta["og:price:amount"] ||
+        meta["product:availability"] ||
+        meta["product:price:currency"],
+    );
+    const hasAddToCart = /add to cart|agregar al carrito|comprar ahora|buy now|comprar/i.test(html);
+    const hasPriceHint = /\\$\\s?\\d|\\bCOP\\b|\\bUSD\\b|\\bEUR\\b|\\bMXN\\b|\\bARS\\b|\\bCLP\\b/.test(html);
+    const hasImageMeta = Boolean(meta["og:image"] || meta["twitter:image"]);
+    const inferredTitle = product?.name ?? meta["og:title"] ?? meta["title"] ?? extractH1(html);
+    const hasTitle = Boolean(inferredTitle);
+    const hasProductHints = hasAddToCart || (hasPriceHint && hasImageMeta && hasTitle);
+
+    if (!product && !hasProductMeta && !hasProductHints) {
+      return null;
+    }
 
     const images = (() => {
       if (product) {

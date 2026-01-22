@@ -105,6 +105,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Reducción de “unknown” en tech profiler y tasa de descubrimiento de productos en custom.
 - Estado: **done (2026-01-22)**.
 
+### MC-059 Custom adapter: omitir listados y detectar producto por pistas
+- Historia: Como operador, quiero evitar que páginas de listado se traten como producto y aun así reconocer PDPs sin JSON-LD, para aumentar la tasa de éxito en unknown.
+- Alcance: Heurísticas más estrictas para `/tienda/` y `/shop/` (requiere slug), y validación por “pistas” (precio + imagen + título o add‑to‑cart) cuando no hay JSON‑LD.
+- CA: URLs de listados no pasan el filtro; PDPs sin JSON‑LD pero con pistas básicas sí se procesan; páginas sin evidencia quedan omitidas.
+- Datos: N/A.
+- NF: Lógica ligera sin headless.
+- Riesgos: Falsos positivos en páginas con precios promocionales; mitigación con combinación de señales.
+- Métricas: % de PDPs válidos en unknown y reducción de errores “raw vacío”.
+- Estado: **done (2026-01-22)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.
