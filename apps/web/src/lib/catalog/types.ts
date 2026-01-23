@@ -95,4 +95,7 @@ export type ExtractSummary = {
   total?: number;
   lastError?: string | null;
   blockReason?: string | null;
+  lastUrl?: string | null;
+  lastStage?: string | null;
+  consecutiveErrors?: number;
 };

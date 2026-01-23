@@ -205,6 +205,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % de reprocesos evitados; costo por producto.
 - Estado: **done (2026-01-23)**.
 
+### MC-069 Robustez extractor: telemetría y pausa por errores consecutivos
+- Historia: Como operador, quiero contexto de fallas y protección contra errores repetitivos, para entender por qué un sitio falla y evitar loops infinitos.
+- Alcance: Guardar `lastUrl`, `lastStage`, `errorSamples` y `consecutiveErrors` en `catalog_extract`; pausar automáticamente cuando se exceda `CATALOG_EXTRACT_CONSECUTIVE_ERROR_LIMIT`.
+- CA: Cuando un sitio falla repetidamente, el run queda en pausa con `blockReason=consecutive_errors:N` y deja evidencia del último URL/etapa.
+- Datos: `brands.metadata.catalog_extract`.
+- NF: Sin cambios en extracción de datos; solo telemetría y control.
+- Riesgos: Pausa prematura por errores transitorios; mitigación con umbral configurable.
+- Métricas: Tiempo de diagnóstico, tasa de pausas por errores.
+- Estado: **done (2026-01-23)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

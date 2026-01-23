@@ -50,11 +50,19 @@ type CatalogRunState = {
   updatedAt: string;
   lastError?: string | null;
   blockReason?: string | null;
+  lastUrl?: string | null;
+  lastStage?: string | null;
+  consecutiveErrors?: number;
+  errorSamples?: Array<{ url: string; error: string; at: string; stage?: string | null }>;
 };
 
 const CATALOG_STATE_KEY = "catalog_extract";
 const MAX_ATTEMPTS = 3;
 const PDP_LLM_ENABLED = process.env.CATALOG_PDP_LLM_ENABLED !== "false";
+const CONSECUTIVE_ERROR_LIMIT = Math.max(
+  2,
+  Number(process.env.CATALOG_EXTRACT_CONSECUTIVE_ERROR_LIMIT ?? 5),
+);
 const PDP_LLM_MIN_CONFIDENCE = Math.max(
   0.1,
   Math.min(0.99, Number(process.env.CATALOG_PDP_LLM_CONFIDENCE_MIN ?? 0.55)),
@@ -131,6 +139,9 @@ export const summarizeCatalogRunState = (state: CatalogRunState | null) => {
     pending,
     lastError: state.lastError ?? null,
     blockReason: state.blockReason ?? null,
+    lastUrl: state.lastUrl ?? null,
+    lastStage: state.lastStage ?? null,
+    consecutiveErrors: state.consecutiveErrors ?? 0,
   };
 };
 
@@ -142,6 +153,17 @@ const persistRunState = async (
   const nextMetadata = { ...metadata, [CATALOG_STATE_KEY]: state };
   await prisma.brand.update({ where: { id: brandId }, data: { metadata: nextMetadata } });
   return nextMetadata;
+};
+
+const pushErrorSample = (
+  state: CatalogRunState,
+  url: string,
+  error: string,
+  stage?: string | null,
+) => {
+  const samples = Array.isArray(state.errorSamples) ? [...state.errorSamples] : [];
+  samples.push({ url, error, at: new Date().toISOString(), stage: stage ?? null });
+  state.errorSamples = samples.slice(-10);
 };
 
 export const pauseCatalogRun = async (brandId: string) => {
@@ -411,6 +433,8 @@ export const extractCatalogForBrand = async (
       batchSize,
       items: syncedItems,
       cursor: nextCursor,
+      consecutiveErrors: existingState.consecutiveErrors ?? 0,
+      errorSamples: existingState.errorSamples ?? [],
       updatedAt: now,
     };
     refs = state.refs;
@@ -457,6 +481,8 @@ export const extractCatalogForBrand = async (
         updatedAt: now,
         lastError: reason,
         blockReason: reason,
+        consecutiveErrors: 0,
+        errorSamples: [],
       };
       const nextMetadata = {
         ...metadataForRun,
@@ -491,6 +517,8 @@ export const extractCatalogForBrand = async (
         startedAt: now,
         updatedAt: now,
         lastError: null,
+        consecutiveErrors: 0,
+        errorSamples: [],
       };
       await persistRunState(brand.id, metadataForRun, state);
     }
@@ -509,12 +537,18 @@ export const extractCatalogForBrand = async (
     pending: 0,
     failed: 0,
     total: refs.length,
+    lastUrl: state.lastUrl ?? null,
+    lastStage: state.lastStage ?? null,
+    consecutiveErrors: state.consecutiveErrors ?? 0,
   };
 
   if (state.status === "blocked") {
     summary.status = state.status;
     summary.lastError = state.lastError ?? null;
     summary.blockReason = state.blockReason ?? null;
+    summary.lastUrl = state.lastUrl ?? null;
+    summary.lastStage = state.lastStage ?? null;
+    summary.consecutiveErrors = state.consecutiveErrors ?? 0;
     summary.pending = 0;
     summary.failed = 0;
     return summary;
@@ -567,6 +601,8 @@ export const extractCatalogForBrand = async (
     if (itemState.attempts >= MAX_ATTEMPTS) continue;
 
     try {
+      state.lastUrl = ref.url;
+      state.lastStage = "fetch";
       state.items[ref.url] = {
         ...itemState,
         status: "in_progress",
@@ -576,6 +612,7 @@ export const extractCatalogForBrand = async (
 
       let raw = await adapter.fetchProduct(ctx, ref);
       if (!raw && canUseLlmPdp) {
+        state.lastStage = "llm_classify";
         const htmlResponse = await fetchText(ref.url, { method: "GET" }, 15000);
         if (htmlResponse.status >= 400 || !htmlResponse.text) {
           throw new Error(`No se pudo obtener HTML (${htmlResponse.status}) para ${ref.url}`);
@@ -592,6 +629,7 @@ export const extractCatalogForBrand = async (
             `llm_pdp_false:${decision.confidence.toFixed(2)}:${decision.reason}`,
           );
         }
+        state.lastStage = "llm_extract";
         const extracted = await extractRawProductWithOpenAI({
           url: ref.url,
           html: htmlResponse.text,
@@ -623,6 +661,7 @@ export const extractCatalogForBrand = async (
         throw new Error(`No se pudo obtener producto (${adapter.platform}) para ${ref.url}`);
       }
 
+      state.lastStage = "normalize_images";
       const normalizedProductImages = normalizeImageUrls(raw.images);
       const normalizedVariants = raw.variants.map((variant) => {
         const variantImages = normalizeImageUrls([variant.image, ...(variant.images ?? [])]);
@@ -642,6 +681,7 @@ export const extractCatalogForBrand = async (
         ].filter(Boolean)),
       );
       const imagePrefix = `catalog/${brand.slug}/${raw.externalId ?? "product"}`;
+      state.lastStage = "blob_upload";
       const imageMapping = await uploadImagesToBlob(allImages, imagePrefix);
       const blobImages = raw.images
         .map((url) => imageMapping.get(url)?.url)
@@ -651,11 +691,13 @@ export const extractCatalogForBrand = async (
       }
       const coverImage = blobImages[0] ?? null;
 
+      state.lastStage = "llm_normalize";
       const normalized = await normalizeCatalogProductWithOpenAI({
         ...raw,
         images: blobImages.length ? blobImages : raw.images,
       });
 
+      state.lastStage = "upsert";
       const { product, created } = await upsertProduct(brand.id, raw, normalized, coverImage);
 
       const fallbackImages = blobImages.length ? blobImages : raw.images;
@@ -723,6 +765,9 @@ export const extractCatalogForBrand = async (
         updatedAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
       };
+      state.lastStage = "completed";
+      state.lastUrl = ref.url;
+      state.consecutiveErrors = 0;
       state.updatedAt = new Date().toISOString();
       await persistRunState(brand.id, metadata, state);
       processedThisBatch += 1;
@@ -740,11 +785,23 @@ export const extractCatalogForBrand = async (
       };
       state.updatedAt = new Date().toISOString();
       state.lastError = message;
+      state.lastUrl = ref.url;
+      state.lastStage = "error";
+      state.consecutiveErrors = (state.consecutiveErrors ?? 0) + 1;
+      pushErrorSample(state, ref.url, message, state.lastStage);
       if (isBlobTokenError(message)) {
         state.status = "blocked";
         state.blockReason = message;
         await persistRunState(brand.id, metadataForRun, state);
         summary.status = state.status;
+        break;
+      }
+      if (state.consecutiveErrors >= CONSECUTIVE_ERROR_LIMIT) {
+        state.status = "paused";
+        state.blockReason = `consecutive_errors:${state.consecutiveErrors}`;
+        await persistRunState(brand.id, metadataForRun, state);
+        summary.status = state.status;
+        summary.blockReason = state.blockReason ?? null;
         break;
       }
       await persistRunState(brand.id, metadataForRun, state);
@@ -782,6 +839,9 @@ export const extractCatalogForBrand = async (
   summary.status = state.status;
   summary.lastError = state.lastError ?? null;
   summary.blockReason = state.blockReason ?? null;
+  summary.lastUrl = state.lastUrl ?? null;
+  summary.lastStage = state.lastStage ?? null;
+  summary.consecutiveErrors = state.consecutiveErrors ?? 0;
   summary.pending = pendingCount;
   summary.failed = failedCount;
 

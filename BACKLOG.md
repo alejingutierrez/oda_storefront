@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-069 | done | P1 | Robustez extractor: telemetría + pausa por errores | lastUrl/lastStage/errorSamples y pausa por errores consecutivos.
 - MC-068 | done | P1 | Resume UI + barrido + GPT-5 mini en productos | Botón Resume en pausa/stop, sync cursor, modelo barato para PDP/normalización.
 - MC-067 | done | P1 | Detener extractor conserva estado | Stop mantiene cursor/refs y permite reanudar sin reiniciar.
 - MC-066 | done | P1 | Finalizar marca en catalog extractor | Botón y endpoint para sacar marcas de la cola y registrar `catalog_extract_finished`.
