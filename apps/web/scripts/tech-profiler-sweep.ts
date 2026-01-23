@@ -86,7 +86,9 @@ const run = async () => {
         : null;
 
     const shouldDelete =
-      profile.risks?.some((risk) => deleteSignals.has(risk)) || shouldDeleteForReview(reviewReason);
+      profile.platform === "unknown" ||
+      profile.risks?.some((risk) => deleteSignals.has(risk)) ||
+      shouldDeleteForReview(reviewReason);
 
     if (shouldDelete) {
       await client.query(`DELETE FROM brands WHERE id = $1`, [brand.id]);

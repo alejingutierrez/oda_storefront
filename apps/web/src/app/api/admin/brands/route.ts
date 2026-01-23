@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
+import { profileBrandTechnology } from "@/lib/brand-tech-profiler";
 
 export const runtime = "nodejs";
 
@@ -238,16 +239,40 @@ export async function POST(req: Request) {
 
   const slug = await ensureUniqueSlug(baseSlug);
 
+  const siteUrl = normalizeString(payload.siteUrl);
+  let techProfile: Awaited<ReturnType<typeof profileBrandTechnology>> | null = null;
+  if (siteUrl) {
+    techProfile = await profileBrandTechnology({ siteUrl } as any);
+    const deleteSignals = new Set([
+      "social",
+      "bot_protection",
+      "unreachable",
+      "parked_domain",
+      "landing_no_store",
+      "no_pdp_candidates",
+    ]);
+    if (techProfile.platform === "unknown" || techProfile.risks?.some((risk) => deleteSignals.has(risk))) {
+      return NextResponse.json(
+        {
+          error: "tech_platform_unknown",
+          message: "Marca rechazada: tecnologia desconocida o no procesable.",
+          profile: techProfile,
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   const data = {
     name,
     slug,
-    siteUrl: normalizeString(payload.siteUrl),
+    siteUrl,
     category: normalizeString(payload.category),
     productCategory: normalizeString(payload.productCategory),
     market: normalizeString(payload.market),
     style: normalizeString(payload.style),
     scale: normalizeString(payload.scale),
-    ecommercePlatform: normalizeString(payload.ecommercePlatform),
+    ecommercePlatform: techProfile?.platform ?? normalizeString(payload.ecommercePlatform),
     avgPrice: normalizeNumber(payload.avgPrice),
     manualReview: normalizeBoolean(payload.manualReview, false) ?? false,
     reviewed: normalizeString(payload.reviewed),
@@ -268,7 +293,15 @@ export async function POST(req: Request) {
     lat: normalizeNumber(payload.lat),
     lng: normalizeNumber(payload.lng),
     openingHours: normalizeJson(payload.openingHours),
-    metadata: normalizeJson(payload.metadata),
+    metadata: techProfile
+      ? {
+          ...(normalizeJson(payload.metadata) ?? {}),
+          tech_profile: {
+            ...techProfile,
+            capturedAt: new Date().toISOString(),
+          },
+        }
+      : normalizeJson(payload.metadata),
     isActive: normalizeBoolean(payload.isActive, true) ?? true,
   };
 

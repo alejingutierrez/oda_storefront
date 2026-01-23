@@ -49,6 +49,7 @@ export async function POST(req: Request) {
       "no_pdp_candidates",
     ]);
     const shouldDelete =
+      profile.platform === "unknown" ||
       profile.risks?.some((risk) => deleteSignals.has(risk)) ||
       ["manual_review_no_products", "manual_review_vtex_no_products"].includes(reviewReason ?? "");
 
