@@ -7,11 +7,13 @@ import {
   createRunWithItems,
   findActiveRun,
   listPendingItems,
+  listRunnableItems,
   markItemsQueued,
   resetQueuedItems,
   resetStuckItems,
   summarizeRun,
 } from "@/lib/catalog/run-store";
+import { processCatalogItemById } from "@/lib/catalog/processor";
 
 export const runtime = "nodejs";
 
@@ -27,6 +29,17 @@ export async function POST(req: Request) {
   const enqueueLimit = Math.max(
     1,
     Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
+  );
+  const drainOnRun =
+    process.env.CATALOG_DRAIN_ON_RUN !== "false" &&
+    process.env.CATALOG_DRAIN_DISABLED !== "true";
+  const drainBatch = Math.max(
+    1,
+    Number(process.env.CATALOG_DRAIN_ON_RUN_BATCH ?? process.env.CATALOG_DRAIN_BATCH ?? 1),
+  );
+  const drainMaxMs = Math.max(
+    1000,
+    Number(process.env.CATALOG_DRAIN_ON_RUN_MAX_RUNTIME_MS ?? 8000),
   );
   const queuedStaleMs = Math.max(
     0,
@@ -79,6 +92,20 @@ export async function POST(req: Request) {
       );
       await markItemsQueued(pendingItems.map((item) => item.id));
       await enqueueCatalogItems(pendingItems);
+      if (drainOnRun) {
+        const startedAt = Date.now();
+        let processed = 0;
+        while (processed < drainBatch && Date.now() - startedAt < drainMaxMs) {
+          const runnable = await listRunnableItems(existing.id, 1, true);
+          if (!runnable.length) break;
+          await processCatalogItemById(runnable[0].id, {
+            allowQueueRefill: false,
+            queuedStaleMs,
+            stuckMs,
+          });
+          processed += 1;
+        }
+      }
       const summary = await summarizeRun(existing.id);
       return NextResponse.json({ summary });
     }
@@ -126,6 +153,20 @@ export async function POST(req: Request) {
     );
     await markItemsQueued(items.map((item) => item.id));
     await enqueueCatalogItems(items);
+    if (drainOnRun) {
+      const startedAt = Date.now();
+      let processed = 0;
+      while (processed < drainBatch && Date.now() - startedAt < drainMaxMs) {
+        const runnable = await listRunnableItems(run.id, 1, true);
+        if (!runnable.length) break;
+        await processCatalogItemById(runnable[0].id, {
+          allowQueueRefill: false,
+          queuedStaleMs,
+          stuckMs,
+        });
+        processed += 1;
+      }
+    }
     const summary = await summarizeRun(run.id);
     return NextResponse.json({ summary });
   } catch (error) {
