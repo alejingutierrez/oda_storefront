@@ -53,9 +53,50 @@ model Brand {
   events         Event[]
   assets         Asset[]
   scrapeJobs     BrandScrapeJob[]
+  catalogRuns    CatalogRun[]
 
   @@index([name])
   @@map("brands")
+}
+
+model CatalogRun {
+  id                String      @id @default(uuid())
+  brandId           String
+  brand             Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  status            String      @default("processing") // processing | paused | stopped | blocked | completed
+  platform          String?
+  totalItems        Int         @default(0)
+  startedAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  finishedAt        DateTime?
+  lastError         String?
+  blockReason       String?
+  lastUrl           String?
+  lastStage         String?
+  consecutiveErrors Int         @default(0)
+  errorSamples      Json?
+  items             CatalogItem[]
+
+  @@index([brandId, status])
+  @@map("catalog_runs")
+}
+
+model CatalogItem {
+  id          String    @id @default(uuid())
+  runId       String
+  run         CatalogRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  url         String
+  status      String    @default("pending") // pending | queued | in_progress | completed | failed
+  attempts    Int       @default(0)
+  lastError   String?
+  lastStage   String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([runId, url])
+  @@index([runId, status])
+  @@map("catalog_items")
 }
 
 model BrandScrapeJob {

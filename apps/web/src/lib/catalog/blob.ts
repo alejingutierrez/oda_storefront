@@ -22,6 +22,12 @@ const getExtension = (url: string, contentType?: string | null) => {
 const resolveBlobToken = () =>
   process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN || "";
 
+const sanitizeBlobPath = (value: string) =>
+  value
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
 const isAccessDenied = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   return message.toLowerCase().includes("access denied") || message.includes("401");
@@ -67,7 +73,7 @@ export const uploadImageToBlob = async (url: string, prefix: string, token: stri
   const contentType = res.headers.get("content-type");
   const hash = hashBuffer(buffer).slice(0, 16);
   const ext = getExtension(normalizedUrl, contentType);
-  const key = `${prefix}/${hash}${ext}`;
+  const key = sanitizeBlobPath(`${prefix}/${hash}${ext}`);
 
   const blob = await put(key, buffer, {
     access: "public",
@@ -130,11 +136,13 @@ export const uploadImagesToBlob = async (urls: string[], prefix: string) => {
   if (blobUploadsDisabled) {
     throw new Error(blobDisableReason ?? "Blob uploads disabled");
   }
+  if (failures.length && mapping.size === 0) {
+    const sample = failures.slice(0, 3).join(", ");
+    throw new Error(`Blob upload failed for ${failures.length} images (sample: ${sample})`);
+  }
   if (failures.length) {
     const sample = failures.slice(0, 3).join(", ");
-    throw new Error(
-      `Blob upload failed for ${failures.length} images (sample: ${sample})`,
-    );
+    console.warn(`blob.upload.partial_failures ${failures.length} (sample: ${sample})`);
   }
 
   return mapping;

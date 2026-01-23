@@ -23,7 +23,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`.
 - Scraper: `USER_AGENT`, `BRAND_SCRAPE_MAX_JOBS`, `BRAND_SCRAPE_MAX_RUNTIME_MS`.
 - Scraper: `BRAND_SCRAPE_STALE_MINUTES` (re-encola jobs en `processing` con más de N minutos).
-- Catalog extractor: `CATALOG_EXTRACT_SITEMAP_LIMIT`, `CATALOG_EXTRACT_SITEMAP_MAX_FILES`, `CATALOG_EXTRACT_DISCOVERY_LIMIT`, `CATALOG_EXTRACT_MAX_RUNTIME_MS`, `CATALOG_EXTRACT_CONSECUTIVE_ERROR_LIMIT`.
+- Catalog extractor: `CATALOG_EXTRACT_SITEMAP_LIMIT`, `CATALOG_EXTRACT_SITEMAP_MAX_FILES`, `CATALOG_EXTRACT_DISCOVERY_LIMIT`, `CATALOG_EXTRACT_MAX_RUNTIME_MS`, `CATALOG_EXTRACT_CONSECUTIVE_ERROR_LIMIT`, `CATALOG_QUEUE_ENQUEUE_LIMIT`, `CATALOG_QUEUE_NAME`, `CATALOG_WORKER_CONCURRENCY`, `CATALOG_WORKER_API_URL`.
 - Catalog extractor (PDP LLM): `CATALOG_OPENAI_MODEL`, `CATALOG_PDP_LLM_ENABLED`, `CATALOG_PDP_LLM_CONFIDENCE_MIN`, `CATALOG_PDP_LLM_MAX_HTML_CHARS`, `CATALOG_PDP_LLM_MAX_TEXT_CHARS`, `CATALOG_PDP_LLM_MAX_IMAGES`.
 - Sweep tech profiler: `TECH_PROFILE_SWEEP_LIMIT`, `TECH_PROFILE_SWEEP_PLATFORM` (all|unknown|null|shopify|...).
 - Dry-run LLM: `UNKNOWN_LLM_DRY_RUN_LIMIT`, `UNKNOWN_LLM_DRY_RUN_CANDIDATES`.
@@ -82,6 +82,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.
   - Controles Play/Pausar/Detener (detener conserva estado para reanudar), reanudación automática y sitemap‑first.
   - Permite **finalizar** una marca para sacarla de la cola y registrar `metadata.catalog_extract_finished`.
+  - Usa cola Redis/BullMQ para procesar URLs en paralelo (workers externos).
   - Para `unknown`, intenta inferencia rápida de plataforma (sin LLM) desde la home y guarda `catalog_extract_inferred_platform` en `brands.metadata`.
   - Para `unknown/custom`, si el adapter no puede extraer, usa LLM para clasificar PDP y extraer RawProduct (HTML+texto).
   - Si no hay URLs producto en sitemap, hace fallback broad y filtra con LLM (solo si PDP LLM está habilitado).
@@ -121,6 +122,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - `GET /api/admin/catalog-extractor/brands`: lista marcas con `ecommercePlatform`.
 - `POST /api/admin/catalog-extractor/run`: ejecuta extracción de catálogo para una marca (body: `{ brandId, limit }`).
 - `POST /api/admin/catalog-extractor/finish`: marca marca como terminada y la saca de la cola (body: `{ brandId, reason? }`).
+- `POST /api/admin/catalog-extractor/process-item`: procesa un item de catálogo desde worker (body: `{ itemId }`).
 
 ## API interna (productos)
 - `GET /api/admin/products`: listado paginado de productos (query: `page`, `pageSize`, `brandId`).

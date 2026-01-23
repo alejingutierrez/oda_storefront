@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
+import { findActiveRun, markRunStatus } from "@/lib/catalog/run-store";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,11 @@ export async function POST(req: Request) {
     where: { id: brandId },
     data: { metadata: nextMetadata as Prisma.InputJsonValue },
   });
+
+  const run = await findActiveRun(brandId);
+  if (run) {
+    await markRunStatus(run.id, "stopped");
+  }
 
   return NextResponse.json({ status: "finished" });
 }

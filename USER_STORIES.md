@@ -215,6 +215,26 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Tiempo de diagnóstico, tasa de pausas por errores.
 - Estado: **done (2026-01-23)**.
 
+### MC-070 Concurrencia catálogo v2 (cola + runs/items)
+- Historia: Como operador, quiero ejecutar el scraping con concurrencia real para acelerar el avance sin perder estado.
+- Alcance: Tablas `catalog_runs` y `catalog_items`, cola BullMQ, worker de catálogo y endpoint `process-item`; backfill desde `brands.metadata.catalog_extract`.
+- CA: Se pueden procesar múltiples URLs en paralelo; el estado se conserva y es retomable; no se reprocesan URLs completadas.
+- Datos: `catalog_runs`, `catalog_items`.
+- NF: Concurrencia configurable (`CATALOG_WORKER_CONCURRENCY`, `CATALOG_QUEUE_ENQUEUE_LIMIT`).
+- Riesgos: Sobrecarga de Redis/DB; mitigación con límites y pausas.
+- Métricas: URLs/min, latencia por item, tasa de fallos.
+- Estado: **done (2026-01-23)**.
+
+### MC-071 Blob robusto: sanitizar path + tolerar fallos parciales
+- Historia: Como operador, quiero que los errores de Blob no detengan el scraping cuando son parciales o por caracteres inválidos.
+- Alcance: Sanitizar pathname para Blob (encode de segmentos) y permitir fallos parciales sin abortar el item; fallback a imágenes originales cuando no hay Blob.
+- CA: URLs con `#` no rompen uploads; si algunas imágenes fallan, el producto se procesa igual.
+- Datos: `product.metadata.blob_upload_failed`.
+- NF: Sin cambios en el esquema de productos.
+- Riesgos: Hotlinking si no hay blob; mitigación con retries y flags.
+- Métricas: % de fallos Blob, % productos con fallback.
+- Estado: **done (2026-01-23)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
-import { readCatalogRunState, summarizeCatalogRunState } from "@/lib/catalog/extractor";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
@@ -34,16 +33,65 @@ export async function GET(req: Request) {
     },
   });
 
+  const brandIds = brands.map((brand) => brand.id);
+  const runs = await prisma.catalogRun.findMany({
+    where: { brandId: { in: brandIds } },
+    orderBy: { updatedAt: "desc" },
+  });
+  const runByBrand = new Map<string, string>();
+  runs.forEach((run) => {
+    if (!runByBrand.has(run.brandId)) runByBrand.set(run.brandId, run.id);
+  });
+
+  const runIds = Array.from(new Set(runByBrand.values()));
+  const counts = runIds.length
+    ? await prisma.catalogItem.groupBy({
+        by: ["runId", "status"],
+        where: { runId: { in: runIds } },
+        _count: { _all: true },
+      })
+    : [];
+  const countMap = new Map<string, Map<string, number>>();
+  counts.forEach((row) => {
+    const runMap = countMap.get(row.runId) ?? new Map<string, number>();
+    runMap.set(row.status, row._count._all);
+    countMap.set(row.runId, runMap);
+  });
+
+  const runMetaMap = new Map(runs.map((run) => [run.id, run]));
+
   const brandsWithState = brands.map((brand) => {
     const metadata =
       brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
         ? (brand.metadata as Record<string, unknown>)
         : {};
-    const runState = summarizeCatalogRunState(readCatalogRunState(metadata));
     const finished =
       metadata.catalog_extract_finished &&
       typeof metadata.catalog_extract_finished === "object" &&
       !Array.isArray(metadata.catalog_extract_finished);
+    const runId = runByBrand.get(brand.id) ?? null;
+    const run = runId ? runMetaMap.get(runId) : null;
+    const countsForRun = runId ? countMap.get(runId) : null;
+    const completed = countsForRun?.get("completed") ?? 0;
+    const failed = countsForRun?.get("failed") ?? 0;
+    const total = run?.totalItems ?? (countsForRun ? Array.from(countsForRun.values()).reduce((a, b) => a + b, 0) : 0);
+    const pending = Math.max(0, total - completed - failed);
+    const runState = run
+      ? {
+          status: run.status,
+          runId: run.id,
+          cursor: completed,
+          total,
+          completed,
+          failed,
+          pending,
+          lastError: run.lastError ?? null,
+          blockReason: run.blockReason ?? null,
+          lastUrl: run.lastUrl ?? null,
+          lastStage: run.lastStage ?? null,
+          consecutiveErrors: run.consecutiveErrors ?? 0,
+        }
+      : null;
     return {
       id: brand.id,
       name: brand.name,

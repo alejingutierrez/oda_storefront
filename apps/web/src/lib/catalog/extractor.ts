@@ -7,6 +7,7 @@ import { normalizeCatalogProductWithOpenAI } from "@/lib/catalog/normalizer";
 import { uploadImagesToBlob } from "@/lib/catalog/blob";
 import { inferCatalogPlatform } from "@/lib/catalog/platform-detect";
 import { classifyPdpWithOpenAI, extractHtmlSignals, extractRawProductWithOpenAI } from "@/lib/catalog/llm-pdp";
+import { CATALOG_MAX_ATTEMPTS, getCatalogConsecutiveErrorLimit } from "@/lib/catalog/constants";
 import {
   discoverFromSitemap,
   fetchText,
@@ -57,12 +58,8 @@ type CatalogRunState = {
 };
 
 const CATALOG_STATE_KEY = "catalog_extract";
-const MAX_ATTEMPTS = 3;
 const PDP_LLM_ENABLED = process.env.CATALOG_PDP_LLM_ENABLED !== "false";
-const CONSECUTIVE_ERROR_LIMIT = Math.max(
-  2,
-  Number(process.env.CATALOG_EXTRACT_CONSECUTIVE_ERROR_LIMIT ?? 5),
-);
+const CONSECUTIVE_ERROR_LIMIT = getCatalogConsecutiveErrorLimit();
 const PDP_LLM_MIN_CONFIDENCE = Math.max(
   0.1,
   Math.min(0.99, Number(process.env.CATALOG_PDP_LLM_CONFIDENCE_MIN ?? 0.55)),
@@ -114,7 +111,7 @@ const findNextEligibleCursor = (
   for (let i = 0; i < refs.length; i += 1) {
     const ref = refs[cursor];
     const entry = items[ref.url];
-    if (!entry || (entry.status !== "completed" && entry.attempts < MAX_ATTEMPTS)) {
+    if (!entry || (entry.status !== "completed" && entry.attempts < CATALOG_MAX_ATTEMPTS)) {
       return cursor;
     }
     cursor = (cursor + 1) % refs.length;
@@ -241,6 +238,179 @@ const buildVariantImages = (
     .filter(Boolean) as string[];
   if (mapped.length) return Array.from(new Set(mapped));
   return fallback;
+};
+
+export const processCatalogRef = async ({
+  brand,
+  adapter,
+  ctx,
+  ref,
+  canUseLlmPdp,
+  onStage,
+}: {
+  brand: { id: string; slug: string };
+  adapter: ReturnType<typeof getCatalogAdapter>;
+  ctx: AdapterContext;
+  ref: { url: string };
+  canUseLlmPdp: boolean;
+  onStage?: (stage: string) => void;
+}) => {
+  onStage?.("fetch");
+  let raw = await adapter.fetchProduct(ctx, ref);
+  if (!raw && canUseLlmPdp) {
+    onStage?.("llm_classify");
+    const htmlResponse = await fetchText(ref.url, { method: "GET" }, 15000);
+    if (htmlResponse.status >= 400 || !htmlResponse.text) {
+      throw new Error(`No se pudo obtener HTML (${htmlResponse.status}) para ${ref.url}`);
+    }
+    const signals = extractHtmlSignals(htmlResponse.text, htmlResponse.finalUrl ?? ref.url);
+    const decision = await classifyPdpWithOpenAI({
+      url: ref.url,
+      html: htmlResponse.text,
+      text: signals.text,
+      images: signals.images,
+    });
+    if (!decision.is_pdp || decision.confidence < PDP_LLM_MIN_CONFIDENCE) {
+      throw new Error(`llm_pdp_false:${decision.confidence.toFixed(2)}:${decision.reason}`);
+    }
+    onStage?.("llm_extract");
+    const extracted = await extractRawProductWithOpenAI({
+      url: ref.url,
+      html: htmlResponse.text,
+      text: signals.text,
+      images: signals.images,
+    });
+    const fallbackImages = extracted.images?.length ? extracted.images : signals.images;
+    const sanitizedVariants = extracted.variants.map((variant) => ({
+      ...variant,
+      options: variant.options ?? undefined,
+      images: variant.images ?? [],
+    }));
+    raw = {
+      ...extracted,
+      sourceUrl: ref.url,
+      images: fallbackImages,
+      variants: sanitizedVariants,
+      metadata: {
+        ...(extracted.metadata ?? {}),
+        platform: "custom",
+        llm: {
+          pdp: decision,
+          extracted_at: new Date().toISOString(),
+        },
+      },
+    };
+  }
+  if (!raw) {
+    throw new Error(`No se pudo obtener producto (${adapter.platform}) para ${ref.url}`);
+  }
+
+  onStage?.("normalize_images");
+  const normalizedProductImages = normalizeImageUrls(raw.images);
+  const normalizedVariants = raw.variants.map((variant) => {
+    const variantImages = normalizeImageUrls([variant.image, ...(variant.images ?? [])]);
+    return {
+      ...variant,
+      image: variantImages[0] ?? null,
+      images: variantImages,
+    };
+  });
+  raw.images = normalizedProductImages;
+  raw.variants = normalizedVariants;
+
+  const allImages = Array.from(
+    new Set([
+      ...normalizedProductImages,
+      ...normalizedVariants.flatMap((variant) => [variant.image ?? "", ...(variant.images ?? [])]),
+    ].filter(Boolean)),
+  );
+  const imagePrefix = `catalog/${brand.slug}/${raw.externalId ?? "product"}`;
+  onStage?.("blob_upload");
+  let imageMapping = new Map<string, { url: string }>();
+  let blobFailure: string | null = null;
+  try {
+    imageMapping = await uploadImagesToBlob(allImages, imagePrefix);
+  } catch (error) {
+    blobFailure = error instanceof Error ? error.message : String(error);
+    imageMapping = new Map();
+  }
+  const blobImages = raw.images
+    .map((url) => imageMapping.get(url)?.url)
+    .filter(Boolean) as string[];
+  const fallbackImages = blobImages.length ? blobImages : raw.images;
+  if (!fallbackImages.length) {
+    throw new Error("No hay imágenes disponibles tras upload");
+  }
+  if (blobFailure) {
+    raw.metadata = { ...(raw.metadata ?? {}), blob_upload_failed: blobFailure };
+  }
+  const coverImage = fallbackImages[0] ?? null;
+
+  onStage?.("llm_normalize");
+  const normalized = await normalizeCatalogProductWithOpenAI({
+    ...raw,
+    images: fallbackImages,
+  });
+
+  onStage?.("upsert");
+  const { product, created } = await upsertProduct(brand.id, raw, normalized, coverImage);
+
+  const variantFallbackImages = fallbackImages;
+  const normalizedVariantMap = new Map<string, any>();
+  if (Array.isArray(normalized.variants)) {
+    normalized.variants.forEach((variant: any) => {
+      if (variant?.sku) normalizedVariantMap.set(String(variant.sku), variant);
+    });
+  }
+
+  const rawVariants = raw.variants.length
+    ? raw.variants
+    : [
+        {
+          sku: raw.externalId ?? null,
+          price: null,
+          currency: raw.currency ?? "COP",
+          images: raw.images,
+        } as RawVariant,
+      ];
+
+  let createdVariants = 0;
+  for (let index = 0; index < rawVariants.length; index += 1) {
+    const rawVariant = rawVariants[index];
+    const sku = buildVariantSku(rawVariant, `${product.id}-${index}`);
+    const options = extractVariantOptions(rawVariant);
+    const normalizedVariant = normalizedVariantMap.get(sku) ?? null;
+    const color = options.color ?? normalizedVariant?.color ?? null;
+    const size = options.size ?? normalizedVariant?.size ?? null;
+    const variantImages = buildVariantImages(rawVariant, imageMapping, variantFallbackImages);
+    const priceValue = toNumber(rawVariant.price) ?? toNumber(normalizedVariant?.price) ?? 0;
+    const currencyValue = guessCurrency(
+      priceValue,
+      rawVariant.currency ?? normalizedVariant?.currency ?? raw.currency ?? null,
+    );
+    const variantPayload = {
+      sku,
+      color,
+      size,
+      fit: normalizedVariant?.fit ?? null,
+      material: normalizedVariant?.material ?? null,
+      price: priceValue,
+      currency: currencyValue ?? "COP",
+      stock: typeof rawVariant.stock === "number" ? rawVariant.stock : null,
+      stock_status: resolveStockStatus(rawVariant),
+      images: variantImages,
+      metadata: {
+        compare_at_price: toNumber(rawVariant.compareAtPrice),
+        source_variant_id: rawVariant.id ?? null,
+        options: rawVariant.options ?? null,
+        source_images: [rawVariant.image ?? "", ...(rawVariant.images ?? [])].filter(Boolean),
+      },
+    };
+    const variantResult = await upsertVariant(product.id, variantPayload);
+    if (variantResult.created) createdVariants += 1;
+  }
+
+  return { created, createdVariants };
 };
 
 const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, imageCoverUrl: string | null) => {
@@ -598,7 +768,7 @@ export const extractCatalogForBrand = async (
     iterations += 1;
     const itemState = state.items[ref.url] ?? { status: "pending", attempts: 0 };
     if (itemState.status === "completed") continue;
-    if (itemState.attempts >= MAX_ATTEMPTS) continue;
+    if (itemState.attempts >= CATALOG_MAX_ATTEMPTS) continue;
 
     try {
       state.lastUrl = ref.url;
@@ -610,150 +780,16 @@ export const extractCatalogForBrand = async (
       };
       await persistRunState(brand.id, metadata, state);
 
-      let raw = await adapter.fetchProduct(ctx, ref);
-      if (!raw && canUseLlmPdp) {
-        state.lastStage = "llm_classify";
-        const htmlResponse = await fetchText(ref.url, { method: "GET" }, 15000);
-        if (htmlResponse.status >= 400 || !htmlResponse.text) {
-          throw new Error(`No se pudo obtener HTML (${htmlResponse.status}) para ${ref.url}`);
-        }
-        const signals = extractHtmlSignals(htmlResponse.text, htmlResponse.finalUrl ?? ref.url);
-        const decision = await classifyPdpWithOpenAI({
-          url: ref.url,
-          html: htmlResponse.text,
-          text: signals.text,
-          images: signals.images,
-        });
-        if (!decision.is_pdp || decision.confidence < PDP_LLM_MIN_CONFIDENCE) {
-          throw new Error(
-            `llm_pdp_false:${decision.confidence.toFixed(2)}:${decision.reason}`,
-          );
-        }
-        state.lastStage = "llm_extract";
-        const extracted = await extractRawProductWithOpenAI({
-          url: ref.url,
-          html: htmlResponse.text,
-          text: signals.text,
-          images: signals.images,
-        });
-        const fallbackImages = extracted.images?.length ? extracted.images : signals.images;
-        const sanitizedVariants = extracted.variants.map((variant) => ({
-          ...variant,
-          options: variant.options ?? undefined,
-          images: variant.images ?? [],
-        }));
-        raw = {
-          ...extracted,
-          sourceUrl: ref.url,
-          images: fallbackImages,
-          variants: sanitizedVariants,
-          metadata: {
-            ...(extracted.metadata ?? {}),
-            platform: "custom",
-            llm: {
-              pdp: decision,
-              extracted_at: new Date().toISOString(),
-            },
-          },
-        };
-      }
-      if (!raw) {
-        throw new Error(`No se pudo obtener producto (${adapter.platform}) para ${ref.url}`);
-      }
-
-      state.lastStage = "normalize_images";
-      const normalizedProductImages = normalizeImageUrls(raw.images);
-      const normalizedVariants = raw.variants.map((variant) => {
-        const variantImages = normalizeImageUrls([variant.image, ...(variant.images ?? [])]);
-        return {
-          ...variant,
-          image: variantImages[0] ?? null,
-          images: variantImages,
-        };
+      const { created, createdVariants } = await processCatalogRef({
+        brand: { id: brand.id, slug: brand.slug },
+        adapter,
+        ctx,
+        ref,
+        canUseLlmPdp,
+        onStage: (stage) => {
+          state.lastStage = stage;
+        },
       });
-      raw.images = normalizedProductImages;
-      raw.variants = normalizedVariants;
-
-      const allImages = Array.from(
-        new Set([
-          ...normalizedProductImages,
-          ...normalizedVariants.flatMap((variant) => [variant.image ?? "", ...(variant.images ?? [])]),
-        ].filter(Boolean)),
-      );
-      const imagePrefix = `catalog/${brand.slug}/${raw.externalId ?? "product"}`;
-      state.lastStage = "blob_upload";
-      const imageMapping = await uploadImagesToBlob(allImages, imagePrefix);
-      const blobImages = raw.images
-        .map((url) => imageMapping.get(url)?.url)
-        .filter(Boolean) as string[];
-      if (!blobImages.length) {
-        throw new Error("Blob upload produjo 0 imágenes");
-      }
-      const coverImage = blobImages[0] ?? null;
-
-      state.lastStage = "llm_normalize";
-      const normalized = await normalizeCatalogProductWithOpenAI({
-        ...raw,
-        images: blobImages.length ? blobImages : raw.images,
-      });
-
-      state.lastStage = "upsert";
-      const { product, created } = await upsertProduct(brand.id, raw, normalized, coverImage);
-
-      const fallbackImages = blobImages.length ? blobImages : raw.images;
-      const normalizedVariantMap = new Map<string, any>();
-      if (Array.isArray(normalized.variants)) {
-        normalized.variants.forEach((variant: any) => {
-          if (variant?.sku) normalizedVariantMap.set(String(variant.sku), variant);
-        });
-      }
-
-      const rawVariants = raw.variants.length
-        ? raw.variants
-        : [
-            {
-              sku: raw.externalId ?? null,
-              price: null,
-              currency: raw.currency ?? "COP",
-              images: raw.images,
-            } as RawVariant,
-          ];
-
-      let createdVariants = 0;
-      for (let index = 0; index < rawVariants.length; index += 1) {
-        const rawVariant = rawVariants[index];
-        const sku = buildVariantSku(rawVariant, `${product.id}-${index}`);
-        const options = extractVariantOptions(rawVariant);
-        const normalizedVariant = normalizedVariantMap.get(sku) ?? null;
-        const color = options.color ?? normalizedVariant?.color ?? null;
-        const size = options.size ?? normalizedVariant?.size ?? null;
-        const variantImages = buildVariantImages(rawVariant, imageMapping, fallbackImages);
-        const priceValue = toNumber(rawVariant.price) ?? toNumber(normalizedVariant?.price) ?? 0;
-        const currencyValue = guessCurrency(
-          priceValue,
-          rawVariant.currency ?? normalizedVariant?.currency ?? raw.currency ?? null,
-        );
-        const variantPayload = {
-          sku,
-          color,
-          size,
-          fit: normalizedVariant?.fit ?? null,
-          material: normalizedVariant?.material ?? null,
-          price: priceValue,
-          currency: currencyValue ?? "COP",
-          stock: typeof rawVariant.stock === "number" ? rawVariant.stock : null,
-          stock_status: resolveStockStatus(rawVariant),
-          images: variantImages,
-          metadata: {
-            compare_at_price: toNumber(rawVariant.compareAtPrice),
-            source_variant_id: rawVariant.id ?? null,
-            options: rawVariant.options ?? null,
-            source_images: [rawVariant.image ?? "", ...(rawVariant.images ?? [])].filter(Boolean),
-          },
-        };
-        const variantResult = await upsertVariant(product.id, variantPayload);
-        if (variantResult.created) createdVariants += 1;
-      }
 
       summary.processed += 1;
       if (created) summary.created += 1;
@@ -817,7 +853,7 @@ export const extractCatalogForBrand = async (
     const entry = state.items[ref.url];
     if (!entry) return true;
     if (entry.status === "completed") return false;
-    return entry.attempts < MAX_ATTEMPTS;
+    return entry.attempts < CATALOG_MAX_ATTEMPTS;
   }).length;
 
   state.cursor = cursor;

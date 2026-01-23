@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
-import { readCatalogRunState, summarizeCatalogRunState } from "@/lib/catalog/extractor";
+import { findLatestRun, summarizeRun } from "@/lib/catalog/run-store";
 
 export const runtime = "nodejs";
 
@@ -25,11 +25,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "brand_not_found" }, { status: 404 });
   }
 
-  const metadata =
-    brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
-      ? (brand.metadata as Record<string, unknown>)
-      : {};
-  const state = summarizeCatalogRunState(readCatalogRunState(metadata));
-
+  const run = await findLatestRun(brandId);
+  if (!run) return NextResponse.json({ state: null });
+  const state = await summarizeRun(run.id);
   return NextResponse.json({ state });
 }

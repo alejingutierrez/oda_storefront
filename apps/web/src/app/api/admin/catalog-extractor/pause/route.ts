@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { validateAdminRequest } from "@/lib/auth";
-import { pauseCatalogRun } from "@/lib/catalog/extractor";
+import { findActiveRun, markRunStatus, summarizeRun } from "@/lib/catalog/run-store";
 
 export const runtime = "nodejs";
 
@@ -16,10 +16,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "missing_brand" }, { status: 400 });
   }
 
-  const state = await pauseCatalogRun(brandId);
-  if (!state) {
+  const run = await findActiveRun(brandId);
+  if (!run) {
     return NextResponse.json({ error: "run_not_found" }, { status: 404 });
   }
 
+  await markRunStatus(run.id, "paused");
+  const state = await summarizeRun(run.id);
   return NextResponse.json({ state });
 }

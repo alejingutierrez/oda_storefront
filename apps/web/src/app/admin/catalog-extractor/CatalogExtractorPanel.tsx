@@ -325,6 +325,10 @@ export default function CatalogExtractorPanel() {
       return;
     }
 
+    if (currentState.status === "processing") {
+      return;
+    }
+
     if (currentState.status === "completed") {
       if (nextBrandId && nextBrandId !== selectedBrand) {
         setSelectedBrand(nextBrandId);

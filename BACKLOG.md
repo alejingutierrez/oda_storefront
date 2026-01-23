@@ -36,6 +36,8 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-071 | done | P1 | Blob robusto: sanitizar path + tolerar fallos | Evita error por # y no aborta por fallos parciales.
+- MC-070 | done | P1 | Concurrencia catálogo v2 (cola + runs/items) | Tablas + BullMQ + worker + backfill.
 - MC-069 | done | P1 | Robustez extractor: telemetría + pausa por errores | lastUrl/lastStage/errorSamples y pausa por errores consecutivos.
 - MC-068 | done | P1 | Resume UI + barrido + GPT-5 mini en productos | Botón Resume en pausa/stop, sync cursor, modelo barato para PDP/normalización.
 - MC-067 | done | P1 | Detener extractor conserva estado | Stop mantiene cursor/refs y permite reanudar sin reiniciar.
