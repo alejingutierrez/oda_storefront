@@ -136,6 +136,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - Variables críticas: `OPENAI_API_KEY`, `NEON_DATABASE_URL`, `REDIS_URL`, `VERCEL_BLOB_READ_WRITE_TOKEN`, `WOMPI_PRIVATE_KEY`, `WOMPI_PUBLIC_KEY`, `SMTP_HOST/USER/PASS`, `NEXTAUTH_SECRET`, `ENCRYPTION_KEY`, `S3_PROXY` si aplica.
 - Feature flags para: try-on, anuncios, recomendaciones proactivas, scrapers experimentales, prompts IA versionados.
 - Separar variables por ambiente (local/stg/prod); política de rotación trimestral de llaves sensibles; exportar configuración de prompts/versiones en Git.
+ - **Vercel CLI**: el `VERCEL_TOKEN` ya está disponible en `.env`. No solicitarlo nuevamente; usar el valor de `.env` cuando se necesite operar Vercel desde CLI.
 
 ## 17) Notas de estilo y UX
 - Enfocar en moda colombiana: lenguaje, imágenes y ejemplos locales.
