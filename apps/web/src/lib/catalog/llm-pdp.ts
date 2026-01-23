@@ -2,7 +2,7 @@ import { z } from "zod";
 import { getOpenAIClient } from "@/lib/openai";
 import { normalizeUrl, safeOrigin } from "@/lib/catalog/utils";
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.2";
+const OPENAI_MODEL = process.env.CATALOG_OPENAI_MODEL ?? "gpt-5-mini";
 const MAX_RETRIES = 3;
 const MAX_HTML_CHARS = Math.max(5000, Number(process.env.CATALOG_PDP_LLM_MAX_HTML_CHARS ?? 40000));
 const MAX_TEXT_CHARS = Math.max(2000, Number(process.env.CATALOG_PDP_LLM_MAX_TEXT_CHARS ?? 8000));

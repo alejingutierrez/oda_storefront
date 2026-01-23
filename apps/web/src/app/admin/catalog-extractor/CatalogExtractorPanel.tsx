@@ -89,6 +89,11 @@ export default function CatalogExtractorPanel() {
   );
 
   const progress = useMemo(() => buildProgress(currentState), [currentState]);
+  const playLabel = useMemo(() => {
+    if (running) return "Procesando...";
+    if (currentState?.status === "paused" || currentState?.status === "stopped") return "Resume";
+    return "Play";
+  }, [currentState, running]);
   const errorDetails = useMemo(() => {
     if (error) return { title: "Fallo al ejecutar", message: error };
     if (currentState?.blockReason) {
@@ -373,7 +378,7 @@ export default function CatalogExtractorPanel() {
             disabled={!selectedBrand || running}
             className="flex-1 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
-            {running ? "Procesando..." : "Play"}
+            {playLabel}
           </button>
           <button
             type="button"

@@ -3,7 +3,7 @@ import { getOpenAIClient } from "@/lib/openai";
 import { guessCurrency } from "@/lib/catalog/utils";
 import type { CanonicalProduct, RawProduct } from "@/lib/catalog/types";
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.2";
+const OPENAI_MODEL = process.env.CATALOG_OPENAI_MODEL ?? "gpt-5-mini";
 const MAX_RETRIES = 3;
 
 const catalogVariantSchema = z.object({

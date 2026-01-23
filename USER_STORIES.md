@@ -195,6 +195,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: N/A.
 - Estado: **done (2026-01-23)**.
 
+### MC-068 Resume UI + barrido de URLs + GPT-5 mini en productos
+- Historia: Como operador, quiero ver “Resume” cuando una marca ya pausó/detuvo, y asegurar que el extractor retome desde el último punto sin re‑scrapear URLs completadas; además reducir costo con GPT‑5 mini en el scraper de productos.
+- Alcance: Label “Resume” en botón Play cuando status es `paused/stopped`; barrido de `refs/items` para encontrar el siguiente pendiente; modelo `CATALOG_OPENAI_MODEL=gpt-5-mini` para PDP LLM + normalización de catálogo.
+- CA: Al pausar/detener, el botón cambia a Resume y al reanudar no se reprocesan URLs completadas; el pipeline de productos usa GPT‑5 mini sin cambiar el output.
+- Datos: `brands.metadata.catalog_extract`, env `CATALOG_OPENAI_MODEL`.
+- NF: Sin cambios en esquema de salida.
+- Riesgos: Desalineación de cursor si refs cambian; mitigado con sincronización de items.
+- Métricas: % de reprocesos evitados; costo por producto.
+- Estado: **done (2026-01-23)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

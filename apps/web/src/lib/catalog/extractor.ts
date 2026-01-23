@@ -78,6 +78,42 @@ export const readCatalogRunState = (metadata: Record<string, unknown>) => {
   return state as CatalogRunState;
 };
 
+const syncRunStateItems = (
+  refs: CatalogRunState["refs"],
+  items: CatalogRunState["items"] | undefined,
+  now: string,
+) => {
+  const nextItems: CatalogRunState["items"] = { ...(items ?? {}) };
+  const refSet = new Set(refs.map((ref) => ref.url));
+  refs.forEach((ref) => {
+    if (!nextItems[ref.url]) {
+      nextItems[ref.url] = { status: "pending", attempts: 0, updatedAt: now };
+    }
+  });
+  Object.keys(nextItems).forEach((url) => {
+    if (!refSet.has(url)) delete nextItems[url];
+  });
+  return nextItems;
+};
+
+const findNextEligibleCursor = (
+  refs: CatalogRunState["refs"],
+  items: CatalogRunState["items"],
+  startCursor: number,
+) => {
+  if (!refs.length) return 0;
+  let cursor = startCursor % refs.length;
+  for (let i = 0; i < refs.length; i += 1) {
+    const ref = refs[cursor];
+    const entry = items[ref.url];
+    if (!entry || (entry.status !== "completed" && entry.attempts < MAX_ATTEMPTS)) {
+      return cursor;
+    }
+    cursor = (cursor + 1) % refs.length;
+  }
+  return startCursor % refs.length;
+};
+
 export const summarizeCatalogRunState = (state: CatalogRunState | null) => {
   if (!state) return null;
   const itemStates = Object.values(state.items ?? {});
@@ -363,6 +399,9 @@ export const extractCatalogForBrand = async (
   let refs: CatalogRunState["refs"] = [];
 
   if (existingState && existingState.status !== "completed" && existingState.refs?.length) {
+    const now = new Date().toISOString();
+    const syncedItems = syncRunStateItems(existingState.refs, existingState.items, now);
+    const nextCursor = findNextEligibleCursor(existingState.refs, syncedItems, existingState.cursor ?? 0);
     state = {
       ...existingState,
       status:
@@ -370,9 +409,12 @@ export const extractCatalogForBrand = async (
           ? "processing"
           : existingState.status,
       batchSize,
-      updatedAt: new Date().toISOString(),
+      items: syncedItems,
+      cursor: nextCursor,
+      updatedAt: now,
     };
     refs = state.refs;
+    await persistRunState(brand.id, metadataForRun, state);
   } else {
     const sitemapRefs = options.forceSitemap
       ? await discoverRefsFromSitemap(brand.siteUrl, sitemapLimit)
