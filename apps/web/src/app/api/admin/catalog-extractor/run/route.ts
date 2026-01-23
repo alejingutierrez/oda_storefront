@@ -16,6 +16,7 @@ import {
 import { drainCatalogRun } from "@/lib/catalog/processor";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const admin = await validateAdminRequest(req);

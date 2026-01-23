@@ -326,7 +326,10 @@ export default function CatalogExtractorPanel() {
     }
 
     if (currentState.status === "processing") {
-      return;
+      const timer = setTimeout(() => {
+        runExtraction();
+      }, 5000);
+      return () => clearTimeout(timer);
     }
 
     if (currentState.status === "completed") {

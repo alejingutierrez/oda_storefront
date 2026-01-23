@@ -5,6 +5,7 @@ import { resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
 import { drainCatalogRun } from "@/lib/catalog/processor";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const allowCronRequest = (req: Request) => {
   const cronHeader = req.headers.get("x-vercel-cron");
