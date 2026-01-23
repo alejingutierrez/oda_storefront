@@ -4,6 +4,8 @@ import { validateAdminRequest } from "@/lib/auth";
 import { getCatalogAdapter } from "@/lib/catalog/registry";
 import { processCatalogRef } from "@/lib/catalog/extractor";
 import { CATALOG_MAX_ATTEMPTS, getCatalogConsecutiveErrorLimit } from "@/lib/catalog/constants";
+import { enqueueCatalogItems } from "@/lib/catalog/queue";
+import { listPendingItems, markItemsQueued, resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
 
 export const runtime = "nodejs";
 
@@ -29,6 +31,12 @@ export async function POST(req: Request) {
 
   const run = item.run;
   if (!run || run.status !== "processing") {
+    if (item.status === "queued" || item.status === "in_progress") {
+      await prisma.catalogItem.update({
+        where: { id: item.id },
+        data: { status: "pending", updatedAt: new Date() },
+      });
+    }
     return NextResponse.json({ status: "skipped", reason: run?.status ?? "missing_run" });
   }
   if (item.status === "completed") {
@@ -60,6 +68,18 @@ export async function POST(req: Request) {
   const canUseLlmPdp =
     process.env.CATALOG_PDP_LLM_ENABLED !== "false" &&
     (adapter.platform === "custom" || (brand.ecommercePlatform ?? "").toLowerCase() === "unknown");
+  const enqueueLimit = Math.max(
+    1,
+    Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
+  );
+  const queuedStaleMs = Math.max(
+    0,
+    Number(process.env.CATALOG_QUEUE_STALE_MINUTES ?? 15) * 60 * 1000,
+  );
+  const stuckMs = Math.max(
+    0,
+    Number(process.env.CATALOG_ITEM_STUCK_MINUTES ?? 30) * 60 * 1000,
+  );
 
   const now = new Date();
   await prisma.catalogItem.update({
@@ -102,10 +122,12 @@ export async function POST(req: Request) {
       },
     });
 
+    await resetQueuedItems(run.id, queuedStaleMs);
+    await resetStuckItems(run.id, stuckMs);
     const remaining = await prisma.catalogItem.count({
       where: {
         runId: run.id,
-        status: { in: ["pending", "in_progress", "failed"] },
+        status: { in: ["pending", "queued", "in_progress", "failed"] },
         attempts: { lt: CATALOG_MAX_ATTEMPTS },
       },
     });
@@ -114,6 +136,10 @@ export async function POST(req: Request) {
         where: { id: run.id },
         data: { status: "completed", finishedAt: new Date(), updatedAt: new Date() },
       });
+    } else {
+      const pendingItems = await listPendingItems(run.id, enqueueLimit);
+      await markItemsQueued(pendingItems.map((candidate) => candidate.id));
+      await enqueueCatalogItems(pendingItems);
     }
 
     return NextResponse.json({ status: "completed", created: result.created, createdVariants: result.createdVariants });
@@ -148,10 +174,12 @@ export async function POST(req: Request) {
     });
 
     if (!shouldPause) {
+      await resetQueuedItems(run.id, queuedStaleMs);
+      await resetStuckItems(run.id, stuckMs);
       const remaining = await prisma.catalogItem.count({
         where: {
           runId: run.id,
-          status: { in: ["pending", "in_progress", "failed"] },
+          status: { in: ["pending", "queued", "in_progress", "failed"] },
           attempts: { lt: CATALOG_MAX_ATTEMPTS },
         },
       });
@@ -160,6 +188,10 @@ export async function POST(req: Request) {
           where: { id: run.id },
           data: { status: "completed", finishedAt: new Date(), updatedAt: new Date() },
         });
+      } else {
+        const pendingItems = await listPendingItems(run.id, enqueueLimit);
+        await markItemsQueued(pendingItems.map((candidate) => candidate.id));
+        await enqueueCatalogItems(pendingItems);
       }
     }
 

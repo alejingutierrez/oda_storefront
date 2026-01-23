@@ -3,7 +3,15 @@ import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { discoverCatalogRefs } from "@/lib/catalog/discovery";
 import { enqueueCatalogItems } from "@/lib/catalog/queue";
-import { createRunWithItems, findActiveRun, listPendingItems, summarizeRun } from "@/lib/catalog/run-store";
+import {
+  createRunWithItems,
+  findActiveRun,
+  listPendingItems,
+  markItemsQueued,
+  resetQueuedItems,
+  resetStuckItems,
+  summarizeRun,
+} from "@/lib/catalog/run-store";
 
 export const runtime = "nodejs";
 
@@ -19,6 +27,14 @@ export async function POST(req: Request) {
   const enqueueLimit = Math.max(
     1,
     Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
+  );
+  const queuedStaleMs = Math.max(
+    0,
+    Number(process.env.CATALOG_QUEUE_STALE_MINUTES ?? 15) * 60 * 1000,
+  );
+  const stuckMs = Math.max(
+    0,
+    Number(process.env.CATALOG_ITEM_STUCK_MINUTES ?? 30) * 60 * 1000,
   );
 
   if (!brandId) {
@@ -39,10 +55,13 @@ export async function POST(req: Request) {
           data: { status: "processing", updatedAt: new Date() },
         });
       }
+      await resetQueuedItems(existing.id, queuedStaleMs);
+      await resetStuckItems(existing.id, stuckMs);
       const pendingItems = await listPendingItems(
         existing.id,
         Number.isFinite(batchSize) ? Math.max(batchSize, enqueueLimit) : enqueueLimit,
       );
+      await markItemsQueued(pendingItems.map((item) => item.id));
       await enqueueCatalogItems(pendingItems);
       const summary = await summarizeRun(existing.id);
       return NextResponse.json({ summary });
@@ -89,6 +108,7 @@ export async function POST(req: Request) {
       run.id,
       Number.isFinite(batchSize) ? Math.max(batchSize, enqueueLimit) : enqueueLimit,
     );
+    await markItemsQueued(items.map((item) => item.id));
     await enqueueCatalogItems(items);
     const summary = await summarizeRun(run.id);
     return NextResponse.json({ summary });

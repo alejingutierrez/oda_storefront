@@ -7,7 +7,13 @@ let catalogQueue: Queue | null = null;
 
 export const getCatalogQueue = () => {
   if (!catalogQueue) {
-    catalogQueue = new Queue(queueName, { connection });
+    catalogQueue = new Queue(queueName, {
+      connection,
+      defaultJobOptions: {
+        removeOnComplete: true,
+        removeOnFail: true,
+      },
+    });
   }
   return catalogQueue;
 };
@@ -15,11 +21,27 @@ export const getCatalogQueue = () => {
 export const enqueueCatalogItems = async (items: Array<{ id: string }>) => {
   if (!items.length) return;
   const queue = getCatalogQueue();
-  await queue.addBulk(
-    items.map((item) => ({
+  const jobs = items.map((item) => ({
       name: "catalog-item",
       data: { itemId: item.id },
       jobId: item.id,
-    })),
-  );
+    }));
+
+  try {
+    await queue.addBulk(jobs);
+  } catch (error) {
+    const results = await Promise.allSettled(
+      jobs.map((job) =>
+        queue.add(job.name, job.data, {
+          jobId: job.jobId,
+          removeOnComplete: true,
+          removeOnFail: true,
+        }),
+      ),
+    );
+    const rejected = results.filter((result) => result.status === "rejected");
+    if (rejected.length) {
+      throw new Error(`Failed to enqueue ${rejected.length} catalog jobs`);
+    }
+  }
 };

@@ -105,6 +105,32 @@ export const listPendingItems = async (runId: string, limit?: number) => {
   });
 };
 
+export const markItemsQueued = async (ids: string[]) => {
+  if (!ids.length) return { count: 0 };
+  return prisma.catalogItem.updateMany({
+    where: { id: { in: ids }, status: { in: ["pending", "failed"] } },
+    data: { status: "queued", updatedAt: new Date() },
+  });
+};
+
+export const resetQueuedItems = async (runId: string, olderThanMs: number) => {
+  if (!Number.isFinite(olderThanMs) || olderThanMs <= 0) return { count: 0 };
+  const cutoff = new Date(Date.now() - olderThanMs);
+  return prisma.catalogItem.updateMany({
+    where: { runId, status: "queued", updatedAt: { lt: cutoff } },
+    data: { status: "pending", updatedAt: new Date() },
+  });
+};
+
+export const resetStuckItems = async (runId: string, olderThanMs: number) => {
+  if (!Number.isFinite(olderThanMs) || olderThanMs <= 0) return { count: 0 };
+  const cutoff = new Date(Date.now() - olderThanMs);
+  return prisma.catalogItem.updateMany({
+    where: { runId, status: "in_progress", startedAt: { lt: cutoff } },
+    data: { status: "pending", updatedAt: new Date() },
+  });
+};
+
 export const markRunStatus = async (runId: string, status: string) => {
   return prisma.catalogRun.update({
     where: { id: runId },
