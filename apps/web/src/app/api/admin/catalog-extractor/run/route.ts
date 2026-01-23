@@ -7,7 +7,6 @@ import {
   createRunWithItems,
   findActiveRun,
   listPendingItems,
-  listRunnableItems,
   markItemsQueued,
   resetQueuedItems,
   resetStuckItems,
@@ -27,6 +26,10 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : null;
   const batchSize = Number(body?.batchSize ?? body?.limit ?? 1);
+  const resumeRequested = Boolean(body?.resume);
+  const requestedDrainBatch = Number(body?.drainBatch ?? body?.drainLimit ?? body?.drainSize);
+  const requestedDrainConcurrency = Number(body?.drainConcurrency ?? body?.concurrency ?? body?.drainWorkers);
+  const requestedDrainMaxMs = Number(body?.drainMaxMs ?? body?.maxMs ?? body?.drainTimeoutMs);
   const enqueueLimit = Math.max(
     1,
     Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
@@ -34,18 +37,20 @@ export async function POST(req: Request) {
   const drainOnRun =
     process.env.CATALOG_DRAIN_ON_RUN !== "false" &&
     process.env.CATALOG_DRAIN_DISABLED !== "true";
-  const drainBatch = Math.max(
-    0,
-    Number(process.env.CATALOG_DRAIN_ON_RUN_BATCH ?? process.env.CATALOG_DRAIN_BATCH ?? 1),
+  const drainBatchDefault = Number(
+    process.env.CATALOG_DRAIN_ON_RUN_BATCH ?? process.env.CATALOG_DRAIN_BATCH ?? 0,
   );
-  const drainConcurrency = Math.max(
-    1,
-    Number(process.env.CATALOG_DRAIN_ON_RUN_CONCURRENCY ?? process.env.CATALOG_DRAIN_CONCURRENCY ?? 2),
+  const drainBatch = Number.isFinite(requestedDrainBatch) ? requestedDrainBatch : drainBatchDefault;
+  const drainConcurrencyDefault = Number(
+    process.env.CATALOG_DRAIN_ON_RUN_CONCURRENCY ?? process.env.CATALOG_DRAIN_CONCURRENCY ?? 5,
   );
-  const drainMaxMs = Math.max(
-    1000,
-    Number(process.env.CATALOG_DRAIN_ON_RUN_MAX_RUNTIME_MS ?? 8000),
+  const drainConcurrency = Number.isFinite(requestedDrainConcurrency)
+    ? requestedDrainConcurrency
+    : drainConcurrencyDefault;
+  const drainMaxMsDefault = Number(
+    process.env.CATALOG_DRAIN_ON_RUN_MAX_RUNTIME_MS ?? 20000,
   );
+  const drainMaxMs = Number.isFinite(requestedDrainMaxMs) ? requestedDrainMaxMs : drainMaxMsDefault;
   const queuedStaleMs = Math.max(
     0,
     Number(process.env.CATALOG_QUEUE_STALE_MINUTES ?? 15) * 60 * 1000,
@@ -53,6 +58,10 @@ export async function POST(req: Request) {
   const stuckMs = Math.max(
     0,
     Number(process.env.CATALOG_ITEM_STUCK_MINUTES ?? 30) * 60 * 1000,
+  );
+  const resumeStuckMs = Math.max(
+    0,
+    Number(process.env.CATALOG_RESUME_STUCK_MINUTES ?? 2) * 60 * 1000,
   );
 
   if (!brandId) {
@@ -83,14 +92,26 @@ export async function POST(req: Request) {
 
     const existing = await findActiveRun(brandId);
     if (existing) {
-      if (existing.status === "paused" || existing.status === "stopped") {
+      const shouldResumeSweep =
+        resumeRequested || existing.status === "paused" || existing.status === "stopped";
+      if (existing.status === "paused" || existing.status === "stopped" || shouldResumeSweep) {
         await prisma.catalogRun.update({
           where: { id: existing.id },
-          data: { status: "processing", updatedAt: new Date() },
+          data: {
+            status: "processing",
+            consecutiveErrors: 0,
+            lastError: null,
+            blockReason: null,
+            updatedAt: new Date(),
+          },
         });
       }
-      await resetQueuedItems(existing.id, queuedStaleMs);
-      await resetStuckItems(existing.id, stuckMs);
+      const effectiveQueuedStaleMs = shouldResumeSweep ? 0 : queuedStaleMs;
+      const effectiveStuckMs = shouldResumeSweep
+        ? Math.min(stuckMs, resumeStuckMs || 0)
+        : stuckMs;
+      await resetQueuedItems(existing.id, effectiveQueuedStaleMs);
+      await resetStuckItems(existing.id, effectiveStuckMs);
       const pendingItems = await listPendingItems(
         existing.id,
         Number.isFinite(batchSize) ? Math.max(batchSize, enqueueLimit) : enqueueLimit,
@@ -100,11 +121,11 @@ export async function POST(req: Request) {
       if (drainOnRun) {
         await drainCatalogRun({
           runId: existing.id,
-          batch: drainBatch <= 0 ? Number.MAX_SAFE_INTEGER : drainBatch,
-          concurrency: drainConcurrency,
-          maxMs: drainMaxMs,
-          queuedStaleMs,
-          stuckMs,
+          batch: drainBatch <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, drainBatch),
+          concurrency: Math.max(1, drainConcurrency),
+          maxMs: Math.max(1000, drainMaxMs),
+          queuedStaleMs: effectiveQueuedStaleMs,
+          stuckMs: effectiveStuckMs,
         });
       }
       const summary = await summarizeRun(existing.id);
@@ -157,9 +178,9 @@ export async function POST(req: Request) {
     if (drainOnRun) {
       await drainCatalogRun({
         runId: run.id,
-        batch: drainBatch <= 0 ? Number.MAX_SAFE_INTEGER : drainBatch,
-        concurrency: drainConcurrency,
-        maxMs: drainMaxMs,
+        batch: drainBatch <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, drainBatch),
+        concurrency: Math.max(1, drainConcurrency),
+        maxMs: Math.max(1000, drainMaxMs),
         queuedStaleMs,
         stuckMs,
       });

@@ -24,6 +24,7 @@ const resolveBlobToken = () =>
 
 const sanitizeBlobPath = (value: string) =>
   value
+    .replace(/[#?]/g, "_")
     .split("/")
     .map((segment) => encodeURIComponent(segment))
     .join("/");

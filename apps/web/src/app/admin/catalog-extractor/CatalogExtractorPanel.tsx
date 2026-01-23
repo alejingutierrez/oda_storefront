@@ -89,21 +89,24 @@ export default function CatalogExtractorPanel() {
   );
 
   const progress = useMemo(() => buildProgress(currentState), [currentState]);
-  const playLabel = useMemo(() => {
-    if (running) return "Procesando...";
+  const shouldResume = useMemo(() => {
     const cursorValue =
       currentState && "cursor" in currentState && typeof currentState.cursor === "number"
         ? currentState.cursor
         : 0;
     const hasProgress = progress.completed > 0 || progress.failed > 0 || cursorValue > 0;
-    const shouldResume =
+    return Boolean(
       currentState &&
-      currentState.status !== "completed" &&
-      (currentState.status === "paused" ||
-        currentState.status === "stopped" ||
-        (currentState.status === "processing" && hasProgress));
+        currentState.status !== "completed" &&
+        (currentState.status === "paused" ||
+          currentState.status === "stopped" ||
+          (currentState.status === "processing" && hasProgress)),
+    );
+  }, [currentState, progress]);
+  const playLabel = useMemo(() => {
+    if (running) return "Procesando...";
     return shouldResume ? "Resume" : "Play";
-  }, [currentState, progress, running]);
+  }, [running, shouldResume]);
   const errorDetails = useMemo(() => {
     if (error) return { title: "Fallo al ejecutar", message: error };
     if (currentState?.blockReason) {
@@ -227,7 +230,12 @@ export default function CatalogExtractorPanel() {
       const res = await fetch("/api/admin/catalog-extractor/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId: selectedBrand, batchSize: 1 }),
+        body: JSON.stringify({
+          brandId: selectedBrand,
+          batchSize: 1,
+          resume: shouldResume,
+          drainBatch: 0,
+        }),
       });
       if (!res.ok) {
         const payload = await res.json().catch(() => null);
@@ -253,7 +261,7 @@ export default function CatalogExtractorPanel() {
     } finally {
       setRunning(false);
     }
-  }, [selectedBrand]);
+  }, [selectedBrand, shouldResume]);
 
   const handlePlay = () => {
     if (!selectedBrand) return;

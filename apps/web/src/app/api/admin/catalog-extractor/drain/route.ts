@@ -12,10 +12,20 @@ const allowCronRequest = (req: Request) => {
   return cronHeader === "1" || cronHeader === "true";
 };
 
-const resolveDrainConfig = () => {
-  const batch = Math.max(1, Number(process.env.CATALOG_DRAIN_BATCH ?? 5));
-  const concurrency = Math.max(1, Number(process.env.CATALOG_DRAIN_CONCURRENCY ?? 3));
-  const maxMs = Math.max(2000, Number(process.env.CATALOG_DRAIN_MAX_RUNTIME_MS ?? 20000));
+const resolveDrainConfig = (body: unknown) => {
+  const payload =
+    body && typeof body === "object" ? (body as Record<string, unknown>) : ({} as Record<string, unknown>);
+  const requestedBatch = Number(payload.drainBatch ?? payload.batch ?? payload.limit);
+  const requestedConcurrency = Number(payload.drainConcurrency ?? payload.concurrency ?? payload.workers);
+  const requestedMaxMs = Number(payload.drainMaxMs ?? payload.maxMs ?? payload.timeoutMs);
+  const batchDefault = Number(process.env.CATALOG_DRAIN_BATCH ?? 0);
+  const concurrencyDefault = Number(process.env.CATALOG_DRAIN_CONCURRENCY ?? 5);
+  const maxMsDefault = Number(process.env.CATALOG_DRAIN_MAX_RUNTIME_MS ?? 20000);
+  const batch = Number.isFinite(requestedBatch) ? requestedBatch : batchDefault;
+  const concurrency = Number.isFinite(requestedConcurrency)
+    ? requestedConcurrency
+    : concurrencyDefault;
+  const maxMs = Number.isFinite(requestedMaxMs) ? requestedMaxMs : maxMsDefault;
   const queuedStaleMs = Math.max(
     0,
     Number(process.env.CATALOG_QUEUE_STALE_MINUTES ?? 15) * 60 * 1000,
@@ -36,12 +46,16 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : null;
 
-  const { batch, concurrency, maxMs, queuedStaleMs, stuckMs } = resolveDrainConfig();
+  const { batch, concurrency, maxMs, queuedStaleMs, stuckMs } = resolveDrainConfig(body);
   const startedAt = Date.now();
   let processed = 0;
   let lastResult: unknown = null;
 
-  while (processed < batch && Date.now() - startedAt < maxMs) {
+  const safeBatch = batch <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, batch);
+  const safeConcurrency = Math.max(1, concurrency);
+  const safeMaxMs = Math.max(2000, maxMs);
+
+  while (processed < safeBatch && Date.now() - startedAt < safeMaxMs) {
     let runId: string | null = null;
     if (brandId) {
       const run = await prisma.catalogRun.findFirst({
@@ -63,9 +77,9 @@ export async function POST(req: Request) {
     await resetStuckItems(runId, stuckMs);
     lastResult = await drainCatalogRun({
       runId,
-      batch,
-      concurrency,
-      maxMs,
+      batch: safeBatch,
+      concurrency: safeConcurrency,
+      maxMs: safeMaxMs,
       queuedStaleMs,
       stuckMs,
     });

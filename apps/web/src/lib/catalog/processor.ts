@@ -239,6 +239,7 @@ export const drainCatalogRun = async ({
   let completed = 0;
   let failed = 0;
   let skipped = 0;
+  let idleRounds = 0;
 
   const safeBatch = Math.max(1, batch);
   const safeConcurrency = Math.max(1, concurrency);
@@ -265,17 +266,31 @@ export const drainCatalogRun = async ({
       ),
     );
 
-    processed += items.length;
+    let progressed = 0;
     results.forEach((result) => {
       if (result.status !== "fulfilled") {
         failed += 1;
+        progressed += 1;
         return;
       }
       const status = result.value.status;
-      if (status === "completed") completed += 1;
-      else if (status === "failed") failed += 1;
-      else skipped += 1;
+      if (status === "completed") {
+        completed += 1;
+        progressed += 1;
+      } else if (status === "failed") {
+        failed += 1;
+        progressed += 1;
+      } else {
+        skipped += 1;
+      }
     });
+    processed += progressed;
+    if (progressed === 0) {
+      idleRounds += 1;
+      if (idleRounds >= 2) break;
+    } else {
+      idleRounds = 0;
+    }
   }
 
   return { processed, completed, failed, skipped };
