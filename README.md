@@ -80,7 +80,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Directorio de productos scrapeados con cards, modal de detalle y filtros por marca.
 - Panel `/admin/catalog-extractor` (catalog extractor):
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.
-  - Controles Play/Pausar/Detener, reanudación automática y sitemap‑first.
+  - Controles Play/Pausar/Detener (detener conserva estado para reanudar), reanudación automática y sitemap‑first.
   - Permite **finalizar** una marca para sacarla de la cola y registrar `metadata.catalog_extract_finished`.
   - Para `unknown`, intenta inferencia rápida de plataforma (sin LLM) desde la home y guarda `catalog_extract_inferred_platform` en `brands.metadata`.
   - Para `unknown/custom`, si el adapter no puede extraer, usa LLM para clasificar PDP y extraer RawProduct (HTML+texto).

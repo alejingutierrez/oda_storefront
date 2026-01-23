@@ -185,6 +185,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: N/A.
 - Estado: **done (2026-01-23)**.
 
+### MC-067 Detener extractor conserva estado
+- Historia: Como operador, quiero detener el extractor sin perder el progreso, para reanudar desde el último producto procesado.
+- Alcance: Acción “Detener” guarda el estado (`catalog_extract`) con status `stopped` y cursor actual; al volver a Play, retoma sin reiniciar refs.
+- CA: Tras detener y volver a Play, no se reprocesan productos ya completados.
+- Datos: `brands.metadata.catalog_extract`.
+- NF: Sin impacto en tiempos ni en lógica de errores.
+- Riesgos: Confusión con “reset”; mitigación: texto en README/panel.
+- Métricas: N/A.
+- Estado: **done (2026-01-23)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

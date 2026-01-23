@@ -127,13 +127,14 @@ export const stopCatalogRun = async (brandId: string) => {
   const brand = await prisma.brand.findUnique({ where: { id: brandId } });
   if (!brand) return false;
   const metadata = getBrandMetadata(brand);
-  if (!(CATALOG_STATE_KEY in metadata)) return true;
-  const nextMetadata = { ...metadata };
-  delete nextMetadata[CATALOG_STATE_KEY];
-  await prisma.brand.update({
-    where: { id: brandId },
-    data: { metadata: nextMetadata as Prisma.InputJsonValue },
-  });
+  const state = readCatalogRunState(metadata);
+  if (!state) return true;
+  const nextState: CatalogRunState = {
+    ...state,
+    status: "stopped",
+    updatedAt: new Date().toISOString(),
+  };
+  await persistRunState(brand.id, metadata, nextState);
   return true;
 };
 
@@ -361,15 +362,13 @@ export const extractCatalogForBrand = async (
   let state: CatalogRunState;
   let refs: CatalogRunState["refs"] = [];
 
-  if (
-    existingState &&
-    existingState.status !== "completed" &&
-    existingState.status !== "stopped" &&
-    existingState.refs?.length
-  ) {
+  if (existingState && existingState.status !== "completed" && existingState.refs?.length) {
     state = {
       ...existingState,
-      status: existingState.status === "paused" ? "processing" : existingState.status,
+      status:
+        existingState.status === "paused" || existingState.status === "stopped"
+          ? "processing"
+          : existingState.status,
       batchSize,
       updatedAt: new Date().toISOString(),
     };
