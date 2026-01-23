@@ -57,6 +57,7 @@ type FetchResult = {
 type FeatureSet = {
   baseUrl: string;
   finalUrl: string;
+  host: string;
   headers: Record<string, string>;
   cookieNames: string[];
   scripts: string[];
@@ -69,6 +70,7 @@ type FeatureSet = {
   manifestText?: string;
   sitemapUrls: string[];
   productHandles: string[];
+  productCandidates: number;
   status: number | null;
 };
 
@@ -94,6 +96,48 @@ const safeHostname = (value: string) => {
     return new URL(value).hostname.toLowerCase();
   } catch {
     return "";
+  }
+};
+
+const SOCIAL_HOSTS = new Set([
+  "instagram.com",
+  "www.instagram.com",
+  "facebook.com",
+  "www.facebook.com",
+  "tiktok.com",
+  "www.tiktok.com",
+  "linktr.ee",
+  "www.linktr.ee",
+  "wa.me",
+  "api.whatsapp.com",
+]);
+
+const isLikelyProductPath = (path: string) => {
+  const lower = path.toLowerCase();
+  if (
+    /\/(blog|journal|news|press|about|nosotros|quienes-somos|contacto|contact|faq|ayuda)\b/.test(lower) ||
+    /\/(category|categories|categoria|categorias|collection|collections|tag|tags)\b/.test(lower) ||
+    /\/(search|busqueda|cart|checkout|account|login|register|policies|privacy|terms|legal)\b/.test(lower) ||
+    /\/(portfolio|portafolio)\b/.test(lower)
+  ) {
+    return false;
+  }
+  if (/\/products?\/[^/]+/i.test(path)) return true;
+  if (/\/producto(s)?\/[^/]+/i.test(path)) return true;
+  if (/\/product-page\/[^/]+/i.test(path)) return true;
+  if (/\/product-[^/]+/i.test(path)) return true;
+  if (/\/tienda\/[^/]+/i.test(path)) return true;
+  if (/\/shop\/[^/]+/i.test(path)) return true;
+  if (/\/catalog\/product\/view/i.test(path)) return true;
+  if (/\/p\/?$/i.test(path)) return true;
+  return false;
+};
+
+const isLikelyProductUrl = (url: string) => {
+  try {
+    return isLikelyProductPath(new URL(url).pathname);
+  } catch {
+    return false;
   }
 };
 
@@ -604,6 +648,7 @@ const collectRisks = (features: FeatureSet) => {
     risks.push("parked_domain");
   }
   if (!features.scripts.length && !features.linkPaths.length) risks.push("minimal_signals");
+  if (features.status && features.productCandidates === 0) risks.push("no_pdp_candidates");
   return unique(risks);
 };
 
@@ -669,6 +714,7 @@ const buildFeatureSet = async (brand: Brand): Promise<FeatureSet> => {
     return {
       baseUrl: "",
       finalUrl: "",
+      host: "",
       headers: {},
       cookieNames: [],
       scripts: [],
@@ -678,6 +724,7 @@ const buildFeatureSet = async (brand: Brand): Promise<FeatureSet> => {
       htmlLower: "",
       sitemapUrls: [],
       productHandles: [],
+      productCandidates: 0,
       status: null,
     };
   }
@@ -687,6 +734,7 @@ const buildFeatureSet = async (brand: Brand): Promise<FeatureSet> => {
     return {
       baseUrl: "",
       finalUrl: "",
+      host: "",
       headers: {},
       cookieNames: [],
       scripts: [],
@@ -696,6 +744,7 @@ const buildFeatureSet = async (brand: Brand): Promise<FeatureSet> => {
       htmlLower: "",
       sitemapUrls: [],
       productHandles: [],
+      productCandidates: 0,
       status: null,
     };
   }
@@ -710,6 +759,7 @@ const buildFeatureSet = async (brand: Brand): Promise<FeatureSet> => {
   }
 
   const finalUrl = baseFetch.finalUrl || normalized;
+  const host = safeHostname(finalUrl);
   const origin = (() => {
     try {
       return new URL(finalUrl).origin;
@@ -775,10 +825,15 @@ const buildFeatureSet = async (brand: Brand): Promise<FeatureSet> => {
   const linkPaths = extractLinkPaths(baseFetch.body, origin);
   const combinedText = `${baseFetch.body}\n${sitemapText}`;
   const productHandles = extractProductHandles(combinedText);
+  const sitemapEntries = sitemapText ? extractSitemapUrls(sitemapText) : [];
+  const productUrls = sitemapEntries.filter((entry) => isLikelyProductUrl(entry));
+  const productPathMatches = linkPaths.filter((path) => isLikelyProductPath(path)).length;
+  const productCandidates = productHandles.length + productUrls.length + productPathMatches;
 
   return {
     baseUrl: normalized,
     finalUrl,
+    host,
     headers: baseFetch.headers,
     cookieNames: baseFetch.cookies,
     scripts,
@@ -791,11 +846,35 @@ const buildFeatureSet = async (brand: Brand): Promise<FeatureSet> => {
     manifestText: manifestFetch.body,
     sitemapUrls,
     productHandles,
+    productCandidates,
     status: baseFetch.status,
   };
 };
 
 export async function profileBrandTechnology(brand: Brand): Promise<TechProfile> {
+  const normalizedSite = brand.siteUrl ? normalizeUrl(brand.siteUrl) : null;
+  const host = normalizedSite ? safeHostname(normalizedSite) : "";
+  if (host && (SOCIAL_HOSTS.has(host) || host.endsWith(".instagram.com"))) {
+    return {
+      platform: "unknown",
+      confidence: 0,
+      evidence: [],
+      probes: [],
+      recommended_strategy: { mode: "html", notes: "La URL apunta a red social, sin PDP." },
+      risks: ["social"],
+    };
+  }
+  if (host && host.endsWith("canva.site")) {
+    return {
+      platform: "unknown",
+      confidence: 0,
+      evidence: [],
+      probes: [],
+      recommended_strategy: { mode: "html", notes: "Landing sin tienda detectada (canva.site)." },
+      risks: ["landing_no_store"],
+    };
+  }
+
   const features = await buildFeatureSet(brand);
 
   if (!features.finalUrl) {

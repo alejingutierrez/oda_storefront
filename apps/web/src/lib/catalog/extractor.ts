@@ -6,8 +6,10 @@ import { getCatalogAdapter } from "@/lib/catalog/registry";
 import { normalizeCatalogProductWithOpenAI } from "@/lib/catalog/normalizer";
 import { uploadImagesToBlob } from "@/lib/catalog/blob";
 import { inferCatalogPlatform } from "@/lib/catalog/platform-detect";
+import { classifyPdpWithOpenAI, extractHtmlSignals, extractRawProductWithOpenAI } from "@/lib/catalog/llm-pdp";
 import {
   discoverFromSitemap,
+  fetchText,
   guessCurrency,
   isLikelyProductUrl,
   normalizeImageUrls,
@@ -52,6 +54,11 @@ type CatalogRunState = {
 
 const CATALOG_STATE_KEY = "catalog_extract";
 const MAX_ATTEMPTS = 3;
+const PDP_LLM_ENABLED = process.env.CATALOG_PDP_LLM_ENABLED !== "false";
+const PDP_LLM_MIN_CONFIDENCE = Math.max(
+  0.1,
+  Math.min(0.99, Number(process.env.CATALOG_PDP_LLM_CONFIDENCE_MIN ?? 0.55)),
+);
 const isBlobTokenError = (message: string) => {
   const normalized = message.toLowerCase();
   return (
@@ -219,6 +226,7 @@ const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, 
     metadata: {
       ...(normalized.metadata ?? {}),
       platform: raw.metadata?.platform ?? null,
+      llm: raw.metadata?.llm ?? null,
       extraction: {
         source_url: raw.sourceUrl,
         external_id: raw.externalId,
@@ -318,6 +326,9 @@ export const extractCatalogForBrand = async (
       ecommercePlatform: platformForRun ?? brand.ecommercePlatform,
     },
   };
+  const canUseLlmPdp =
+    PDP_LLM_ENABLED &&
+    (adapter.platform === "custom" || (platformForRun ?? "").toLowerCase() === "unknown");
 
   const metadataForRun =
     inferredPlatform?.platform && inferredPlatform.confidence >= 0.6
@@ -370,6 +381,22 @@ export const extractCatalogForBrand = async (
     refs = sitemapRefs.length
       ? sitemapRefs
       : await adapter.discoverProducts(ctx, discoveryLimit);
+    if (!refs.length && canUseLlmPdp) {
+      const broadUrls = await discoverFromSitemap(brand.siteUrl, discoveryLimit, {
+        productAware: false,
+      });
+      const origin = safeOrigin(normalizeUrl(brand.siteUrl) ?? brand.siteUrl);
+      refs = broadUrls
+        .filter((url) => {
+          try {
+            return new URL(url).origin === origin;
+          } catch {
+            return false;
+          }
+        })
+        .slice(0, discoveryLimit)
+        .map((url) => ({ url }));
+    }
 
     const now = new Date().toISOString();
     const hasRefs = refs.length > 0;
@@ -506,7 +533,51 @@ export const extractCatalogForBrand = async (
       };
       await persistRunState(brand.id, metadata, state);
 
-      const raw = await adapter.fetchProduct(ctx, ref);
+      let raw = await adapter.fetchProduct(ctx, ref);
+      if (!raw && canUseLlmPdp) {
+        const htmlResponse = await fetchText(ref.url, { method: "GET" }, 15000);
+        if (htmlResponse.status >= 400 || !htmlResponse.text) {
+          throw new Error(`No se pudo obtener HTML (${htmlResponse.status}) para ${ref.url}`);
+        }
+        const signals = extractHtmlSignals(htmlResponse.text, htmlResponse.finalUrl ?? ref.url);
+        const decision = await classifyPdpWithOpenAI({
+          url: ref.url,
+          html: htmlResponse.text,
+          text: signals.text,
+          images: signals.images,
+        });
+        if (!decision.is_pdp || decision.confidence < PDP_LLM_MIN_CONFIDENCE) {
+          throw new Error(
+            `llm_pdp_false:${decision.confidence.toFixed(2)}:${decision.reason}`,
+          );
+        }
+        const extracted = await extractRawProductWithOpenAI({
+          url: ref.url,
+          html: htmlResponse.text,
+          text: signals.text,
+          images: signals.images,
+        });
+        const fallbackImages = extracted.images?.length ? extracted.images : signals.images;
+        const sanitizedVariants = extracted.variants.map((variant) => ({
+          ...variant,
+          options: variant.options ?? undefined,
+          images: variant.images ?? [],
+        }));
+        raw = {
+          ...extracted,
+          sourceUrl: ref.url,
+          images: fallbackImages,
+          variants: sanitizedVariants,
+          metadata: {
+            ...(extracted.metadata ?? {}),
+            platform: "custom",
+            llm: {
+              pdp: decision,
+              extracted_at: new Date().toISOString(),
+            },
+          },
+        };
+      }
       if (!raw) {
         throw new Error(`No se pudo obtener producto (${adapter.platform}) para ${ref.url}`);
       }

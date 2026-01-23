@@ -24,6 +24,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Scraper: `USER_AGENT`, `BRAND_SCRAPE_MAX_JOBS`, `BRAND_SCRAPE_MAX_RUNTIME_MS`.
 - Scraper: `BRAND_SCRAPE_STALE_MINUTES` (re-encola jobs en `processing` con más de N minutos).
 - Catalog extractor: `CATALOG_EXTRACT_SITEMAP_LIMIT`, `CATALOG_EXTRACT_SITEMAP_MAX_FILES`, `CATALOG_EXTRACT_DISCOVERY_LIMIT`, `CATALOG_EXTRACT_MAX_RUNTIME_MS`.
+- Catalog extractor (PDP LLM): `CATALOG_PDP_LLM_ENABLED`, `CATALOG_PDP_LLM_CONFIDENCE_MIN`, `CATALOG_PDP_LLM_MAX_HTML_CHARS`, `CATALOG_PDP_LLM_MAX_TEXT_CHARS`, `CATALOG_PDP_LLM_MAX_IMAGES`.
 No commitees credenciales reales.
 
 ## Comandos locales
@@ -70,12 +71,15 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/brands/tech` (tech profiler):
   - Ejecuta perfilado de tecnología ecommerce (Shopify/Woo/Magento/VTEX/Tiendanube/Wix/custom).
   - Actualiza `brands.ecommercePlatform` y guarda detalle en `brands.metadata.tech_profile`.
+  - Si detecta `social`, `bot_protection`, `unreachable`, `parked_domain`, `landing_no_store`, `no_pdp_candidates` o review `manual_review_no_products`, elimina la marca automáticamente.
 - Panel `/admin/products` (productos):
   - Directorio de productos scrapeados con cards, modal de detalle y filtros por marca.
 - Panel `/admin/catalog-extractor` (catalog extractor):
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.
   - Controles Play/Pausar/Detener, reanudación automática y sitemap‑first.
   - Para `unknown`, intenta inferencia rápida de plataforma (sin LLM) desde la home y guarda `catalog_extract_inferred_platform` en `brands.metadata`.
+  - Para `unknown/custom`, si el adapter no puede extraer, usa LLM para clasificar PDP y extraer RawProduct (HTML+texto).
+  - Si no hay URLs producto en sitemap, hace fallback broad y filtra con LLM (solo si PDP LLM está habilitado).
   - Si el sitemap no contiene URLs de producto, se omite (no procesa listados/portafolios) y cae a fallback o manual review.
   - Subida de imágenes reintenta con `referer` y `user-agent` para evitar hotlinking.
   - Normaliza imágenes (acepta JSON-LD ImageObject y extrae `contentUrl`) antes de subir a Blob.

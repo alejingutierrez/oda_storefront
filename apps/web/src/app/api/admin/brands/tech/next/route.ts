@@ -33,6 +33,38 @@ export async function POST(req: Request) {
       brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
         ? (brand.metadata as Record<string, unknown>)
         : {};
+    const reviewReason =
+      typeof existingMetadata.catalog_extract_review === "object" &&
+      existingMetadata.catalog_extract_review &&
+      !Array.isArray(existingMetadata.catalog_extract_review)
+        ? (existingMetadata.catalog_extract_review as { reason?: string }).reason
+        : null;
+    const deleteSignals = new Set([
+      "social",
+      "bot_protection",
+      "unreachable",
+      "parked_domain",
+      "landing_no_store",
+      "no_store",
+      "no_pdp_candidates",
+    ]);
+    const shouldDelete =
+      profile.risks?.some((risk) => deleteSignals.has(risk)) ||
+      ["manual_review_no_products", "manual_review_vtex_no_products"].includes(reviewReason ?? "");
+
+    if (shouldDelete) {
+      await prisma.brand.delete({ where: { id: brand.id } });
+      return NextResponse.json({
+        status: "deleted",
+        brandId: brand.id,
+        brandName: brand.name,
+        platform: profile.platform,
+        reasons: {
+          risks: profile.risks ?? [],
+          reviewReason: reviewReason ?? null,
+        },
+      });
+    }
 
     const nextMetadata = {
       ...existingMetadata,
