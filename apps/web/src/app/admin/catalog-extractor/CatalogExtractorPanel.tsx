@@ -91,10 +91,11 @@ export default function CatalogExtractorPanel() {
   const progress = useMemo(() => buildProgress(currentState), [currentState]);
   const playLabel = useMemo(() => {
     if (running) return "Procesando...";
-    const hasProgress =
-      (currentState?.completed ?? 0) > 0 ||
-      (currentState?.failed ?? 0) > 0 ||
-      (currentState?.cursor ?? 0) > 0;
+    const cursorValue =
+      currentState && "cursor" in currentState && typeof currentState.cursor === "number"
+        ? currentState.cursor
+        : 0;
+    const hasProgress = progress.completed > 0 || progress.failed > 0 || cursorValue > 0;
     const shouldResume =
       currentState &&
       currentState.status !== "completed" &&
@@ -102,7 +103,7 @@ export default function CatalogExtractorPanel() {
         currentState.status === "stopped" ||
         (currentState.status === "processing" && hasProgress));
     return shouldResume ? "Resume" : "Play";
-  }, [currentState, running]);
+  }, [currentState, progress, running]);
   const errorDetails = useMemo(() => {
     if (error) return { title: "Fallo al ejecutar", message: error };
     if (currentState?.blockReason) {
