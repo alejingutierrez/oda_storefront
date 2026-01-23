@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-072 | done | P1 | Redis + cola operativa en Vercel | REDIS_URL correcto en Vercel, guardas de cola y reanudacion sin timeouts.
 - MC-071 | done | P1 | Blob robusto: sanitizar path + tolerar fallos | Evita error por # y no aborta por fallos parciales.
 - MC-070 | done | P1 | Concurrencia catálogo v2 (cola + runs/items) | Tablas + BullMQ + worker + backfill.
 - MC-069 | done | P1 | Robustez extractor: telemetría + pausa por errores | lastUrl/lastStage/errorSamples y pausa por errores consecutivos.

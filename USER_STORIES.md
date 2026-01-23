@@ -235,6 +235,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % de fallos Blob, % productos con fallback.
 - Estado: **done (2026-01-23)**.
 
+### MC-072 Redis + cola operativa en Vercel
+- Historia: Como operador, quiero que la cola de catálogo funcione en producción sin timeouts, para que los runs no queden colgados.
+- Alcance: Ajustar `REDIS_URL` en Vercel, timeout de encolado y guardas cuando la cola no está disponible.
+- CA: `/api/admin/catalog-extractor/run` responde sin colgarse; con Redis correcto, se encolan items y el worker procesa.
+- Datos: env `REDIS_URL`, `CATALOG_QUEUE_TIMEOUT_MS`.
+- NF: Sin cambios en el esquema de productos.
+- Riesgos: Cola caída; mitigación con pausa y mensajes claros.
+- Métricas: tiempo de respuesta de `/run`, jobs encolados/min.
+- Estado: **done (2026-01-23)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.
