@@ -4,6 +4,25 @@ const queueName = process.env.CATALOG_QUEUE_NAME ?? "catalog";
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 const queueTimeoutMs = Math.max(1000, Number(process.env.CATALOG_QUEUE_TIMEOUT_MS ?? 8000));
 
+export const isCatalogQueueEnabled = () => {
+  if (process.env.CATALOG_QUEUE_DISABLED === "true") return false;
+  const url = process.env.REDIS_URL ?? "";
+  if (!url) return false;
+  try {
+    const { hostname } = new URL(url);
+    if (process.env.VERCEL) {
+      if (!hostname) return false;
+      const host = hostname.toLowerCase();
+      if (host === "localhost" || host === "127.0.0.1" || host === "redis") {
+        return false;
+      }
+    }
+  } catch {
+    return false;
+  }
+  return true;
+};
+
 let catalogQueue: Queue | null = null;
 
 export const getCatalogQueue = () => {

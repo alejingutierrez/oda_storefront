@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { discoverCatalogRefs } from "@/lib/catalog/discovery";
-import { enqueueCatalogItems } from "@/lib/catalog/queue";
+import { enqueueCatalogItems, isCatalogQueueEnabled } from "@/lib/catalog/queue";
 import {
   createRunWithItems,
   findActiveRun,
@@ -45,6 +45,22 @@ export async function POST(req: Request) {
     const brand = await prisma.brand.findUnique({ where: { id: brandId } });
     if (!brand || !brand.siteUrl) {
       return NextResponse.json({ error: "brand_not_found" }, { status: 404 });
+    }
+
+    if (!isCatalogQueueEnabled()) {
+      const existing = await findActiveRun(brandId);
+      if (existing) {
+        await prisma.catalogRun.update({
+          where: { id: existing.id },
+          data: {
+            status: "paused",
+            lastError: "queue_disabled",
+            blockReason: "queue_disabled",
+            updatedAt: new Date(),
+          },
+        });
+      }
+      return NextResponse.json({ error: "queue_disabled" }, { status: 503 });
     }
 
     const existing = await findActiveRun(brandId);
