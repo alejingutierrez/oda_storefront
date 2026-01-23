@@ -3,7 +3,7 @@ import { getCatalogAdapter } from "@/lib/catalog/registry";
 import { processCatalogRef } from "@/lib/catalog/extractor";
 import { CATALOG_MAX_ATTEMPTS, getCatalogConsecutiveErrorLimit } from "@/lib/catalog/constants";
 import { enqueueCatalogItems } from "@/lib/catalog/queue";
-import { listPendingItems, markItemsQueued, resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
+import { listPendingItems, listRunnableItems, markItemsQueued, resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
 
 export type ProcessCatalogItemResult = {
   status: string;
@@ -18,6 +18,22 @@ export type ProcessCatalogItemOptions = {
   enqueueLimit?: number;
   queuedStaleMs?: number;
   stuckMs?: number;
+};
+
+export type DrainCatalogRunOptions = {
+  runId: string;
+  batch: number;
+  concurrency: number;
+  maxMs: number;
+  queuedStaleMs: number;
+  stuckMs: number;
+};
+
+export type DrainCatalogRunResult = {
+  processed: number;
+  completed: number;
+  failed: number;
+  skipped: number;
 };
 
 export const processCatalogItemById = async (
@@ -208,4 +224,59 @@ export const processCatalogItemById = async (
 
     return { status: "failed", error: message };
   }
+};
+
+export const drainCatalogRun = async ({
+  runId,
+  batch,
+  concurrency,
+  maxMs,
+  queuedStaleMs,
+  stuckMs,
+}: DrainCatalogRunOptions): Promise<DrainCatalogRunResult> => {
+  const startedAt = Date.now();
+  let processed = 0;
+  let completed = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  const safeBatch = Math.max(1, batch);
+  const safeConcurrency = Math.max(1, concurrency);
+
+  while (processed < safeBatch && Date.now() - startedAt < maxMs) {
+    await resetQueuedItems(runId, queuedStaleMs);
+    await resetStuckItems(runId, stuckMs);
+
+    const remaining = safeBatch - processed;
+    const items = await listRunnableItems(
+      runId,
+      Math.min(safeConcurrency, remaining),
+      true,
+    );
+    if (!items.length) break;
+
+    const results = await Promise.allSettled(
+      items.map((item) =>
+        processCatalogItemById(item.id, {
+          allowQueueRefill: false,
+          queuedStaleMs,
+          stuckMs,
+        }),
+      ),
+    );
+
+    processed += items.length;
+    results.forEach((result) => {
+      if (result.status !== "fulfilled") {
+        failed += 1;
+        return;
+      }
+      const status = result.value.status;
+      if (status === "completed") completed += 1;
+      else if (status === "failed") failed += 1;
+      else skipped += 1;
+    });
+  }
+
+  return { processed, completed, failed, skipped };
 };

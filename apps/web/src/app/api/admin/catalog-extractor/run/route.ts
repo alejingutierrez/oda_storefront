@@ -13,7 +13,7 @@ import {
   resetStuckItems,
   summarizeRun,
 } from "@/lib/catalog/run-store";
-import { processCatalogItemById } from "@/lib/catalog/processor";
+import { drainCatalogRun } from "@/lib/catalog/processor";
 
 export const runtime = "nodejs";
 
@@ -34,8 +34,12 @@ export async function POST(req: Request) {
     process.env.CATALOG_DRAIN_ON_RUN !== "false" &&
     process.env.CATALOG_DRAIN_DISABLED !== "true";
   const drainBatch = Math.max(
-    1,
+    0,
     Number(process.env.CATALOG_DRAIN_ON_RUN_BATCH ?? process.env.CATALOG_DRAIN_BATCH ?? 1),
+  );
+  const drainConcurrency = Math.max(
+    1,
+    Number(process.env.CATALOG_DRAIN_ON_RUN_CONCURRENCY ?? process.env.CATALOG_DRAIN_CONCURRENCY ?? 2),
   );
   const drainMaxMs = Math.max(
     1000,
@@ -93,18 +97,14 @@ export async function POST(req: Request) {
       await markItemsQueued(pendingItems.map((item) => item.id));
       await enqueueCatalogItems(pendingItems);
       if (drainOnRun) {
-        const startedAt = Date.now();
-        let processed = 0;
-        while (processed < drainBatch && Date.now() - startedAt < drainMaxMs) {
-          const runnable = await listRunnableItems(existing.id, 1, true);
-          if (!runnable.length) break;
-          await processCatalogItemById(runnable[0].id, {
-            allowQueueRefill: false,
-            queuedStaleMs,
-            stuckMs,
-          });
-          processed += 1;
-        }
+        await drainCatalogRun({
+          runId: existing.id,
+          batch: drainBatch <= 0 ? Number.MAX_SAFE_INTEGER : drainBatch,
+          concurrency: drainConcurrency,
+          maxMs: drainMaxMs,
+          queuedStaleMs,
+          stuckMs,
+        });
       }
       const summary = await summarizeRun(existing.id);
       return NextResponse.json({ summary });
@@ -154,18 +154,14 @@ export async function POST(req: Request) {
     await markItemsQueued(items.map((item) => item.id));
     await enqueueCatalogItems(items);
     if (drainOnRun) {
-      const startedAt = Date.now();
-      let processed = 0;
-      while (processed < drainBatch && Date.now() - startedAt < drainMaxMs) {
-        const runnable = await listRunnableItems(run.id, 1, true);
-        if (!runnable.length) break;
-        await processCatalogItemById(runnable[0].id, {
-          allowQueueRefill: false,
-          queuedStaleMs,
-          stuckMs,
-        });
-        processed += 1;
-      }
+      await drainCatalogRun({
+        runId: run.id,
+        batch: drainBatch <= 0 ? Number.MAX_SAFE_INTEGER : drainBatch,
+        concurrency: drainConcurrency,
+        maxMs: drainMaxMs,
+        queuedStaleMs,
+        stuckMs,
+      });
     }
     const summary = await summarizeRun(run.id);
     return NextResponse.json({ summary });
