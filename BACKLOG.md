@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-066 | done | P1 | Finalizar marca en catalog extractor | Botón y endpoint para sacar marcas de la cola y registrar `catalog_extract_finished`.
 - MC-064 | done | P1 | Normalizar ImageObject en blob | Extrae contentUrl/thumbnail antes de upload.
 - MC-065 | done | P1 | LLM PDP fallback + limpieza de marcas | Clasifica PDP con LLM, extrae RawProduct y elimina marcas no procesables.
 - MC-063 | done | P1 | Blob: retry con referer/UA | Reduce fallos por hotlinking al subir imágenes.

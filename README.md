@@ -81,6 +81,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/catalog-extractor` (catalog extractor):
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.
   - Controles Play/Pausar/Detener, reanudación automática y sitemap‑first.
+  - Permite **finalizar** una marca para sacarla de la cola y registrar `metadata.catalog_extract_finished`.
   - Para `unknown`, intenta inferencia rápida de plataforma (sin LLM) desde la home y guarda `catalog_extract_inferred_platform` en `brands.metadata`.
   - Para `unknown/custom`, si el adapter no puede extraer, usa LLM para clasificar PDP y extraer RawProduct (HTML+texto).
   - Si no hay URLs producto en sitemap, hace fallback broad y filtra con LLM (solo si PDP LLM está habilitado).
@@ -119,6 +120,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 ## API interna (catalog extractor)
 - `GET /api/admin/catalog-extractor/brands`: lista marcas con `ecommercePlatform`.
 - `POST /api/admin/catalog-extractor/run`: ejecuta extracción de catálogo para una marca (body: `{ brandId, limit }`).
+- `POST /api/admin/catalog-extractor/finish`: marca marca como terminada y la saca de la cola (body: `{ brandId, reason? }`).
 
 ## API interna (productos)
 - `GET /api/admin/products`: listado paginado de productos (query: `page`, `pageSize`, `brandId`).

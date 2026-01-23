@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-23 | MC-066 | done | Catalog extractor: finalizar marca y sacarla de la cola | Docker rebuild: ok; servicios locales OK; Vercel pendiente (sin acceso).
 - 2026-01-23 | MC-065 | done | LLM PDP fallback + limpieza de marcas | Docker rebuild: ok; servicios locales OK; Vercel pendiente.
 - 2026-01-22 | MC-064 | done | Normaliza ImageObject antes de subir a Blob | Docker rebuild: ok; Vercel prod OK: https://oda-storefront-6ee5-l2c89z1w0-alejingutierrezs-projects.vercel.app (logs sin eventos).
 - 2026-01-22 | MC-063 | done | Blob retry con referer/UA | Docker rebuild: ok; Vercel prod OK: https://oda-storefront-6ee5-bcdhvfxlm-alejingutierrezs-projects.vercel.app (logs sin eventos).

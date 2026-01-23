@@ -40,6 +40,10 @@ export async function GET(req: Request) {
         ? (brand.metadata as Record<string, unknown>)
         : {};
     const runState = summarizeCatalogRunState(readCatalogRunState(metadata));
+    const finished =
+      metadata.catalog_extract_finished &&
+      typeof metadata.catalog_extract_finished === "object" &&
+      !Array.isArray(metadata.catalog_extract_finished);
     return {
       id: brand.id,
       name: brand.name,
@@ -48,10 +52,12 @@ export async function GET(req: Request) {
       ecommercePlatform: brand.ecommercePlatform,
       _count: brand._count,
       runState,
+      finished,
     };
   });
 
-  const nextBrand = brandsWithState.find((brand) => brand.runState?.status !== "completed") ?? null;
+  const visibleBrands = brandsWithState.filter((brand) => !brand.finished);
+  const nextBrand = visibleBrands.find((brand) => brand.runState?.status !== "completed") ?? null;
 
-  return NextResponse.json({ brands: brandsWithState, nextBrandId: nextBrand?.id ?? null });
+  return NextResponse.json({ brands: visibleBrands, nextBrandId: nextBrand?.id ?? null });
 }

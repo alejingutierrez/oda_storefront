@@ -175,6 +175,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % de PDPs rescatados; reducción de marcas “unknown” no procesables.
 - Estado: **done (2026-01-23)**.
 
+### MC-066 Finalizar marca en catalog extractor
+- Historia: Como operador, quiero marcar una marca como terminada desde el extractor, para sacarla de la cola cuando ya fue revisada o no requiere más extracción.
+- Alcance: Acción “Finalizar” en `/admin/catalog-extractor` con confirmación; endpoint `POST /api/admin/catalog-extractor/finish`; persistencia en `brands.metadata.catalog_extract_finished`; la marca deja de aparecer en la lista/cola.
+- CA: Tras confirmar, la marca sale de la lista y no se auto‑selecciona; se guarda `finishedAt` y `reason` en metadata.
+- Datos: `brands.metadata.catalog_extract_finished`.
+- NF: Acción idempotente y sin impacto en productos ya guardados.
+- Riesgos: Eliminación accidental; mitigación con confirmación explícita.
+- Métricas: N/A.
+- Estado: **done (2026-01-23)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

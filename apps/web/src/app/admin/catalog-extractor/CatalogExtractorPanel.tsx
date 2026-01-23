@@ -272,6 +272,32 @@ export default function CatalogExtractorPanel() {
     fetchBrands(selectedPlatform);
   };
 
+  const handleFinish = async () => {
+    if (!selectedBrand || !currentBrand) return;
+    const confirmFinish = window.confirm(
+      `¿Confirmas marcar como terminada la marca ${currentBrand.name}? Saldrá de la lista de espera.`,
+    );
+    if (!confirmFinish) return;
+    setAutoPlay(false);
+    setRunning(false);
+    setSummary(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/catalog-extractor/finish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId: selectedBrand }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? "No se pudo marcar como terminada");
+      }
+      fetchBrands(selectedPlatform);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error inesperado");
+    }
+  };
+
   useEffect(() => {
     if (!autoPlay || running || !selectedBrand) return;
     if (!currentState) {
@@ -364,6 +390,14 @@ export default function CatalogExtractorPanel() {
             className="flex-1 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 disabled:opacity-60"
           >
             Detener
+          </button>
+          <button
+            type="button"
+            onClick={handleFinish}
+            disabled={!selectedBrand}
+            className="flex-1 rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+          >
+            Finalizar
           </button>
         </div>
       </div>
