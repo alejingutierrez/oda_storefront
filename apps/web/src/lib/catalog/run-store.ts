@@ -105,6 +105,23 @@ export const listPendingItems = async (runId: string, limit?: number) => {
   });
 };
 
+export const listRunnableItems = async (
+  runId: string,
+  limit?: number,
+  includeQueued = true,
+) => {
+  const statuses = includeQueued ? ["pending", "failed", "queued"] : ["pending", "failed"];
+  return prisma.catalogItem.findMany({
+    where: {
+      runId,
+      status: { in: statuses },
+      attempts: { lt: CATALOG_MAX_ATTEMPTS },
+    },
+    orderBy: { updatedAt: "asc" },
+    take: limit ?? 100,
+  });
+};
+
 export const markItemsQueued = async (ids: string[]) => {
   if (!ids.length) return { count: 0 };
   return prisma.catalogItem.updateMany({

@@ -245,6 +245,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: tiempo de respuesta de `/run`, jobs encolados/min.
 - Estado: **done (2026-01-23)**.
 
+### MC-073 Drain serverless catálogo (Vercel cron)
+- Historia: Como operador, quiero que el catálogo avance aun sin workers externos, para que el “play” en Vercel inicie progreso real.
+- Alcance: Endpoint `/api/admin/catalog-extractor/drain` con batch y runtime limitados + cron en `vercel.json` cada minuto.
+- CA: Cron procesa items sin worker persistente; el run avanza con la cola funcionando.
+- Datos: env `CATALOG_DRAIN_BATCH`, `CATALOG_DRAIN_MAX_RUNTIME_MS`.
+- NF: Sin cambios en el esquema de productos.
+- Riesgos: Límite de tiempo en serverless; mitigación con batches pequeños y cron frecuente.
+- Métricas: items/min procesados por cron.
+- Estado: **done (2026-01-23)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.

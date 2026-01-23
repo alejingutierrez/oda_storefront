@@ -1,0 +1,211 @@
+import { prisma } from "@/lib/prisma";
+import { getCatalogAdapter } from "@/lib/catalog/registry";
+import { processCatalogRef } from "@/lib/catalog/extractor";
+import { CATALOG_MAX_ATTEMPTS, getCatalogConsecutiveErrorLimit } from "@/lib/catalog/constants";
+import { enqueueCatalogItems } from "@/lib/catalog/queue";
+import { listPendingItems, markItemsQueued, resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
+
+export type ProcessCatalogItemResult = {
+  status: string;
+  created?: boolean;
+  createdVariants?: number;
+  reason?: string;
+  error?: string;
+};
+
+export type ProcessCatalogItemOptions = {
+  allowQueueRefill?: boolean;
+  enqueueLimit?: number;
+  queuedStaleMs?: number;
+  stuckMs?: number;
+};
+
+export const processCatalogItemById = async (
+  itemId: string,
+  options: ProcessCatalogItemOptions = {},
+): Promise<ProcessCatalogItemResult> => {
+  const item = await prisma.catalogItem.findUnique({
+    where: { id: itemId },
+    include: { run: { include: { brand: true } } },
+  });
+  if (!item) return { status: "not_found" };
+
+  const run = item.run;
+  const now = new Date();
+  if (!run || run.status !== "processing") {
+    if (item.status === "queued" || item.status === "in_progress") {
+      await prisma.catalogItem.update({
+        where: { id: item.id },
+        data: { status: "pending", updatedAt: now },
+      });
+    }
+    return { status: "skipped", reason: run?.status ?? "missing_run" };
+  }
+  if (item.status === "completed") return { status: "already_completed" };
+  if (item.attempts >= CATALOG_MAX_ATTEMPTS) return { status: "max_attempts" };
+
+  const brand = run.brand;
+  if (!brand?.siteUrl) {
+    await prisma.catalogItem.update({
+      where: { id: item.id },
+      data: { status: "failed", attempts: item.attempts + 1, lastError: "missing_site_url" },
+    });
+    return { status: "failed", error: "missing_site_url" };
+  }
+
+  const enqueueLimit = Math.max(
+    1,
+    Number(options.enqueueLimit ?? process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
+  );
+  const queuedStaleMs = Math.max(
+    0,
+    Number(options.queuedStaleMs ?? process.env.CATALOG_QUEUE_STALE_MINUTES ?? 15) * 60 * 1000,
+  );
+  const stuckMs = Math.max(
+    0,
+    Number(options.stuckMs ?? process.env.CATALOG_ITEM_STUCK_MINUTES ?? 30) * 60 * 1000,
+  );
+
+  if (item.status === "in_progress" && item.startedAt) {
+    const age = Date.now() - item.startedAt.getTime();
+    if (age < stuckMs) {
+      return { status: "in_progress" };
+    }
+  }
+
+  const claimed = await prisma.catalogItem.updateMany({
+    where: {
+      id: item.id,
+      status: { in: ["pending", "failed", "queued", "in_progress"] },
+    },
+    data: { status: "in_progress", startedAt: now, updatedAt: now },
+  });
+  if (!claimed.count) {
+    return { status: "skipped", reason: "already_claimed" };
+  }
+
+  const adapter = getCatalogAdapter(run.platform ?? brand.ecommercePlatform);
+  const ctx = {
+    brand: {
+      id: brand.id,
+      name: brand.name,
+      slug: brand.slug,
+      siteUrl: brand.siteUrl,
+      ecommercePlatform: run.platform ?? brand.ecommercePlatform,
+    },
+  };
+  const canUseLlmPdp =
+    process.env.CATALOG_PDP_LLM_ENABLED !== "false" &&
+    (adapter.platform === "custom" || (brand.ecommercePlatform ?? "").toLowerCase() === "unknown");
+
+  let lastStage: string | null = null;
+  try {
+    const result = await processCatalogRef({
+      brand: { id: brand.id, slug: brand.slug },
+      adapter,
+      ctx,
+      ref: { url: item.url },
+      canUseLlmPdp,
+      onStage: (stage) => {
+        lastStage = stage;
+      },
+    });
+
+    await prisma.catalogItem.update({
+      where: { id: item.id },
+      data: {
+        status: "completed",
+        attempts: item.attempts + 1,
+        lastError: null,
+        lastStage: lastStage ?? "completed",
+        completedAt: new Date(),
+      },
+    });
+
+    await prisma.catalogRun.update({
+      where: { id: run.id },
+      data: {
+        lastUrl: item.url,
+        lastStage: lastStage ?? "completed",
+        lastError: null,
+        consecutiveErrors: 0,
+        updatedAt: new Date(),
+      },
+    });
+
+    await resetQueuedItems(run.id, queuedStaleMs);
+    await resetStuckItems(run.id, stuckMs);
+    const remaining = await prisma.catalogItem.count({
+      where: {
+        runId: run.id,
+        status: { in: ["pending", "queued", "in_progress", "failed"] },
+        attempts: { lt: CATALOG_MAX_ATTEMPTS },
+      },
+    });
+    if (remaining === 0) {
+      await prisma.catalogRun.update({
+        where: { id: run.id },
+        data: { status: "completed", finishedAt: new Date(), updatedAt: new Date() },
+      });
+    } else if (options.allowQueueRefill) {
+      const pendingItems = await listPendingItems(run.id, enqueueLimit);
+      await markItemsQueued(pendingItems.map((candidate) => candidate.id));
+      await enqueueCatalogItems(pendingItems);
+    }
+
+    return { status: "completed", created: result.created, createdVariants: result.createdVariants };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const attempts = item.attempts + 1;
+    await prisma.catalogItem.update({
+      where: { id: item.id },
+      data: {
+        status: "failed",
+        attempts,
+        lastError: message,
+        lastStage: lastStage ?? "error",
+      },
+    });
+
+    const consecutiveErrors = (run.consecutiveErrors ?? 0) + 1;
+    const limit = getCatalogConsecutiveErrorLimit();
+    const shouldPause = consecutiveErrors >= limit;
+
+    await prisma.catalogRun.update({
+      where: { id: run.id },
+      data: {
+        lastUrl: item.url,
+        lastStage: lastStage ?? "error",
+        lastError: message,
+        blockReason: shouldPause ? `consecutive_errors:${consecutiveErrors}` : run.blockReason,
+        consecutiveErrors,
+        status: shouldPause ? "paused" : run.status,
+        updatedAt: new Date(),
+      },
+    });
+
+    if (!shouldPause) {
+      await resetQueuedItems(run.id, queuedStaleMs);
+      await resetStuckItems(run.id, stuckMs);
+      const remaining = await prisma.catalogItem.count({
+        where: {
+          runId: run.id,
+          status: { in: ["pending", "queued", "in_progress", "failed"] },
+          attempts: { lt: CATALOG_MAX_ATTEMPTS },
+        },
+      });
+      if (remaining === 0) {
+        await prisma.catalogRun.update({
+          where: { id: run.id },
+          data: { status: "completed", finishedAt: new Date(), updatedAt: new Date() },
+        });
+      } else if (options.allowQueueRefill) {
+        const pendingItems = await listPendingItems(run.id, enqueueLimit);
+        await markItemsQueued(pendingItems.map((candidate) => candidate.id));
+        await enqueueCatalogItems(pendingItems);
+      }
+    }
+
+    return { status: "failed", error: message };
+  }
+};

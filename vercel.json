@@ -3,6 +3,10 @@
     {
       "path": "/api/admin/brands/scrape/cron",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/admin/catalog-extractor/drain",
+      "schedule": "*/1 * * * *"
     }
   ]
 }
