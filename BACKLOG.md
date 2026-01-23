@@ -37,6 +37,7 @@
 
 ## Done (2026-01)
 - MC-064 | done | P1 | Normalizar ImageObject en blob | Extrae contentUrl/thumbnail antes de upload.
+- MC-065 | done | P1 | LLM PDP fallback + limpieza de marcas | Clasifica PDP con LLM, extrae RawProduct y elimina marcas no procesables.
 - MC-063 | done | P1 | Blob: retry con referer/UA | Reduce fallos por hotlinking al subir imágenes.
 - MC-062 | done | P1 | Custom: evitar URLs no-producto desde sitemap | Excluye /portafolio y no usa URLs no-producto cuando no hay coincidencias.
 - MC-061 | done | P1 | Unknown: sitemaps extra + inferencia rápida plataforma | Nuevos sitemaps (wp/products/store), inferencia sin LLM y pistas microdata.

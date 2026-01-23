@@ -61,12 +61,14 @@ const pickCandidates = async (siteUrl: string, limit = 40) => {
 const run = async () => {
   await client.connect();
   try {
-    const brands = await sampleBrands(10);
+    const limit = Math.max(1, Number(process.env.UNKNOWN_LLM_DRY_RUN_LIMIT ?? 10));
+    const candidateLimit = Math.max(5, Number(process.env.UNKNOWN_LLM_DRY_RUN_CANDIDATES ?? 40));
+    const brands = await sampleBrands(limit);
     const results: any[] = [];
 
     for (const brand of brands) {
       const siteUrl = normalizeUrl(brand.siteUrl) ?? brand.siteUrl;
-      const candidates = await pickCandidates(siteUrl, 40);
+      const candidates = await pickCandidates(siteUrl, candidateLimit);
       let picked = null;
       let decision = null;
       let extracted = null;

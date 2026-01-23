@@ -165,6 +165,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Reducción de “Blob upload failed” por objetos.
 - Estado: **done (2026-01-22)**.
 
+### MC-065 LLM PDP fallback + autolimpieza de marcas no procesables
+- Historia: Como operador, quiero clasificar PDPs con LLM y extraer productos cuando el extractor tradicional falla, y eliminar marcas que no sean procesables (social/bot/unreachable/sin PDP), para mantener el catálogo limpio.
+- Alcance: Clasificador PDP LLM (JSON) y extractor RawProduct LLM; fallback en unknown/custom; tech profiler elimina marcas no procesables y persiste riesgos.
+- CA: Si el adapter no extrae en unknown/custom, LLM clasifica PDP; si es PDP, extrae RawProduct y se normaliza; marcas con riesgos críticos se eliminan automáticamente.
+- Datos: Persistencia de decisión LLM en `product.metadata.llm`.
+- NF: Límite de caracteres configurable para HTML/texto y batchs controlados.
+- Riesgos: Costos de LLM; mitigar con umbral de confianza y límite de candidatos.
+- Métricas: % de PDPs rescatados; reducción de marcas “unknown” no procesables.
+- Estado: **done (2026-01-23)**.
+
 ### MC-006 Autenticación y roles base
 - Historia: Como admin, quiero iniciar sesión y proteger rutas, para operar seguro.
 - Alcance: NextAuth/JWT, seed usuario admin, middleware RBAC (admin vs user), expiración de sesión, protección de rutas admin/API.
