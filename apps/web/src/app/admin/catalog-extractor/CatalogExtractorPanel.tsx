@@ -250,7 +250,6 @@ export default function CatalogExtractorPanel() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
-      setAutoPlay(false);
     } finally {
       setRunning(false);
     }
