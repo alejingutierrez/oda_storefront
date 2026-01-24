@@ -2,6 +2,7 @@
 
 ## Now (F0 – bootstrap E2E mínimo)
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.2, upsert DB, ficha en VSF + ISR.
+- MC-080 | doing | P1 | Enriquecimiento IA de productos | Admin + cola para enriquecer categorías/tags/colores/fit con GPT-5 mini.
 - MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build contenedores básicos.
 - MC-008 | todo | P1 | Observabilidad mínima | Logging estructurado, health checks, traces básicos; dashboard inicial de servicios.
 

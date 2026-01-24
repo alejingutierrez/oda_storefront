@@ -54,6 +54,7 @@ model Brand {
   assets         Asset[]
   scrapeJobs     BrandScrapeJob[]
   catalogRuns    CatalogRun[]
+  productEnrichmentRuns ProductEnrichmentRun[]
 
   @@index([name])
   @@map("brands")
@@ -167,6 +168,7 @@ model Product {
   variants          Variant[]
   assets            Asset[]
   events            Event[]
+  enrichmentItems   ProductEnrichmentItem[]
 
   @@index([brandId])
   @@index([externalId])
@@ -179,6 +181,7 @@ model Variant {
   product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
   sku          String?
   color        String?
+  colorPantone String?
   size         String?
   fit          String?
   material     String?
@@ -198,6 +201,49 @@ model Variant {
   @@index([productId])
   @@unique([productId, sku])
   @@map("variants")
+}
+
+model ProductEnrichmentRun {
+  id                String    @id @default(uuid())
+  scope             String
+  brandId           String?
+  brand             Brand?    @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  status            String    @default("processing") // processing | paused | stopped | completed | blocked
+  totalItems        Int       @default(0)
+  startedAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  finishedAt        DateTime?
+  lastError         String?
+  blockReason       String?
+  lastProductId     String?
+  lastStage         String?
+  consecutiveErrors Int       @default(0)
+  metadata          Json?
+  items             ProductEnrichmentItem[]
+
+  @@index([brandId, status])
+  @@index([scope, status])
+  @@map("product_enrichment_runs")
+}
+
+model ProductEnrichmentItem {
+  id          String    @id @default(uuid())
+  runId       String
+  run         ProductEnrichmentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  status      String    @default("pending") // pending | queued | in_progress | completed | failed
+  attempts    Int       @default(0)
+  lastError   String?
+  lastStage   String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([runId, productId])
+  @@index([runId, status])
+  @@index([productId])
+  @@map("product_enrichment_items")
 }
 
 model PriceHistory {

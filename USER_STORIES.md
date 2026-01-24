@@ -294,6 +294,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Falta de cobertura de términos; mitigar con backlog de sinónimos.
 - Métricas: % productos con categoría/material válidos; tasa de errores de validación.
 
+### MC-080 Enriquecimiento IA de productos (admin)
+- Historia: Como operador/admin, quiero enriquecer categorías, tags, color y fit de productos desde el admin, para estandarizar la clasificación y mejorar búsqueda/recomendaciones.
+- Alcance: Sección `/admin/product-enrichment`, batchs (10/25/50/100/250/500/1000), ejecutar “todos por marca” o “todos”, controles pausar/detener, cola BullMQ con worker, endpoint para procesar ítems, persistencia en DB y auditoría en metadata.
+- CA: Se actualizan `products.category/subcategory/styleTags/materialTags/patternTags/occasionTags/gender/season` y `variants.color/colorPantone/fit`; JSON validado; colores en HEX; Pantone sin null; tags con límites; el proceso puede pausarse o detenerse; UI muestra progreso/errores.
+- Datos: Catálogo existente (productos + variantes), imágenes en Blob/URLs.
+- NF: Reintentos y límite de intentos por item; operación segura con cola y locks; tiempos razonables por batch.
+- Riesgos: Costos de IA y errores por valores fuera del estándar; mitigación con listas permitidas, validación y reintentos.
+- Métricas: % de productos enriquecidos, error rate por batch, costo medio por producto.
+- Estado: **doing (2026-01-24)**.
+
 ### MC-010 Búsqueda básica + pgvector
 - Historia: Como usuario, quiero buscar y filtrar prendas relevantes, para encontrar rápido lo que me gusta.
 - Alcance: Índice texto+embeddings (pgvector), endpoint search, facetas básicas, UI de listados VSF, orden por relevancia/stock.

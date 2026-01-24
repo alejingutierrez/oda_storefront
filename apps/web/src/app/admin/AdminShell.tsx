@@ -6,6 +6,7 @@ const navItems = [
   { key: "brand-scrape", label: "Scraping", href: "/admin/brands/scrape" },
   { key: "brand-tech", label: "Tech profiler", href: "/admin/brands/tech" },
   { key: "products", label: "Productos", href: "/admin/products" },
+  { key: "product-enrichment", label: "Enriquecimiento", href: "/admin/product-enrichment" },
   { key: "catalog-extractor", label: "Catalog extractor", href: "/admin/catalog-extractor" },
 ];
 

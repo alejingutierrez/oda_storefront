@@ -1,6 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  CATEGORY_LABELS,
+  SUBCATEGORY_LABELS,
+  SEASON_LABELS,
+  GENDER_LABELS,
+  FIT_LABELS,
+  STYLE_TAG_FRIENDLY,
+  MATERIAL_TAG_FRIENDLY,
+  PATTERN_TAG_FRIENDLY,
+  OCCASION_TAG_FRIENDLY,
+} from "@/lib/product-enrichment/constants";
 
 type BrandOption = {
   id: string;
@@ -70,6 +81,7 @@ type ProductDetail = {
     color: string | null;
     size: string | null;
     fit: string | null;
+    colorPantone: string | null;
     material: string | null;
     price: number | string;
     currency: string;
@@ -127,7 +139,11 @@ const formatPriceRange = (minPrice: number | null, maxPrice: number | null, curr
   return `${price} ${currencyLabel}`;
 };
 
-const renderTags = (label: string, tags: string[]) => {
+const renderFriendlyTags = (
+  label: string,
+  tags: string[],
+  map: Record<string, string>,
+) => {
   if (!tags.length) return null;
   return (
     <div>
@@ -138,12 +154,17 @@ const renderTags = (label: string, tags: string[]) => {
             key={tag}
             className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
           >
-            {tag}
+            {map[tag] ?? tag}
           </span>
         ))}
       </div>
     </div>
   );
+};
+
+const formatLabel = (value: string | null, map: Record<string, string>) => {
+  if (!value) return "—";
+  return map[value] ?? value;
 };
 
 export default function ProductDirectoryPanel() {
@@ -285,7 +306,8 @@ export default function ProductDirectoryPanel() {
                 <div>
                   <h3 className="text-base font-semibold text-slate-900">{product.name}</h3>
                   <p className="mt-1 text-xs text-slate-500">
-                    {product.category ?? "—"} {product.subcategory ? `· ${product.subcategory}` : ""}
+                    {formatLabel(product.category, CATEGORY_LABELS)}{" "}
+                    {product.subcategory ? `· ${formatLabel(product.subcategory, SUBCATEGORY_LABELS)}` : ""}
                   </p>
                 </div>
                 <button
@@ -307,13 +329,17 @@ export default function ProductDirectoryPanel() {
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">{product.status}</span>
                 )}
                 {product.gender && (
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">{product.gender}</span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                    {formatLabel(product.gender, GENDER_LABELS)}
+                  </span>
                 )}
                 {product.season && (
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">{product.season}</span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                    {formatLabel(product.season, SEASON_LABELS)}
+                  </span>
                 )}
               </div>
-              {renderTags("Tags estilo", product.styleTags)}
+              {renderFriendlyTags("Tags estilo", product.styleTags, STYLE_TAG_FRIENDLY)}
             </div>
           </article>
         ))}
@@ -412,19 +438,19 @@ export default function ProductDirectoryPanel() {
                       <div className="mt-3 space-y-2 text-sm text-slate-700">
                         <p>
                           <span className="font-semibold text-slate-800">Categoría:</span>{" "}
-                          {toText(detail.category)}
+                          {formatLabel(detail.category, CATEGORY_LABELS)}
                         </p>
                         <p>
                           <span className="font-semibold text-slate-800">Subcategoría:</span>{" "}
-                          {toText(detail.subcategory)}
+                          {formatLabel(detail.subcategory, SUBCATEGORY_LABELS)}
                         </p>
                         <p>
                           <span className="font-semibold text-slate-800">Género:</span>{" "}
-                          {toText(detail.gender)}
+                          {formatLabel(detail.gender, GENDER_LABELS)}
                         </p>
                         <p>
                           <span className="font-semibold text-slate-800">Temporada:</span>{" "}
-                          {toText(detail.season)}
+                          {formatLabel(detail.season, SEASON_LABELS)}
                         </p>
                         <p>
                           <span className="font-semibold text-slate-800">Cuidado:</span>{" "}
@@ -446,10 +472,10 @@ export default function ProductDirectoryPanel() {
                     <div className="rounded-xl border border-slate-200 bg-white p-4">
                       <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Tags</p>
                       <div className="mt-3 space-y-3 text-sm text-slate-700">
-                        {renderTags("Estilo", detail.styleTags)}
-                        {renderTags("Material", detail.materialTags)}
-                        {renderTags("Patrón", detail.patternTags)}
-                        {renderTags("Ocasión", detail.occasionTags)}
+                        {renderFriendlyTags("Estilo", detail.styleTags, STYLE_TAG_FRIENDLY)}
+                        {renderFriendlyTags("Material", detail.materialTags, MATERIAL_TAG_FRIENDLY)}
+                        {renderFriendlyTags("Patrón", detail.patternTags, PATTERN_TAG_FRIENDLY)}
+                        {renderFriendlyTags("Ocasión", detail.occasionTags, OCCASION_TAG_FRIENDLY)}
                       </div>
                     </div>
                   </div>
@@ -470,6 +496,9 @@ export default function ProductDirectoryPanel() {
                                 </p>
                                 <p className="text-xs text-slate-500">
                                   SKU: {variant.sku ?? "—"} · Stock: {variant.stockStatus ?? "—"}
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  Fit: {variant.fit ? formatLabel(variant.fit, FIT_LABELS) : "—"} · Pantone: {variant.colorPantone ?? "—"}
                                 </p>
                               </div>
                               <div className="text-right text-sm font-semibold text-slate-800">

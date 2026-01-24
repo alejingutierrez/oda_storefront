@@ -19,7 +19,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - **Catálogo unificado**: productos, variantes, imágenes, histórico de precios/stock, taxonomía uniforme (categoría, fit, material, patrón, ocasión, temporada), enlaces al ítem original.
 - **Recomendador**: modelos híbridos (contenido + comportamiento). Similaridad semántica de texto/imágenes y señales de clic/guardar/compra redirigida. Soporte para “proactividad” (alertas, drops, back-in-stock).
 - **Búsqueda y filtrado**: texto libre, filtros por categoría, talla, color, material, precio, disponibilidad, ubicación de la tienda, estilo.
-- **Admin**: gestión de marcas/tiendas, control de scrapers, revisión de calidad de datos, entrenamiento/versión del recomendador, gestión de usuarios (gratis/pago), billing Wompi, plantillas de correo (SMTP/SendGrid), features flags, auditoría.
+- **Admin**: gestión de marcas/tiendas, control de scrapers, revisión de calidad de datos, enriquecimiento de atributos de producto, entrenamiento/versión del recomendador, gestión de usuarios (gratis/pago), billing Wompi, plantillas de correo (SMTP/SendGrid), features flags, auditoría.
 - **Try-on y asesoría**: pipeline para generar previews de outfits (API de tercero o modelo propio), guardar sesiones y recomendaciones resultantes.
 
 ## 4) Arquitectura de alto nivel
@@ -46,7 +46,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 
 ## 5) Componentes y responsabilidades
 - **UI pública (Vue Storefront + Next)**: home inspiracional, listados, ficha de producto con variantes, store locator, recomendaciones, anuncios. Optimizar Core Web Vitals.
-- **Portal Admin**: CRUD marcas/tiendas, catálogos, reglas de scraping, aprobación de datos IA, configuración de recomendador, gestión de anuncios, gestión de usuarios/planes, monitoreo de colas.
+- **Portal Admin**: CRUD marcas/tiendas, catálogos, reglas de scraping, aprobación de datos IA, enriquecimiento de productos, configuración de recomendador, gestión de anuncios, gestión de usuarios/planes, monitoreo de colas.
 - **API/BFF**: autenticación JWT/NextAuth, límites de tasa, API de catálogo, búsqueda, recomendaciones, eventos de usuario, billing, webhooks (Wompi, email provider), endpoints para admin.
 - **Scrapers**: por marca/plantilla; detección de cambios; respeto de robots/cookies; rotación de user-agent/proxy; tolerancia a bloqueos; diff de DOM para minimizar llamadas.
 - **Ingestión IA**: prompts versionados; validación estricta de JSON; catálogos de taxonomías (categorías, materiales, patrones, fits); generación de captions y etiquetas de estilo; detección de stock-out por señales de texto/atributos y deltas históricos.
@@ -58,7 +58,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - `brands(id, name, slug, site_url, description, logo_url, contact_phone, contact_email, instagram, tiktok, facebook, whatsapp, address, city, lat, lng, opening_hours, metadata, is_active)`
 - `stores(id, brand_id, name, address, lat, lng, phone, schedule, website, channel_links, metadata)`
 - `products(id, brand_id, external_id, name, description, category, subcategory, style_tags[], material_tags[], pattern_tags[], occasion_tags[], gender, season, care, origin, status, source_url, image_cover_url, metadata, created_at, updated_at)`
-- `variants(id, product_id, sku, color, size, fit, material, price, currency, stock, stock_status, images[], metadata)`
+- `variants(id, product_id, sku, color, color_pantone, size, fit, material, price, currency, stock, stock_status, images[], metadata)`
 - `price_history(id, variant_id, price, currency, captured_at)`
 - `stock_history(id, variant_id, stock, captured_at)`
 - `assets(id, owner_type, owner_id, url, blob_path, kind)`
@@ -81,6 +81,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 
 ## 8) Ingestión IA (OpenAI)
 - Modelo por defecto: **GPT-5.2** (JSON mode). Backups: 4.1/4.0 si hay degradación.
+- Enriquecimiento de atributos (admin): **GPT-5 mini** (JSON mode) con catálogo cerrado de categorías/tags/gender/season y color hex + Pantone (formato 19‑4042, nunca null; usar el más cercano disponible).
 - Usar JSON mode y esquemas versionados; validar con JSON Schema antes de persistir; rechazar y reintentar con prompt de reparación cuando falle.
 - Prompts que exijan: categorías normalizadas, materiales, patrones, silueta/fit, ocasión, temporada, tono/estilo, calidad de estampado, cierres, bolsillos, forro, instrucciones de cuidado.
 - Captioning de imágenes (visión) para enriquecer búsqueda y recomendaciones; extracción de rasgos finos (texturas, acabados, tipo de cuello/tirante, largo, calce).

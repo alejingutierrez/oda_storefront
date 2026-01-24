@@ -25,6 +25,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Scraper: `BRAND_SCRAPE_STALE_MINUTES` (re-encola jobs en `processing` con más de N minutos).
 - Catalog extractor: `CATALOG_EXTRACT_SITEMAP_LIMIT`, `CATALOG_EXTRACT_SITEMAP_MAX_FILES`, `CATALOG_EXTRACT_DISCOVERY_LIMIT`, `CATALOG_EXTRACT_MAX_RUNTIME_MS`, `CATALOG_EXTRACT_CONSECUTIVE_ERROR_LIMIT`, `CATALOG_AUTO_PAUSE_ON_ERRORS`, `CATALOG_QUEUE_ENQUEUE_LIMIT`, `CATALOG_QUEUE_NAME`, `CATALOG_QUEUE_STALE_MINUTES`, `CATALOG_ITEM_STUCK_MINUTES`, `CATALOG_RESUME_STUCK_MINUTES`, `CATALOG_QUEUE_TIMEOUT_MS`, `CATALOG_QUEUE_DISABLED`, `CATALOG_DRAIN_BATCH`, `CATALOG_DRAIN_MAX_RUNTIME_MS`, `CATALOG_DRAIN_CONCURRENCY`, `CATALOG_DRAIN_ON_RUN`, `CATALOG_DRAIN_ON_RUN_BATCH`, `CATALOG_DRAIN_ON_RUN_MAX_RUNTIME_MS`, `CATALOG_DRAIN_ON_RUN_CONCURRENCY`, `CATALOG_DRAIN_DISABLED`, `CATALOG_WORKER_CONCURRENCY`, `CATALOG_WORKER_API_URL`.
 - Catalog extractor (PDP LLM): `CATALOG_OPENAI_MODEL`, `CATALOG_OPENAI_TEMPERATURE`, `CATALOG_OPENAI_DISABLE_TEMPERATURE`, `CATALOG_PDP_LLM_ENABLED`, `CATALOG_PDP_LLM_CONFIDENCE_MIN`, `CATALOG_PDP_LLM_MAX_HTML_CHARS`, `CATALOG_PDP_LLM_MAX_TEXT_CHARS`, `CATALOG_PDP_LLM_MAX_IMAGES`.
+- Product enrichment: `PRODUCT_ENRICHMENT_MODEL`, `PRODUCT_ENRICHMENT_MAX_RETRIES`, `PRODUCT_ENRICHMENT_MAX_ATTEMPTS`, `PRODUCT_ENRICHMENT_MAX_IMAGES`, `PRODUCT_ENRICHMENT_QUEUE_NAME`, `PRODUCT_ENRICHMENT_QUEUE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_QUEUE_DISABLED`, `PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT`, `PRODUCT_ENRICHMENT_QUEUE_STALE_MINUTES`, `PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_RESUME_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_AUTO_PAUSE_ON_ERRORS`, `PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT`, `PRODUCT_ENRICHMENT_DRAIN_ON_RUN`, `PRODUCT_ENRICHMENT_DRAIN_BATCH`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS`, `PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY`, `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`, `PRODUCT_ENRICHMENT_WORKER_API_URL`.
 - Sweep tech profiler: `TECH_PROFILE_SWEEP_LIMIT`, `TECH_PROFILE_SWEEP_PLATFORM` (all|unknown|null|shopify|...).
 - Dry-run LLM: `UNKNOWN_LLM_DRY_RUN_LIMIT`, `UNKNOWN_LLM_DRY_RUN_CANDIDATES`.
 No commitees credenciales reales.
@@ -78,6 +79,10 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Si detecta `social`, `bot_protection`, `unreachable`, `parked_domain`, `landing_no_store`, `no_pdp_candidates` o review `manual_review_no_products`, elimina la marca automáticamente.
 - Panel `/admin/products` (productos):
   - Directorio de productos scrapeados con cards, modal de detalle y filtros por marca.
+- Panel `/admin/product-enrichment` (enriquecimiento):
+  - Enriquecimiento de atributos por GPT‑5 mini (categoría, subcategoría, tags, género, temporada, color hex, Pantone y fit).
+  - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
+  - Controles de **pausa** y **detener**; muestra progreso, errores y estado.
 - Panel `/admin/catalog-extractor` (catalog extractor):
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.
   - Controles Play/Pausar/Detener (detener conserva estado para reanudar), reanudación automática y sitemap‑first.
@@ -128,6 +133,13 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - `GET /api/admin/products`: listado paginado de productos (query: `page`, `pageSize`, `brandId`).
 - `GET /api/admin/products/brands`: listado de marcas con conteo de productos.
 - `GET /api/admin/products/:id`: detalle de producto con variantes.
+
+## API interna (product enrichment)
+- `GET /api/admin/product-enrichment/state`: estado de corrida (query: `scope=brand|all`, `brandId?`).
+- `POST /api/admin/product-enrichment/run`: inicia corrida (body: `{ scope, brandId?, mode: \"batch\"|\"all\", limit?, resume? }`).
+- `POST /api/admin/product-enrichment/pause`: pausa corrida (body: `{ runId }`).
+- `POST /api/admin/product-enrichment/stop`: detiene corrida (body: `{ runId }`).
+- `POST /api/admin/product-enrichment/process-item`: procesa item (body: `{ itemId }`).
 
 ## Cron en Vercel
 - Configurado en `vercel.json` para ejecutar `/api/admin/brands/scrape/cron` cada 5 minutos.
