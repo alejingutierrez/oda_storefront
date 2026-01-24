@@ -149,6 +149,12 @@ Reglas estrictas:
 - No inventes variantes: devuelve un objeto por cada variant_id recibido.
 - color_hex debe ser hexadecimal #RRGGBB.
 - color_pantone debe ser un código Pantone TCX NN-NNNN. No puede ser null. Usa el más cercano si no es exacto.
+Reglas de evidencia y consistencia:
+- Prioriza la señal de texto en este orden: product.name, product.description, metadata (og:title, og:description, jsonld, etc.).
+- Si el texto es claro sobre el tipo de prenda (ej: "top", "camisa", "blusa", "camiseta", "falda", "vestido", "pantalón", "jean", "short", "bikini"), ESA familia manda.
+- Las imágenes solo ayudan a desambiguar detalles (fit, color, pattern), nunca para contradecir el texto.
+- Si hay conflicto entre imagen y texto, gana el texto.
+- No clasifiques como falda/pantalón/vestido si el texto indica explícitamente que es un top/camiseta/blusa (y viceversa).
 
 Valores permitidos:
 category -> subcategory
@@ -410,7 +416,7 @@ export async function enrichProductWithOpenAI(params: {
   throw new Error(`OpenAI enrichment failed after ${MAX_RETRIES} attempts: ${String(lastError)}`);
 }
 
-export const productEnrichmentPromptVersion = "v1";
+export const productEnrichmentPromptVersion = "v2";
 export const productEnrichmentSchemaVersion = "v1";
 
 export const toSlugLabel = (value: string) => slugify(value);
