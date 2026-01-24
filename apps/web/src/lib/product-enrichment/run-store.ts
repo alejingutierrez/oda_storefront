@@ -74,7 +74,7 @@ export const createRunWithItems = async (params: {
   brandId?: string | null;
   productIds: string[];
   status?: string;
-  metadata?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown>;
 }) => {
   const now = new Date();
   return prisma.productEnrichmentRun.create({
@@ -85,7 +85,7 @@ export const createRunWithItems = async (params: {
       totalItems: params.productIds.length,
       startedAt: now,
       updatedAt: now,
-      metadata: params.metadata ?? null,
+      metadata: params.metadata ?? undefined,
       items: {
         createMany: {
           data: params.productIds.map((productId) => ({
