@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-23 | MC-075 | done | Errores no detienen extractor (sin auto‑pause) + auto‑resume continuo | Vercel prod OK: https://oda-storefront-6ee5-hnw0qqnzc-alejingutierrezs-projects.vercel.app (CATALOG_AUTO_PAUSE_ON_ERRORS=false).
 - 2026-01-23 | MC-074 | done | Resume robusto (barrido + drain ilimitado por tiempo) y Blob path safe (#/?) | Vercel prod OK: https://oda-storefront-6ee5-54lb6safv-alejingutierrezs-projects.vercel.app (envs drain/resume actualizadas).
 - 2026-01-23 | MC-073 | done | Drain serverless catálogo con cron Vercel | Build local OK (env); Vercel prod OK: https://oda-storefront-6ee5-8qznsuruv-alejingutierrezs-projects.vercel.app (logs sin eventos).
 - 2026-01-23 | MC-072 | done | Redis + cola operativa en Vercel (guardas + timeout) | Docker rebuild: no ejecutado (daemon apagado); Vercel prod OK: https://oda-storefront-6ee5-65dxt41qs-alejingutierrezs-projects.vercel.app (logs sin eventos).
