@@ -68,6 +68,7 @@ export default function CatalogExtractorPanel() {
   const [selectedBrand, setSelectedBrand] = useState<string>("");
   const [running, setRunning] = useState(false);
   const [autoPlay, setAutoPlay] = useState(false);
+  const [autoRunAll, setAutoRunAll] = useState(false);
   const [summary, setSummary] = useState<ExtractSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -279,6 +280,18 @@ export default function CatalogExtractorPanel() {
   const handlePlay = () => {
     const targetBrand = nextUncatalogedBrandId || nextBrandId || selectedBrand;
     if (!targetBrand) return;
+    setAutoRunAll(false);
+    if (targetBrand !== selectedBrand) {
+      setSelectedBrand(targetBrand);
+    }
+    setAutoPlay(true);
+    runExtraction(targetBrand);
+  };
+
+  const handleAutoRunAll = () => {
+    const targetBrand = nextUncatalogedBrandId || nextBrandId || selectedBrand;
+    if (!targetBrand) return;
+    setAutoRunAll(true);
     if (targetBrand !== selectedBrand) {
       setSelectedBrand(targetBrand);
     }
@@ -289,6 +302,7 @@ export default function CatalogExtractorPanel() {
   const handlePause = async () => {
     if (!selectedBrand) return;
     setAutoPlay(false);
+    setAutoRunAll(false);
     setRunning(false);
     await fetch("/api/admin/catalog-extractor/pause", {
       method: "POST",
@@ -301,6 +315,7 @@ export default function CatalogExtractorPanel() {
   const handleStop = async () => {
     if (!selectedBrand) return;
     setAutoPlay(false);
+    setAutoRunAll(false);
     setRunning(false);
     setSummary(null);
     await fetch("/api/admin/catalog-extractor/stop", {
@@ -318,6 +333,7 @@ export default function CatalogExtractorPanel() {
     );
     if (!confirmFinish) return;
     setAutoPlay(false);
+    setAutoRunAll(false);
     setRunning(false);
     setSummary(null);
     setError(null);
@@ -347,8 +363,21 @@ export default function CatalogExtractorPanel() {
       return;
     }
 
-    if (currentState.status === "blocked" || currentState.status === "paused" || currentState.status === "stopped") {
+    if (currentState.status === "blocked") {
+      if (autoRunAll) {
+        const nextTarget = nextUncatalogedBrandId || nextBrandId;
+        if (nextTarget && nextTarget !== selectedBrand) {
+          setSelectedBrand(nextTarget);
+          return;
+        }
+      }
       setAutoPlay(false);
+      setAutoRunAll(false);
+      return;
+    }
+    if (currentState.status === "paused" || currentState.status === "stopped") {
+      setAutoPlay(false);
+      setAutoRunAll(false);
       return;
     }
 
@@ -366,6 +395,7 @@ export default function CatalogExtractorPanel() {
         return;
       }
       setAutoPlay(false);
+      setAutoRunAll(false);
       return;
     }
 
@@ -375,6 +405,7 @@ export default function CatalogExtractorPanel() {
     return () => clearTimeout(timer);
   }, [
     autoPlay,
+    autoRunAll,
     running,
     selectedBrand,
     currentState,
@@ -424,7 +455,16 @@ export default function CatalogExtractorPanel() {
             )}
           </div>
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-col items-stretch gap-2">
+          <button
+            type="button"
+            onClick={handleAutoRunAll}
+            disabled={running || brands.length === 0}
+            className="rounded-full border border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            Auto‑Play (todas las marcas)
+          </button>
+          <div className="flex items-end gap-2">
           <button
             type="button"
             onClick={handlePlay}
@@ -457,6 +497,7 @@ export default function CatalogExtractorPanel() {
           >
             Finalizar
           </button>
+          </div>
         </div>
       </div>
 
