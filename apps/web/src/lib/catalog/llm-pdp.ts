@@ -3,6 +3,13 @@ import { getOpenAIClient } from "@/lib/openai";
 import { normalizeUrl, safeOrigin } from "@/lib/catalog/utils";
 
 const OPENAI_MODEL = process.env.CATALOG_OPENAI_MODEL ?? "gpt-5-mini";
+const resolveTemperature = (model: string) => {
+  if (process.env.CATALOG_OPENAI_DISABLE_TEMPERATURE === "true") return undefined;
+  const temp = Number(process.env.CATALOG_OPENAI_TEMPERATURE ?? 0);
+  if (!Number.isFinite(temp)) return undefined;
+  if (/gpt-5/i.test(model)) return undefined;
+  return temp;
+};
 const MAX_RETRIES = 3;
 const MAX_HTML_CHARS = Math.max(5000, Number(process.env.CATALOG_PDP_LLM_MAX_HTML_CHARS ?? 40000));
 const MAX_TEXT_CHARS = Math.max(2000, Number(process.env.CATALOG_PDP_LLM_MAX_TEXT_CHARS ?? 8000));
@@ -182,9 +189,10 @@ Reglas:
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
     try {
+      const temperature = resolveTemperature(OPENAI_MODEL);
       const response = await client.responses.create({
         model: OPENAI_MODEL,
-        temperature: 0,
+        ...(temperature !== undefined ? { temperature } : {}),
         input: [
           { role: "system", content: systemPrompt },
           {
@@ -274,9 +282,10 @@ Reglas:
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
     try {
+      const temperature = resolveTemperature(OPENAI_MODEL);
       const response = await client.responses.create({
         model: OPENAI_MODEL,
-        temperature: 0,
+        ...(temperature !== undefined ? { temperature } : {}),
         input: [
           { role: "system", content: systemPrompt },
           {
