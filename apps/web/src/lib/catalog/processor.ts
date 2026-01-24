@@ -185,7 +185,8 @@ export const processCatalogItemById = async (
 
     const consecutiveErrors = (run.consecutiveErrors ?? 0) + 1;
     const limit = getCatalogConsecutiveErrorLimit();
-    const shouldPause = consecutiveErrors >= limit;
+    const allowAutoPause = process.env.CATALOG_AUTO_PAUSE_ON_ERRORS === "true";
+    const shouldPause = allowAutoPause && consecutiveErrors >= limit;
 
     await prisma.catalogRun.update({
       where: { id: run.id },
