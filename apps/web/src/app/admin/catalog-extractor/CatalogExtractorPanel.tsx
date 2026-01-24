@@ -83,26 +83,33 @@ export default function CatalogExtractorPanel() {
     return next?.id ?? brands[0]?.id ?? "";
   }, [brands]);
 
+  const nextUncatalogedBrandId = useMemo(() => {
+    if (!brands.length) return "";
+    const uncataloged = brands.filter((brand) => (brand._count?.products ?? 0) === 0);
+    const next = uncataloged.find((brand) => brand.runState?.status !== "completed");
+    return next?.id ?? uncataloged[0]?.id ?? "";
+  }, [brands]);
+
   const currentState = useMemo(
     () => summary ?? currentBrand?.runState ?? null,
     [summary, currentBrand],
   );
 
   const progress = useMemo(() => buildProgress(currentState), [currentState]);
-  const shouldResume = useMemo(() => {
+  const shouldResumeForState = useCallback((state: RunState | null) => {
+    if (!state) return false;
     const cursorValue =
-      currentState && "cursor" in currentState && typeof currentState.cursor === "number"
-        ? currentState.cursor
-        : 0;
-    const hasProgress = progress.completed > 0 || progress.failed > 0 || cursorValue > 0;
+      "cursor" in state && typeof state.cursor === "number" ? state.cursor : 0;
+    const stateProgress = buildProgress(state);
+    const hasProgress = stateProgress.completed > 0 || stateProgress.failed > 0 || cursorValue > 0;
     return Boolean(
-      currentState &&
-        currentState.status !== "completed" &&
-        (currentState.status === "paused" ||
-          currentState.status === "stopped" ||
-          (currentState.status === "processing" && hasProgress)),
+      state.status !== "completed" &&
+        (state.status === "paused" ||
+          state.status === "stopped" ||
+          (state.status === "processing" && hasProgress)),
     );
-  }, [currentState, progress]);
+  }, []);
+  const shouldResume = useMemo(() => shouldResumeForState(currentState), [currentState, shouldResumeForState]);
   const playLabel = useMemo(() => {
     if (running) return "Procesando...";
     return shouldResume ? "Resume" : "Play";
@@ -222,8 +229,14 @@ export default function CatalogExtractorPanel() {
     };
   }, [selectedBrand, fetchState]);
 
-  const runExtraction = useCallback(async () => {
-    if (!selectedBrand) return;
+  const runExtraction = useCallback(async (overrideBrandId?: string) => {
+    const targetBrand = overrideBrandId ?? selectedBrand;
+    if (!targetBrand) return;
+    const targetState =
+      targetBrand === selectedBrand
+        ? currentState
+        : brands.find((brand) => brand.id === targetBrand)?.runState ?? null;
+    const resumeFlag = shouldResumeForState(targetState);
     setRunning(true);
     setError(null);
     try {
@@ -231,9 +244,9 @@ export default function CatalogExtractorPanel() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brandId: selectedBrand,
+          brandId: targetBrand,
           batchSize: 1,
-          resume: shouldResume,
+          resume: resumeFlag,
           drainBatch: 0,
         }),
       });
@@ -245,7 +258,7 @@ export default function CatalogExtractorPanel() {
       const nextSummary = payload.summary ?? null;
       setSummary(nextSummary);
       if (nextSummary) {
-        updateBrandRunState(selectedBrand, {
+        updateBrandRunState(targetBrand, {
           status: nextSummary.status,
           runId: nextSummary.runId,
           total: nextSummary.total ?? nextSummary.discovered ?? 0,
@@ -261,12 +274,16 @@ export default function CatalogExtractorPanel() {
     } finally {
       setRunning(false);
     }
-  }, [selectedBrand, shouldResume]);
+  }, [selectedBrand, currentState, brands, shouldResumeForState, updateBrandRunState]);
 
   const handlePlay = () => {
-    if (!selectedBrand) return;
+    const targetBrand = nextUncatalogedBrandId || nextBrandId || selectedBrand;
+    if (!targetBrand) return;
+    if (targetBrand !== selectedBrand) {
+      setSelectedBrand(targetBrand);
+    }
     setAutoPlay(true);
-    runExtraction();
+    runExtraction(targetBrand);
   };
 
   const handlePause = async () => {
@@ -321,9 +338,12 @@ export default function CatalogExtractorPanel() {
   };
 
   useEffect(() => {
-    if (!autoPlay || running || !selectedBrand) return;
+    if (!autoPlay || running) return;
+    const targetBrand = selectedBrand || nextUncatalogedBrandId || nextBrandId;
+    if (!targetBrand) return;
     if (!currentState) {
-      runExtraction();
+      if (!selectedBrand) setSelectedBrand(targetBrand);
+      runExtraction(targetBrand);
       return;
     }
 
@@ -340,8 +360,9 @@ export default function CatalogExtractorPanel() {
     }
 
     if (currentState.status === "completed") {
-      if (nextBrandId && nextBrandId !== selectedBrand) {
-        setSelectedBrand(nextBrandId);
+      const nextTarget = nextUncatalogedBrandId || nextBrandId;
+      if (nextTarget && nextTarget !== selectedBrand) {
+        setSelectedBrand(nextTarget);
         return;
       }
       setAutoPlay(false);
@@ -352,7 +373,15 @@ export default function CatalogExtractorPanel() {
       runExtraction();
     }, 600);
     return () => clearTimeout(timer);
-  }, [autoPlay, running, selectedBrand, currentState, runExtraction, nextBrandId]);
+  }, [
+    autoPlay,
+    running,
+    selectedBrand,
+    currentState,
+    runExtraction,
+    nextBrandId,
+    nextUncatalogedBrandId,
+  ]);
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
