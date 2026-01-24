@@ -74,7 +74,7 @@ export const createRunWithItems = async (params: {
   brandId?: string | null;
   productIds: string[];
   status?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Prisma.InputJsonValue;
 }) => {
   const now = new Date();
   return prisma.productEnrichmentRun.create({
