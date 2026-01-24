@@ -78,18 +78,20 @@ export default function CatalogExtractorPanel() {
     [brands, selectedBrand],
   );
 
-  const nextBrandId = useMemo(() => {
-    if (!brands.length) return "";
-    const next = brands.find((brand) => brand.runState?.status !== "completed");
-    return next?.id ?? brands[0]?.id ?? "";
-  }, [brands]);
-
-  const nextUncatalogedBrandId = useMemo(() => {
-    if (!brands.length) return "";
-    const uncataloged = brands.filter((brand) => (brand._count?.products ?? 0) === 0);
-    const next = uncataloged.find((brand) => brand.runState?.status !== "completed");
-    return next?.id ?? uncataloged[0]?.id ?? "";
-  }, [brands]);
+  const getNextBrandId = useCallback(
+    (excludeId?: string) => {
+      if (!brands.length) return "";
+      const isPending = (brand: BrandOption) =>
+        brand.id !== excludeId && brand.runState?.status !== "completed";
+      const uncataloged = brands.filter(
+        (brand) => (brand._count?.products ?? 0) === 0 && isPending(brand),
+      );
+      if (uncataloged.length) return uncataloged[0]?.id ?? "";
+      const next = brands.find(isPending);
+      return next?.id ?? "";
+    },
+    [brands],
+  );
 
   const currentState = useMemo(
     () => summary ?? currentBrand?.runState ?? null,
@@ -278,18 +280,14 @@ export default function CatalogExtractorPanel() {
   }, [selectedBrand, currentState, brands, shouldResumeForState, updateBrandRunState]);
 
   const handlePlay = () => {
-    const targetBrand = nextUncatalogedBrandId || nextBrandId || selectedBrand;
-    if (!targetBrand) return;
+    if (!selectedBrand) return;
     setAutoRunAll(false);
-    if (targetBrand !== selectedBrand) {
-      setSelectedBrand(targetBrand);
-    }
     setAutoPlay(true);
-    runExtraction(targetBrand);
+    runExtraction(selectedBrand);
   };
 
   const handleAutoRunAll = () => {
-    const targetBrand = nextUncatalogedBrandId || nextBrandId || selectedBrand;
+    const targetBrand = selectedBrand || getNextBrandId();
     if (!targetBrand) return;
     setAutoRunAll(true);
     if (targetBrand !== selectedBrand) {
@@ -355,8 +353,14 @@ export default function CatalogExtractorPanel() {
 
   useEffect(() => {
     if (!autoPlay || running) return;
-    const targetBrand = selectedBrand || nextUncatalogedBrandId || nextBrandId;
-    if (!targetBrand) return;
+    const targetBrand = autoRunAll ? selectedBrand || getNextBrandId() : selectedBrand;
+    if (!targetBrand) {
+      if (autoRunAll) {
+        setAutoPlay(false);
+        setAutoRunAll(false);
+      }
+      return;
+    }
     if (!currentState) {
       if (!selectedBrand) setSelectedBrand(targetBrand);
       runExtraction(targetBrand);
@@ -365,7 +369,7 @@ export default function CatalogExtractorPanel() {
 
     if (currentState.status === "blocked") {
       if (autoRunAll) {
-        const nextTarget = nextUncatalogedBrandId || nextBrandId;
+        const nextTarget = getNextBrandId(selectedBrand ?? targetBrand);
         if (nextTarget && nextTarget !== selectedBrand) {
           setSelectedBrand(nextTarget);
           return;
@@ -389,10 +393,12 @@ export default function CatalogExtractorPanel() {
     }
 
     if (currentState.status === "completed") {
-      const nextTarget = nextUncatalogedBrandId || nextBrandId;
-      if (nextTarget && nextTarget !== selectedBrand) {
-        setSelectedBrand(nextTarget);
-        return;
+      if (autoRunAll) {
+        const nextTarget = getNextBrandId(selectedBrand ?? targetBrand);
+        if (nextTarget && nextTarget !== selectedBrand) {
+          setSelectedBrand(nextTarget);
+          return;
+        }
       }
       setAutoPlay(false);
       setAutoRunAll(false);
@@ -410,8 +416,7 @@ export default function CatalogExtractorPanel() {
     selectedBrand,
     currentState,
     runExtraction,
-    nextBrandId,
-    nextUncatalogedBrandId,
+    getNextBrandId,
   ]);
 
   return (
