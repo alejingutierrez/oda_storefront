@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-23 | MC-079 | fix | Auto‑Play all no se detiene tras primera marca | Vercel prod OK: https://oda-storefront-6ee5-cnktphvd0-alejingutierrezs-projects.vercel.app
 - 2026-01-23 | MC-078 | done | Botón Auto‑Play para recorrer todas las marcas sin selección manual | Vercel prod OK: https://oda-storefront-6ee5-e9bxrn5om-alejingutierrezs-projects.vercel.app
 - 2026-01-23 | MC-077 | done | Auto-play selecciona marcas sin productos y encadena siguiente | Vercel prod OK: https://oda-storefront-6ee5-kvt8951mv-alejingutierrezs-projects.vercel.app
 - 2026-01-23 | MC-076 | done | PDP LLM sin temperature en gpt-5 (evita 400) | Vercel prod OK: https://oda-storefront-6ee5-8tb3bbgn0-alejingutierrezs-projects.vercel.app
