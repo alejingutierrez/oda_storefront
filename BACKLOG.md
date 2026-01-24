@@ -2,7 +2,6 @@
 
 ## Now (F0 – bootstrap E2E mínimo)
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.2, upsert DB, ficha en VSF + ISR.
-- MC-080 | doing | P1 | Enriquecimiento IA de productos | Admin + cola para enriquecer categorías/tags/colores/fit con GPT-5 mini.
 - MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build contenedores básicos.
 - MC-008 | todo | P1 | Observabilidad mínima | Logging estructurado, health checks, traces básicos; dashboard inicial de servicios.
 
@@ -37,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-080 | done | P1 | Enriquecimiento IA de productos | Admin + cola para enriquecer categorías/tags/colores/fit con GPT-5 mini.
 - MC-073 | done | P1 | Drain serverless catálogo (Vercel cron) | Endpoint drain + cron cada minuto para procesar sin worker persistente.
 - MC-072 | done | P1 | Redis + cola operativa en Vercel | REDIS_URL correcto en Vercel, guardas de cola y reanudacion sin timeouts.
 - MC-071 | done | P1 | Blob robusto: sanitizar path + tolerar fallos | Evita error por # y no aborta por fallos parciales.

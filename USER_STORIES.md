@@ -302,7 +302,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: Reintentos y límite de intentos por item; operación segura con cola y locks; tiempos razonables por batch.
 - Riesgos: Costos de IA y errores por valores fuera del estándar; mitigación con listas permitidas, validación y reintentos.
 - Métricas: % de productos enriquecidos, error rate por batch, costo medio por producto.
-- Estado: **doing (2026-01-24)**.
+- Estado: **done (2026-01-24)**.
 
 ### MC-010 Búsqueda básica + pgvector
 - Historia: Como usuario, quiero buscar y filtrar prendas relevantes, para encontrar rápido lo que me gusta.
