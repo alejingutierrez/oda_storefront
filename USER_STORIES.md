@@ -109,6 +109,13 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Datos: env `CATALOG_FORCE_SITEMAP`.
 - Estado: **done (2026-01-25)**.
 
+### MC-092 Reducir reintentos de catálogo
+- Historia: Como operador, quiero limitar reintentos para que el scraping sea más rápido y no se atasque.
+- Alcance: Máximo 1 reintento por producto y 1 reintento en la cola (BullMQ).
+- CA: El extractor no reintenta más de una vez por producto y por job; reduce latencia de corridas largas.
+- Datos: `CATALOG_MAX_ATTEMPTS`, `CATALOG_QUEUE_ATTEMPTS`.
+- Estado: **done (2026-01-25)**.
+
 ### MC-055 Fallback a API si sitemap no trae productos
 - Historia: Como operador, quiero que si el sitemap no contiene URLs de producto, el extractor use el discovery del adapter, para evitar fallas en VTEX.
 - Alcance: Filtrar URLs de producto en sitemap; si quedan 0, pasar a discovery por plataforma (API) en vez de intentar páginas no‑producto.

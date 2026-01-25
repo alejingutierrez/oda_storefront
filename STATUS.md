@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-25 | MC-092 | done | Reducir reintentos de catálogo | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel prod pendiente tras push de docs.
 - 2026-01-25 | MC-091 | done | Drain finaliza runs idle + control sitemap/queue | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel prod OK: https://oda-storefront-6ee5-izjoexjup-alejingutierrezs-projects.vercel.app (deploy dpl_GtGdfJ7TzEawz3WsWZb5KquMByQe, logs sin eventos).
 - 2026-01-25 | MC-090 | done | Sitemap budget + precios Woo fallback | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel prod OK: https://oda-storefront-6ee5-b7n0zyw6g-alejingutierrezs-projects.vercel.app (deploy dpl_9m7ZAtqa9F2Uta9WvyNqftPV5LdN, logs sin eventos).
 - 2026-01-25 | MC-084 | fix | Stop extractor ahora limpia jobs en cola y resetea items | Docker rebuild ok; docker-compose up ok; stop aplicado a 2 marcas activas (Bibiana Pineda Joyas, Love Culture).
