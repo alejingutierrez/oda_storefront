@@ -31,13 +31,20 @@ export async function POST(req: Request) {
   const requestedDrainBatch = Number(body?.drainBatch ?? body?.drainLimit ?? body?.drainSize);
   const requestedDrainConcurrency = Number(body?.drainConcurrency ?? body?.concurrency ?? body?.drainWorkers);
   const requestedDrainMaxMs = Number(body?.drainMaxMs ?? body?.maxMs ?? body?.drainTimeoutMs);
+  const drainOverride = typeof body?.drainOnRun === "boolean" ? body.drainOnRun : null;
+  const enqueueOnly = Boolean(body?.enqueueOnly);
+  const forceSitemap =
+    typeof body?.forceSitemap === "boolean"
+      ? body.forceSitemap
+      : process.env.CATALOG_FORCE_SITEMAP === "true";
   const enqueueLimit = Math.max(
     1,
     Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
   );
-  const drainOnRun =
+  const envDrainOnRun =
     process.env.CATALOG_DRAIN_ON_RUN !== "false" &&
     process.env.CATALOG_DRAIN_DISABLED !== "true";
+  const drainOnRun = enqueueOnly ? false : (drainOverride ?? envDrainOnRun);
   const drainBatchDefault = Number(
     process.env.CATALOG_DRAIN_ON_RUN_BATCH ?? process.env.CATALOG_DRAIN_BATCH ?? 0,
   );
@@ -149,7 +156,7 @@ export async function POST(req: Request) {
         ecommercePlatform: brand.ecommercePlatform,
       },
       limit: Number.isFinite(batchSize) ? Math.max(10, batchSize * 10) : 50,
-      forceSitemap: true,
+      forceSitemap,
     });
 
     if (!refs.length) {

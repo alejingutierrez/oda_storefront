@@ -102,6 +102,13 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Datos: env `CATALOG_EXTRACT_SITEMAP_BUDGET_MS`, `CATALOG_TRY_SITEMAP_FIRST`.
 - Estado: **done (2026-01-25)**.
 
+### MC-091 Drain finaliza runs idle + control de sitemap/queue
+- Historia: Como operador, quiero que el drain marque runs como completados cuando ya no quedan items, y poder controlar cuándo forzar sitemap o solo encolar.
+- Alcance: `drain` finaliza run y setea `catalog_extract_finished` si no hay fallos; `/run` respeta `enqueueOnly` para no drenar en la misma request y permite `CATALOG_FORCE_SITEMAP`/`forceSitemap`.
+- CA: Runs sin pendientes quedan en `completed` tras drain; Play no se bloquea por drenado; sitemap solo se fuerza cuando el env/flag lo indica.
+- Datos: env `CATALOG_FORCE_SITEMAP`.
+- Estado: **done (2026-01-25)**.
+
 ### MC-055 Fallback a API si sitemap no trae productos
 - Historia: Como operador, quiero que si el sitemap no contiene URLs de producto, el extractor use el discovery del adapter, para evitar fallas en VTEX.
 - Alcance: Filtrar URLs de producto en sitemap; si quedan 0, pasar a discovery por plataforma (API) en vez de intentar páginas no‑producto.

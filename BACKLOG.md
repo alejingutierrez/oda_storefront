@@ -37,6 +37,7 @@
 
 ## Done (2026-01)
 - MC-090 | done | P1 | Sitemap budget + precios Woo fallback | Prioriza robots y limita tiempo de discovery; precios Woo se completan con fallback HTML cuando API devuelve 0.
+- MC-091 | done | P1 | Drain finaliza runs idle + control sitemap/queue | Drain marca run completed si no hay pendientes; /run respeta enqueueOnly y `CATALOG_FORCE_SITEMAP`.
 - MC-089 | done | P1 | Concurrencia alta + progreso frecuente en extractor | Drenado más rápido y polling ~2s en UI.
 - MC-088 | done | P1 | Catalog extractor no pausa por errores de producto | Errores soft no cuentan para auto-pause; continua la corrida.
 - MC-087 | done | P2 | Modal productos + carrusel en cards | Colores visibles con swatches, resumen de variantes y navegación de fotos en listado.

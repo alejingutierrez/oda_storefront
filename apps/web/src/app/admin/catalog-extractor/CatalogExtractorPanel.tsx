@@ -303,6 +303,7 @@ export default function CatalogExtractorPanel() {
           drainBatch: DRAIN_BATCH,
           drainConcurrency: DRAIN_CONCURRENCY,
           drainMaxMs: DRAIN_MAX_MS,
+          enqueueOnly: true,
         }),
       });
       if (!res.ok) {
