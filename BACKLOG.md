@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-081 | done | P1 | Catalog extractor: normalizacion determinista + menos OpenAI | Shopify/Woo sin LLM, payload LLM recortado, retries/backoff en cola, auto-finish marcas sin fallos.
 - MC-080 | done | P1 | Enriquecimiento IA de productos | Admin + cola para enriquecer categorías/tags/colores/fit con GPT-5 mini.
 - MC-073 | done | P1 | Drain serverless catálogo (Vercel cron) | Endpoint drain + cron cada minuto para procesar sin worker persistente.
 - MC-072 | done | P1 | Redis + cola operativa en Vercel | REDIS_URL correcto en Vercel, guardas de cola y reanudacion sin timeouts.

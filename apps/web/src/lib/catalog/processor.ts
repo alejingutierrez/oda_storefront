@@ -5,6 +5,41 @@ import { CATALOG_MAX_ATTEMPTS, getCatalogConsecutiveErrorLimit } from "@/lib/cat
 import { enqueueCatalogItems } from "@/lib/catalog/queue";
 import { listPendingItems, listRunnableItems, markItemsQueued, resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
 
+const readBrandMetadata = (brand: { metadata?: unknown }) =>
+  brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
+    ? (brand.metadata as Record<string, unknown>)
+    : {};
+
+const markBrandCatalogFinished = async ({
+  brand,
+  run,
+  failedCount,
+  reason,
+}: {
+  brand: { id: string; metadata?: unknown; ecommercePlatform?: string | null };
+  run: { id: string; platform?: string | null; totalItems?: number | null };
+  failedCount: number;
+  reason: string;
+}) => {
+  if (failedCount > 0) return;
+  const metadata = readBrandMetadata(brand);
+  if (metadata.catalog_extract_finished) return;
+  const nextMetadata = { ...metadata };
+  delete nextMetadata.catalog_extract;
+  nextMetadata.catalog_extract_finished = {
+    finishedAt: new Date().toISOString(),
+    reason,
+    runId: run.id,
+    platform: run.platform ?? brand.ecommercePlatform ?? null,
+    totalItems: run.totalItems ?? null,
+    failedItems: failedCount,
+  };
+  await prisma.brand.update({
+    where: { id: brand.id },
+    data: { metadata: nextMetadata },
+  });
+};
+
 export type ProcessCatalogItemResult = {
   status: string;
   created?: boolean;
@@ -89,10 +124,14 @@ export const processCatalogItemById = async (
     }
   }
 
+  const stuckCutoff = new Date(Date.now() - stuckMs);
   const claimed = await prisma.catalogItem.updateMany({
     where: {
       id: item.id,
-      status: { in: ["pending", "failed", "queued", "in_progress"] },
+      OR: [
+        { status: { in: ["pending", "failed", "queued"] } },
+        { status: "in_progress", startedAt: { lt: stuckCutoff } },
+      ],
     },
     data: { status: "in_progress", startedAt: now, updatedAt: now },
   });
@@ -163,6 +202,15 @@ export const processCatalogItemById = async (
         where: { id: run.id },
         data: { status: "completed", finishedAt: new Date(), updatedAt: new Date() },
       });
+      const failedCount = await prisma.catalogItem.count({
+        where: { runId: run.id, status: "failed" },
+      });
+      await markBrandCatalogFinished({
+        brand,
+        run,
+        failedCount,
+        reason: "auto_complete",
+      });
     } else if (options.allowQueueRefill) {
       const pendingItems = await listPendingItems(run.id, enqueueLimit);
       await markItemsQueued(pendingItems.map((candidate) => candidate.id));
@@ -215,6 +263,15 @@ export const processCatalogItemById = async (
         await prisma.catalogRun.update({
           where: { id: run.id },
           data: { status: "completed", finishedAt: new Date(), updatedAt: new Date() },
+        });
+        const failedCount = await prisma.catalogItem.count({
+          where: { runId: run.id, status: "failed" },
+        });
+        await markBrandCatalogFinished({
+          brand,
+          run,
+          failedCount,
+          reason: "auto_complete",
         });
       } else if (options.allowQueueRefill) {
         const pendingItems = await listPendingItems(run.id, enqueueLimit);

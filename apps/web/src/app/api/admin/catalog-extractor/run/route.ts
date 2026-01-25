@@ -27,6 +27,7 @@ export async function POST(req: Request) {
   const brandId = typeof body?.brandId === "string" ? body.brandId : null;
   const batchSize = Number(body?.batchSize ?? body?.limit ?? 1);
   const resumeRequested = Boolean(body?.resume);
+  const forceRun = Boolean(body?.force);
   const requestedDrainBatch = Number(body?.drainBatch ?? body?.drainLimit ?? body?.drainSize);
   const requestedDrainConcurrency = Number(body?.drainConcurrency ?? body?.concurrency ?? body?.drainWorkers);
   const requestedDrainMaxMs = Number(body?.drainMaxMs ?? body?.maxMs ?? body?.drainTimeoutMs);
@@ -72,6 +73,13 @@ export async function POST(req: Request) {
     const brand = await prisma.brand.findUnique({ where: { id: brandId } });
     if (!brand || !brand.siteUrl) {
       return NextResponse.json({ error: "brand_not_found" }, { status: 404 });
+    }
+    const metadata =
+      brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
+        ? (brand.metadata as Record<string, unknown>)
+        : {};
+    if (metadata.catalog_extract_finished && !forceRun) {
+      return NextResponse.json({ error: "brand_finished", status: "finished" }, { status: 409 });
     }
 
     if (!isCatalogQueueEnabled()) {

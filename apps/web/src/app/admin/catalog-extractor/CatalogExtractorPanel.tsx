@@ -79,10 +79,17 @@ export default function CatalogExtractorPanel() {
   );
 
   const getNextBrandId = useCallback(
-    (excludeId?: string) => {
+    (excludeId?: string, mode: "auto" | "single" = "single") => {
       if (!brands.length) return "";
-      const isPending = (brand: BrandOption) =>
-        brand.id !== excludeId && brand.runState?.status !== "completed";
+      const isPending = (brand: BrandOption) => {
+        if (brand.id === excludeId) return false;
+        const status = brand.runState?.status ?? "idle";
+        if (status === "completed") return false;
+        if (mode === "auto" && (status === "paused" || status === "stopped" || status === "blocked")) {
+          return false;
+        }
+        return true;
+      };
       const uncataloged = brands.filter(
         (brand) => (brand._count?.products ?? 0) === 0 && isPending(brand),
       );
@@ -287,7 +294,7 @@ export default function CatalogExtractorPanel() {
   };
 
   const handleAutoRunAll = () => {
-    const targetBrand = selectedBrand || getNextBrandId();
+    const targetBrand = selectedBrand || getNextBrandId(undefined, "auto");
     if (!targetBrand) return;
     setAutoRunAll(true);
     if (targetBrand !== selectedBrand) {
@@ -369,7 +376,7 @@ export default function CatalogExtractorPanel() {
 
     if (currentState.status === "blocked") {
       if (autoRunAll) {
-        const nextTarget = getNextBrandId(selectedBrand ?? targetBrand);
+        const nextTarget = getNextBrandId(selectedBrand ?? targetBrand, "auto");
         if (nextTarget && nextTarget !== selectedBrand) {
           setSelectedBrand(nextTarget);
           return;
@@ -380,6 +387,13 @@ export default function CatalogExtractorPanel() {
       return;
     }
     if (currentState.status === "paused" || currentState.status === "stopped") {
+      if (autoRunAll) {
+        const nextTarget = getNextBrandId(selectedBrand ?? targetBrand, "auto");
+        if (nextTarget && nextTarget !== selectedBrand) {
+          setSelectedBrand(nextTarget);
+          return;
+        }
+      }
       setAutoPlay(false);
       setAutoRunAll(false);
       return;
@@ -394,7 +408,7 @@ export default function CatalogExtractorPanel() {
 
     if (currentState.status === "completed") {
       if (autoRunAll) {
-        const nextTarget = getNextBrandId(selectedBrand ?? targetBrand);
+        const nextTarget = getNextBrandId(selectedBrand ?? targetBrand, "auto");
         if (nextTarget && nextTarget !== selectedBrand) {
           setSelectedBrand(nextTarget);
           return;

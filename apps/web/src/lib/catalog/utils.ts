@@ -251,9 +251,14 @@ export const hashBuffer = (buffer: Buffer) =>
 
 export const pickOption = (options: Record<string, string> | undefined, keys: string[]) => {
   if (!options) return null;
+  const normalizeKey = (value: string) =>
+    value
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
   for (const key of keys) {
     for (const [optionKey, value] of Object.entries(options)) {
-      if (optionKey.toLowerCase().includes(key)) return value;
+      if (normalizeKey(optionKey).includes(normalizeKey(key))) return value;
     }
   }
   return null;

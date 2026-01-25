@@ -3,6 +3,8 @@ import { Queue } from "bullmq";
 const queueName = process.env.CATALOG_QUEUE_NAME ?? "catalog";
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 const queueTimeoutMs = Math.max(1000, Number(process.env.CATALOG_QUEUE_TIMEOUT_MS ?? 8000));
+const queueAttempts = Math.max(1, Number(process.env.CATALOG_QUEUE_ATTEMPTS ?? 3));
+const queueBackoffMs = Math.max(200, Number(process.env.CATALOG_QUEUE_BACKOFF_MS ?? 5000));
 
 export const isCatalogQueueEnabled = () => {
   if (process.env.CATALOG_QUEUE_DISABLED === "true") return false;
@@ -32,6 +34,8 @@ export const getCatalogQueue = () => {
       defaultJobOptions: {
         removeOnComplete: true,
         removeOnFail: true,
+        attempts: queueAttempts,
+        backoff: { type: "exponential", delay: queueBackoffMs },
       },
     });
   }
@@ -69,6 +73,8 @@ export const enqueueCatalogItems = async (items: Array<{ id: string }>) => {
             jobId: job.jobId,
             removeOnComplete: true,
             removeOnFail: true,
+            attempts: queueAttempts,
+            backoff: { type: "exponential", delay: queueBackoffMs },
           }),
         ),
       ),

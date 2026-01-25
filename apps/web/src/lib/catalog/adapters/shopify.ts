@@ -45,6 +45,12 @@ export const shopifyAdapter: CatalogAdapter = {
       return null;
     }
 
+    const optionNames = Array.isArray(data.options)
+      ? data.options
+          .map((option: any) => (option?.name ? String(option.name).trim().toLowerCase() : ""))
+          .filter(Boolean)
+      : [];
+
     const images = Array.isArray(data.images)
       ? data.images.map((img: any) => (typeof img === "string" ? img : img?.src)).filter(Boolean)
       : [];
@@ -53,11 +59,22 @@ export const shopifyAdapter: CatalogAdapter = {
       ? data.variants.map((variant: any) => ({
           id: variant.id ? String(variant.id) : null,
           sku: variant.sku ? String(variant.sku) : variant.id ? String(variant.id) : null,
-          options: {
-            option1: variant.option1,
-            option2: variant.option2,
-            option3: variant.option3,
-          },
+          options: (() => {
+            const options: Record<string, string> = {};
+            if (variant.option1) {
+              options.option1 = variant.option1;
+              if (optionNames[0]) options[optionNames[0]] = variant.option1;
+            }
+            if (variant.option2) {
+              options.option2 = variant.option2;
+              if (optionNames[1]) options[optionNames[1]] = variant.option2;
+            }
+            if (variant.option3) {
+              options.option3 = variant.option3;
+              if (optionNames[2]) options[optionNames[2]] = variant.option3;
+            }
+            return options;
+          })(),
           price: normalizePrice(variant.price),
           compareAtPrice: normalizePrice(variant.compare_at_price),
           currency: data.currency ?? "COP",
@@ -86,6 +103,8 @@ export const shopifyAdapter: CatalogAdapter = {
       metadata: {
         platform: "shopify",
         handle,
+        product_type: data.product_type ?? null,
+        tags: typeof data.tags === "string" ? data.tags.split(",").map((tag: string) => tag.trim()) : data.tags ?? null,
         raw: {
           id: data.id,
         },

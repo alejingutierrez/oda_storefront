@@ -179,6 +179,16 @@ export const wooCommerceAdapter: CatalogAdapter = {
       variants: rawVariants.length ? rawVariants : [{ price, compareAtPrice, currency: priceInfo.currency_code ?? "COP" }],
       metadata: {
         platform: "woocommerce",
+        categories: Array.isArray(data.categories)
+          ? data.categories.map((entry: any) => entry?.name ?? entry?.slug).filter(Boolean)
+          : null,
+        tags: Array.isArray(data.tags) ? data.tags.map((entry: any) => entry?.name ?? entry?.slug).filter(Boolean) : null,
+        attributes: Array.isArray(data.attributes)
+          ? data.attributes.map((attr: any) => ({
+              name: attr?.name ?? attr?.slug ?? "",
+              options: Array.isArray(attr?.options) ? attr.options : [],
+            }))
+          : null,
         raw: { id: data.id, type: data.type },
       },
     };

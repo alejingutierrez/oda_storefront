@@ -1,10 +1,15 @@
 import { z } from "zod";
 import { getOpenAIClient } from "@/lib/openai";
-import { guessCurrency } from "@/lib/catalog/utils";
-import type { CanonicalProduct, RawProduct } from "@/lib/catalog/types";
+import { guessCurrency, normalizeSize, pickOption } from "@/lib/catalog/utils";
+import type { CanonicalProduct, CanonicalVariant, RawProduct, RawVariant } from "@/lib/catalog/types";
 
 const OPENAI_MODEL = process.env.CATALOG_OPENAI_MODEL ?? "gpt-5-mini";
 const MAX_RETRIES = 3;
+const LLM_MODE = (process.env.CATALOG_LLM_NORMALIZE_MODE ?? "auto").toLowerCase();
+const MAX_LLM_DESC_CHARS = Math.max(200, Number(process.env.CATALOG_LLM_NORMALIZE_MAX_DESC_CHARS ?? 2000));
+const MAX_LLM_IMAGES = Math.max(1, Number(process.env.CATALOG_LLM_NORMALIZE_MAX_IMAGES ?? 10));
+const MAX_LLM_VARIANTS = Math.max(1, Number(process.env.CATALOG_LLM_NORMALIZE_MAX_VARIANTS ?? 60));
+const MAX_LLM_OPTION_VALUES = Math.max(1, Number(process.env.CATALOG_LLM_NORMALIZE_MAX_OPTION_VALUES ?? 20));
 
 const catalogVariantSchema = z.object({
   sku: z.string().nullable().optional(),
@@ -88,6 +93,257 @@ Eres un sistema de normalizacion de catalogo de moda colombiana. Devuelve SOLO J
 - image_cover_url debe ser una URL de imagen (preferir blob_url si se provee).
 `;
 
+const normalizeText = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const toText = (value: unknown) => {
+  if (!value) return "";
+  if (Array.isArray(value)) return value.map((entry) => toText(entry)).filter(Boolean).join(" ");
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>)
+      .map((entry) => toText(entry))
+      .filter(Boolean)
+      .join(" ");
+  }
+  return String(value);
+};
+
+const addTag = (set: Set<string>, tag: string) => {
+  if (tag && tag.trim()) set.add(tag.trim());
+};
+
+type TagRule = { tag: string; keywords: string[] };
+
+const MATERIAL_RULES: TagRule[] = [
+  { tag: "algodon", keywords: ["algodon", "cotton"] },
+  { tag: "lino", keywords: ["lino", "linen"] },
+  { tag: "denim", keywords: ["denim", "jean", "jeans"] },
+  { tag: "cuero", keywords: ["cuero", "leather"] },
+  { tag: "seda", keywords: ["seda", "silk"] },
+  { tag: "lana", keywords: ["lana", "wool"] },
+  { tag: "poliester", keywords: ["poliester", "polyester", "poly"] },
+  { tag: "viscosa", keywords: ["viscosa", "viscose", "rayon"] },
+  { tag: "nylon", keywords: ["nylon"] },
+  { tag: "elastano", keywords: ["elastano", "elastane", "spandex", "lycra"] },
+];
+
+const PATTERN_RULES: TagRule[] = [
+  { tag: "rayas", keywords: ["raya", "rayas", "stripe", "stripes"] },
+  { tag: "flores", keywords: ["flor", "floral", "flores"] },
+  { tag: "cuadros", keywords: ["cuadro", "cuadros", "plaid", "tartan"] },
+  { tag: "animal_print", keywords: ["animal print", "leopardo", "cebra", "tigre"] },
+  { tag: "puntos", keywords: ["puntos", "polka", "dot"] },
+  { tag: "liso", keywords: ["liso", "solid", "plain"] },
+];
+
+const STYLE_RULES: TagRule[] = [
+  { tag: "casual", keywords: ["casual", "diario", "everyday"] },
+  { tag: "formal", keywords: ["formal", "elegante", "smart"] },
+  { tag: "boho", keywords: ["boho", "bohemio"] },
+  { tag: "minimal", keywords: ["minimal", "minimalista"] },
+  { tag: "urbano", keywords: ["urbano", "street", "streetwear"] },
+  { tag: "romantico", keywords: ["romantico", "romantica", "romance"] },
+];
+
+const OCCASION_RULES: TagRule[] = [
+  { tag: "fiesta", keywords: ["fiesta", "party", "noche"] },
+  { tag: "playa", keywords: ["playa", "beach"] },
+  { tag: "oficina", keywords: ["oficina", "office", "work"] },
+  { tag: "deporte", keywords: ["deporte", "sport", "gym", "active"] },
+  { tag: "boda", keywords: ["boda", "wedding"] },
+];
+
+const SEASON_RULES: TagRule[] = [
+  { tag: "verano", keywords: ["verano", "summer"] },
+  { tag: "invierno", keywords: ["invierno", "winter"] },
+  { tag: "primavera", keywords: ["primavera", "spring"] },
+  { tag: "otono", keywords: ["otono", "fall", "autumn"] },
+];
+
+const CATEGORY_RULES: Array<{
+  category: string;
+  subcategory?: string;
+  keywords: string[];
+}> = [
+  { category: "vestidos", keywords: ["vestido", "dress"] },
+  { category: "tops", subcategory: "camisetas", keywords: ["camiseta", "tshirt", "t-shirt"] },
+  { category: "tops", subcategory: "blusas", keywords: ["blusa", "top"] },
+  { category: "tops", subcategory: "camisas", keywords: ["camisa", "shirt"] },
+  { category: "bottoms", subcategory: "pantalones", keywords: ["pantalon", "pantalones", "trouser", "pant"] },
+  { category: "bottoms", subcategory: "jeans", keywords: ["jean", "jeans", "denim"] },
+  { category: "bottoms", subcategory: "shorts", keywords: ["short", "shorts", "bermuda"] },
+  { category: "bottoms", subcategory: "faldas", keywords: ["falda", "skirt"] },
+  { category: "outerwear", subcategory: "chaquetas", keywords: ["chaqueta", "jacket"] },
+  { category: "outerwear", subcategory: "abrigos", keywords: ["abrigo", "coat"] },
+  { category: "outerwear", subcategory: "buzos", keywords: ["buzo", "hoodie", "sweatshirt"] },
+  { category: "knitwear", subcategory: "sweaters", keywords: ["sueter", "sweater", "cardigan", "knit"] },
+  { category: "calzado", keywords: ["zapato", "tenis", "sneaker", "sandalia", "bota", "botas"] },
+  { category: "accesorios", subcategory: "bolsos", keywords: ["bolso", "cartera", "mochila"] },
+  { category: "accesorios", keywords: ["accesorio", "arete", "collar", "gorro", "bufanda"] },
+  { category: "trajes_de_bano", keywords: ["bikini", "traje de bano", "swim"] },
+  { category: "ropa_interior", keywords: ["bra", "brasier", "bralette", "panty", "interior", "lingerie"] },
+  { category: "deportivo", keywords: ["deportivo", "activewear", "legging", "gym"] },
+];
+
+const GENDER_RULES: TagRule[] = [
+  { tag: "mujer", keywords: ["mujer", "women", "womens", "dama", "ladies"] },
+  { tag: "hombre", keywords: ["hombre", "men", "mens", "caballero"] },
+  { tag: "nino", keywords: ["nino", "kids", "boy", "girl", "infantil"] },
+];
+
+const collectTags = (text: string, rules: TagRule[]) => {
+  const tags = new Set<string>();
+  rules.forEach((rule) => {
+    if (rule.keywords.some((keyword) => text.includes(keyword))) {
+      addTag(tags, rule.tag);
+    }
+  });
+  return Array.from(tags);
+};
+
+const inferCategory = (text: string) => {
+  for (const rule of CATEGORY_RULES) {
+    if (rule.keywords.some((keyword) => text.includes(keyword))) {
+      return { category: rule.category, subcategory: rule.subcategory ?? null };
+    }
+  }
+  return { category: null, subcategory: null };
+};
+
+const inferGender = (text: string) => {
+  for (const rule of GENDER_RULES) {
+    if (rule.keywords.some((keyword) => text.includes(keyword))) {
+      return rule.tag;
+    }
+  }
+  return null;
+};
+
+const resolveVariantColor = (variant: RawVariant) => {
+  const color = pickOption(variant.options, ["color", "colour", "tono"]);
+  return color ?? null;
+};
+
+const resolveVariantSize = (variant: RawVariant) => {
+  const sizeRaw = pickOption(variant.options, ["talla", "size", "tamano"]);
+  return normalizeSize(sizeRaw);
+};
+
+const resolveStockStatus = (variant: RawVariant) => {
+  if (variant.available === true) return "in_stock";
+  if (variant.available === false) return "out_of_stock";
+  if (typeof variant.stock === "number") return variant.stock > 0 ? "in_stock" : "out_of_stock";
+  return null;
+};
+
+const buildCanonicalVariants = (rawVariants: RawVariant[], fallbackCurrency?: string | null) => {
+  const variants: CanonicalVariant[] = [];
+  rawVariants.forEach((variant) => {
+    const price = typeof variant.price === "number" ? variant.price : null;
+    const currency = guessCurrency(price, variant.currency ?? fallbackCurrency ?? null);
+    variants.push({
+      sku: variant.sku ?? null,
+      color: resolveVariantColor(variant),
+      size: resolveVariantSize(variant),
+      fit: null,
+      material: null,
+      price,
+      currency: currency ?? variant.currency ?? fallbackCurrency ?? null,
+      stock: typeof variant.stock === "number" ? variant.stock : null,
+      stock_status: resolveStockStatus(variant),
+      images: variant.images ?? (variant.image ? [variant.image] : null),
+    });
+  });
+  return variants.length
+    ? variants
+    : [
+        {
+          sku: null,
+          color: null,
+          size: null,
+          fit: null,
+          material: null,
+          price: null,
+          currency: fallbackCurrency ?? null,
+          stock: null,
+          stock_status: null,
+          images: null,
+        },
+      ];
+};
+
+const normalizeCatalogProductDeterministic = (rawProduct: RawProduct, platform?: string | null): CanonicalProduct => {
+  const rawTags = toText(rawProduct.metadata?.tags);
+  const rawCategories = toText(rawProduct.metadata?.categories);
+  const rawAttributes = toText(rawProduct.metadata?.attributes);
+  const rawProductType = toText(rawProduct.metadata?.product_type);
+  const text = normalizeText(
+    [rawProduct.title, rawProduct.description, rawProduct.vendor, rawTags, rawCategories, rawAttributes, rawProductType]
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  const categoryResult = inferCategory(text);
+  const materialTags = collectTags(text, MATERIAL_RULES);
+  const patternTags = collectTags(text, PATTERN_RULES);
+  const styleTags = collectTags(text, STYLE_RULES);
+  const occasionTags = collectTags(text, OCCASION_RULES);
+  const season = collectTags(text, SEASON_RULES)[0] ?? null;
+  const gender = inferGender(text);
+
+  return {
+    name: rawProduct.title ?? "Sin nombre",
+    description: rawProduct.description ?? null,
+    category: categoryResult.category,
+    subcategory: categoryResult.subcategory ?? null,
+    style_tags: styleTags,
+    material_tags: materialTags,
+    pattern_tags: patternTags,
+    occasion_tags: occasionTags,
+    gender,
+    season,
+    care: null,
+    origin: null,
+    status: null,
+    source_url: rawProduct.sourceUrl ?? null,
+    image_cover_url: rawProduct.images?.[0] ?? null,
+    variants: buildCanonicalVariants(rawProduct.variants ?? [], rawProduct.currency ?? null),
+    metadata: {
+      platform: platform ?? rawProduct.metadata?.platform ?? null,
+      normalized_by: "rules",
+    },
+  };
+};
+
+const isDeterministicRichEnough = (product: CanonicalProduct) => {
+  return Boolean(
+    product.category ||
+      (product.style_tags && product.style_tags.length) ||
+      (product.material_tags && product.material_tags.length) ||
+      (product.pattern_tags && product.pattern_tags.length) ||
+      (product.occasion_tags && product.occasion_tags.length),
+  );
+};
+
+const shouldUseLlmNormalizer = (
+  product: CanonicalProduct,
+  platform?: string | null,
+) => {
+  if (LLM_MODE === "never") return false;
+  if (LLM_MODE === "always") return true;
+  const normalizedPlatform = (platform ?? "").toLowerCase();
+  if (normalizedPlatform === "shopify" || normalizedPlatform === "woocommerce") {
+    return false;
+  }
+  return !isDeterministicRichEnough(product);
+};
+
 const extractOutputText = (response: any) => {
   if (typeof response?.output_text === "string") return response.output_text;
   const message = Array.isArray(response?.output)
@@ -121,9 +377,60 @@ const coerceProductWrapper = (parsed: any) => {
   return parsed;
 };
 
+const buildLlmInput = (rawProduct: RawProduct) => {
+  const trimText = (value: string | null | undefined, limit: number) =>
+    value && value.length > limit ? value.slice(0, limit) : value ?? null;
+
+  const trimArray = <T,>(arr: T[] | undefined, limit: number) => (Array.isArray(arr) ? arr.slice(0, limit) : []);
+
+  const metadata = rawProduct.metadata && typeof rawProduct.metadata === "object" && !Array.isArray(rawProduct.metadata)
+    ? {
+        platform: (rawProduct.metadata as Record<string, unknown>).platform ?? null,
+        tags: (rawProduct.metadata as Record<string, unknown>).tags ?? null,
+        categories: (rawProduct.metadata as Record<string, unknown>).categories ?? null,
+        attributes: (rawProduct.metadata as Record<string, unknown>).attributes ?? null,
+        product_type: (rawProduct.metadata as Record<string, unknown>).product_type ?? null,
+      }
+    : undefined;
+
+  const options = Array.isArray(rawProduct.options)
+    ? rawProduct.options.slice(0, 6).map((option) => ({
+        name: trimText(option.name, 60) ?? "",
+        values: trimArray(option.values, MAX_LLM_OPTION_VALUES),
+      }))
+    : undefined;
+
+  const variants = trimArray(rawProduct.variants, MAX_LLM_VARIANTS).map((variant) => ({
+    id: variant.id ?? null,
+    sku: variant.sku ?? null,
+    options: variant.options ?? null,
+    price: variant.price ?? null,
+    compareAtPrice: variant.compareAtPrice ?? null,
+    currency: variant.currency ?? null,
+    available: typeof variant.available === "boolean" ? variant.available : null,
+    stock: typeof variant.stock === "number" ? variant.stock : null,
+    image: variant.image ?? null,
+    images: trimArray(variant.images ?? (variant.image ? [variant.image] : []), MAX_LLM_IMAGES),
+  }));
+
+  return {
+    sourceUrl: rawProduct.sourceUrl,
+    externalId: rawProduct.externalId ?? null,
+    title: trimText(rawProduct.title ?? null, 200),
+    description: trimText(rawProduct.description ?? null, MAX_LLM_DESC_CHARS),
+    vendor: trimText(rawProduct.vendor ?? null, 120),
+    currency: rawProduct.currency ?? null,
+    images: trimArray(rawProduct.images ?? [], MAX_LLM_IMAGES),
+    options,
+    variants: variants.length ? variants : rawProduct.variants,
+    metadata,
+  } satisfies RawProduct;
+};
+
 export const normalizeCatalogProductWithOpenAI = async (rawProduct: RawProduct) => {
   const client = getOpenAIClient() as any;
   let lastError: unknown = null;
+  const payload = buildLlmInput(rawProduct);
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
     try {
@@ -135,7 +442,7 @@ export const normalizeCatalogProductWithOpenAI = async (rawProduct: RawProduct) 
             role: "user",
             content: JSON.stringify(
               {
-                raw_product: rawProduct,
+                raw_product: payload,
               },
               null,
               2,
@@ -169,4 +476,12 @@ export const normalizeCatalogProductWithOpenAI = async (rawProduct: RawProduct) 
   }
 
   throw new Error(`OpenAI catalog normalization failed after ${MAX_RETRIES} attempts: ${String(lastError)}`);
+};
+
+export const normalizeCatalogProduct = async (rawProduct: RawProduct, platform?: string | null) => {
+  const deterministic = normalizeCatalogProductDeterministic(rawProduct, platform);
+  if (!shouldUseLlmNormalizer(deterministic, platform)) {
+    return deterministic;
+  }
+  return normalizeCatalogProductWithOpenAI(rawProduct);
 };

@@ -210,6 +210,13 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Alcance: Guardar `lastUrl`, `lastStage`, `errorSamples` y `consecutiveErrors` en `catalog_extract`; pausar automáticamente cuando se exceda `CATALOG_EXTRACT_CONSECUTIVE_ERROR_LIMIT`.
 - CA: Cuando un sitio falla repetidamente, el run queda en pausa con `blockReason=consecutive_errors:N` y deja evidencia del último URL/etapa.
 - Datos: `brands.metadata.catalog_extract`.
+
+### MC-081 Catalog extractor: normalizacion determinista + menos OpenAI
+- Historia: Como operador, quiero reducir el costo del extractor y depender menos de OpenAI sin perder calidad, para escalar mas marcas con el mismo presupuesto.
+- Alcance: Normalizacion determinista para Shopify/Woo, payload LLM recortado para custom/unknown, reintentos con backoff en cola, y auto-finish cuando un run termina sin fallos.
+- CA: Shopify/Woo no disparan LLM en normalizacion (salvo override), el payload LLM es mas corto, la cola reintenta fallos transitorios, y las marcas terminadas salen de la cola automaticamente.
+- Datos: `CATALOG_LLM_NORMALIZE_MODE`, `CATALOG_LLM_NORMALIZE_MAX_DESC_CHARS`, `CATALOG_LLM_NORMALIZE_MAX_IMAGES`, `CATALOG_LLM_NORMALIZE_MAX_VARIANTS`, `CATALOG_LLM_NORMALIZE_MAX_OPTION_VALUES`.
+- Estado: done (2026-01-25).
 - NF: Sin cambios en extracción de datos; solo telemetría y control.
 - Riesgos: Pausa prematura por errores transitorios; mitigación con umbral configurable.
 - Métricas: Tiempo de diagnóstico, tasa de pausas por errores.

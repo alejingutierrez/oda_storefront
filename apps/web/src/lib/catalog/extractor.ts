@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { AdapterContext, ExtractSummary, RawProduct, RawVariant } from "@/lib/catalog/types";
 import { getCatalogAdapter } from "@/lib/catalog/registry";
-import { normalizeCatalogProductWithOpenAI } from "@/lib/catalog/normalizer";
+import { normalizeCatalogProduct } from "@/lib/catalog/normalizer";
 import { uploadImagesToBlob } from "@/lib/catalog/blob";
 import { inferCatalogPlatform } from "@/lib/catalog/platform-detect";
 import { classifyPdpWithOpenAI, extractHtmlSignals, extractRawProductWithOpenAI } from "@/lib/catalog/llm-pdp";
@@ -346,11 +346,14 @@ export const processCatalogRef = async ({
   }
   const coverImage = fallbackImages[0] ?? null;
 
-  onStage?.("llm_normalize");
-  const normalized = await normalizeCatalogProductWithOpenAI({
+  onStage?.("normalize");
+  const normalized = await normalizeCatalogProduct(
+    {
     ...raw,
     images: fallbackImages,
-  });
+    },
+    adapter.platform,
+  );
 
   onStage?.("upsert");
   const { product, created } = await upsertProduct(brand.id, raw, normalized, coverImage);
