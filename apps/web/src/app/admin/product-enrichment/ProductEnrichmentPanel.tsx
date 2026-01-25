@@ -97,11 +97,12 @@ export default function ProductEnrichmentPanel() {
   }, [fetchSummary]);
 
   useEffect(() => {
+    if (summary?.status !== "processing") return;
     const interval = setInterval(() => {
       fetchSummary();
     }, 15000);
     return () => clearInterval(interval);
-  }, [fetchSummary]);
+  }, [fetchSummary, summary?.status]);
 
   const progress = useMemo(() => buildProgress(summary), [summary]);
 

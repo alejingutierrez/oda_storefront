@@ -328,6 +328,15 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Tiempo de recuperación de runs pegados; % de runs finalizados sin intervención manual.
 - Estado: **done (2026-01-25)**.
 
+### MC-084 Auto‑refresh solo con runs processing
+- Historia: Como operador, quiero que el panel de enrichment solo auto‑refresque cuando hay un run en `processing`, para evitar llamadas innecesarias.
+- Alcance: Auto‑refresh condicional en `/admin/product-enrichment`.
+- CA: Sin run en `processing` no hay polling; al iniciar un run se activa el refresh; al completar/pausar/detener, se desactiva.
+- Datos: N/A.
+- NF: Sin impacto en UX del panel.
+- Riesgos: Estado no se actualiza si el run cambia fuera de la UI; mitigado por botón “Refrescar estado”.
+- Estado: **done (2026-01-25)**.
+
 ### MC-010 Búsqueda básica + pgvector
 - Historia: Como usuario, quiero buscar y filtrar prendas relevantes, para encontrar rápido lo que me gusta.
 - Alcance: Índice texto+embeddings (pgvector), endpoint search, facetas básicas, UI de listados VSF, orden por relevancia/stock.
