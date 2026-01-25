@@ -23,6 +23,12 @@ type RunSummary = {
   consecutiveErrors?: number;
 };
 
+type CoverageCounts = {
+  total: number;
+  enriched: number;
+  remaining: number;
+};
+
 const buildProgress = (summary: RunSummary | null) => {
   if (!summary) return { total: 0, completed: 0, failed: 0, pending: 0, percent: 0 };
   const total = summary.total ?? 0;
@@ -39,8 +45,10 @@ export default function ProductEnrichmentPanel() {
   const [scope, setScope] = useState<"brand" | "all">("brand");
   const [batchSize, setBatchSize] = useState<number>(BATCH_OPTIONS[0] ?? 10);
   const [summary, setSummary] = useState<RunSummary | null>(null);
+  const [counts, setCounts] = useState<CoverageCounts | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [includeEnriched, setIncludeEnriched] = useState(false);
 
   const fetchBrands = useCallback(async () => {
     try {
@@ -68,6 +76,7 @@ export default function ProductEnrichmentPanel() {
       if (!res.ok) return;
       const payload = await res.json();
       setSummary(payload.summary ?? null);
+      setCounts(payload.counts ?? null);
     } catch (err) {
       console.warn(err);
     }
@@ -103,6 +112,7 @@ export default function ProductEnrichmentPanel() {
         mode,
         limit: mode === "batch" ? batchSize : null,
         resume: shouldResume,
+        includeEnriched,
       };
       if (scope === "brand") payload.brandId = selectedBrand;
       const res = await fetch("/api/admin/product-enrichment/run", {
@@ -235,6 +245,21 @@ export default function ProductEnrichmentPanel() {
           <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Progreso</p>
           <div className="mt-3 space-y-2 text-sm text-slate-600">
             <p>
+              Cobertura:{" "}
+              <span className="font-semibold text-slate-900">
+                {counts?.enriched ?? 0}
+              </span>{" "}
+              enriquecidos ·{" "}
+              <span className="font-semibold text-slate-900">
+                {counts?.remaining ?? 0}
+              </span>{" "}
+              pendientes ·{" "}
+              <span className="font-semibold text-slate-900">
+                {counts?.total ?? 0}
+              </span>{" "}
+              total
+            </p>
+            <p>
               Estado: <span className="font-semibold text-slate-900">{summary?.status ?? "—"}</span>
             </p>
             <p>
@@ -286,7 +311,8 @@ export default function ProductEnrichmentPanel() {
             </button>
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            Selecciona {batchSize} productos al azar dentro del alcance.
+            Selecciona {batchSize} productos al azar dentro del alcance; por defecto excluye los ya
+            enriquecidos.
           </p>
         </div>
 
@@ -306,6 +332,17 @@ export default function ProductEnrichmentPanel() {
             Procesa todo el catálogo del alcance seleccionado.
           </p>
         </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2 text-xs text-slate-600">
+        <input
+          id="includeEnriched"
+          type="checkbox"
+          checked={includeEnriched}
+          onChange={(event) => setIncludeEnriched(event.target.checked)}
+          className="h-4 w-4 rounded border-slate-300"
+        />
+        <label htmlFor="includeEnriched">Incluir productos ya enriquecidos</label>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">

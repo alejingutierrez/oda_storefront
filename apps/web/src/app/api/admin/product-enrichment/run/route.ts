@@ -17,24 +17,34 @@ import { drainEnrichmentRun } from "@/lib/product-enrichment/processor";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const getRandomProductIds = async (params: { brandId?: string | null; limit: number }) => {
+const buildProductFilters = (params: { brandId?: string | null; includeEnriched?: boolean }) => {
+  const filters: Prisma.Sql[] = [];
   if (params.brandId) {
-    return prisma.$queryRaw<{ id: string }[]>(
-      Prisma.sql`SELECT id FROM "products" WHERE "brandId" = ${params.brandId} ORDER BY RANDOM() LIMIT ${params.limit}`,
-    );
+    filters.push(Prisma.sql`"brandId" = ${params.brandId}`);
   }
+  if (!params.includeEnriched) {
+    filters.push(Prisma.sql`("metadata" -> 'enrichment') IS NULL`);
+  }
+  if (!filters.length) return Prisma.sql``;
+  return Prisma.sql`WHERE ${Prisma.join(filters, Prisma.sql` AND `)}`;
+};
+
+const getRandomProductIds = async (params: {
+  brandId?: string | null;
+  limit: number;
+  includeEnriched?: boolean;
+}) => {
+  const where = buildProductFilters(params);
   return prisma.$queryRaw<{ id: string }[]>(
-    Prisma.sql`SELECT id FROM "products" ORDER BY RANDOM() LIMIT ${params.limit}`,
+    Prisma.sql`SELECT id FROM "products" ${where} ORDER BY RANDOM() LIMIT ${params.limit}`,
   );
 };
 
-const getAllProductIds = async (params: { brandId?: string | null }) => {
-  if (params.brandId) {
-    return prisma.$queryRaw<{ id: string }[]>(
-      Prisma.sql`SELECT id FROM "products" WHERE "brandId" = ${params.brandId}`,
-    );
-  }
-  return prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM "products"`);
+const getAllProductIds = async (params: { brandId?: string | null; includeEnriched?: boolean }) => {
+  const where = buildProductFilters(params);
+  return prisma.$queryRaw<{ id: string }[]>(
+    Prisma.sql`SELECT id FROM "products" ${where}`,
+  );
 };
 
 export async function POST(req: Request) {
@@ -49,6 +59,7 @@ export async function POST(req: Request) {
   const mode = body?.mode === "all" || body?.mode === "batch" ? body.mode : body?.limit ? "batch" : "all";
   const limit = Number(body?.limit ?? body?.batchSize ?? body?.count ?? 0);
   const resumeRequested = Boolean(body?.resume);
+  const includeEnriched = Boolean(body?.includeEnriched);
   const requestedDrainBatch = Number(body?.drainBatch ?? body?.drainLimit ?? body?.drainSize);
   const requestedDrainConcurrency = Number(body?.drainConcurrency ?? body?.concurrency ?? body?.drainWorkers);
   const requestedDrainMaxMs = Number(body?.drainMaxMs ?? body?.maxMs ?? body?.drainTimeoutMs);
@@ -161,12 +172,15 @@ export async function POST(req: Request) {
 
   const effectiveLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0;
   const productRows = mode === "batch"
-    ? await getRandomProductIds({ brandId, limit: effectiveLimit || enqueueLimit })
-    : await getAllProductIds({ brandId });
+    ? await getRandomProductIds({ brandId, limit: effectiveLimit || enqueueLimit, includeEnriched })
+    : await getAllProductIds({ brandId, includeEnriched });
 
   const productIds = productRows.map((row) => row.id);
   if (!productIds.length) {
-    return NextResponse.json({ error: "no_products" }, { status: 404 });
+    return NextResponse.json(
+      { error: includeEnriched ? "no_products" : "no_pending_products" },
+      { status: 404 },
+    );
   }
 
   const run = await createRunWithItems({

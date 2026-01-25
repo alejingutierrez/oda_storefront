@@ -82,7 +82,8 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/product-enrichment` (enriquecimiento):
   - Enriquecimiento de atributos por GPT‑5 mini (categoría, subcategoría, tags, género, temporada, color hex, Pantone y fit).
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
-  - Controles de **pausa** y **detener**; muestra progreso, errores y estado.
+  - Por defecto omite productos ya enriquecidos (se puede incluirlos manualmente).
+  - Controles de **pausa** y **detener**; muestra progreso, errores, estado y cobertura (enriquecidos vs pendientes).
 - Panel `/admin/catalog-extractor` (catalog extractor):
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.
   - Controles Play/Pausar/Detener (detener conserva estado para reanudar), reanudación automática y sitemap‑first.
