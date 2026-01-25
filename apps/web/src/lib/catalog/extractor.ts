@@ -222,6 +222,15 @@ const buildVariantSku = (variant: RawVariant, fallback: string) => {
   return fallback;
 };
 
+const toStringOrNull = (value: unknown) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
+    return String(value);
+  }
+  return null;
+};
+
 const extractVariantOptions = (variant: RawVariant) => {
   const options = variant.options ?? {};
   const color = pickOption(options, ["color", "colour", "tono"]);
@@ -311,6 +320,20 @@ export const processCatalogRef = async ({
   }
 
   onStage?.("normalize_images");
+  raw.externalId = toStringOrNull(raw.externalId);
+  raw.variants = raw.variants.map((variant) => ({
+    ...variant,
+    id: toStringOrNull(variant.id),
+    sku: toStringOrNull(variant.sku),
+    options: variant.options
+      ? Object.fromEntries(
+          Object.entries(variant.options).map(([key, value]) => [
+            key,
+            value === null || value === undefined ? "" : String(value),
+          ]),
+        )
+      : variant.options,
+  }));
   const normalizedProductImages = normalizeImageUrls(raw.images);
   const normalizedVariants = raw.variants.map((variant) => {
     const variantImages = normalizeImageUrls([variant.image, ...(variant.images ?? [])]);
