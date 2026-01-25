@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-25 | MC-089 | done | Concurrencia alta + progreso frecuente en extractor | Docker rebuild ok; logs web/worker/scraper OK; progreso usa runState live; Vercel pendiente.
+- 2026-01-25 | MC-089 | done | Concurrencia alta + progreso frecuente en extractor | Docker rebuild ok; logs web/worker/scraper OK; progreso usa runState live; Vercel prod OK: https://oda-storefront-6ee5.vercel.app (deploy dpl_CbZswEHcsuoEM5miLxhgGoMyzdo4).
 - 2026-01-25 | MC-088 | done | Catalog extractor sin pausa por errores soft | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod OK: https://oda-storefront-6ee5.vercel.app (deploy dpl_96jMabmxTGtcBx5qtU6iz7JnXmDA).
 - 2026-01-25 | MC-087 | done | Modal productos + carrusel en cards | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod OK: https://oda-storefront-6ee5.vercel.app (deploy dpl_8T6XGHVMRQ4qtHTfBdeC7RUcbmUG).
 - 2026-01-25 | MC-085 | done | Style tags exactos 10 | Docker rebuild: ok; logs web/worker/scraper OK.
