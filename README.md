@@ -78,7 +78,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Actualiza `brands.ecommercePlatform` y guarda detalle en `brands.metadata.tech_profile`.
   - Si detecta `social`, `bot_protection`, `unreachable`, `parked_domain`, `landing_no_store`, `no_pdp_candidates` o review `manual_review_no_products`, elimina la marca automáticamente.
 - Panel `/admin/products` (productos):
-  - Directorio de productos scrapeados con cards, modal de detalle y filtros por marca.
+  - Directorio de productos scrapeados con cards (carrusel de imágenes si hay múltiples fotos), modal de detalle enriquecido (precio/stock, tallas y colores visibles con swatches, fit/material por variante) y filtros por marca.
 - Panel `/admin/product-enrichment` (enriquecimiento):
   - Enriquecimiento de atributos por GPT‑5 mini (categoría, subcategoría, tags, género, temporada, color hex, Pantone y fit).
   - Style tags: **exactamente 10** por producto.

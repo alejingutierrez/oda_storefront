@@ -55,6 +55,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Anti-bot; mitigar con user-agent y backoff.
 - Métricas: Tasa de éxito scrape→DB, frescura horas.
 
+### MC-087 Mejora modal productos + carrusel en cards
+- Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
+- Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.
+- CA: Cards muestran flechas y contador cuando hay más de una foto; con 1 foto no aparecen controles; modal muestra colores con swatches y resumen de tallas/fit/material; sigue mostrando “Sin imagen” si no hay fotos.
+- Datos: `variants.images`, `variants.color`, `variants.size`, `variants.fit`, `variants.material`, `products.imageCoverUrl`.
+- NF: Mantener UI consistente con admin; limitar gallery a 8 imágenes por producto.
+- Riesgos: Colores sin hex; mitigación con mapeo común y fallback neutro.
+- Métricas: Tiempo de revisión por producto y número de clicks para inspección.
+- Estado: **done (2026-01-25)**.
+
 ### MC-054 Sitemap scan completo + fallbacks Woo/VTEX
 - Historia: Como operador, quiero que el extractor lea sitemaps completos (index/gz) y tenga fallback HTML, para no perder productos en Woo/VTEX/custom.
 - Alcance: Descubrimiento product-aware con sitemap index/gz, límite de sitemaps por corrida, heurísticas de URL producto y fallback HTML cuando API falla.

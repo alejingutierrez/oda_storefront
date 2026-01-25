@@ -4,6 +4,8 @@ import { validateAdminRequest } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
+const MAX_GALLERY_IMAGES = 8;
+
 const toNumber = (value: unknown) => {
   if (value === null || value === undefined) return null;
   const num = typeof value === "number" ? value : Number(value);
@@ -37,6 +39,12 @@ export async function GET(req: Request) {
   });
 
   const productIds = products.map((product) => product.id);
+  const variantImages = productIds.length
+    ? await prisma.variant.findMany({
+        where: { productId: { in: productIds } },
+        select: { productId: true, images: true },
+      })
+    : [];
   const variantAgg = productIds.length
     ? await prisma.variant.groupBy({
         by: ["productId"],
@@ -74,6 +82,26 @@ export async function GET(req: Request) {
     stockMap.set(row.productId, current + (row._count._all ?? 0));
   });
 
+  const imageMap = new Map<string, string[]>();
+  const imageSetMap = new Map<string, Set<string>>();
+  variantImages.forEach((row) => {
+    if (!row.images.length) return;
+    let set = imageSetMap.get(row.productId);
+    if (!set) {
+      set = new Set();
+      imageSetMap.set(row.productId, set);
+    }
+    if (set.size >= MAX_GALLERY_IMAGES) return;
+    for (const url of row.images) {
+      if (!url || set.has(url)) continue;
+      set.add(url);
+      if (set.size >= MAX_GALLERY_IMAGES) break;
+    }
+  });
+  imageSetMap.forEach((set, productId) => {
+    imageMap.set(productId, Array.from(set));
+  });
+
   const payload = products.map((product) => {
     const stats = variantMap.get(product.id);
     return {
@@ -94,6 +122,7 @@ export async function GET(req: Request) {
       sourceUrl: product.sourceUrl,
       currency: product.currency,
       imageCoverUrl: product.imageCoverUrl,
+      imageGallery: imageMap.get(product.id) ?? [],
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
       brand: product.brand,

@@ -37,6 +37,7 @@ type ProductRow = {
   sourceUrl: string | null;
   currency: string | null;
   imageCoverUrl: string | null;
+  imageGallery: string[];
   createdAt: string;
   updatedAt: string;
   brand: { id: string; name: string; logoUrl: string | null };
@@ -70,6 +71,7 @@ type ProductDetail = {
   origin: string | null;
   status: string | null;
   sourceUrl: string | null;
+  currency: string | null;
   imageCoverUrl: string | null;
   metadata: Record<string, unknown> | null;
   createdAt: string;
@@ -93,6 +95,35 @@ type ProductDetail = {
 };
 
 const PAGE_SIZE = 15;
+const MAX_GALLERY_IMAGES = 8;
+
+const COLOR_SWATCHES: Record<string, string> = {
+  blanco: "#f8fafc",
+  negro: "#0f172a",
+  gris: "#94a3b8",
+  "gris claro": "#cbd5e1",
+  "gris oscuro": "#475569",
+  rojo: "#dc2626",
+  azul: "#2563eb",
+  "azul oscuro": "#1e3a8a",
+  "azul marino": "#1e3a8a",
+  verde: "#16a34a",
+  "verde militar": "#4d7c0f",
+  "verde oliva": "#6b8e23",
+  rosado: "#f472b6",
+  "rosado claro": "#fbcfe8",
+  "palo de rosa": "#b76e79",
+  vino: "#7f1d1d",
+  beige: "#f5f5dc",
+  marfil: "#fffff0",
+  crudo: "#f8f5e6",
+  piel: "#f2c9ac",
+  cafe: "#7c2d12",
+  marron: "#7c2d12",
+  mostaza: "#d97706",
+  amarillo: "#facc15",
+  naranja: "#f97316",
+};
 
 const toText = (value: unknown) => {
   if (value === null || value === undefined || value === "") return "—";
@@ -109,6 +140,41 @@ const toText = (value: unknown) => {
 const formatDate = (value: string | null | undefined) => {
   if (!value) return "—";
   return new Date(value).toLocaleString("es-CO");
+};
+
+const getColorHex = (value: string | null) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^#([0-9a-f]{3}){1,2}$/i.test(trimmed)) return trimmed;
+  const normalized = trimmed.toLowerCase();
+  if (COLOR_SWATCHES[normalized]) return COLOR_SWATCHES[normalized];
+  if (normalized.includes("azul")) return COLOR_SWATCHES.azul;
+  if (normalized.includes("rojo")) return COLOR_SWATCHES.rojo;
+  if (normalized.includes("verde")) return COLOR_SWATCHES.verde;
+  if (normalized.includes("gris")) return COLOR_SWATCHES.gris;
+  if (normalized.includes("negro")) return COLOR_SWATCHES.negro;
+  if (normalized.includes("blanco")) return COLOR_SWATCHES.blanco;
+  if (normalized.includes("rosado")) return COLOR_SWATCHES.rosado;
+  if (normalized.includes("beige")) return COLOR_SWATCHES.beige;
+  return null;
+};
+
+const collectUnique = (values: Array<string | null | undefined>) => {
+  const set = new Set<string>();
+  values.forEach((value) => {
+    if (!value) return;
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    set.add(trimmed);
+  });
+  return Array.from(set);
+};
+
+const buildGallery = (product: ProductRow) => {
+  const urls = [product.imageCoverUrl, ...product.imageGallery].filter(Boolean) as string[];
+  const unique = Array.from(new Set(urls));
+  return unique.slice(0, MAX_GALLERY_IMAGES);
 };
 
 const normalizeLink = (value: string | null) => {
@@ -167,6 +233,30 @@ const formatLabel = (value: string | null, map: Record<string, string>) => {
   return map[value] ?? value;
 };
 
+const ColorSwatch = ({
+  color,
+  sizeClass = "h-4 w-4",
+  labelClass = "text-sm text-slate-700",
+}: {
+  color: string | null;
+  sizeClass?: string;
+  labelClass?: string;
+}) => {
+  const hex = getColorHex(color);
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span
+        className={`inline-flex ${sizeClass} rounded-full border border-slate-200 shadow-sm ${
+          hex ? "" : "bg-gradient-to-br from-slate-200 via-slate-300 to-slate-100"
+        }`}
+        style={hex ? { backgroundColor: hex } : undefined}
+        aria-hidden
+      />
+      <span className={labelClass}>{color ?? "—"}</span>
+    </span>
+  );
+};
+
 export default function ProductDirectoryPanel() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [brands, setBrands] = useState<BrandOption[]>([]);
@@ -178,6 +268,7 @@ export default function ProductDirectoryPanel() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProductDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [imageIndexByProduct, setImageIndexByProduct] = useState<Record<string, number>>({});
 
   const fetchBrands = useCallback(async () => {
     try {
@@ -223,6 +314,44 @@ export default function ProductDirectoryPanel() {
   useEffect(() => {
     setPage(1);
   }, [brandFilter]);
+
+  useEffect(() => {
+    setImageIndexByProduct({});
+  }, [products]);
+
+  const variantSummary = useMemo(() => {
+    if (!detail) return null;
+    const colors = collectUnique(detail.variants.map((variant) => variant.color));
+    const sizes = collectUnique(detail.variants.map((variant) => variant.size));
+    const fits = collectUnique(detail.variants.map((variant) => variant.fit));
+    const materials = collectUnique(detail.variants.map((variant) => variant.material));
+    let minPrice: number | null = null;
+    let maxPrice: number | null = null;
+    let currency = detail.currency ?? null;
+    let inStock = 0;
+    detail.variants.forEach((variant) => {
+      const numericPrice = typeof variant.price === "number" ? variant.price : Number(variant.price);
+      if (Number.isFinite(numericPrice)) {
+        minPrice = minPrice === null ? numericPrice : Math.min(minPrice, numericPrice);
+        maxPrice = maxPrice === null ? numericPrice : Math.max(maxPrice, numericPrice);
+      }
+      if (!currency && variant.currency) currency = variant.currency;
+      if (variant.stockStatus === "in_stock" || (typeof variant.stock === "number" && variant.stock > 0)) {
+        inStock += 1;
+      }
+    });
+    return {
+      colors,
+      sizes,
+      fits,
+      materials,
+      minPrice,
+      maxPrice,
+      currency,
+      totalVariants: detail.variants.length,
+      inStock,
+    };
+  }, [detail]);
 
   const openDetail = async (productId: string) => {
     setDetailId(productId);
@@ -287,20 +416,67 @@ export default function ProductDirectoryPanel() {
       </div>
 
       <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {products.map((product) => (
-          <article key={product.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
-              {product.imageCoverUrl ? (
-                <img src={product.imageCoverUrl} alt={product.name} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.2em] text-slate-400">
-                  Sin imagen
+        {products.map((product) => {
+          const gallery = buildGallery(product);
+          const currentIndex = gallery.length
+            ? (imageIndexByProduct[product.id] ?? 0) % gallery.length
+            : 0;
+          const currentImage = gallery[currentIndex];
+          const showControls = gallery.length > 1;
+          const handlePrev = () => {
+            if (!gallery.length) return;
+            setImageIndexByProduct((prev) => {
+              const prevIndex = prev[product.id] ?? 0;
+              const nextIndex = (prevIndex - 1 + gallery.length) % gallery.length;
+              return { ...prev, [product.id]: nextIndex };
+            });
+          };
+          const handleNext = () => {
+            if (!gallery.length) return;
+            setImageIndexByProduct((prev) => {
+              const prevIndex = prev[product.id] ?? 0;
+              const nextIndex = (prevIndex + 1) % gallery.length;
+              return { ...prev, [product.id]: nextIndex };
+            });
+          };
+
+          return (
+            <article key={product.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+                {currentImage ? (
+                  <img src={currentImage} alt={product.name} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.2em] text-slate-400">
+                    Sin imagen
+                  </div>
+                )}
+                {showControls && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handlePrev}
+                      aria-label="Imagen anterior"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full border border-white/80 bg-white/80 p-1 text-xs font-semibold text-slate-700 shadow-sm"
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNext}
+                      aria-label="Imagen siguiente"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-white/80 bg-white/80 p-1 text-xs font-semibold text-slate-700 shadow-sm"
+                    >
+                      ›
+                    </button>
+                    <div className="absolute bottom-3 right-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                      {currentIndex + 1}/{gallery.length}
+                    </div>
+                  </>
+                )}
+                <div className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700">
+                  {product.brand.name}
                 </div>
-              )}
-              <div className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700">
-                {product.brand.name}
               </div>
-            </div>
             <div className="space-y-3 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -342,7 +518,8 @@ export default function ProductDirectoryPanel() {
               {renderFriendlyTags("Tags estilo", product.styleTags, STYLE_TAG_FRIENDLY)}
             </div>
           </article>
-        ))}
+        );
+        })}
       </div>
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-4 text-sm text-slate-600">
@@ -464,6 +641,101 @@ export default function ProductDirectoryPanel() {
                     </div>
                   </div>
 
+                  {variantSummary && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                        Variantes y disponibilidad
+                      </p>
+                      <div className="mt-3 grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Precio</p>
+                          <p className="text-sm font-semibold text-slate-800">
+                            {formatPriceRange(
+                              variantSummary.minPrice,
+                              variantSummary.maxPrice,
+                              variantSummary.currency,
+                            )}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {variantSummary.inStock} en stock de {variantSummary.totalVariants} variantes
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Tallas</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {variantSummary.sizes.length ? (
+                              variantSummary.sizes.slice(0, 10).map((size) => (
+                                <span
+                                  key={size}
+                                  className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600"
+                                >
+                                  {size}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs text-slate-500">—</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="md:col-span-2">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Colores</p>
+                          <div className="mt-2 flex flex-wrap gap-3">
+                            {variantSummary.colors.length ? (
+                              variantSummary.colors.slice(0, 12).map((color) => (
+                                <span
+                                  key={color}
+                                  className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1"
+                                >
+                                  <ColorSwatch
+                                    color={color}
+                                    sizeClass="h-3 w-3"
+                                    labelClass="text-xs font-semibold text-slate-600"
+                                  />
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs text-slate-500">—</span>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Fit</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {variantSummary.fits.length ? (
+                              variantSummary.fits.slice(0, 8).map((fit) => (
+                                <span
+                                  key={fit}
+                                  className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600"
+                                >
+                                  {formatLabel(fit, FIT_LABELS)}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs text-slate-500">—</span>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Material variante</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {variantSummary.materials.length ? (
+                              variantSummary.materials.slice(0, 8).map((material) => (
+                                <span
+                                  key={material}
+                                  className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600"
+                                >
+                                  {material}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs text-slate-500">—</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="rounded-xl border border-slate-200 bg-white p-4">
                       <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Descripción</p>
@@ -491,14 +763,22 @@ export default function ProductDirectoryPanel() {
                               className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-2"
                             >
                               <div>
-                                <p className="font-semibold text-slate-800">
-                                  {variant.color ?? "—"} {variant.size ? `· ${variant.size}` : ""}
-                                </p>
+                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                  <ColorSwatch
+                                    color={variant.color}
+                                    sizeClass="h-3 w-3"
+                                    labelClass="text-sm font-semibold text-slate-800"
+                                  />
+                                  {variant.size ? (
+                                    <span className="text-xs text-slate-500">· {variant.size}</span>
+                                  ) : null}
+                                </div>
                                 <p className="text-xs text-slate-500">
                                   SKU: {variant.sku ?? "—"} · Stock: {variant.stockStatus ?? "—"}
                                 </p>
                                 <p className="text-xs text-slate-500">
-                                  Fit: {variant.fit ? formatLabel(variant.fit, FIT_LABELS) : "—"} · Pantone: {variant.colorPantone ?? "—"}
+                                  Fit: {variant.fit ? formatLabel(variant.fit, FIT_LABELS) : "—"} · Material:{" "}
+                                  {variant.material ?? "—"} · Pantone: {variant.colorPantone ?? "—"}
                                 </p>
                               </div>
                               <div className="text-right text-sm font-semibold text-slate-800">
