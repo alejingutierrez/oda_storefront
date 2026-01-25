@@ -217,6 +217,13 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - CA: Shopify/Woo no disparan LLM en normalizacion (salvo override), el payload LLM es mas corto, la cola reintenta fallos transitorios, y las marcas terminadas salen de la cola automaticamente.
 - Datos: `CATALOG_LLM_NORMALIZE_MODE`, `CATALOG_LLM_NORMALIZE_MAX_DESC_CHARS`, `CATALOG_LLM_NORMALIZE_MAX_IMAGES`, `CATALOG_LLM_NORMALIZE_MAX_VARIANTS`, `CATALOG_LLM_NORMALIZE_MAX_OPTION_VALUES`.
 - Estado: done (2026-01-25).
+
+### MC-082 Normalizacion determinista v2 (reglas extendidas)
+- Historia: Como operador, quiero reglas deterministas mas robustas (categoria/material/patron/fit/color), para reducir aun mas las llamadas a OpenAI en el catalogo.
+- Alcance: Ampliar diccionarios de materiales, patrones, estilos y colores; inferir fit y color por opciones/descripcion; propagar material/fit a variantes cuando aplique.
+- CA: Productos Shopify/Woo obtienen tags y categoria por reglas en la mayoria de casos; variantes capturan color y fit sin LLM; el fallback LLM queda solo para custom/unknown con baja señal.
+- Datos: Normalizador determinista (`normalized_by=rules_v2`).
+- Estado: done (2026-01-25).
 - NF: Sin cambios en extracción de datos; solo telemetría y control.
 - Riesgos: Pausa prematura por errores transitorios; mitigación con umbral configurable.
 - Métricas: Tiempo de diagnóstico, tasa de pausas por errores.

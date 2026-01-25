@@ -121,16 +121,24 @@ const addTag = (set: Set<string>, tag: string) => {
 type TagRule = { tag: string; keywords: string[] };
 
 const MATERIAL_RULES: TagRule[] = [
-  { tag: "algodon", keywords: ["algodon", "cotton"] },
+  { tag: "algodon", keywords: ["algodon", "cotton", "algodon organico"] },
   { tag: "lino", keywords: ["lino", "linen"] },
   { tag: "denim", keywords: ["denim", "jean", "jeans"] },
-  { tag: "cuero", keywords: ["cuero", "leather"] },
+  { tag: "cuero", keywords: ["cuero", "leather", "cuero vegano", "polipiel"] },
+  { tag: "gamuza", keywords: ["gamuza", "suede"] },
   { tag: "seda", keywords: ["seda", "silk"] },
   { tag: "lana", keywords: ["lana", "wool"] },
   { tag: "poliester", keywords: ["poliester", "polyester", "poly"] },
   { tag: "viscosa", keywords: ["viscosa", "viscose", "rayon"] },
   { tag: "nylon", keywords: ["nylon"] },
   { tag: "elastano", keywords: ["elastano", "elastane", "spandex", "lycra"] },
+  { tag: "tencel", keywords: ["tencel", "lyocell"] },
+  { tag: "modal", keywords: ["modal"] },
+  { tag: "satin", keywords: ["satin"] },
+  { tag: "chiffon", keywords: ["chiffon"] },
+  { tag: "tweed", keywords: ["tweed"] },
+  { tag: "lona", keywords: ["lona", "canvas"] },
+  { tag: "malla", keywords: ["malla", "mesh"] },
 ];
 
 const PATTERN_RULES: TagRule[] = [
@@ -139,6 +147,8 @@ const PATTERN_RULES: TagRule[] = [
   { tag: "cuadros", keywords: ["cuadro", "cuadros", "plaid", "tartan"] },
   { tag: "animal_print", keywords: ["animal print", "leopardo", "cebra", "tigre"] },
   { tag: "puntos", keywords: ["puntos", "polka", "dot"] },
+  { tag: "geom", keywords: ["geometrico", "geometric"] },
+  { tag: "estampado", keywords: ["estampado", "print"] },
   { tag: "liso", keywords: ["liso", "solid", "plain"] },
 ];
 
@@ -149,6 +159,9 @@ const STYLE_RULES: TagRule[] = [
   { tag: "minimal", keywords: ["minimal", "minimalista"] },
   { tag: "urbano", keywords: ["urbano", "street", "streetwear"] },
   { tag: "romantico", keywords: ["romantico", "romantica", "romance"] },
+  { tag: "sport", keywords: ["sport", "deportivo", "athleisure"] },
+  { tag: "retro", keywords: ["retro", "vintage"] },
+  { tag: "elegante", keywords: ["gala", "elegante", "fiesta"] },
 ];
 
 const OCCASION_RULES: TagRule[] = [
@@ -157,6 +170,7 @@ const OCCASION_RULES: TagRule[] = [
   { tag: "oficina", keywords: ["oficina", "office", "work"] },
   { tag: "deporte", keywords: ["deporte", "sport", "gym", "active"] },
   { tag: "boda", keywords: ["boda", "wedding"] },
+  { tag: "viaje", keywords: ["viaje", "travel"] },
 ];
 
 const SEASON_RULES: TagRule[] = [
@@ -172,6 +186,7 @@ const CATEGORY_RULES: Array<{
   keywords: string[];
 }> = [
   { category: "vestidos", keywords: ["vestido", "dress"] },
+  { category: "enterizos", keywords: ["enterizo", "jumpsuit", "overall", "overol"] },
   { category: "tops", subcategory: "camisetas", keywords: ["camiseta", "tshirt", "t-shirt"] },
   { category: "tops", subcategory: "blusas", keywords: ["blusa", "top"] },
   { category: "tops", subcategory: "camisas", keywords: ["camisa", "shirt"] },
@@ -179,6 +194,7 @@ const CATEGORY_RULES: Array<{
   { category: "bottoms", subcategory: "jeans", keywords: ["jean", "jeans", "denim"] },
   { category: "bottoms", subcategory: "shorts", keywords: ["short", "shorts", "bermuda"] },
   { category: "bottoms", subcategory: "faldas", keywords: ["falda", "skirt"] },
+  { category: "outerwear", subcategory: "blazers", keywords: ["blazer"] },
   { category: "outerwear", subcategory: "chaquetas", keywords: ["chaqueta", "jacket"] },
   { category: "outerwear", subcategory: "abrigos", keywords: ["abrigo", "coat"] },
   { category: "outerwear", subcategory: "buzos", keywords: ["buzo", "hoodie", "sweatshirt"] },
@@ -186,7 +202,7 @@ const CATEGORY_RULES: Array<{
   { category: "calzado", keywords: ["zapato", "tenis", "sneaker", "sandalia", "bota", "botas"] },
   { category: "accesorios", subcategory: "bolsos", keywords: ["bolso", "cartera", "mochila"] },
   { category: "accesorios", keywords: ["accesorio", "arete", "collar", "gorro", "bufanda"] },
-  { category: "trajes_de_bano", keywords: ["bikini", "traje de bano", "swim"] },
+  { category: "trajes_de_bano", keywords: ["bikini", "traje de bano", "swim", "banador"] },
   { category: "ropa_interior", keywords: ["bra", "brasier", "bralette", "panty", "interior", "lingerie"] },
   { category: "deportivo", keywords: ["deportivo", "activewear", "legging", "gym"] },
 ];
@@ -194,7 +210,38 @@ const CATEGORY_RULES: Array<{
 const GENDER_RULES: TagRule[] = [
   { tag: "mujer", keywords: ["mujer", "women", "womens", "dama", "ladies"] },
   { tag: "hombre", keywords: ["hombre", "men", "mens", "caballero"] },
-  { tag: "nino", keywords: ["nino", "kids", "boy", "girl", "infantil"] },
+  { tag: "nino", keywords: ["nino", "kids", "boy", "girl", "infantil", "juvenil"] },
+  { tag: "unisex", keywords: ["unisex"] },
+];
+
+const COLOR_RULES: TagRule[] = [
+  { tag: "negro", keywords: ["negro", "black"] },
+  { tag: "blanco", keywords: ["blanco", "white", "marfil", "ivory"] },
+  { tag: "gris", keywords: ["gris", "gray", "grey"] },
+  { tag: "azul", keywords: ["azul", "blue", "navy", "marino"] },
+  { tag: "rojo", keywords: ["rojo", "red"] },
+  { tag: "verde", keywords: ["verde", "green", "oliva"] },
+  { tag: "amarillo", keywords: ["amarillo", "yellow"] },
+  { tag: "naranja", keywords: ["naranja", "orange"] },
+  { tag: "rosado", keywords: ["rosado", "rosa", "pink"] },
+  { tag: "morado", keywords: ["morado", "purple", "lila", "lavanda"] },
+  { tag: "beige", keywords: ["beige", "nude", "arena"] },
+  { tag: "cafe", keywords: ["cafe", "brown", "chocolate"] },
+  { tag: "vino", keywords: ["vino", "burgundy", "vinotinto", "bordo"] },
+  { tag: "mostaza", keywords: ["mostaza", "mustard"] },
+  { tag: "turquesa", keywords: ["turquesa", "turquoise"] },
+  { tag: "fucsia", keywords: ["fucsia", "fuchsia", "magenta"] },
+  { tag: "dorado", keywords: ["dorado", "gold"] },
+  { tag: "plateado", keywords: ["plateado", "silver"] },
+  { tag: "multicolor", keywords: ["multicolor", "multi color", "multi-color", "varios colores"] },
+];
+
+const FIT_RULES: TagRule[] = [
+  { tag: "slim", keywords: ["slim", "entallado", "ajustado"] },
+  { tag: "regular", keywords: ["regular", "clasico"] },
+  { tag: "oversize", keywords: ["oversize", "over", "holgado"] },
+  { tag: "relajado", keywords: ["relajado", "relaxed"] },
+  { tag: "cropped", keywords: ["cropped", "corto"] },
 ];
 
 const collectTags = (text: string, rules: TagRule[]) => {
@@ -225,14 +272,39 @@ const inferGender = (text: string) => {
   return null;
 };
 
+const inferFit = (text: string) => {
+  for (const rule of FIT_RULES) {
+    if (rule.keywords.some((keyword) => text.includes(keyword))) {
+      return rule.tag;
+    }
+  }
+  return null;
+};
+
+const normalizeColorName = (value: string | null | undefined) => {
+  if (!value) return null;
+  const text = normalizeText(value);
+  for (const rule of COLOR_RULES) {
+    if (rule.keywords.some((keyword) => text.includes(keyword))) {
+      return rule.tag;
+    }
+  }
+  return value.trim() || null;
+};
+
 const resolveVariantColor = (variant: RawVariant) => {
   const color = pickOption(variant.options, ["color", "colour", "tono"]);
-  return color ?? null;
+  return normalizeColorName(color ?? null);
 };
 
 const resolveVariantSize = (variant: RawVariant) => {
   const sizeRaw = pickOption(variant.options, ["talla", "size", "tamano"]);
   return normalizeSize(sizeRaw);
+};
+
+const resolveVariantFit = (variant: RawVariant) => {
+  const fit = pickOption(variant.options, ["fit", "calce"]);
+  return fit ?? null;
 };
 
 const resolveStockStatus = (variant: RawVariant) => {
@@ -242,7 +314,11 @@ const resolveStockStatus = (variant: RawVariant) => {
   return null;
 };
 
-const buildCanonicalVariants = (rawVariants: RawVariant[], fallbackCurrency?: string | null) => {
+const buildCanonicalVariants = (
+  rawVariants: RawVariant[],
+  fallbackCurrency?: string | null,
+  defaults?: { material?: string | null; fit?: string | null },
+) => {
   const variants: CanonicalVariant[] = [];
   rawVariants.forEach((variant) => {
     const price = typeof variant.price === "number" ? variant.price : null;
@@ -251,8 +327,8 @@ const buildCanonicalVariants = (rawVariants: RawVariant[], fallbackCurrency?: st
       sku: variant.sku ?? null,
       color: resolveVariantColor(variant),
       size: resolveVariantSize(variant),
-      fit: null,
-      material: null,
+      fit: resolveVariantFit(variant) ?? defaults?.fit ?? null,
+      material: defaults?.material ?? null,
       price,
       currency: currency ?? variant.currency ?? fallbackCurrency ?? null,
       stock: typeof variant.stock === "number" ? variant.stock : null,
@@ -283,8 +359,30 @@ const normalizeCatalogProductDeterministic = (rawProduct: RawProduct, platform?:
   const rawCategories = toText(rawProduct.metadata?.categories);
   const rawAttributes = toText(rawProduct.metadata?.attributes);
   const rawProductType = toText(rawProduct.metadata?.product_type);
+  const optionText = Array.isArray(rawProduct.options)
+    ? rawProduct.options
+        .flatMap((option) => [option.name, ...(option.values ?? [])])
+        .filter(Boolean)
+        .join(" ")
+    : "";
+  const variantOptionText = Array.isArray(rawProduct.variants)
+    ? rawProduct.variants
+        .flatMap((variant) => Object.values(variant.options ?? {}))
+        .filter(Boolean)
+        .join(" ")
+    : "";
   const text = normalizeText(
-    [rawProduct.title, rawProduct.description, rawProduct.vendor, rawTags, rawCategories, rawAttributes, rawProductType]
+    [
+      rawProduct.title,
+      rawProduct.description,
+      rawProduct.vendor,
+      rawTags,
+      rawCategories,
+      rawAttributes,
+      rawProductType,
+      optionText,
+      variantOptionText,
+    ]
       .filter(Boolean)
       .join(" "),
   );
@@ -296,6 +394,7 @@ const normalizeCatalogProductDeterministic = (rawProduct: RawProduct, platform?:
   const occasionTags = collectTags(text, OCCASION_RULES);
   const season = collectTags(text, SEASON_RULES)[0] ?? null;
   const gender = inferGender(text);
+  const fit = inferFit(text);
 
   return {
     name: rawProduct.title ?? "Sin nombre",
@@ -313,10 +412,13 @@ const normalizeCatalogProductDeterministic = (rawProduct: RawProduct, platform?:
     status: null,
     source_url: rawProduct.sourceUrl ?? null,
     image_cover_url: rawProduct.images?.[0] ?? null,
-    variants: buildCanonicalVariants(rawProduct.variants ?? [], rawProduct.currency ?? null),
+    variants: buildCanonicalVariants(rawProduct.variants ?? [], rawProduct.currency ?? null, {
+      material: materialTags[0] ?? null,
+      fit,
+    }),
     metadata: {
       platform: platform ?? rawProduct.metadata?.platform ?? null,
-      normalized_by: "rules",
+      normalized_by: "rules_v2",
     },
   };
 };
