@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
 import { findActiveRun, markRunStatus } from "@/lib/catalog/run-store";
+import { getCatalogQueue, isCatalogQueueEnabled } from "@/lib/catalog/queue";
 
 export const runtime = "nodejs";
 
@@ -22,5 +24,27 @@ export async function POST(req: Request) {
   }
 
   await markRunStatus(run.id, "stopped");
+  const queuedItems = await prisma.catalogItem.findMany({
+    where: { runId: run.id, status: "queued" },
+    select: { id: true },
+  });
+  await prisma.catalogItem.updateMany({
+    where: { runId: run.id, status: { in: ["queued", "in_progress"] } },
+    data: { status: "pending", startedAt: null, updatedAt: new Date() },
+  });
+  if (queuedItems.length && isCatalogQueueEnabled()) {
+    const queue = getCatalogQueue();
+    const jobIds = queuedItems.map((item) => item.id);
+    const removeJobs = (queue as any).removeJobs as ((ids: string[]) => Promise<void>) | undefined;
+    try {
+      if (removeJobs) {
+        await removeJobs.call(queue, jobIds);
+      } else {
+        await Promise.allSettled(jobIds.map((id) => queue.remove(id)));
+      }
+    } catch (error) {
+      console.warn("catalog.stop.remove_jobs_failed", error);
+    }
+  }
   return NextResponse.json({ status: "stopped" });
 }
