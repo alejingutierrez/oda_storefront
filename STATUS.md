@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-25 | MC-093 | done | Sitemap completo sin corte temprano + límite configurable | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel prod OK: https://oda-storefront-6ee5-4u1578k2v-alejingutierrezs-projects.vercel.app (deploy dpl_HPnN2t7fzRzhhLmD9L8zzr4iyS5n, logs sin eventos en 1h).
 - 2026-01-25 | MC-092 | done | Reducir reintentos de catálogo | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel prod OK: https://oda-storefront-6ee5-4mpkvvs4o-alejingutierrezs-projects.vercel.app (deploy dpl_8BBkqXoW69RJHaJnwoCKeWPqV9bp, logs sin eventos).
 - 2026-01-25 | MC-091 | done | Drain finaliza runs idle + control sitemap/queue | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel prod OK: https://oda-storefront-6ee5-izjoexjup-alejingutierrezs-projects.vercel.app (deploy dpl_GtGdfJ7TzEawz3WsWZb5KquMByQe, logs sin eventos).
 - 2026-01-25 | MC-090 | done | Sitemap budget + precios Woo fallback | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel prod OK: https://oda-storefront-6ee5-b7n0zyw6g-alejingutierrezs-projects.vercel.app (deploy dpl_9m7ZAtqa9F2Uta9WvyNqftPV5LdN, logs sin eventos).
