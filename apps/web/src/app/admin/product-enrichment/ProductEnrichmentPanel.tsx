@@ -96,6 +96,13 @@ export default function ProductEnrichmentPanel() {
     fetchSummary();
   }, [fetchSummary]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchSummary();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [fetchSummary]);
+
   const progress = useMemo(() => buildProgress(summary), [summary]);
 
   const shouldResume = useMemo(() => {
