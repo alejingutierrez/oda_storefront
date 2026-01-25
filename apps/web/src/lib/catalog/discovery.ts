@@ -50,8 +50,14 @@ export const discoverCatalogRefs = async ({
     },
   };
 
-  const discoveryLimit = Math.max(limit, Math.min(Number(process.env.CATALOG_EXTRACT_DISCOVERY_LIMIT ?? limit * 5), 500));
-  const sitemapLimit = Math.max(discoveryLimit, Math.min(Number(process.env.CATALOG_EXTRACT_SITEMAP_LIMIT ?? 5000), 20000));
+  const discoveryLimit = Math.max(
+    limit,
+    Math.min(Number(process.env.CATALOG_EXTRACT_DISCOVERY_LIMIT ?? limit * 5), 500),
+  );
+  const rawSitemapLimit = Number(process.env.CATALOG_EXTRACT_SITEMAP_LIMIT ?? 5000);
+  const normalizedSitemapLimit = Number.isFinite(rawSitemapLimit) ? rawSitemapLimit : 5000;
+  const sitemapLimit =
+    normalizedSitemapLimit <= 0 ? 0 : Math.max(discoveryLimit, normalizedSitemapLimit);
 
   let refs: ProductRef[] = [];
   const trySitemap = forceSitemap || process.env.CATALOG_TRY_SITEMAP_FIRST !== "false";

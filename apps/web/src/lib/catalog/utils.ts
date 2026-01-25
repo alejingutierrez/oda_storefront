@@ -74,14 +74,16 @@ export const discoverFromSitemap = async (
 ) => {
   const origin = safeOrigin(baseUrl);
   const startedAt = Date.now();
+  const normalizedLimit = Number.isFinite(limit) ? limit : 0;
+  const hasLimit = normalizedLimit > 0;
+  const effectiveLimit = hasLimit ? normalizedLimit : Number.MAX_SAFE_INTEGER;
   const budgetMs = Math.max(
     2000,
     Number(options?.budgetMs ?? process.env.CATALOG_EXTRACT_SITEMAP_BUDGET_MS ?? 12000),
   );
-  const sitemapScanLimit = Math.max(
-    limit * 5,
-    Math.min(Number(process.env.CATALOG_EXTRACT_SITEMAP_SCAN_MAX_URLS ?? 5000), 20000),
-  );
+  const rawScanLimit = Number(process.env.CATALOG_EXTRACT_SITEMAP_SCAN_MAX_URLS ?? 5000);
+  const scanLimit = Number.isFinite(rawScanLimit) ? rawScanLimit : 5000;
+  const sitemapScanLimit = Math.max(hasLimit ? normalizedLimit * 5 : 0, scanLimit > 0 ? scanLimit : 0);
   const robotsUrl = new URL("/robots.txt", origin).toString();
   const robots = await fetchText(robotsUrl);
   const sitemaps = extractSitemapsFromRobots(robots.text || "");
@@ -179,7 +181,7 @@ export const discoverFromSitemap = async (
   const shouldContinue = () =>
     queue.length &&
     visited.size < maxSitemaps &&
-    (options?.productAware ? productUrls.size < limit : urls.size < limit) &&
+    (options?.productAware ? productUrls.size < effectiveLimit : urls.size < effectiveLimit) &&
     Date.now() - startedAt < budgetMs;
 
   while (shouldContinue()) {
@@ -204,35 +206,36 @@ export const discoverFromSitemap = async (
       continue;
     }
 
-    const remaining = Math.max(
-      0,
-      limit - (options?.productAware ? productUrls.size : urls.size),
-    );
-    const scanLimit = options?.productAware ? sitemapScanLimit : remaining || undefined;
-    const entries = extractSitemapUrls(sitemapText, scanLimit || undefined);
+    const remaining = hasLimit
+      ? Math.max(0, effectiveLimit - (options?.productAware ? productUrls.size : urls.size))
+      : 0;
+    const scanLimitForSitemap = options?.productAware
+      ? sitemapScanLimit > 0
+        ? sitemapScanLimit
+        : undefined
+      : hasLimit
+        ? remaining || undefined
+        : undefined;
+    const entries = extractSitemapUrls(sitemapText, scanLimitForSitemap);
     const isProductMap = options?.productAware && isProductSitemap(sitemapUrl);
     const allowAllFromSitemap = Boolean(isProductMap);
     for (const entry of entries) {
-      if (urls.size < limit) urls.add(entry);
+      if (urls.size < effectiveLimit) urls.add(entry);
       if (options?.productAware) {
         if (allowAllFromSitemap || isLikelyProductUrl(entry)) {
           productUrls.add(entry);
-          if (productUrls.size >= limit) break;
+          if (productUrls.size >= effectiveLimit) break;
         }
         continue;
       }
-      if (urls.size >= limit) break;
-    }
-
-    if (options?.productAware && isProductMap && productUrls.size > 0) {
-      break;
+      if (urls.size >= effectiveLimit) break;
     }
   }
 
   if (options?.productAware && productUrls.size) {
-    return Array.from(productUrls).slice(0, limit);
+    return Array.from(productUrls).slice(0, effectiveLimit);
   }
-  return Array.from(urls).slice(0, limit);
+  return Array.from(urls).slice(0, effectiveLimit);
 };
 
 export const isLikelyProductUrl = (url: string) => {

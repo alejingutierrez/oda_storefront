@@ -608,10 +608,10 @@ export const extractCatalogForBrand = async (
     batchSize,
     Math.min(Number(process.env.CATALOG_EXTRACT_DISCOVERY_LIMIT ?? batchSize * 5), 500),
   );
-  const sitemapLimit = Math.max(
-    discoveryLimit,
-    Math.min(Number(process.env.CATALOG_EXTRACT_SITEMAP_LIMIT ?? 5000), 20000),
-  );
+  const rawSitemapLimit = Number(process.env.CATALOG_EXTRACT_SITEMAP_LIMIT ?? 5000);
+  const normalizedSitemapLimit = Number.isFinite(rawSitemapLimit) ? rawSitemapLimit : 5000;
+  const sitemapLimit =
+    normalizedSitemapLimit <= 0 ? 0 : Math.max(discoveryLimit, normalizedSitemapLimit);
   const startTime = Date.now();
   const maxRuntimeMs = Math.max(
     30000,

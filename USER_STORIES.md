@@ -116,6 +116,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Datos: `CATALOG_MAX_ATTEMPTS`, `CATALOG_QUEUE_ATTEMPTS`.
 - Estado: **done (2026-01-25)**.
 
+### MC-093 Sitemap completo sin corte temprano
+- Historia: Como operador, quiero que el extractor recorra todos los sitemaps de productos sin detenerse en el primero, para traer todo el catálogo disponible.
+- Alcance: Eliminar el corte temprano por sitemap de producto; permitir `CATALOG_EXTRACT_SITEMAP_LIMIT=0` para no truncar y remover el cap fijo; respetar `CATALOG_EXTRACT_SITEMAP_SCAN_MAX_URLS`.
+- CA: Sitemaps con múltiples archivos (p.ej., 1k por archivo) agregan todas las URLs; si `CATALOG_EXTRACT_SITEMAP_LIMIT=0`, el discovery no se trunca por límite y solo respeta `budgetMs` y `maxFiles`.
+- Datos: `CATALOG_EXTRACT_SITEMAP_LIMIT`, `CATALOG_EXTRACT_SITEMAP_SCAN_MAX_URLS`.
+- NF: Discovery sigue teniendo presupuesto temporal y límite de archivos para evitar bloqueos.
+- Riesgos: Metadata con miles de URLs; mitigación con budget, maxFiles y límites configurables.
+- Métricas: % de URLs de producto descubiertas vs total declarado en sitemap; tiempo de discovery.
+- Estado: **done (2026-01-25)**.
+
 ### MC-055 Fallback a API si sitemap no trae productos
 - Historia: Como operador, quiero que si el sitemap no contiene URLs de producto, el extractor use el discovery del adapter, para evitar fallas en VTEX.
 - Alcance: Filtrar URLs de producto en sitemap; si quedan 0, pasar a discovery por plataforma (API) en vez de intentar páginas no‑producto.
