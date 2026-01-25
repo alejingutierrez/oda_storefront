@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-25 | MC-090 | done | Sitemap budget + precios Woo fallback | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel prod OK: https://oda-storefront-6ee5-hinv2qvqj-alejingutierrezs-projects.vercel.app (deploy dpl_481gAFkLP2F1A9XJfeF6hRhGgr4J, logs sin eventos).
+- 2026-01-25 | MC-090 | done | Sitemap budget + precios Woo fallback | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel prod OK: https://oda-storefront-6ee5-b7n0zyw6g-alejingutierrezs-projects.vercel.app (deploy dpl_9m7ZAtqa9F2Uta9WvyNqftPV5LdN, logs sin eventos).
 - 2026-01-25 | MC-084 | fix | Stop extractor ahora limpia jobs en cola y resetea items | Docker rebuild ok; docker-compose up ok; stop aplicado a 2 marcas activas (Bibiana Pineda Joyas, Love Culture).
 - 2026-01-25 | MC-083 | fix | Coerce externalId/sku a string para evitar error Prisma en Woo | Docker rebuild ok; docker-compose up ok; logs saludables.
 - 2026-01-25 | MC-089 | done | Concurrencia alta + progreso frecuente en extractor | Docker rebuild ok; logs web/worker/scraper OK; progreso usa runState live; Vercel prod OK: https://oda-storefront-6ee5.vercel.app (deploy dpl_CbZswEHcsuoEM5miLxhgGoMyzdo4).
