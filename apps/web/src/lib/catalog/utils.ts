@@ -70,9 +70,14 @@ const extractSitemapsFromRobots = (robotsText: string) => {
 export const discoverFromSitemap = async (
   baseUrl: string,
   limit = 200,
-  options?: { productAware?: boolean },
+  options?: { productAware?: boolean; budgetMs?: number; maxFiles?: number },
 ) => {
   const origin = safeOrigin(baseUrl);
+  const startedAt = Date.now();
+  const budgetMs = Math.max(
+    2000,
+    Number(options?.budgetMs ?? process.env.CATALOG_EXTRACT_SITEMAP_BUDGET_MS ?? 12000),
+  );
   const sitemapScanLimit = Math.max(
     limit * 5,
     Math.min(Number(process.env.CATALOG_EXTRACT_SITEMAP_SCAN_MAX_URLS ?? 5000), 20000),
@@ -102,8 +107,8 @@ export const discoverFromSitemap = async (
     new URL("/products-sitemap.xml", origin).toString(),
     new URL("/store-products-sitemap.xml", origin).toString(),
   ];
-  const sitemapCandidates = Array.from(new Set([...sitemaps, ...fallbackCandidates]));
-
+  const uniqueRobots = Array.from(new Set(sitemaps));
+  const uniqueFallback = Array.from(new Set(fallbackCandidates));
   const scoreSitemap = (url: string) => {
     const lower = url.toLowerCase();
     let score = 0;
@@ -116,13 +121,17 @@ export const discoverFromSitemap = async (
     return score;
   };
 
-  const queue = sitemapCandidates.sort((a, b) => scoreSitemap(b) - scoreSitemap(a));
+  const orderedRobots = uniqueRobots.sort((a, b) => scoreSitemap(b) - scoreSitemap(a));
+  const orderedFallback = uniqueFallback.sort((a, b) => scoreSitemap(b) - scoreSitemap(a));
+  const queue = uniqueRobots.length
+    ? [...orderedRobots, ...orderedFallback.filter((url) => !orderedRobots.includes(url))]
+    : orderedFallback;
   const visited = new Set<string>();
   const urls = new Set<string>();
   const productUrls = new Set<string>();
   const maxSitemaps = Math.max(
     5,
-    Math.min(Number(process.env.CATALOG_EXTRACT_SITEMAP_MAX_FILES ?? 200), 1000),
+    Math.min(Number(options?.maxFiles ?? process.env.CATALOG_EXTRACT_SITEMAP_MAX_FILES ?? 200), 1000),
   );
 
   const isProductSitemap = (url: string) => {
@@ -170,7 +179,8 @@ export const discoverFromSitemap = async (
   const shouldContinue = () =>
     queue.length &&
     visited.size < maxSitemaps &&
-    (options?.productAware ? productUrls.size < limit : urls.size < limit);
+    (options?.productAware ? productUrls.size < limit : urls.size < limit) &&
+    Date.now() - startedAt < budgetMs;
 
   while (shouldContinue()) {
     const sitemapUrl = queue.shift();
@@ -200,7 +210,8 @@ export const discoverFromSitemap = async (
     );
     const scanLimit = options?.productAware ? sitemapScanLimit : remaining || undefined;
     const entries = extractSitemapUrls(sitemapText, scanLimit || undefined);
-    const allowAllFromSitemap = options?.productAware && isProductSitemap(sitemapUrl);
+    const isProductMap = options?.productAware && isProductSitemap(sitemapUrl);
+    const allowAllFromSitemap = Boolean(isProductMap);
     for (const entry of entries) {
       if (urls.size < limit) urls.add(entry);
       if (options?.productAware) {
@@ -211,6 +222,10 @@ export const discoverFromSitemap = async (
         continue;
       }
       if (urls.size >= limit) break;
+    }
+
+    if (options?.productAware && isProductMap && productUrls.size > 0) {
+      break;
     }
   }
 

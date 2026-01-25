@@ -641,9 +641,9 @@ export const extractCatalogForBrand = async (
     refs = state.refs;
     await persistRunState(brand.id, metadataForRun, state);
   } else {
-    const sitemapRefs = options.forceSitemap
-      ? await discoverRefsFromSitemap(brand.siteUrl, sitemapLimit)
-      : [];
+    const trySitemap =
+      options.forceSitemap || process.env.CATALOG_TRY_SITEMAP_FIRST !== "false";
+    const sitemapRefs = trySitemap ? await discoverRefsFromSitemap(brand.siteUrl, sitemapLimit) : [];
     refs = sitemapRefs.length
       ? sitemapRefs
       : await adapter.discoverProducts(ctx, discoveryLimit);

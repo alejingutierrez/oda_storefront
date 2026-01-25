@@ -54,7 +54,8 @@ export const discoverCatalogRefs = async ({
   const sitemapLimit = Math.max(discoveryLimit, Math.min(Number(process.env.CATALOG_EXTRACT_SITEMAP_LIMIT ?? 5000), 20000));
 
   let refs: ProductRef[] = [];
-  const sitemapRefs = forceSitemap ? await discoverRefsFromSitemap(brand.siteUrl, sitemapLimit) : [];
+  const trySitemap = forceSitemap || process.env.CATALOG_TRY_SITEMAP_FIRST !== "false";
+  const sitemapRefs = trySitemap ? await discoverRefsFromSitemap(brand.siteUrl, sitemapLimit) : [];
   refs = sitemapRefs.length ? sitemapRefs : await adapter.discoverProducts(ctx, discoveryLimit);
 
   if (!refs.length && (adapter.platform === "custom" || (platformForRun ?? "").toLowerCase() === "unknown")) {
