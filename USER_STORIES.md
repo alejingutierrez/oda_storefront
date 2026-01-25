@@ -95,6 +95,13 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % product URLs detectadas y tasa de fetch ok por tecnología.
 - Estado: **done (2026-01-21)**.
 
+### MC-090 Sitemap budget + precios Woo fallback
+- Historia: Como operador, quiero que la detección de sitemaps tenga un tiempo límite para no bloquear el Play, y que WooCommerce no entregue precios en cero cuando el API es incompleto.
+- Alcance: Priorizar sitemaps de `robots.txt`, cortar discovery por budget configurable y usar fallback HTML cuando Woo devuelve `price=0` o vacío.
+- CA: El Play responde rápido incluso con sitemaps inválidos; productos Woo muestran precio > 0 cuando el PDP lo tiene.
+- Datos: env `CATALOG_EXTRACT_SITEMAP_BUDGET_MS`, `CATALOG_TRY_SITEMAP_FIRST`.
+- Estado: **done (2026-01-25)**.
+
 ### MC-055 Fallback a API si sitemap no trae productos
 - Historia: Como operador, quiero que si el sitemap no contiene URLs de producto, el extractor use el discovery del adapter, para evitar fallas en VTEX.
 - Alcance: Filtrar URLs de producto en sitemap; si quedan 0, pasar a discovery por plataforma (API) en vez de intentar páginas no‑producto.
