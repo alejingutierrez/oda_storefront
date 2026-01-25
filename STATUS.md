@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-25 | MC-083 | done | Estabilidad product‑enrichment (drain cron + auto‑refresh) | Docker rebuild: ok; Vercel prod OK: https://oda-storefront-6ee5.vercel.app; endpoint drain probado (200).
 - 2026-01-25 | MC-082 | done | Normalizacion determinista v2 (reglas extendidas) | Docker rebuild ok; docker-compose up ok; logs web/worker/scraper saludables (warning sslmode); vercel build local OK; Vercel preview OK: https://oda-storefront-6ee5-git-mc-081-c37d8b-alejingutierrezs-projects.vercel.app
 - 2026-01-25 | MC-081 | done | Catalog extractor: normalizacion determinista + menos OpenAI + retries cola | Docker rebuild: fallo (daemon apagado); vercel build local OK; Vercel preview OK: https://oda-storefront-6ee5-git-mc-081-c37d8b-alejingutierrezs-projects.vercel.app
 - 2026-01-24 | MC-080 | done | Enriquecimiento IA de productos (admin + cola + GPT-5 mini) | Docker rebuild: falló (daemon apagado); migración `20260124123000_product_enrichment` aplicada en Neon; Vercel prod OK: https://oda-storefront-6ee5.vercel.app; prueba batch 10 random OK (10/10).

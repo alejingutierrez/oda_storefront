@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-083 | done | P1 | Estabilidad product-enrichment (cron + auto-refresh) | Drain serverless y cron Vercel para product-enrichment; auto-refresh en panel.
 - MC-082 | done | P1 | Normalizacion determinista v2 (reglas extendidas) | Reglas de categoria, material, patron, fit y color mejoradas para reducir LLM.
 - MC-081 | done | P1 | Catalog extractor: normalizacion determinista + menos OpenAI | Shopify/Woo sin LLM, payload LLM recortado, retries/backoff en cola, auto-finish marcas sin fallos.
 - MC-080 | done | P1 | Enriquecimiento IA de productos | Admin + cola para enriquecer categorías/tags/colores/fit con GPT-5 mini.

@@ -318,6 +318,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % de productos enriquecidos, error rate por batch, costo medio por producto.
 - Estado: **done (2026-01-24)**.
 
+### MC-083 Estabilidad product‑enrichment (cron + auto‑refresh)
+- Historia: Como operador, quiero que el enriquecimiento tenga un fallback serverless y UI que refleje estado real, para evitar colas pegadas y poder monitorear cobertura.
+- Alcance: Endpoint `/api/admin/product-enrichment/drain` (cron Vercel) que drena runs en `processing` con reset de queued/stuck; auto‑refresh cada 15s del panel y métricas de cobertura (enriquecidos vs pendientes).
+- CA: Cron drena cuando el worker no está disponible; endpoint responde con `processed` y `lastResult`; panel actualiza progreso/cobertura sin recargar manualmente.
+- Datos: `product_enrichment_runs`/`product_enrichment_items`, `products.metadata.enrichment`.
+- NF: Seguro ante pausas/detenciones (no drena runs en `paused`/`stopped`); tiempo de ejecución controlado.
+- Riesgos: Costos por cron si no hay runs activos; mitigado retornando sin trabajo cuando no hay runs en `processing`.
+- Métricas: Tiempo de recuperación de runs pegados; % de runs finalizados sin intervención manual.
+- Estado: **done (2026-01-25)**.
+
 ### MC-010 Búsqueda básica + pgvector
 - Historia: Como usuario, quiero buscar y filtrar prendas relevantes, para encontrar rápido lo que me gusta.
 - Alcance: Índice texto+embeddings (pgvector), endpoint search, facetas básicas, UI de listados VSF, orden por relevancia/stock.
