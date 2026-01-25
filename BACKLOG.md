@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-085 | done | P2 | Style tags exactos 10 | Prompt y validación ajustados a 10 tags exactos.
 - MC-084 | done | P2 | Auto-refresh solo con runs processing | Panel enrichment refresca solo cuando hay run activo.
 - MC-083 | done | P1 | Estabilidad product-enrichment (cron + auto-refresh) | Drain serverless y cron Vercel para product-enrichment; auto-refresh en panel.
 - MC-082 | done | P1 | Normalizacion determinista v2 (reglas extendidas) | Reglas de categoria, material, patron, fit y color mejoradas para reducir LLM.

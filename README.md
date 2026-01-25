@@ -81,6 +81,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Directorio de productos scrapeados con cards, modal de detalle y filtros por marca.
 - Panel `/admin/product-enrichment` (enriquecimiento):
   - Enriquecimiento de atributos por GPT‑5 mini (categoría, subcategoría, tags, género, temporada, color hex, Pantone y fit).
+  - Style tags: **exactamente 10** por producto.
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
   - Por defecto omite productos ya enriquecidos (se puede incluirlos manualmente).
   - Controles de **pausa** y **detener**; muestra progreso, errores, estado y cobertura (enriquecidos vs pendientes). Auto‑refresco cada 15s cuando hay run en processing.

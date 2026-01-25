@@ -337,6 +337,15 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Estado no se actualiza si el run cambia fuera de la UI; mitigado por botón “Refrescar estado”.
 - Estado: **done (2026-01-25)**.
 
+### MC-085 Style tags exactos 10
+- Historia: Como operador, quiero que el clasificador devuelva exactamente 10 style tags por producto, para homogenizar el modelo de estilo.
+- Alcance: Prompt y validación del enrichment para exigir 10 tags exactos.
+- CA: Respuesta con menos o más de 10 tags falla validación; UI y DB guardan siempre 10 tags.
+- Datos: `products.styleTags`.
+- NF: Sin impacto en tiempos de respuesta.
+- Riesgos: Menos flexibilidad cuando hay poca evidencia; mitigado con catálogo de tags amplio.
+- Estado: **done (2026-01-25)**.
+
 ### MC-010 Búsqueda básica + pgvector
 - Historia: Como usuario, quiero buscar y filtrar prendas relevantes, para encontrar rápido lo que me gusta.
 - Alcance: Índice texto+embeddings (pgvector), endpoint search, facetas básicas, UI de listados VSF, orden por relevancia/stock.

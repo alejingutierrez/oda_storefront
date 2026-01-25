@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-25 | MC-085 | done | Style tags exactos 10 | Docker rebuild: ok; logs web/worker/scraper OK.
 - 2026-01-25 | MC-084 | done | Auto‑refresh enrichment solo con runs processing | Docker rebuild: ok; logs web/worker/scraper OK.
 - 2026-01-25 | MC-083 | done | Estabilidad product‑enrichment (drain cron + auto‑refresh) | Docker rebuild: ok; Vercel prod OK: https://oda-storefront-6ee5.vercel.app; endpoint drain probado (200).
 - 2026-01-25 | MC-082 | done | Normalizacion determinista v2 (reglas extendidas) | Docker rebuild ok; docker-compose up ok; logs web/worker/scraper saludables (warning sslmode); vercel build local OK; Vercel preview OK: https://oda-storefront-6ee5-git-mc-081-c37d8b-alejingutierrezs-projects.vercel.app

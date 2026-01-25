@@ -36,7 +36,7 @@ const variantSchema = z.object({
 const productSchema = z.object({
   category: z.string(),
   subcategory: z.string(),
-  style_tags: z.array(z.string()).min(5).max(10),
+  style_tags: z.array(z.string()).min(10).max(10),
   material_tags: z.array(z.string()).max(3).default([]),
   pattern_tags: z.array(z.string()).max(2).default([]),
   occasion_tags: z.array(z.string()).max(2).default([]),
@@ -141,7 +141,7 @@ Debes devolver SOLO JSON válido con el siguiente esquema:
 }
 Reglas estrictas:
 - category, subcategory, gender, season, color_hex, color_pantone y fit deben tener UN SOLO valor.
-- style_tags deben ser entre 5 y 10 elementos.
+- style_tags deben ser EXACTAMENTE 10 elementos.
 - material_tags máximo 3 elementos.
 - pattern_tags máximo 2 elementos.
 - occasion_tags máximo 2 elementos.
@@ -202,7 +202,7 @@ const normalizeEnrichment = (input: EnrichedProduct, variantIds: Set<string>) =>
   }
 
   const styleTags = normalizeEnumArray(input.styleTags, STYLE_TAGS);
-  if (styleTags.length < 5 || styleTags.length > 10) {
+  if (styleTags.length !== 10) {
     throw new Error(`Invalid style_tags length: ${styleTags.length}`);
   }
 
@@ -416,7 +416,7 @@ export async function enrichProductWithOpenAI(params: {
   throw new Error(`OpenAI enrichment failed after ${MAX_RETRIES} attempts: ${String(lastError)}`);
 }
 
-export const productEnrichmentPromptVersion = "v2";
+export const productEnrichmentPromptVersion = "v3";
 export const productEnrichmentSchemaVersion = "v1";
 
 export const toSlugLabel = (value: string) => slugify(value);
