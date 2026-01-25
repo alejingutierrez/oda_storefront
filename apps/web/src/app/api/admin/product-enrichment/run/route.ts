@@ -60,6 +60,7 @@ export async function POST(req: Request) {
   const limit = Number(body?.limit ?? body?.batchSize ?? body?.count ?? 0);
   const resumeRequested = Boolean(body?.resume);
   const includeEnriched = Boolean(body?.includeEnriched);
+  const requestDrainOnRun = body?.drainOnRun;
   const requestedDrainBatch = Number(body?.drainBatch ?? body?.drainLimit ?? body?.drainSize);
   const requestedDrainConcurrency = Number(body?.drainConcurrency ?? body?.concurrency ?? body?.drainWorkers);
   const requestedDrainMaxMs = Number(body?.drainMaxMs ?? body?.maxMs ?? body?.drainTimeoutMs);
@@ -95,9 +96,11 @@ export async function POST(req: Request) {
     1,
     Number(process.env.PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT ?? 50),
   );
-  const drainOnRun =
+  const drainOnRunDefault =
     process.env.PRODUCT_ENRICHMENT_DRAIN_ON_RUN !== "false" &&
     process.env.PRODUCT_ENRICHMENT_DRAIN_DISABLED !== "true";
+  const drainOnRun =
+    typeof requestDrainOnRun === "boolean" ? requestDrainOnRun : drainOnRunDefault;
   const drainBatchDefault = Number(
     process.env.PRODUCT_ENRICHMENT_DRAIN_BATCH ?? 0,
   );

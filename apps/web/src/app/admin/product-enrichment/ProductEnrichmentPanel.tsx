@@ -121,6 +121,7 @@ export default function ProductEnrichmentPanel() {
         limit: mode === "batch" ? batchSize : null,
         resume: shouldResume,
         includeEnriched,
+        drainOnRun: false,
       };
       if (scope === "brand") payload.brandId = selectedBrand;
       const res = await fetch("/api/admin/product-enrichment/run", {

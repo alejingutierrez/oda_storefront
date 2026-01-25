@@ -85,6 +85,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
   - Por defecto omite productos ya enriquecidos (se puede incluirlos manualmente).
   - Controles de **pausa** y **detener**; muestra progreso, errores, estado y cobertura (enriquecidos vs pendientes). Auto‑refresco cada 15s cuando hay run en processing.
+  - En el panel, el run no se drena en la misma petición (respuesta rápida); el progreso se ve por polling y por el cron `/api/admin/product-enrichment/drain`.
   - Fallback serverless `/api/admin/product-enrichment/drain` con cron (cada 1 min) para evitar colas “pegadas”.
 - Panel `/admin/catalog-extractor` (catalog extractor):
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.

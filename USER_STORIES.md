@@ -346,6 +346,15 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Menos flexibilidad cuando hay poca evidencia; mitigado con catálogo de tags amplio.
 - Estado: **done (2026-01-25)**.
 
+### MC-086 Progreso incremental en panel product-enrichment
+- Historia: Como operador, quiero ver progreso mientras el run está en curso, para validar que el enriquecimiento avanza sin esperar al final.
+- Alcance: El panel crea el run sin drenar en la misma request; el progreso se actualiza vía polling y cron `/api/admin/product-enrichment/drain`.
+- CA: Al iniciar un run, la barra y conteos avanzan mientras el procesamiento ocurre; no hay bloqueos por requests largas.
+- Datos: `product_enrichment_runs`, `product_enrichment_items`.
+- NF: El panel solo refresca cuando hay run en `processing`.
+- Riesgos: Desfase temporal si el worker y el cron están detenidos; mitigado con botón “Refrescar estado”.
+- Estado: **done (2026-01-25)**.
+
 ### MC-010 Búsqueda básica + pgvector
 - Historia: Como usuario, quiero buscar y filtrar prendas relevantes, para encontrar rápido lo que me gusta.
 - Alcance: Índice texto+embeddings (pgvector), endpoint search, facetas básicas, UI de listados VSF, orden por relevancia/stock.
