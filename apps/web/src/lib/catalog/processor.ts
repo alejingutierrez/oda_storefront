@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCatalogAdapter } from "@/lib/catalog/registry";
 import { processCatalogRef } from "@/lib/catalog/extractor";
@@ -36,7 +37,7 @@ const markBrandCatalogFinished = async ({
   };
   await prisma.brand.update({
     where: { id: brand.id },
-    data: { metadata: nextMetadata },
+    data: { metadata: nextMetadata as Prisma.InputJsonValue },
   });
 };
 

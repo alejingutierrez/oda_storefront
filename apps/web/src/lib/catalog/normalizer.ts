@@ -102,7 +102,7 @@ const normalizeText = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const toText = (value: unknown) => {
+const toText = (value: unknown): string => {
   if (!value) return "";
   if (Array.isArray(value)) return value.map((entry) => toText(entry)).filter(Boolean).join(" ");
   if (typeof value === "object") {
@@ -400,10 +400,10 @@ const buildLlmInput = (rawProduct: RawProduct) => {
       }))
     : undefined;
 
-  const variants = trimArray(rawProduct.variants, MAX_LLM_VARIANTS).map((variant) => ({
+  const variants: RawVariant[] = trimArray(rawProduct.variants, MAX_LLM_VARIANTS).map((variant) => ({
     id: variant.id ?? null,
     sku: variant.sku ?? null,
-    options: variant.options ?? null,
+    options: variant.options ?? undefined,
     price: variant.price ?? null,
     compareAtPrice: variant.compareAtPrice ?? null,
     currency: variant.currency ?? null,
