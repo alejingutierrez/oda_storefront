@@ -108,7 +108,7 @@ export default function CatalogExtractorPanel() {
   );
 
   const currentState = useMemo(
-    () => summary ?? currentBrand?.runState ?? null,
+    () => currentBrand?.runState ?? summary ?? null,
     [summary, currentBrand],
   );
 
