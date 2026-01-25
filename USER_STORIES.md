@@ -65,6 +65,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Tiempo de revisión por producto y número de clicks para inspección.
 - Estado: **done (2026-01-25)**.
 
+### MC-088 Catalog extractor no pausa por errores de producto
+- Historia: Como operador, quiero que la extracción de catálogo continúe aunque existan errores por producto (HTML/imagenes/LLM no‑PDP), para no tener que hacer Resume manual en cada lote fallido.
+- Alcance: Clasificar errores “soft” y evitar que cuenten para auto‑pause; mantener auto‑pause solo para fallas sistémicas si se habilita por env.
+- CA: Corridas en marcas con productos problemáticos no quedan en `paused` por “No se pudo obtener HTML/Producto” o “No hay imágenes”; el run sigue en `processing` y se agotan intentos por item; auto‑pause solo aplica a fallas sistémicas con `CATALOG_AUTO_PAUSE_ON_ERRORS=true`.
+- Datos: `catalog_runs.consecutiveErrors`, `catalog_items.lastError`, `catalog_runs.blockReason`.
+- NF: No afecta el throughput ni el orden de reintentos; mantiene métricas de error.
+- Riesgos: Menor protección ante errores masivos si se clasifican como “soft”; mitigación con lista explícita de errores blandos.
+- Métricas: Menos resumes manuales; tasa de completitud por run.
+- Estado: **done (2026-01-25)**.
+
 ### MC-054 Sitemap scan completo + fallbacks Woo/VTEX
 - Historia: Como operador, quiero que el extractor lea sitemaps completos (index/gz) y tenga fallback HTML, para no perder productos en Woo/VTEX/custom.
 - Alcance: Descubrimiento product-aware con sitemap index/gz, límite de sitemaps por corrida, heurísticas de URL producto y fallback HTML cuando API falla.

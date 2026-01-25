@@ -7,7 +7,11 @@ import { normalizeCatalogProduct } from "@/lib/catalog/normalizer";
 import { uploadImagesToBlob } from "@/lib/catalog/blob";
 import { inferCatalogPlatform } from "@/lib/catalog/platform-detect";
 import { classifyPdpWithOpenAI, extractHtmlSignals, extractRawProductWithOpenAI } from "@/lib/catalog/llm-pdp";
-import { CATALOG_MAX_ATTEMPTS, getCatalogConsecutiveErrorLimit } from "@/lib/catalog/constants";
+import {
+  CATALOG_MAX_ATTEMPTS,
+  getCatalogConsecutiveErrorLimit,
+  isCatalogSoftError,
+} from "@/lib/catalog/constants";
 import {
   discoverFromSitemap,
   fetchText,
@@ -60,6 +64,7 @@ type CatalogRunState = {
 const CATALOG_STATE_KEY = "catalog_extract";
 const PDP_LLM_ENABLED = process.env.CATALOG_PDP_LLM_ENABLED !== "false";
 const CONSECUTIVE_ERROR_LIMIT = getCatalogConsecutiveErrorLimit();
+const AUTO_PAUSE_ON_ERRORS = process.env.CATALOG_AUTO_PAUSE_ON_ERRORS === "true";
 const PDP_LLM_MIN_CONFIDENCE = Math.max(
   0.1,
   Math.min(0.99, Number(process.env.CATALOG_PDP_LLM_CONFIDENCE_MIN ?? 0.55)),
@@ -812,6 +817,7 @@ export const extractCatalogForBrand = async (
       processedThisBatch += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const isSoftError = isCatalogSoftError(message);
       summary.errors.push({
         url: ref.url,
         error: message,
@@ -826,7 +832,7 @@ export const extractCatalogForBrand = async (
       state.lastError = message;
       state.lastUrl = ref.url;
       state.lastStage = "error";
-      state.consecutiveErrors = (state.consecutiveErrors ?? 0) + 1;
+      state.consecutiveErrors = isSoftError ? 0 : (state.consecutiveErrors ?? 0) + 1;
       pushErrorSample(state, ref.url, message, state.lastStage);
       if (isBlobTokenError(message)) {
         state.status = "blocked";
@@ -835,7 +841,7 @@ export const extractCatalogForBrand = async (
         summary.status = state.status;
         break;
       }
-      if (state.consecutiveErrors >= CONSECUTIVE_ERROR_LIMIT) {
+      if (AUTO_PAUSE_ON_ERRORS && state.consecutiveErrors >= CONSECUTIVE_ERROR_LIMIT) {
         state.status = "paused";
         state.blockReason = `consecutive_errors:${state.consecutiveErrors}`;
         await persistRunState(brand.id, metadataForRun, state);

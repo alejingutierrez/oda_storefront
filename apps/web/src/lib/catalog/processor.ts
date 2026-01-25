@@ -2,7 +2,11 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCatalogAdapter } from "@/lib/catalog/registry";
 import { processCatalogRef } from "@/lib/catalog/extractor";
-import { CATALOG_MAX_ATTEMPTS, getCatalogConsecutiveErrorLimit } from "@/lib/catalog/constants";
+import {
+  CATALOG_MAX_ATTEMPTS,
+  getCatalogConsecutiveErrorLimit,
+  isCatalogSoftError,
+} from "@/lib/catalog/constants";
 import { enqueueCatalogItems } from "@/lib/catalog/queue";
 import { listPendingItems, listRunnableItems, markItemsQueued, resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
 
@@ -221,6 +225,7 @@ export const processCatalogItemById = async (
     return { status: "completed", created: result.created, createdVariants: result.createdVariants };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const isSoftError = isCatalogSoftError(message);
     const attempts = item.attempts + 1;
     await prisma.catalogItem.update({
       where: { id: item.id },
@@ -232,10 +237,10 @@ export const processCatalogItemById = async (
       },
     });
 
-    const consecutiveErrors = (run.consecutiveErrors ?? 0) + 1;
+    const consecutiveErrors = isSoftError ? 0 : (run.consecutiveErrors ?? 0) + 1;
     const limit = getCatalogConsecutiveErrorLimit();
     const allowAutoPause = process.env.CATALOG_AUTO_PAUSE_ON_ERRORS === "true";
-    const shouldPause = allowAutoPause && consecutiveErrors >= limit;
+    const shouldPause = allowAutoPause && !isSoftError && consecutiveErrors >= limit;
 
     await prisma.catalogRun.update({
       where: { id: run.id },

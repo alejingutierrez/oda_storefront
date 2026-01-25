@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-088 | done | P1 | Catalog extractor no pausa por errores de producto | Errores soft no cuentan para auto-pause; continua la corrida.
 - MC-087 | done | P2 | Modal productos + carrusel en cards | Colores visibles con swatches, resumen de variantes y navegación de fotos en listado.
 - MC-086 | done | P2 | Progreso incremental en panel product-enrichment | Run no drena en la misma request; barra avanza vía polling + cron.
 - MC-085 | done | P2 | Style tags exactos 10 | Prompt y validación ajustados a 10 tags exactos.

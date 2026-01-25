@@ -100,6 +100,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Normaliza imágenes (acepta JSON-LD ImageObject y extrae `contentUrl`) antes de subir a Blob.
   - Sube imágenes a Vercel Blob y guarda productos/variantes en Neon.
   - Muestra último error y errores recientes para diagnosticar fallas.
+  - No pausa la corrida por errores de producto (HTML/imagenes/LLM no-PDP); el auto‑pause queda solo para fallas sistémicas si se habilita.
   - Moneda se infiere por regla (<=999 USD, >=10000 COP) si no viene explícita.
   - Normalizacion determinista para Shopify/Woo; LLM solo se usa para custom/unknown o cuando `CATALOG_LLM_NORMALIZE_MODE=always`.
 
