@@ -26,7 +26,7 @@ const buildProductFilters = (params: { brandId?: string | null; includeEnriched?
     filters.push(Prisma.sql`("metadata" -> 'enrichment') IS NULL`);
   }
   if (!filters.length) return Prisma.sql``;
-  return Prisma.sql`WHERE ${Prisma.join(filters, Prisma.sql` AND `)}`;
+  return Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}`;
 };
 
 const getRandomProductIds = async (params: {

@@ -23,7 +23,7 @@ export async function GET(req: Request) {
   if (scope === "brand" && brandId) {
     filters.push(Prisma.sql`"brandId" = ${brandId}`);
   }
-  const where = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, Prisma.sql` AND `)}` : Prisma.sql``;
+  const where = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}` : Prisma.sql``;
   const [counts] = await prisma.$queryRaw<{ total: number; enriched: number }[]>(
     Prisma.sql`
       SELECT
