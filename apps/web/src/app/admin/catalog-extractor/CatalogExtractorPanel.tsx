@@ -46,6 +46,12 @@ type ExtractSummary = {
   blockReason?: string | null;
 };
 
+const POLL_INTERVAL_MS = 2000;
+const RUN_BATCH_SIZE = 25;
+const DRAIN_BATCH = 40;
+const DRAIN_CONCURRENCY = 8;
+const DRAIN_MAX_MS = 15000;
+
 const buildProgress = (state?: RunState | ExtractSummary | null) => {
   if (!state) {
     return { total: 0, completed: 0, failed: 0, pending: 0, percent: 0 };
@@ -71,7 +77,8 @@ export default function CatalogExtractorPanel() {
   const [autoRunAll, setAutoRunAll] = useState(false);
   const [summary, setSummary] = useState<ExtractSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const drainInFlightRef = useRef(false);
 
   const currentBrand = useMemo(
     () => brands.find((brand) => brand.id === selectedBrand) ?? null,
@@ -195,11 +202,37 @@ export default function CatalogExtractorPanel() {
       const payload = await res.json();
       if (payload.state) {
         updateBrandRunState(brandId, payload.state);
+        return payload.state as RunState;
       }
     } catch (err) {
       console.warn(err);
     }
+    return null;
   }, [updateBrandRunState]);
+
+  const drainNow = useCallback(async (brandId: string) => {
+    if (!brandId || drainInFlightRef.current) return null;
+    drainInFlightRef.current = true;
+    try {
+      const res = await fetch("/api/admin/catalog-extractor/drain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandId,
+          drainBatch: DRAIN_BATCH,
+          drainConcurrency: DRAIN_CONCURRENCY,
+          drainMaxMs: DRAIN_MAX_MS,
+        }),
+      });
+      if (!res.ok) return null;
+      return await res.json().catch(() => null);
+    } catch (err) {
+      console.warn(err);
+      return null;
+    } finally {
+      drainInFlightRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     fetchPlatforms();
@@ -227,17 +260,27 @@ export default function CatalogExtractorPanel() {
 
   useEffect(() => {
     if (pollRef.current) {
-      clearInterval(pollRef.current);
+      clearTimeout(pollRef.current);
       pollRef.current = null;
     }
     if (!selectedBrand) return;
-    pollRef.current = setInterval(() => {
-      fetchState(selectedBrand);
-    }, 4000);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+    let active = true;
+    const tick = async () => {
+      if (!active) return;
+      const state = await fetchState(selectedBrand);
+      if (active && state?.status === "processing" && autoPlay) {
+        await drainNow(selectedBrand);
+        await fetchState(selectedBrand);
+      }
+      if (!active) return;
+      pollRef.current = setTimeout(tick, POLL_INTERVAL_MS);
     };
-  }, [selectedBrand, fetchState]);
+    tick();
+    return () => {
+      active = false;
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
+  }, [selectedBrand, fetchState, drainNow, autoPlay]);
 
   const runExtraction = useCallback(async (overrideBrandId?: string) => {
     const targetBrand = overrideBrandId ?? selectedBrand;
@@ -255,9 +298,11 @@ export default function CatalogExtractorPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           brandId: targetBrand,
-          batchSize: 1,
+          batchSize: RUN_BATCH_SIZE,
           resume: resumeFlag,
-          drainBatch: 0,
+          drainBatch: DRAIN_BATCH,
+          drainConcurrency: DRAIN_CONCURRENCY,
+          drainMaxMs: DRAIN_MAX_MS,
         }),
       });
       if (!res.ok) {
@@ -400,10 +445,7 @@ export default function CatalogExtractorPanel() {
     }
 
     if (currentState.status === "processing") {
-      const timer = setTimeout(() => {
-        runExtraction();
-      }, 5000);
-      return () => clearTimeout(timer);
+      return;
     }
 
     if (currentState.status === "completed") {

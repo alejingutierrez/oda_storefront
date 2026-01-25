@@ -75,6 +75,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Menos resumes manuales; tasa de completitud por run.
 - Estado: **done (2026-01-25)**.
 
+### MC-089 Concurrencia alta y progreso más frecuente en catalog extractor
+- Historia: Como operador, quiero que el procesamiento sea más rápido y ver el progreso casi en tiempo real, para no perder visibilidad durante runs largos.
+- Alcance: Subir concurrencia y batch de drenado; UI drena lotes pequeños mientras está en `processing` y reduce el polling para un progreso más real.
+- CA: La barra de progreso se actualiza cada ~2s mientras corre; el run avanza sin necesidad de re‑Play constante; el drenado usa mayor concurrencia.
+- Datos: `catalog_runs`, `catalog_items`; envs `CATALOG_DRAIN_*`, `CATALOG_QUEUE_ENQUEUE_LIMIT`.
+- NF: Evitar overlap de drenados y mantener límite de tiempo en serverless.
+- Riesgos: Mayor carga en Vercel/DB; mitigación con batch moderado y guardas de concurrencia.
+- Métricas: Items procesados/min y latencia de actualización de progreso.
+- Estado: **done (2026-01-25)**.
+
 ### MC-054 Sitemap scan completo + fallbacks Woo/VTEX
 - Historia: Como operador, quiero que el extractor lea sitemaps completos (index/gz) y tenga fallback HTML, para no perder productos en Woo/VTEX/custom.
 - Alcance: Descubrimiento product-aware con sitemap index/gz, límite de sitemaps por corrida, heurísticas de URL producto y fallback HTML cuando API falla.
