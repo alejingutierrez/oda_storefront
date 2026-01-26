@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-26 | MC-095 | done | UI: marcas sin run agrupadas por tecnología + límite por plataforma 2000 | Docker rebuild ok; logs web/scraper OK; Redis OOM resuelto limpiando ~42k keys bull:* y reiniciando worker; Vercel prod OK: https://oda-storefront-6ee5-fmm0xkstg-alejingutierrezs-projects.vercel.app (logs sin eventos visibles).
+- 2026-01-26 | MC-095 | done | UI: marcas sin run agrupadas por tecnología + límite por plataforma 2000 | Docker rebuild ok; logs web/scraper OK; Redis OOM resuelto limpiando ~42k keys bull:* y reiniciando worker; Vercel prod OK: https://oda-storefront-6ee5-jexf1wgfl-alejingutierrezs-projects.vercel.app (logs sin eventos visibles).
 - 2026-01-25 | MC-094 | done | Sitemap discovery tolerante a fallos (fetch failed) | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod OK: https://oda-storefront-6ee5-5yjleqz98-alejingutierrezs-projects.vercel.app (deploy dpl_AxmzmhvWw2XoVDXrt373Ug1TTJmp, logs sin eventos en 1h).
 - 2026-01-25 | MC-093 | done | Sitemap completo sin corte temprano + límite configurable | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel prod OK: https://oda-storefront-6ee5-4u1578k2v-alejingutierrezs-projects.vercel.app (deploy dpl_HPnN2t7fzRzhhLmD9L8zzr4iyS5n, logs sin eventos en 1h).
 - 2026-01-25 | MC-092 | done | Reducir reintentos de catálogo | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel prod OK: https://oda-storefront-6ee5-4mpkvvs4o-alejingutierrezs-projects.vercel.app (deploy dpl_8BBkqXoW69RJHaJnwoCKeWPqV9bp, logs sin eventos).
