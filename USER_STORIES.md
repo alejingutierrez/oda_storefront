@@ -136,6 +136,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Menos runs fallidos por `fetch failed`.
 - Estado: **done (2026-01-25)**.
 
+### MC-095 UI: ver marcas sin run agrupadas por tecnología
+- Historia: Como operador, quiero ver en el panel todas las marcas que aún no tienen run, agrupadas por tecnología, para planear el procesamiento masivo.
+- Alcance: Toggle en `/admin/catalog-extractor` para listar marcas sin run; API soporta `onlyNoRun=true` y `platform=all`; límite ampliado.
+- CA: El panel muestra todas las marcas sin run y las agrupa por tecnología con conteos; no depende del límite de 200 marcas.
+- Datos: `catalog_runs` y `brands.ecommercePlatform`.
+- NF: No afecta la vista normal por tecnología; carga razonable para ~600 marcas.
+- Riesgos: Respuesta pesada en entornos con miles de marcas; mitigación con límite 2000.
+- Métricas: Cobertura de marcas sin run visibles en UI.
+- Estado: **done (2026-01-26)**.
+
 ### MC-055 Fallback a API si sitemap no trae productos
 - Historia: Como operador, quiero que si el sitemap no contiene URLs de producto, el extractor use el discovery del adapter, para evitar fallas en VTEX.
 - Alcance: Filtrar URLs de producto en sitemap; si quedan 0, pasar a discovery por plataforma (API) en vez de intentar páginas no‑producto.

@@ -91,6 +91,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.
   - Controles Play/Pausar/Detener (detener conserva estado para reanudar), reanudación automática y sitemap‑first.
   - Mientras está en `processing`, el panel drena lotes pequeños para progreso casi en tiempo real (poll ~2s).
+  - Toggle para ver **todas** las marcas sin run, agrupadas por tecnología.
   - Permite **finalizar** una marca para sacarla de la cola y registrar `metadata.catalog_extract_finished`.
   - Usa cola Redis/BullMQ para procesar URLs en paralelo (workers externos).
   - Para `unknown`, intenta inferencia rápida de plataforma (sin LLM) desde la home y guarda `catalog_extract_inferred_platform` en `brands.metadata`.
@@ -131,7 +132,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - `POST /api/admin/brands/tech/next`: procesa la siguiente marca pendiente y actualiza su tecnología.
 
 ## API interna (catalog extractor)
-- `GET /api/admin/catalog-extractor/brands`: lista marcas con `ecommercePlatform`.
+- `GET /api/admin/catalog-extractor/brands`: lista marcas con `ecommercePlatform` (`onlyNoRun=true` devuelve solo marcas sin runs; `platform=all` trae todas las tecnologías; `limit` hasta 2000).
 - `POST /api/admin/catalog-extractor/run`: ejecuta extracción de catálogo para una marca (body: `{ brandId, limit }`).
 - `POST /api/admin/catalog-extractor/finish`: marca marca como terminada y la saca de la cola (body: `{ brandId, reason? }`).
 - `POST /api/admin/catalog-extractor/process-item`: procesa un item de catálogo desde worker (body: `{ itemId }`).

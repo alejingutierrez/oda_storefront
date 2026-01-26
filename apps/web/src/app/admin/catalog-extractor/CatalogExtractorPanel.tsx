@@ -69,6 +69,7 @@ const buildProgress = (state?: RunState | ExtractSummary | null) => {
 export default function CatalogExtractorPanel() {
   const [platforms, setPlatforms] = useState<PlatformOption[]>([]);
   const [selectedPlatform, setSelectedPlatform] = useState("");
+  const [showNoRunOnly, setShowNoRunOnly] = useState(false);
   const [brands, setBrands] = useState<BrandOption[]>([]);
   const [loadingBrands, setLoadingBrands] = useState(false);
   const [selectedBrand, setSelectedBrand] = useState<string>("");
@@ -171,12 +172,17 @@ export default function CatalogExtractorPanel() {
   }, []);
 
   const fetchBrands = useCallback(
-    async (platform: string) => {
-      if (!platform) return;
+    async (platform: string, options?: { onlyNoRun?: boolean }) => {
+      const onlyNoRun = Boolean(options?.onlyNoRun);
+      if (!platform && !onlyNoRun) return;
       setLoadingBrands(true);
       try {
+        const params = new URLSearchParams();
+        params.set("platform", onlyNoRun ? "all" : platform);
+        params.set("limit", onlyNoRun ? "2000" : "200");
+        if (onlyNoRun) params.set("onlyNoRun", "true");
         const res = await fetch(
-          `/api/admin/catalog-extractor/brands?platform=${encodeURIComponent(platform)}&limit=200`,
+          `/api/admin/catalog-extractor/brands?${params.toString()}`,
           { cache: "no-store" },
         );
         if (!res.ok) throw new Error("No se pudieron cargar las marcas");
@@ -248,9 +254,13 @@ export default function CatalogExtractorPanel() {
     setAutoPlay(false);
     setRunning(false);
     setSummary(null);
+    if (showNoRunOnly) {
+      fetchBrands("all", { onlyNoRun: true });
+      return;
+    }
     if (!selectedPlatform) return;
     fetchBrands(selectedPlatform);
-  }, [selectedPlatform, fetchBrands]);
+  }, [selectedPlatform, showNoRunOnly, fetchBrands]);
 
   useEffect(() => {
     setSummary(null);
@@ -476,6 +486,18 @@ export default function CatalogExtractorPanel() {
     getNextBrandId,
   ]);
 
+  const groupedNoRunBrands = useMemo(() => {
+    if (!showNoRunOnly) return [];
+    const groups = new Map<string, BrandOption[]>();
+    brands.forEach((brand) => {
+      const key = brand.ecommercePlatform ?? "unknown";
+      const list = groups.get(key) ?? [];
+      list.push(brand);
+      groups.set(key, list);
+    });
+    return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [brands, showNoRunOnly]);
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -495,6 +517,7 @@ export default function CatalogExtractorPanel() {
             className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
             value={selectedPlatform}
             onChange={(event) => setSelectedPlatform(event.target.value)}
+            disabled={showNoRunOnly}
           >
             <option value="">Selecciona tecnologia</option>
             {platforms.map((platform) => (
@@ -503,6 +526,15 @@ export default function CatalogExtractorPanel() {
               </option>
             ))}
           </select>
+          <label className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+            <input
+              type="checkbox"
+              checked={showNoRunOnly}
+              onChange={(event) => setShowNoRunOnly(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Ver todas las marcas sin run (agrupadas por tecnologia)
+          </label>
         </div>
         <div>
           <label className="text-xs uppercase tracking-wide text-slate-500">Marca actual</label>
@@ -633,28 +665,60 @@ export default function CatalogExtractorPanel() {
       {brands.length > 0 && (
         <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-4">
           <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-400">
-            <p>Marcas por tecnologia</p>
+            <p>{showNoRunOnly ? "Marcas sin run (todas las tecnologias)" : "Marcas por tecnologia"}</p>
             <p>{brands.length} marcas</p>
           </div>
-          <div className="mt-3 grid gap-2 md:grid-cols-2">
-            {brands.map((brand) => (
-              <button
-                key={brand.id}
-                type="button"
-                onClick={() => setSelectedBrand(brand.id)}
-                className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm ${
-                  brand.id === selectedBrand
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                    : "border-slate-200 bg-white text-slate-700"
-                }`}
-              >
-                <span>{brand.name}</span>
-                <span className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                  {brand.runState?.status ?? "pendiente"}
-                </span>
-              </button>
-            ))}
-          </div>
+          {showNoRunOnly ? (
+            <div className="mt-4 space-y-6">
+              {groupedNoRunBrands.map(([platform, list]) => (
+                <div key={platform} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-400">
+                    <p>{platform}</p>
+                    <p>{list.length} marcas</p>
+                  </div>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {list.map((brand) => (
+                      <button
+                        key={brand.id}
+                        type="button"
+                        onClick={() => setSelectedBrand(brand.id)}
+                        className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm ${
+                          brand.id === selectedBrand
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                            : "border-slate-200 bg-white text-slate-700"
+                        }`}
+                      >
+                        <span>{brand.name}</span>
+                        <span className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                          {brand.runState?.status ?? "pendiente"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              {brands.map((brand) => (
+                <button
+                  key={brand.id}
+                  type="button"
+                  onClick={() => setSelectedBrand(brand.id)}
+                  className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm ${
+                    brand.id === selectedBrand
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                      : "border-slate-200 bg-white text-slate-700"
+                  }`}
+                >
+                  <span>{brand.name}</span>
+                  <span className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                    {brand.runState?.status ?? "pendiente"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>

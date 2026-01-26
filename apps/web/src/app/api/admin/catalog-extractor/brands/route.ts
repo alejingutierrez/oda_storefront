@@ -11,14 +11,18 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
-  const limit = Math.min(Number(url.searchParams.get("limit") ?? 50), 200);
-  const platform = url.searchParams.get("platform");
+  const limitParam = Number(url.searchParams.get("limit") ?? 50);
+  const limit = Number.isFinite(limitParam) ? Math.min(limitParam, 2000) : 50;
+  const platformParam = url.searchParams.get("platform");
+  const platform = platformParam && platformParam !== "all" ? platformParam : null;
+  const onlyNoRun = url.searchParams.get("onlyNoRun") === "true";
 
   const brands = await prisma.brand.findMany({
     where: {
       isActive: true,
       siteUrl: { not: null },
       ecommercePlatform: platform ? platform : { not: null },
+      catalogRuns: onlyNoRun ? { none: {} } : undefined,
     },
     orderBy: { updatedAt: "asc" },
     take: limit,
