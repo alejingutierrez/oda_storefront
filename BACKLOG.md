@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-094 | done | P1 | Sitemap discovery tolerante a fallos | Robots/sitemaps con fetch error no bloquean el run; fallback a adapter.
 - MC-093 | done | P1 | Sitemap completo sin corte temprano | No se corta en el primer sitemap de productos; límite configurable y sin cap fijo.
 - MC-090 | done | P1 | Sitemap budget + precios Woo fallback | Prioriza robots y limita tiempo de discovery; precios Woo se completan con fallback HTML cuando API devuelve 0.
 - MC-091 | done | P1 | Drain finaliza runs idle + control sitemap/queue | Drain marca run completed si no hay pendientes; /run respeta enqueueOnly y `CATALOG_FORCE_SITEMAP`.

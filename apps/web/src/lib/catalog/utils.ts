@@ -85,8 +85,14 @@ export const discoverFromSitemap = async (
   const scanLimit = Number.isFinite(rawScanLimit) ? rawScanLimit : 5000;
   const sitemapScanLimit = Math.max(hasLimit ? normalizedLimit * 5 : 0, scanLimit > 0 ? scanLimit : 0);
   const robotsUrl = new URL("/robots.txt", origin).toString();
-  const robots = await fetchText(robotsUrl);
-  const sitemaps = extractSitemapsFromRobots(robots.text || "");
+  let robotsText = "";
+  try {
+    const robots = await fetchText(robotsUrl);
+    robotsText = robots.text || "";
+  } catch {
+    robotsText = "";
+  }
+  const sitemaps = extractSitemapsFromRobots(robotsText);
   const fallbackCandidates = [
     new URL("/sitemap.xml", origin).toString(),
     new URL("/sitemap_index.xml", origin).toString(),

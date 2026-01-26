@@ -126,6 +126,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % de URLs de producto descubiertas vs total declarado en sitemap; tiempo de discovery.
 - Estado: **done (2026-01-25)**.
 
+### MC-094 Sitemap discovery tolerante a fallos
+- Historia: Como operador, quiero que el run no falle si `robots.txt` o sitemaps devuelven error de red, para que el extractor haga fallback al adapter y no quede bloqueado.
+- Alcance: Capturar errores de fetch en robots/sitemap y continuar; loggear el fallo para diagnóstico; mantener fallback a discovery por plataforma.
+- CA: Un `fetch failed` en robots/sitemap no rompe el `run`; el extractor continúa con el adapter; error visible en logs.
+- Datos: N/A.
+- NF: Sin impacto en plataformas con sitemap funcional.
+- Riesgos: Ocultar fallas de red persistentes; mitigación: logging explícito con sitio y error.
+- Métricas: Menos runs fallidos por `fetch failed`.
+- Estado: **done (2026-01-25)**.
+
 ### MC-055 Fallback a API si sitemap no trae productos
 - Historia: Como operador, quiero que si el sitemap no contiene URLs de producto, el extractor use el discovery del adapter, para evitar fallas en VTEX.
 - Alcance: Filtrar URLs de producto en sitemap; si quedan 0, pasar a discovery por plataforma (API) en vez de intentar páginas no‑producto.

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import type { AdapterContext, ExtractSummary, RawProduct, RawVariant } from "@/lib/catalog/types";
+import type { AdapterContext, ExtractSummary, ProductRef, RawProduct, RawVariant } from "@/lib/catalog/types";
 import { getCatalogAdapter } from "@/lib/catalog/registry";
 import { normalizeCatalogProduct } from "@/lib/catalog/normalizer";
 import { uploadImagesToBlob } from "@/lib/catalog/blob";
@@ -643,7 +643,18 @@ export const extractCatalogForBrand = async (
   } else {
     const trySitemap =
       options.forceSitemap || process.env.CATALOG_TRY_SITEMAP_FIRST !== "false";
-    const sitemapRefs = trySitemap ? await discoverRefsFromSitemap(brand.siteUrl, sitemapLimit) : [];
+    let sitemapRefs: ProductRef[] = [];
+    if (trySitemap) {
+      try {
+        sitemapRefs = await discoverRefsFromSitemap(brand.siteUrl, sitemapLimit);
+      } catch (error) {
+        console.warn("catalog: sitemap discovery failed", {
+          siteUrl: brand.siteUrl,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        sitemapRefs = [];
+      }
+    }
     refs = sitemapRefs.length
       ? sitemapRefs
       : await adapter.discoverProducts(ctx, discoveryLimit);

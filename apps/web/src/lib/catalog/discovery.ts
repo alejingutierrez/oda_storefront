@@ -61,7 +61,18 @@ export const discoverCatalogRefs = async ({
 
   let refs: ProductRef[] = [];
   const trySitemap = forceSitemap || process.env.CATALOG_TRY_SITEMAP_FIRST !== "false";
-  const sitemapRefs = trySitemap ? await discoverRefsFromSitemap(brand.siteUrl, sitemapLimit) : [];
+  let sitemapRefs: ProductRef[] = [];
+  if (trySitemap) {
+    try {
+      sitemapRefs = await discoverRefsFromSitemap(brand.siteUrl, sitemapLimit);
+    } catch (error) {
+      console.warn("catalog: sitemap discovery failed", {
+        siteUrl: brand.siteUrl,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      sitemapRefs = [];
+    }
+  }
   refs = sitemapRefs.length ? sitemapRefs : await adapter.discoverProducts(ctx, discoveryLimit);
 
   if (!refs.length && (adapter.platform === "custom" || (platformForRun ?? "").toLowerCase() === "unknown")) {
