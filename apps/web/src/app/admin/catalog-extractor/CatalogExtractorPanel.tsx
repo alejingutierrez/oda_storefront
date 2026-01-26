@@ -51,6 +51,7 @@ const RUN_BATCH_SIZE = 25;
 const DRAIN_BATCH = 40;
 const DRAIN_CONCURRENCY = 8;
 const DRAIN_MAX_MS = 15000;
+const PLATFORM_BRAND_LIMIT = 2000;
 
 const buildProgress = (state?: RunState | ExtractSummary | null) => {
   if (!state) {
@@ -179,7 +180,7 @@ export default function CatalogExtractorPanel() {
       try {
         const params = new URLSearchParams();
         params.set("platform", onlyNoRun ? "all" : platform);
-        params.set("limit", onlyNoRun ? "2000" : "200");
+        params.set("limit", String(PLATFORM_BRAND_LIMIT));
         if (onlyNoRun) params.set("onlyNoRun", "true");
         const res = await fetch(
           `/api/admin/catalog-extractor/brands?${params.toString()}`,
