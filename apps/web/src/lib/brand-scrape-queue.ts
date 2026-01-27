@@ -112,6 +112,10 @@ export async function processBrandScrapeBatch({
   maxJobs: number;
   maxRuntimeMs: number;
 }) {
+  const maxFailuresRaw = Number(process.env.BRAND_SCRAPE_MAX_FAILURES ?? 3);
+  const maxFailures =
+    Number.isFinite(maxFailuresRaw) && maxFailuresRaw > 0 ? maxFailuresRaw : 3;
+  let consecutiveFailures = 0;
   const startedAt = Date.now();
   const results: BrandScrapeResult[] = [];
 
@@ -120,7 +124,12 @@ export async function processBrandScrapeBatch({
     const result = await processNextBrandScrapeJob();
     results.push(result);
     if (result.status === "empty") break;
-    if (result.status === "failed") break;
+    if (result.status === "failed") {
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= maxFailures) break;
+    } else {
+      consecutiveFailures = 0;
+    }
   }
 
   return results;

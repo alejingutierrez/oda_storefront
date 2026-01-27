@@ -154,6 +154,7 @@ export default function BrandScrapePanel() {
   const runBatch = useCallback(
     async (targetBatchId?: string | null) => {
       let processed = 0;
+      let consecutiveFailures = 0;
       while (true) {
         const payload = await fetchStatus(targetBatchId ?? null);
         if (payload?.processing) {
@@ -179,7 +180,13 @@ export default function BrandScrapePanel() {
         }
         if (result.status === "failed") {
           appendLog(`⚠️ Error en job: ${result.error ?? "sin detalle"}`);
-          break;
+          consecutiveFailures += 1;
+          if (consecutiveFailures >= 3) {
+            appendLog("Se detuvo por multiples errores consecutivos.");
+            break;
+          }
+        } else {
+          consecutiveFailures = 0;
         }
         processed += 1;
       }
