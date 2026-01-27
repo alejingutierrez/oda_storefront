@@ -98,6 +98,13 @@ type ProductDetail = {
 const PAGE_SIZE = 15;
 const MAX_GALLERY_IMAGES = 8;
 
+const parsePositiveInt = (value: string | null, fallback: number) => {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.floor(parsed);
+};
+
 const COLOR_SWATCHES: Record<string, string> = {
   blanco: "#f8fafc",
   negro: "#0f172a",
@@ -262,10 +269,12 @@ export default function ProductDirectoryPanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const productIdFromQuery = searchParams.get("productId");
+  const initialPage = parsePositiveInt(searchParams.get("page"), 1);
+  const initialBrandFilter = searchParams.get("brandId") ?? "";
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [brands, setBrands] = useState<BrandOption[]>([]);
-  const [brandFilter, setBrandFilter] = useState<string>("");
-  const [page, setPage] = useState(1);
+  const [brandFilter, setBrandFilter] = useState<string>(initialBrandFilter);
+  const [page, setPage] = useState(initialPage);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -297,8 +306,12 @@ export default function ProductDirectoryPanel() {
       if (!res.ok) throw new Error("No se pudo cargar el catálogo");
       const payload: ProductListResponse = await res.json();
       setProducts(payload.products ?? []);
-      setTotalPages(payload.totalPages ?? 1);
+      const nextTotalPages = payload.totalPages ?? 1;
+      setTotalPages(nextTotalPages);
       setTotalCount(payload.totalCount ?? 0);
+      if (page > nextTotalPages) {
+        setPage(nextTotalPages);
+      }
     } catch (error) {
       console.warn(error);
       setProducts([]);
@@ -306,6 +319,13 @@ export default function ProductDirectoryPanel() {
       setLoading(false);
     }
   }, [page, brandFilter]);
+
+  useEffect(() => {
+    const nextPage = parsePositiveInt(searchParams.get("page"), 1);
+    const nextBrandFilter = searchParams.get("brandId") ?? "";
+    setPage((prev) => (prev === nextPage ? prev : nextPage));
+    setBrandFilter((prev) => (prev === nextBrandFilter ? prev : nextBrandFilter));
+  }, [searchParams]);
 
   useEffect(() => {
     fetchBrands();
@@ -316,12 +336,31 @@ export default function ProductDirectoryPanel() {
   }, [fetchProducts]);
 
   useEffect(() => {
-    setPage(1);
-  }, [brandFilter]);
-
-  useEffect(() => {
     setImageIndexByProduct({});
   }, [products]);
+
+  const replaceUrl = useCallback(
+    (productIdOverride?: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("page", String(page));
+      if (brandFilter) params.set("brandId", brandFilter);
+      else params.delete("brandId");
+      const productIdValue =
+        productIdOverride === undefined ? detailId ?? productIdFromQuery : productIdOverride;
+      if (productIdValue) params.set("productId", productIdValue);
+      else params.delete("productId");
+      const next = params.toString();
+      const current = searchParams.toString();
+      if (next !== current) {
+        router.replace(`/admin/products?${next}`, { scroll: false });
+      }
+    },
+    [page, brandFilter, detailId, productIdFromQuery, router, searchParams],
+  );
+
+  useEffect(() => {
+    replaceUrl();
+  }, [replaceUrl]);
 
   const variantSummary = useMemo(() => {
     if (!detail) return null;
@@ -362,7 +401,7 @@ export default function ProductDirectoryPanel() {
       setDetailId(productId);
       setDetail(null);
       setDetailLoading(true);
-      router.replace(`/admin/products?productId=${productId}`, { scroll: false });
+      replaceUrl(productId);
       try {
         const res = await fetch(`/api/admin/products/${productId}`, { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudo cargar el detalle");
@@ -378,13 +417,13 @@ export default function ProductDirectoryPanel() {
         setDetailLoading(false);
       }
     },
-    [router],
+    [replaceUrl],
   );
 
   const closeDetail = () => {
     setDetailId(null);
     setDetail(null);
-    router.replace("/admin/products", { scroll: false });
+    replaceUrl(null);
   };
 
   useEffect(() => {
@@ -415,7 +454,11 @@ export default function ProductDirectoryPanel() {
           <select
             className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
             value={brandFilter}
-            onChange={(event) => setBrandFilter(event.target.value)}
+            onChange={(event) => {
+              const nextBrand = event.target.value;
+              setBrandFilter(nextBrand);
+              setPage(1);
+            }}
           >
             <option value="">Todas las marcas</option>
             {brands.map((brand) => (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type BrandRow = {
   id: string;
@@ -245,6 +246,18 @@ const formatPriceRange = (min: number | string | null, max: number | string | nu
   return `${formatMoney(minValue)} - ${formatMoney(maxValue)}`;
 };
 
+const parsePositiveInt = (value: string | null, fallback: number) => {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.floor(parsed);
+};
+
+const normalizeFilterParam = (value: string | null) => {
+  if (value === "processed" || value === "unprocessed" || value === "all") return value;
+  return null;
+};
+
 const formatPlatform = (value: string | null) => {
   if (!value) return "—";
   if (value === "unknown") return "Desconocida";
@@ -302,10 +315,14 @@ function BrandAvatar({ name, logoUrl }: { name: string; logoUrl: string | null }
 }
 
 export default function BrandDirectoryPanel() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialPage = parsePositiveInt(searchParams.get("page"), 1);
+  const initialFilter = normalizeFilterParam(searchParams.get("filter")) ?? "processed";
   const [brandData, setBrandData] = useState<BrandListResponse | null>(null);
   const [brandsLoading, setBrandsLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [filter, setFilter] = useState<"processed" | "unprocessed" | "all">("processed");
+  const [page, setPage] = useState(initialPage);
+  const [filter, setFilter] = useState<"processed" | "unprocessed" | "all">(initialFilter);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"detail" | "edit" | "create">("detail");
   const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
@@ -331,12 +348,33 @@ export default function BrandDirectoryPanel() {
       if (!res.ok) throw new Error("No se pudo cargar el directorio de marcas");
       const payload = (await res.json()) as BrandListResponse;
       setBrandData(payload);
+      if (payload.totalPages && page > payload.totalPages) {
+        setPage(payload.totalPages);
+      }
     } catch (err) {
       console.warn(err);
     } finally {
       setBrandsLoading(false);
     }
   }, [page, filter]);
+
+  useEffect(() => {
+    const nextPage = parsePositiveInt(searchParams.get("page"), 1);
+    const nextFilter = normalizeFilterParam(searchParams.get("filter")) ?? "processed";
+    setPage((prev) => (prev === nextPage ? prev : nextPage));
+    setFilter((prev) => (prev === nextFilter ? prev : nextFilter));
+  }, [searchParams]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(page));
+    params.set("filter", filter);
+    const next = params.toString();
+    const current = searchParams.toString();
+    if (next !== current) {
+      router.replace(`/admin/brands?${next}`, { scroll: false });
+    }
+  }, [page, filter, router, searchParams]);
 
   const fetchBrandDetail = useCallback(async (brandId: string) => {
     setDetailLoading(true);

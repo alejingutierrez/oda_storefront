@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-097 | done | P1 | Persistencia de navegación en admin (page/filter en URL) | `/admin/brands` y `/admin/products` conservan página/filtros tras reload/acciones y ajustan página si se sale de rango.
 - MC-096 | done | P1 | Modal marcas: stats reales + preview + delete cascada | Modal usa stats reales desde variants, preview 10 productos con deep-link a `/admin/products?productId=...` y delete hard cascade.
 - MC-095 | done | P1 | UI: ver marcas sin run agrupadas por tecnología | Toggle en extractor + API soporta onlyNoRun/all y límite ampliado.
 - MC-094 | done | P1 | Sitemap discovery tolerante a fallos | Robots/sitemaps con fetch error no bloquean el run; fallback a adapter.

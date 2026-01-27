@@ -65,6 +65,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Tiempo para auditar una marca (menos clicks), reducción de marcas con `products=0` tras limpieza manual.
 - Estado: **done (2026-01-27)**.
 
+### MC-097 Persistencia de navegación en admin (página/filtros en URL)
+- Historia: Como operador, quiero que la página y los filtros del admin se conserven al recargar o tras acciones como eliminar, para no perder el punto exacto donde iba (p. ej., página 100 de marcas o 1000 de productos).
+- Alcance: `/admin/brands` y `/admin/products` leen `page`/`filter`/`brandId` desde query params, sincronizan el estado con la URL y ajustan la página si el total cambia y queda fuera de rango. El detalle de producto mantiene `productId` sin romper la página/filtros.
+- CA: Al recargar, volver atrás/adelante o eliminar desde el modal, la lista permanece en la misma página y con los mismos filtros; si la página ya no existe (por menos resultados), cae a la última página válida.
+- Datos: query params `page`, `filter`, `brandId`, `productId`.
+- NF: Sin bucles de navegación ni saltos de scroll (`router.replace(..., { scroll: false })`).
+- Riesgos: URLs largas o estado inconsistente; mitigación con params acotados y comparación `next !== current`.
+- Métricas: Menos tiempo perdido reencontrando el punto de trabajo.
+- Estado: **done (2026-01-27)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

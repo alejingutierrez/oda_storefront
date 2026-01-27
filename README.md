@@ -71,6 +71,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - El modal ahora muestra conteo de productos, precio promedio real (calculado desde variantes) y un preview de 10 productos con foto.
   - Al hacer click en un producto del preview, abre el detalle en `/admin/products?productId=<id>`.
   - Eliminar marca hace **hard delete** en cascada (marca + productos/variantes/historiales + runs/anuncios/eventos asociados).
+  - Persistencia de navegación: la página y el filtro se guardan en la URL (`page`, `filter`) para mantener el punto exacto tras reload/acciones.
   - Acciones por marca: **Re‑enriquecer** (método 2 con 14 fuentes y 20k chars por fuente).
   - Check azul cuando una marca tiene revisión manual (guardado en `brands.manualReview`).
 - Panel `/admin/brands/scrape` (scraping):
@@ -82,6 +83,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Si detecta `social`, `bot_protection`, `unreachable`, `parked_domain`, `landing_no_store`, `no_pdp_candidates` o review `manual_review_no_products`, elimina la marca automáticamente.
 - Panel `/admin/products` (productos):
   - Directorio de productos scrapeados con cards (carrusel de imágenes si hay múltiples fotos), modal de detalle enriquecido (precio/stock, tallas y colores visibles con swatches, fit/material por variante) y filtros por marca.
+  - Persistencia de navegación: la página y el filtro por marca viven en la URL (`page`, `brandId`) y el detalle se puede abrir por `productId`.
 - Panel `/admin/product-enrichment` (enriquecimiento):
   - Enriquecimiento de atributos por GPT‑5 mini (categoría, subcategoría, tags, género, temporada, color hex, Pantone y fit).
   - Style tags: **exactamente 10** por producto.
