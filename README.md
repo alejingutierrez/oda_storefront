@@ -73,7 +73,8 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - La card de "Pendientes" ahora muestra desglose: en cola, sin job, fallidas, manual review y riesgo Cloudflare.
   - Al hacer click en un producto del preview, abre el detalle en `/admin/products?productId=<id>`.
   - Eliminar marca hace **hard delete** en cascada (marca + productos/variantes/historiales + runs/anuncios/eventos asociados).
-  - Persistencia de navegación: la página y el filtro se guardan en la URL (`page`, `filter`) para mantener el punto exacto tras reload/acciones.
+  - Filtros nuevos: categorias (`brands.category`) multi‑select y orden por cantidad de productos (asc/desc).
+  - Persistencia de navegación: la página y filtros se guardan en la URL (`page`, `filter`, `category`, `sort`, `order`) para mantener el punto exacto tras reload/acciones.
   - Acciones por marca: **Re‑enriquecer** (método 2 con 14 fuentes y 20k chars por fuente).
   - Check azul cuando una marca tiene revisión manual (guardado en `brands.manualReview`).
 - Panel `/admin/brands/scrape` (scraping):
@@ -128,7 +129,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - El enriquecimiento usa `web_search` + fetch HTML (sin Playwright) para extraer señales del sitio oficial y evidencia **textual limpia** de **mínimo 15 fuentes** (hasta 20k caracteres por fuente, guardado en `brands.metadata.brand_scrape`).
 
 ## API interna (brands CRUD)
-- `GET /api/admin/brands`: listado paginado con filtros (`filter=processed|unprocessed|all`).
+- `GET /api/admin/brands`: listado paginado con filtros (`filter=processed|unprocessed|all`), categorias multi‑select (`category=...` repetible) y orden por productos (`sort=productCount&order=asc|desc`).
 - `POST /api/admin/brands`: crear marca (slug autogenerado si no se envía).
 - `GET /api/admin/brands/:id`: detalle completo de marca + último job + `productStats` (conteo y avg real) + `previewProducts` (10 productos).
 - `PATCH /api/admin/brands/:id`: editar campos de marca.

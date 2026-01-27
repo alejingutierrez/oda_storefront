@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
 import { profileBrandTechnology } from "@/lib/brand-tech-profiler";
@@ -46,6 +47,14 @@ const normalizeJson = (value: unknown) => {
   return null;
 };
 
+const normalizeListParam = (values: string[]) => {
+  const items = values
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return Array.from(new Set(items));
+};
+
 const slugify = (value: string) =>
   value
     .normalize("NFD")
@@ -84,9 +93,33 @@ export async function GET(req: Request) {
   const page = toInt(url.searchParams.get("page"), 1);
   const pageSize = Math.min(toInt(url.searchParams.get("pageSize"), 15), 100);
   const filter = url.searchParams.get("filter") ?? "all";
+  const categories = normalizeListParam(url.searchParams.getAll("category"));
+  const sort = url.searchParams.get("sort");
+  const order = url.searchParams.get("order");
   const offset = (page - 1) * pageSize;
 
-  const summaryRows = await prisma.$queryRawUnsafe<
+  const categoryFilter = categories.length
+    ? Prisma.sql`AND b."category" IN (${Prisma.join(categories)})`
+    : Prisma.sql``;
+  const activeBrandWhere = categories.length
+    ? Prisma.sql`WHERE "isActive" = true AND "category" IN (${Prisma.join(categories)})`
+    : Prisma.sql`WHERE "isActive" = true`;
+  const filterClause =
+    filter === "unprocessed"
+      ? Prisma.sql`AND NOT EXISTS (SELECT 1 FROM "brand_scrape_jobs" j WHERE j."brandId" = b.id AND j.status = 'completed')`
+      : filter === "processed"
+        ? Prisma.sql`AND EXISTS (SELECT 1 FROM "brand_scrape_jobs" j WHERE j."brandId" = b.id AND j.status = 'completed')`
+        : Prisma.sql``;
+
+  const sortByProductCount = sort === "productCount";
+  const sortOrder = order === "asc" || order === "desc" ? order : "desc";
+  const orderClause = sortByProductCount
+    ? sortOrder === "asc"
+      ? Prisma.sql`ORDER BY "productCount" ASC, b.name ASC`
+      : Prisma.sql`ORDER BY "productCount" DESC, b.name ASC`
+    : Prisma.sql`ORDER BY b.name ASC`;
+
+  const summaryRows = await prisma.$queryRaw<
     Array<{
       total: number;
       unprocessed: number;
@@ -101,11 +134,11 @@ export async function GET(req: Request) {
       completedJobs: number;
       failedJobs: number;
     }>
-  >(
-    `WITH active_brands AS (
+  >(Prisma.sql`
+    WITH active_brands AS (
         SELECT id, "manualReview", metadata
         FROM "brands"
-        WHERE "isActive" = true
+        ${activeBrandWhere}
       ),
       completed_brand AS (
         SELECT DISTINCT j."brandId"
@@ -159,21 +192,18 @@ export async function GET(req: Request) {
     failedJobs: 0,
   };
 
-  const filterClause =
-    filter === "unprocessed"
-      ? "AND NOT EXISTS (SELECT 1 FROM \"brand_scrape_jobs\" j WHERE j.\"brandId\" = b.id AND j.status = 'completed')"
-      : filter === "processed"
-        ? "AND EXISTS (SELECT 1 FROM \"brand_scrape_jobs\" j WHERE j.\"brandId\" = b.id AND j.status = 'completed')"
-        : "";
-
-  const countRows = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
-    `SELECT COUNT(*)::int AS count FROM "brands" b WHERE b."isActive" = true ${filterClause}`,
-  );
+  const countRows = await prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
+    SELECT COUNT(*)::int AS count
+    FROM "brands" b
+    WHERE b."isActive" = true
+    ${categoryFilter}
+    ${filterClause}
+  `);
 
   const totalCount = countRows[0]?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-  const brands = await prisma.$queryRawUnsafe<
+  const brands = await prisma.$queryRaw<
     Array<{
       id: string;
       name: string;
@@ -201,8 +231,8 @@ export async function GET(req: Request) {
       lastResult: unknown | null;
       hasCompleted: boolean | null;
     }>
-  >(
-    `WITH latest_job AS (
+  >(Prisma.sql`
+    WITH latest_job AS (
         SELECT DISTINCT ON ("brandId") * FROM "brand_scrape_jobs" ORDER BY "brandId", "createdAt" DESC
       ), completed_brand AS (
         SELECT DISTINCT "brandId" FROM "brand_scrape_jobs" WHERE status = 'completed'
@@ -236,10 +266,22 @@ export async function GET(req: Request) {
       FROM "brands" b
       LEFT JOIN latest_job lj ON lj."brandId" = b.id
       LEFT JOIN completed_brand cb ON cb."brandId" = b.id
-      WHERE b."isActive" = true ${filterClause}
-      ORDER BY b.name ASC
-      LIMIT ${pageSize} OFFSET ${offset}`,
-  );
+      WHERE b."isActive" = true
+      ${categoryFilter}
+      ${filterClause}
+      ${orderClause}
+      LIMIT ${pageSize} OFFSET ${offset}
+  `);
+
+  const categoryRows = await prisma.$queryRaw<Array<{ category: string }>>(Prisma.sql`
+    SELECT DISTINCT TRIM("category") AS category
+    FROM "brands"
+    WHERE "isActive" = true
+      AND "category" IS NOT NULL
+      AND TRIM("category") <> ''
+    ORDER BY TRIM("category") ASC
+  `);
+  const availableCategories = categoryRows.map((row) => row.category).filter(Boolean);
 
   return NextResponse.json({
     page,
@@ -248,6 +290,7 @@ export async function GET(req: Request) {
     totalCount,
     summary,
     brands,
+    categories: availableCategories,
   });
 }
 

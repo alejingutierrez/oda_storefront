@@ -95,6 +95,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Menos confusiones sobre pendientes y mejor triage del trabajo restante.
 - Estado: **done (2026-01-27)**.
 
+### MC-100 Filtro por categoria y orden por productos en marcas
+- Historia: Como operador, quiero filtrar marcas por `brands.category` (multi-select) y ordenarlas por cantidad de productos, para auditar grupos especificos mas rapido.
+- Alcance: `/admin/brands` agrega selector multi‑select de categorias y un orden exclusivo por `productCount` (asc/desc). `GET /api/admin/brands` soporta `category` repetible y `sort=productCount&order=asc|desc`; el resumen se calcula sobre el mismo filtro. La respuesta incluye la lista de categorias disponibles para poblar el selector.
+- CA: Se pueden seleccionar varias categorias y combinarlas con `filter=processed|unprocessed|all`; el orden por productos respeta asc/desc y no ofrece otros criterios; la URL persiste `category`/`sort`/`order` y sobrevive reload.
+- Datos: `brands.category`, `products.brandId` (conteo).
+- NF: Sin impacto visible en tiempo de carga; consultas agregadas siguen siendo O(1) por pagina.
+- Riesgos: Categorias vacias o inconsistentes; mitigacion: trim y deduplicacion en API, UI muestra "Sin categorias" cuando no hay valores.
+- Métricas: Menos tiempo para encontrar marcas por categoria o volumen de catalogo.
+- Estado: **done (2026-01-27)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

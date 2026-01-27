@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-100 | done | P1 | Filtro de categorias + orden por productos en /admin/brands | Multiselect `brands.category` y sort `productCount` asc/desc.
 - MC-099 | done | P1 | Contador pendientes marcas: desglose y elegibilidad | `/api/admin/brands` expone pending breakdown (queued/no_jobs/failed/manualReview/cloudflare) y la UI lo muestra.
 - MC-098 | done | P1 | Acelerar serving de imágenes (proxy+cache) | Nuevo `/api/image-proxy` cachea en Blob/CDN y el admin lo usa en logos/grids con `next/image`.
 - MC-097 | done | P1 | Persistencia de navegación en admin (page/filter en URL) | `/admin/brands` y `/admin/products` conservan página/filtros tras reload/acciones y ajustan página si se sale de rango.

@@ -57,6 +57,7 @@ type BrandListResponse = {
   totalCount: number;
   summary: BrandSummary;
   brands: BrandRow[];
+  categories?: string[];
 };
 
 type BrandDetail = {
@@ -265,6 +266,29 @@ const normalizeFilterParam = (value: string | null) => {
   return null;
 };
 
+const normalizeCategories = (values: string[]) => {
+  const normalized = values.map((value) => value.trim()).filter((value) => value.length > 0);
+  return Array.from(new Set(normalized)).sort((a, b) => a.localeCompare(b));
+};
+
+const parseCategoryParams = (params: URLSearchParams) =>
+  normalizeCategories(params.getAll("category").flatMap((value) => value.split(",")));
+
+const parseProductSortParam = (params: URLSearchParams) => {
+  if (params.get("sort") !== "productCount") return "none";
+  const order = params.get("order");
+  if (order === "asc" || order === "desc") return order;
+  return "desc";
+};
+
+const isSameStringArray = (left: string[], right: string[]) => {
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] !== right[i]) return false;
+  }
+  return true;
+};
+
 const formatPlatform = (value: string | null) => {
   if (!value) return "—";
   if (value === "unknown") return "Desconocida";
@@ -327,10 +351,14 @@ export default function BrandDirectoryPanel() {
   const searchParams = useSearchParams();
   const initialPage = parsePositiveInt(searchParams.get("page"), 1);
   const initialFilter = normalizeFilterParam(searchParams.get("filter")) ?? "processed";
+  const initialCategories = parseCategoryParams(searchParams);
+  const initialProductSort = parseProductSortParam(searchParams);
   const [brandData, setBrandData] = useState<BrandListResponse | null>(null);
   const [brandsLoading, setBrandsLoading] = useState(false);
   const [page, setPage] = useState(initialPage);
   const [filter, setFilter] = useState<"processed" | "unprocessed" | "all">(initialFilter);
+  const [categoryFilters, setCategoryFilters] = useState<string[]>(initialCategories);
+  const [productSort, setProductSort] = useState<"none" | "asc" | "desc">(initialProductSort);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"detail" | "edit" | "create">("detail");
   const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
@@ -352,6 +380,13 @@ export default function BrandDirectoryPanel() {
         pageSize: String(PAGE_SIZE),
         filter,
       });
+      categoryFilters.forEach((category) => {
+        params.append("category", category);
+      });
+      if (productSort !== "none") {
+        params.set("sort", "productCount");
+        params.set("order", productSort);
+      }
       const res = await fetch(`/api/admin/brands?${params.toString()}`, { cache: "no-store" });
       if (!res.ok) throw new Error("No se pudo cargar el directorio de marcas");
       const payload = (await res.json()) as BrandListResponse;
@@ -364,25 +399,42 @@ export default function BrandDirectoryPanel() {
     } finally {
       setBrandsLoading(false);
     }
-  }, [page, filter]);
+  }, [categoryFilters, filter, page, productSort]);
 
   useEffect(() => {
     const nextPage = parsePositiveInt(searchParams.get("page"), 1);
     const nextFilter = normalizeFilterParam(searchParams.get("filter")) ?? "processed";
+    const nextCategories = parseCategoryParams(searchParams);
+    const nextProductSort = parseProductSortParam(searchParams);
     setPage((prev) => (prev === nextPage ? prev : nextPage));
     setFilter((prev) => (prev === nextFilter ? prev : nextFilter));
+    setCategoryFilters((prev) =>
+      isSameStringArray(prev, nextCategories) ? prev : nextCategories,
+    );
+    setProductSort((prev) => (prev === nextProductSort ? prev : nextProductSort));
   }, [searchParams]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("page", String(page));
     params.set("filter", filter);
+    params.delete("category");
+    categoryFilters.forEach((category) => {
+      params.append("category", category);
+    });
+    if (productSort === "none") {
+      params.delete("sort");
+      params.delete("order");
+    } else {
+      params.set("sort", "productCount");
+      params.set("order", productSort);
+    }
     const next = params.toString();
     const current = searchParams.toString();
     if (next !== current) {
       router.replace(`/admin/brands?${next}`, { scroll: false });
     }
-  }, [page, filter, router, searchParams]);
+  }, [categoryFilters, filter, page, productSort, router, searchParams]);
 
   const fetchBrandDetail = useCallback(async (brandId: string) => {
     setDetailLoading(true);
@@ -455,6 +507,27 @@ export default function BrandDirectoryPanel() {
   const pendingManualReview = summary?.unprocessedManualReview ?? 0;
   const pendingCloudflare = summary?.unprocessedCloudflare ?? 0;
   const totalPages = brandData?.totalPages ?? 1;
+  const availableCategories = brandData?.categories ?? [];
+
+  const toggleCategory = useCallback((value: string) => {
+    setPage(1);
+    setCategoryFilters((prev) => {
+      const next = prev.includes(value)
+        ? prev.filter((item) => item !== value)
+        : [...prev, value];
+      return normalizeCategories(next);
+    });
+  }, []);
+
+  const clearCategories = useCallback(() => {
+    setPage(1);
+    setCategoryFilters([]);
+  }, []);
+
+  const handleSortChange = useCallback((value: "none" | "asc" | "desc") => {
+    setPage(1);
+    setProductSort(value);
+  }, []);
 
   const pageNumbers = useMemo(() => {
     const total = totalPages;
@@ -771,6 +844,58 @@ export default function BrandDirectoryPanel() {
           </button>
         ))}
         <span className="text-xs text-slate-500">Mostrando {PAGE_SIZE} marcas por página.</span>
+      </div>
+
+      <div className="mt-4 grid gap-4 text-sm text-slate-600 lg:grid-cols-[minmax(0,1fr)_240px]">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Categorias</p>
+            {categoryFilters.length > 0 && (
+              <button
+                type="button"
+                onClick={clearCategories}
+                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-500"
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {availableCategories.length ? (
+              availableCategories.map((category) => {
+                const selected = categoryFilters.includes(category);
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => toggleCategory(category)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                      selected
+                        ? "border-indigo-600 bg-indigo-600 text-white"
+                        : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    {category}
+                  </button>
+                );
+              })
+            ) : (
+              <span className="text-xs text-slate-400">Sin categorias registradas.</span>
+            )}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Orden por productos</p>
+          <select
+            value={productSort}
+            onChange={(event) => handleSortChange(event.target.value as "none" | "asc" | "desc")}
+            className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+          >
+            <option value="none">Nombre (A-Z)</option>
+            <option value="desc">Productos: mayor a menor</option>
+            <option value="asc">Productos: menor a mayor</option>
+          </select>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
