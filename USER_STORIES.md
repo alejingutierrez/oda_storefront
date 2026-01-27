@@ -85,6 +85,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Menor latencia percibida en grids y menos fallos por hotlinking.
 - Estado: **done (2026-01-27)**.
 
+### MC-099 Contador pendientes marcas: desglose y elegibilidad
+- Historia: Como operador, quiero entender por que el contador de pendientes es alto (p. ej., si estan en cola, sin job o bloqueadas), para tomar decisiones operativas mas rapido.
+- Alcance: `/api/admin/brands` ahora calcula el resumen solo sobre marcas activas y expone un desglose de pendientes: `unprocessedQueued`, `unprocessedNoJobs`, `unprocessedFailed`, `unprocessedManualReview` y `unprocessedCloudflare`. La card de Pendientes lo muestra directamente.
+- CA: La card de Pendientes muestra el total y el desglose (en cola, sin job, fallidas); si aplica, muestra manual review y riesgo Cloudflare; el resumen no mezcla marcas inactivas.
+- Datos: `brands.isActive`, `brands.manualReview`, `brands.metadata.tech_profile.risks`, `brand_scrape_jobs`.
+- NF: Se resuelve con una sola consulta agregada (CTEs) para evitar N+1.
+- Riesgos: Cloudflare es una señal de riesgo, no bloqueo absoluto; mitigacion: se muestra como diagnostico, no excluye del total.
+- Métricas: Menos confusiones sobre pendientes y mejor triage del trabajo restante.
+- Estado: **done (2026-01-27)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

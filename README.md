@@ -70,6 +70,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Cards 3×5 por página, modal con detalle completo, CRUD (crear/editar/eliminar).
   - El modal ahora muestra conteo de productos, precio promedio real (calculado desde variantes) y un preview de 10 productos con foto.
   - Logos y fotos del preview se sirven via `/api/image-proxy`, que cachea automaticamente en Vercel Blob/CDN.
+  - La card de "Pendientes" ahora muestra desglose: en cola, sin job, fallidas, manual review y riesgo Cloudflare.
   - Al hacer click en un producto del preview, abre el detalle en `/admin/products?productId=<id>`.
   - Eliminar marca hace **hard delete** en cascada (marca + productos/variantes/historiales + runs/anuncios/eventos asociados).
   - Persistencia de navegación: la página y el filtro se guardan en la URL (`page`, `filter`) para mantener el punto exacto tras reload/acciones.

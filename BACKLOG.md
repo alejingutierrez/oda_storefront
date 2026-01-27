@@ -4,7 +4,6 @@
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.2, upsert DB, ficha en VSF + ISR.
 - MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build contenedores básicos.
 - MC-008 | todo | P1 | Observabilidad mínima | Logging estructurado, health checks, traces básicos; dashboard inicial de servicios.
-- MC-099 | doing | P1 | Contador pendientes marcas: desglose y elegibilidad | Exponer pending total/queued/no_jobs/failed/manualReview/cloudflare para diagnostico real.
 
 ## Next (F1 – primeras capacidades)
 - MC-009 | todo | P1 | Taxonomía fija y catálogos | Categorías, materiales, patrones, fits, estilo/ocasión; publicación para IA y front.
@@ -37,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-099 | done | P1 | Contador pendientes marcas: desglose y elegibilidad | `/api/admin/brands` expone pending breakdown (queued/no_jobs/failed/manualReview/cloudflare) y la UI lo muestra.
 - MC-098 | done | P1 | Acelerar serving de imágenes (proxy+cache) | Nuevo `/api/image-proxy` cachea en Blob/CDN y el admin lo usa en logos/grids con `next/image`.
 - MC-097 | done | P1 | Persistencia de navegación en admin (page/filter en URL) | `/admin/brands` y `/admin/products` conservan página/filtros tras reload/acciones y ajustan página si se sale de rango.
 - MC-096 | done | P1 | Modal marcas: stats reales + preview + delete cascada | Modal usa stats reales desde variants, preview 10 productos con deep-link a `/admin/products?productId=...` y delete hard cascade.
