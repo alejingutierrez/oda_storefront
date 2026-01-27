@@ -28,10 +28,24 @@ const isPrivateIpv4 = (hostname: string) => {
   return false;
 };
 
+const extractCdnCgiUrl = (value: string) => {
+  const lower = value.toLowerCase();
+  if (!lower.includes("cdn-cgi/image")) return null;
+  const httpsIndex = value.indexOf("/https://");
+  const httpIndex = value.indexOf("/http://");
+  const index = httpsIndex !== -1 ? httpsIndex : httpIndex;
+  if (index === -1) return null;
+  return value.slice(index + 1);
+};
+
 const normalizeSourceUrl = (raw: string | null) => {
   if (!raw) return null;
   const trimmed = raw.trim();
   if (!trimmed || trimmed.length > 2048) return null;
+  const cdnOverride = extractCdnCgiUrl(trimmed);
+  if (cdnOverride && cdnOverride !== trimmed) {
+    return normalizeSourceUrl(cdnOverride);
+  }
   const withProtocol = trimmed.startsWith("//") ? `https:${trimmed}` : trimmed;
   const normalized = /^https?:\/\//i.test(withProtocol)
     ? withProtocol
@@ -200,4 +214,3 @@ export async function GET(req: NextRequest) {
   response.headers.set("x-oda-image-proxy", cacheStatus);
   return response;
 }
-

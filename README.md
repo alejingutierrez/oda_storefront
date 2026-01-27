@@ -156,6 +156,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 ## API interna (image proxy)
 - `GET /api/image-proxy?url=<encoded>`: descarga la imagen remota, la cachea en Vercel Blob y redirige al asset cacheado.
 - Query params opcionales: `productId` y `kind=cover|gallery` (si es `cover`, intenta persistir el cover en DB).
+- URLs con formato Cloudflare `cdn-cgi/image/.../https://...` se normalizan al asset original para evitar errores de DNS.
 
 ## API interna (product enrichment)
 - `GET /api/admin/product-enrichment/state`: estado de corrida (query: `scope=brand|all`, `brandId?`).
