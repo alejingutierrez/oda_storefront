@@ -196,6 +196,9 @@ const buildGallery = (product: ProductRow) => {
   return proxied.slice(0, MAX_GALLERY_IMAGES);
 };
 
+const shouldSkipOptimization = (src: string | null | undefined) =>
+  !!src && src.startsWith("/api/image-proxy");
+
 const normalizeLink = (value: string | null) => {
   if (!value) return null;
   const trimmed = value.trim();
@@ -495,6 +498,7 @@ export default function ProductDirectoryPanel() {
             ? (imageIndexByProduct[product.id] ?? 0) % gallery.length
             : 0;
           const currentImage = gallery[currentIndex];
+          const unoptimized = shouldSkipOptimization(currentImage);
           const showControls = gallery.length > 1;
           const handlePrev = () => {
             if (!gallery.length) return;
@@ -521,6 +525,7 @@ export default function ProductDirectoryPanel() {
                     src={currentImage}
                     alt={product.name}
                     fill
+                    unoptimized={unoptimized}
                     sizes="(min-width: 1280px) 28vw, (min-width: 768px) 45vw, 92vw"
                     className="object-cover"
                   />

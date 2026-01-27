@@ -326,6 +326,9 @@ const getInitials = (name: string) =>
 
 const toText = (value: string | null) => value ?? "—";
 
+const shouldSkipOptimization = (src: string | null | undefined) =>
+  !!src && src.startsWith("/api/image-proxy");
+
 function BrandAvatar({ name, logoUrl }: { name: string; logoUrl: string | null }) {
   const [error, setError] = useState(false);
   const proxiedLogo = proxiedImageUrl(logoUrl);
@@ -1205,6 +1208,7 @@ export default function BrandDirectoryPanel() {
                                     productId: product.id,
                                     kind: "cover",
                                   });
+                                  const unoptimized = shouldSkipOptimization(coverSrc);
                                   return (
                                     <a
                                       key={product.id}
@@ -1218,6 +1222,7 @@ export default function BrandDirectoryPanel() {
                                             src={coverSrc}
                                             alt={product.name}
                                             fill
+                                            unoptimized={unoptimized}
                                             sizes="(min-width: 1024px) 12vw, (min-width: 768px) 20vw, 45vw"
                                             className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                                           />
