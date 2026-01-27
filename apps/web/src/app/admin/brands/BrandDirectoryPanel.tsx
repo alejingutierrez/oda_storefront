@@ -39,6 +39,11 @@ type BrandSummary = {
   total: number;
   unprocessed: number;
   processed: number;
+  unprocessedQueued?: number;
+  unprocessedFailed?: number;
+  unprocessedNoJobs?: number;
+  unprocessedManualReview?: number;
+  unprocessedCloudflare?: number;
   queuedJobs: number;
   processingJobs: number;
   completedJobs: number;
@@ -444,6 +449,11 @@ export default function BrandDirectoryPanel() {
   }, [fetchBrands]);
 
   const summary = brandData?.summary;
+  const pendingQueued = summary?.unprocessedQueued ?? 0;
+  const pendingFailed = summary?.unprocessedFailed ?? 0;
+  const pendingNoJobs = summary?.unprocessedNoJobs ?? 0;
+  const pendingManualReview = summary?.unprocessedManualReview ?? 0;
+  const pendingCloudflare = summary?.unprocessedCloudflare ?? 0;
   const totalPages = brandData?.totalPages ?? 1;
 
   const pageNumbers = useMemo(() => {
@@ -727,6 +737,14 @@ export default function BrandDirectoryPanel() {
           <p className="mt-1 text-lg font-semibold text-slate-900">
             {summary?.unprocessed ?? 0}
           </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            En cola: {pendingQueued} · sin job: {pendingNoJobs} · fallidas: {pendingFailed}
+          </p>
+          {(pendingManualReview > 0 || pendingCloudflare > 0) && (
+            <p className="mt-1 text-[11px] text-slate-400">
+              Manual review: {pendingManualReview} · Cloudflare: {pendingCloudflare}
+            </p>
+          )}
         </div>
       </div>
 

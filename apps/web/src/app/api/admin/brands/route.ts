@@ -91,21 +91,52 @@ export async function GET(req: Request) {
       total: number;
       unprocessed: number;
       processed: number;
+      unprocessedQueued: number;
+      unprocessedFailed: number;
+      unprocessedNoJobs: number;
+      unprocessedManualReview: number;
+      unprocessedCloudflare: number;
       queuedJobs: number;
       processingJobs: number;
       completedJobs: number;
       failedJobs: number;
     }>
   >(
-    `WITH completed_brand AS (
-        SELECT DISTINCT "brandId" FROM "brand_scrape_jobs" WHERE status = 'completed'
+    `WITH active_brands AS (
+        SELECT id, "manualReview", metadata
+        FROM "brands"
+        WHERE "isActive" = true
+      ),
+      completed_brand AS (
+        SELECT DISTINCT j."brandId"
+        FROM "brand_scrape_jobs" j
+        INNER JOIN active_brands b ON b.id = j."brandId"
+        WHERE j.status = 'completed'
+      ),
+      latest_job AS (
+        SELECT DISTINCT ON (j."brandId") j."brandId", j.status
+        FROM "brand_scrape_jobs" j
+        INNER JOIN active_brands b ON b.id = j."brandId"
+        ORDER BY j."brandId", j."createdAt" DESC
+      ),
+      unprocessed AS (
+        SELECT b.id, b."manualReview", b.metadata, lj.status AS "latestStatus"
+        FROM active_brands b
+        LEFT JOIN completed_brand cb ON cb."brandId" = b.id
+        LEFT JOIN latest_job lj ON lj."brandId" = b.id
+        WHERE cb."brandId" IS NULL
       )
       SELECT
-        (SELECT COUNT(*)::int FROM "brands" WHERE "isActive" = true) AS total,
-        (SELECT COUNT(*)::int FROM "brands" b WHERE b."isActive" = true AND NOT EXISTS (
-          SELECT 1 FROM "brand_scrape_jobs" j WHERE j."brandId" = b.id AND j.status = 'completed'
-        )) AS unprocessed,
+        (SELECT COUNT(*)::int FROM active_brands) AS total,
         (SELECT COUNT(*)::int FROM completed_brand) AS processed,
+        (SELECT COUNT(*)::int FROM unprocessed) AS unprocessed,
+        (SELECT COUNT(*)::int FROM unprocessed WHERE "latestStatus" = 'queued') AS "unprocessedQueued",
+        (SELECT COUNT(*)::int FROM unprocessed WHERE "latestStatus" = 'failed') AS "unprocessedFailed",
+        (SELECT COUNT(*)::int FROM unprocessed WHERE "latestStatus" IS NULL) AS "unprocessedNoJobs",
+        (SELECT COUNT(*)::int FROM unprocessed WHERE COALESCE("manualReview", false) = true) AS "unprocessedManualReview",
+        (SELECT COUNT(*)::int FROM unprocessed
+          WHERE COALESCE((metadata -> 'tech_profile' -> 'risks')::jsonb, '[]'::jsonb) @> '["cloudflare"]'::jsonb
+        ) AS "unprocessedCloudflare",
         (SELECT COUNT(*)::int FROM "brand_scrape_jobs" WHERE status = 'queued') AS "queuedJobs",
         (SELECT COUNT(*)::int FROM "brand_scrape_jobs" WHERE status = 'processing') AS "processingJobs",
         (SELECT COUNT(*)::int FROM "brand_scrape_jobs" WHERE status = 'completed') AS "completedJobs",
@@ -117,6 +148,11 @@ export async function GET(req: Request) {
     total: 0,
     unprocessed: 0,
     processed: 0,
+    unprocessedQueued: 0,
+    unprocessedFailed: 0,
+    unprocessedNoJobs: 0,
+    unprocessedManualReview: 0,
+    unprocessedCloudflare: 0,
     queuedJobs: 0,
     processingJobs: 0,
     completedJobs: 0,
