@@ -87,6 +87,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/products` (productos):
   - Directorio de productos scrapeados con cards (carrusel de imágenes si hay múltiples fotos), modal de detalle enriquecido (precio/stock, tallas y colores visibles con swatches, fit/material por variante) y filtros por marca.
   - Las imágenes de cards pasan por `/api/image-proxy` (cache a Blob) y se renderizan con `next/image`.
+  - `next.config.ts` incluye allowlist para dominios `*.public.blob.vercel-storage.com` usados por Vercel Blob.
   - Persistencia de navegación: la página y el filtro por marca viven en la URL (`page`, `brandId`) y el detalle se puede abrir por `productId`.
 - Panel `/admin/product-enrichment` (enriquecimiento):
   - Enriquecimiento de atributos por GPT‑5 mini (categoría, subcategoría, tags, género, temporada, color hex, Pantone y fit).
