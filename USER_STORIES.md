@@ -75,6 +75,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Menos tiempo perdido reencontrando el punto de trabajo.
 - Estado: **done (2026-01-27)**.
 
+### MC-098 Acelerar serving de imágenes con proxy+cache en Blob
+- Historia: Como operador, quiero que las imágenes del admin carguen rápido y de forma consistente aunque vengan de CDNs externos lentos o con hotlinking, para auditar catálogos sin fricción.
+- Alcance: Se agrega `/api/image-proxy`, que descarga la imagen remota, la cachea en Vercel Blob y redirige al asset cacheado. Se crea el helper `proxiedImageUrl(...)` y el admin (`/admin/brands` y `/admin/products`) pasa logos/fotos por el proxy. Cuando `kind=cover`, el proxy intenta persistir el cover cacheado en DB.
+- CA: Las imágenes siguen viéndose aunque el origen sea externo; tras la primera carga, las siguientes solicitudes sirven desde Blob/CDN; si falta el token de Blob, el proxy hace fallback al origen sin romper la UI.
+- Datos: `products.imageCoverUrl`, `variants.images`, token de Blob, y query params `url`, `productId`, `kind`.
+- NF: Límite de tamaño por imagen, timeout de red y bloqueo de hosts locales/IPs privadas para evitar SSRF básicos.
+- Riesgos: La primera carga puede ser más lenta mientras se cachea; mitigación: cache por hash de URL y reuse posterior.
+- Métricas: Menor latencia percibida en grids y menos fallos por hotlinking.
+- Estado: **done (2026-01-27)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

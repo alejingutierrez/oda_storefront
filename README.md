@@ -69,6 +69,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/brands` (directorio):
   - Cards 3×5 por página, modal con detalle completo, CRUD (crear/editar/eliminar).
   - El modal ahora muestra conteo de productos, precio promedio real (calculado desde variantes) y un preview de 10 productos con foto.
+  - Logos y fotos del preview se sirven via `/api/image-proxy`, que cachea automaticamente en Vercel Blob/CDN.
   - Al hacer click en un producto del preview, abre el detalle en `/admin/products?productId=<id>`.
   - Eliminar marca hace **hard delete** en cascada (marca + productos/variantes/historiales + runs/anuncios/eventos asociados).
   - Persistencia de navegación: la página y el filtro se guardan en la URL (`page`, `filter`) para mantener el punto exacto tras reload/acciones.
@@ -83,6 +84,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Si detecta `social`, `bot_protection`, `unreachable`, `parked_domain`, `landing_no_store`, `no_pdp_candidates` o review `manual_review_no_products`, elimina la marca automáticamente.
 - Panel `/admin/products` (productos):
   - Directorio de productos scrapeados con cards (carrusel de imágenes si hay múltiples fotos), modal de detalle enriquecido (precio/stock, tallas y colores visibles con swatches, fit/material por variante) y filtros por marca.
+  - Las imágenes de cards pasan por `/api/image-proxy` (cache a Blob) y se renderizan con `next/image`.
   - Persistencia de navegación: la página y el filtro por marca viven en la URL (`page`, `brandId`) y el detalle se puede abrir por `productId`.
 - Panel `/admin/product-enrichment` (enriquecimiento):
   - Enriquecimiento de atributos por GPT‑5 mini (categoría, subcategoría, tags, género, temporada, color hex, Pantone y fit).
@@ -146,6 +148,10 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - `GET /api/admin/products`: listado paginado de productos (query: `page`, `pageSize`, `brandId`).
 - `GET /api/admin/products/brands`: listado de marcas con conteo de productos.
 - `GET /api/admin/products/:id`: detalle de producto con variantes.
+
+## API interna (image proxy)
+- `GET /api/image-proxy?url=<encoded>`: descarga la imagen remota, la cachea en Vercel Blob y redirige al asset cacheado.
+- Query params opcionales: `productId` y `kind=cover|gallery` (si es `cover`, intenta persistir el cover en DB).
 
 ## API interna (product enrichment)
 - `GET /api/admin/product-enrichment/state`: estado de corrida (query: `scope=brand|all`, `brandId?`).
