@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-27 | MC-097 | done | Persistencia de navegación en admin (page/filter en URL) | Docker rebuild ok; logs web/scraper OK; worker sin OOM; vercel prod OK: https://oda-storefront-6ee5-158nqgnat-alejingutierrezs-projects.vercel.app (runtime logs sin eventos); delete A NEW CROSS verificado (brand no existe y 0 huérfanos).
 - 2026-01-27 | MC-096 | done | Modal marcas: stats reales + preview + delete cascada | Docker rebuild ok; logs web/scraper OK; worker Redis OOM mitigado limpiando ~40k keys `bull:*` y reiniciando worker; README/Backlog/User Stories actualizados.
 - 2026-01-26 | MC-095 | done | UI: marcas sin run agrupadas por tecnología + límite por plataforma 2000 | Docker rebuild ok; logs web/scraper OK; Redis OOM resuelto limpiando ~42k keys bull:* y reiniciando worker; Vercel prod OK: https://oda-storefront-6ee5-jexf1wgfl-alejingutierrezs-projects.vercel.app (logs sin eventos visibles).
 - 2026-01-25 | MC-094 | done | Sitemap discovery tolerante a fallos (fetch failed) | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod OK: https://oda-storefront-6ee5-5yjleqz98-alejingutierrezs-projects.vercel.app (deploy dpl_AxmzmhvWw2XoVDXrt373Ug1TTJmp, logs sin eventos en 1h).
