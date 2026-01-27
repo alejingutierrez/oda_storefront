@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
+import { proxiedImageUrl } from "@/lib/image-proxy";
 
 type BrandRow = {
   id: string;
@@ -297,10 +299,11 @@ const toText = (value: string | null) => value ?? "—";
 
 function BrandAvatar({ name, logoUrl }: { name: string; logoUrl: string | null }) {
   const [error, setError] = useState(false);
-  if (logoUrl && !error) {
+  const proxiedLogo = proxiedImageUrl(logoUrl);
+  if (proxiedLogo && !error) {
     return (
       <img
-        src={logoUrl}
+        src={proxiedLogo}
         alt={name}
         className="h-12 w-12 rounded-2xl border border-slate-200 object-cover"
         onError={() => setError(true)}
@@ -1054,37 +1057,44 @@ export default function BrandDirectoryPanel() {
                             </div>
                             {preview.length ? (
                               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
-                                {preview.map((product) => (
-                                  <a
-                                    key={product.id}
-                                    href={`/admin/products?productId=${product.id}`}
-                                    className="group overflow-hidden rounded-xl border border-slate-200 bg-white"
-                                    title={`Ver detalle de ${product.name}`}
-                                  >
-                                    <div className="aspect-[4/5] w-full bg-slate-100">
-                                      {product.imageCoverUrl ? (
-                                        <img
-                                          src={product.imageCoverUrl}
-                                          alt={product.name}
-                                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                                          loading="lazy"
-                                        />
-                                      ) : (
-                                        <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500">
-                                          Sin foto
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="space-y-1 px-2 py-2">
-                                      <p className="line-clamp-2 text-xs font-semibold text-slate-800">
-                                        {product.name}
-                                      </p>
-                                      <p className="text-[11px] text-slate-500">
-                                        {formatPriceRange(product.minPrice, product.maxPrice)}
-                                      </p>
-                                    </div>
-                                  </a>
-                                ))}
+                                {preview.map((product) => {
+                                  const coverSrc = proxiedImageUrl(product.imageCoverUrl, {
+                                    productId: product.id,
+                                    kind: "cover",
+                                  });
+                                  return (
+                                    <a
+                                      key={product.id}
+                                      href={`/admin/products?productId=${product.id}`}
+                                      className="group overflow-hidden rounded-xl border border-slate-200 bg-white"
+                                      title={`Ver detalle de ${product.name}`}
+                                    >
+                                      <div className="relative aspect-[4/5] w-full bg-slate-100">
+                                        {coverSrc ? (
+                                          <Image
+                                            src={coverSrc}
+                                            alt={product.name}
+                                            fill
+                                            sizes="(min-width: 1024px) 12vw, (min-width: 768px) 20vw, 45vw"
+                                            className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                                          />
+                                        ) : (
+                                          <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500">
+                                            Sin foto
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="space-y-1 px-2 py-2">
+                                        <p className="line-clamp-2 text-xs font-semibold text-slate-800">
+                                          {product.name}
+                                        </p>
+                                        <p className="text-[11px] text-slate-500">
+                                          {formatPriceRange(product.minPrice, product.maxPrice)}
+                                        </p>
+                                      </div>
+                                    </a>
+                                  );
+                                })}
                               </div>
                             ) : (
                               <p className="mt-3 text-sm text-slate-500">

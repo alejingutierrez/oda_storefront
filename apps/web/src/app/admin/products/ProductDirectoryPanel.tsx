@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
+import { proxiedImageUrl } from "@/lib/image-proxy";
 import {
   CATEGORY_LABELS,
   SUBCATEGORY_LABELS,
@@ -182,7 +184,16 @@ const collectUnique = (values: Array<string | null | undefined>) => {
 const buildGallery = (product: ProductRow) => {
   const urls = [product.imageCoverUrl, ...product.imageGallery].filter(Boolean) as string[];
   const unique = Array.from(new Set(urls));
-  return unique.slice(0, MAX_GALLERY_IMAGES);
+  const coverUrl = product.imageCoverUrl;
+  const proxied = unique
+    .map((url) =>
+      proxiedImageUrl(url, {
+        productId: product.id,
+        kind: coverUrl && url === coverUrl ? "cover" : "gallery",
+      }),
+    )
+    .filter(Boolean) as string[];
+  return proxied.slice(0, MAX_GALLERY_IMAGES);
 };
 
 const normalizeLink = (value: string | null) => {
@@ -506,7 +517,13 @@ export default function ProductDirectoryPanel() {
             <article key={product.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
                 {currentImage ? (
-                  <img src={currentImage} alt={product.name} className="h-full w-full object-cover" />
+                  <Image
+                    src={currentImage}
+                    alt={product.name}
+                    fill
+                    sizes="(min-width: 1280px) 28vw, (min-width: 768px) 45vw, 92vw"
+                    className="object-cover"
+                  />
                 ) : (
                   <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.2em] text-slate-400">
                     Sin imagen
