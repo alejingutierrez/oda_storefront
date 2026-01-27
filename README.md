@@ -73,7 +73,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - La card de "Pendientes" ahora muestra desglose: en cola, sin job, fallidas, manual review y riesgo Cloudflare.
   - Al hacer click en un producto del preview, abre el detalle en `/admin/products?productId=<id>`.
   - Eliminar marca hace **hard delete** en cascada (marca + productos/variantes/historiales + runs/anuncios/eventos asociados).
-  - Filtros nuevos: categorias (`brands.category`) multi‑select y orden por cantidad de productos (asc/desc).
+  - Filtros nuevos: categorias (`brands.category`) en dropdown multi‑select con opcion "Todas" y orden por cantidad de productos (asc/desc).
   - Persistencia de navegación: la página y filtros se guardan en la URL (`page`, `filter`, `category`, `sort`, `order`) para mantener el punto exacto tras reload/acciones.
   - Acciones por marca: **Re‑enriquecer** (método 2 con 14 fuentes y 20k chars por fuente).
   - Check azul cuando una marca tiene revisión manual (guardado en `brands.manualReview`).

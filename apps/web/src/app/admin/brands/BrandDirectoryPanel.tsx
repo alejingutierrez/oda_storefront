@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { proxiedImageUrl } from "@/lib/image-proxy";
@@ -362,6 +362,8 @@ export default function BrandDirectoryPanel() {
   const [filter, setFilter] = useState<"processed" | "unprocessed" | "all">(initialFilter);
   const [categoryFilters, setCategoryFilters] = useState<string[]>(initialCategories);
   const [productSort, setProductSort] = useState<"none" | "asc" | "desc">(initialProductSort);
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const categoryMenuRef = useRef<HTMLDivElement | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"detail" | "edit" | "create">("detail");
   const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
@@ -511,6 +513,12 @@ export default function BrandDirectoryPanel() {
   const pendingCloudflare = summary?.unprocessedCloudflare ?? 0;
   const totalPages = brandData?.totalPages ?? 1;
   const availableCategories = brandData?.categories ?? [];
+  const categoryLabel = useMemo(() => {
+    if (categoryFilters.length === 0) return "Todas";
+    const visible = categoryFilters.slice(0, 2).join(", ");
+    const extra = categoryFilters.length > 2 ? ` +${categoryFilters.length - 2}` : "";
+    return `${visible}${extra}`;
+  }, [categoryFilters]);
 
   const toggleCategory = useCallback((value: string) => {
     setPage(1);
@@ -541,6 +549,19 @@ export default function BrandDirectoryPanel() {
     for (let i = start; i <= end; i += 1) numbers.push(i);
     return numbers;
   }, [page, totalPages]);
+
+  useEffect(() => {
+    if (!categoryMenuOpen) return;
+    const handler = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target || !categoryMenuRef.current) return;
+      if (!categoryMenuRef.current.contains(target)) {
+        setCategoryMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [categoryMenuOpen]);
 
   const openModal = useCallback(() => {
     setModalOpen(true);
@@ -851,39 +872,63 @@ export default function BrandDirectoryPanel() {
 
       <div className="mt-4 grid gap-4 text-sm text-slate-600 lg:grid-cols-[minmax(0,1fr)_240px]">
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Categorias</p>
-            {categoryFilters.length > 0 && (
-              <button
-                type="button"
-                onClick={clearCategories}
-                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-500"
-              >
-                Limpiar
-              </button>
-            )}
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {availableCategories.length ? (
-              availableCategories.map((category) => {
-                const selected = categoryFilters.includes(category);
-                return (
-                  <button
-                    key={category}
-                    type="button"
-                    onClick={() => toggleCategory(category)}
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                      selected
-                        ? "border-indigo-600 bg-indigo-600 text-white"
-                        : "border-slate-200 bg-white text-slate-600"
-                    }`}
-                  >
-                    {category}
-                  </button>
-                );
-              })
-            ) : (
-              <span className="text-xs text-slate-400">Sin categorias registradas.</span>
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Categorias</p>
+          <div ref={categoryMenuRef} className="relative mt-2">
+            <button
+              type="button"
+              onClick={() => setCategoryMenuOpen((prev) => !prev)}
+              aria-expanded={categoryMenuOpen}
+              aria-haspopup="listbox"
+              className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            >
+              <span>{categoryLabel}</span>
+              <span className="text-xs text-slate-400">{categoryMenuOpen ? "▲" : "▼"}</span>
+            </button>
+            {categoryMenuOpen && (
+              <div className="absolute left-0 right-0 z-30 mt-2 max-h-64 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearCategories();
+                    setCategoryMenuOpen(false);
+                  }}
+                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold ${
+                    categoryFilters.length === 0
+                      ? "bg-indigo-600 text-white"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <span>Todas</span>
+                  {categoryFilters.length === 0 && <span>✓</span>}
+                </button>
+                <div className="my-2 h-px bg-slate-200" />
+                {availableCategories.length ? (
+                  availableCategories.map((category) => {
+                    const selected = categoryFilters.includes(category);
+                    return (
+                      <label
+                        key={category}
+                        className="flex cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
+                      >
+                        <span className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleCategory(category)}
+                            className="h-3.5 w-3.5 rounded border-slate-300"
+                          />
+                          {category}
+                        </span>
+                        {selected && <span className="text-indigo-600">✓</span>}
+                      </label>
+                    );
+                  })
+                ) : (
+                  <span className="block px-3 py-2 text-xs text-slate-400">
+                    Sin categorias registradas.
+                  </span>
+                )}
+              </div>
             )}
           </div>
         </div>
