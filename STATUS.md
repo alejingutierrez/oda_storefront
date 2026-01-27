@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-27 | fix | Batch de marcas sigue tras fallos | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-pjddavzdl-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante la revision).
 - 2026-01-27 | fix | Dropdown multi-select categorias en marcas | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-500eckcsu-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante la revision).
 - 2026-01-27 | fix | Image-proxy normaliza cdn-cgi | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-9f47v2lqh-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante la revision).
 - 2026-01-27 | fix | Imagenes proxy sin optimizacion Next | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-cvb85mdh8-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante la revision).
