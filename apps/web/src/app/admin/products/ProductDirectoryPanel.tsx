@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { proxiedImageUrl } from "@/lib/image-proxy";
@@ -296,6 +296,7 @@ export default function ProductDirectoryPanel() {
   const [detail, setDetail] = useState<ProductDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [imageIndexByProduct, setImageIndexByProduct] = useState<Record<string, number>>({});
+  const suppressQueryRef = useRef(false);
 
   const fetchBrands = useCallback(async () => {
     try {
@@ -359,8 +360,11 @@ export default function ProductDirectoryPanel() {
       params.set("page", String(page));
       if (brandFilter) params.set("brandId", brandFilter);
       else params.delete("brandId");
+      const allowQueryProductId = !suppressQueryRef.current;
       const productIdValue =
-        productIdOverride === undefined ? detailId ?? productIdFromQuery : productIdOverride;
+        productIdOverride === undefined
+          ? detailId ?? (allowQueryProductId ? productIdFromQuery : null)
+          : productIdOverride;
       if (productIdValue) params.set("productId", productIdValue);
       else params.delete("productId");
       const next = params.toString();
@@ -435,13 +439,20 @@ export default function ProductDirectoryPanel() {
   );
 
   const closeDetail = () => {
+    suppressQueryRef.current = true;
     setDetailId(null);
     setDetail(null);
     replaceUrl(null);
   };
 
   useEffect(() => {
-    if (!productIdFromQuery) return;
+    if (!productIdFromQuery) {
+      if (suppressQueryRef.current) {
+        suppressQueryRef.current = false;
+      }
+      return;
+    }
+    if (suppressQueryRef.current) return;
     if (productIdFromQuery === detailId) return;
     openDetail(productIdFromQuery);
   }, [productIdFromQuery, detailId, openDetail]);
