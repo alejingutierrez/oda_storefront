@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   CATEGORY_LABELS,
   SUBCATEGORY_LABELS,
@@ -258,6 +259,9 @@ const ColorSwatch = ({
 };
 
 export default function ProductDirectoryPanel() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const productIdFromQuery = searchParams.get("productId");
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [brands, setBrands] = useState<BrandOption[]>([]);
   const [brandFilter, setBrandFilter] = useState<string>("");
@@ -353,26 +357,41 @@ export default function ProductDirectoryPanel() {
     };
   }, [detail]);
 
-  const openDetail = async (productId: string) => {
-    setDetailId(productId);
-    setDetail(null);
-    setDetailLoading(true);
-    try {
-      const res = await fetch(`/api/admin/products/${productId}`, { cache: "no-store" });
-      if (!res.ok) throw new Error("No se pudo cargar el detalle");
-      const payload = await res.json();
-      setDetail(payload.product ?? null);
-    } catch (error) {
-      console.warn(error);
-    } finally {
-      setDetailLoading(false);
-    }
-  };
+  const openDetail = useCallback(
+    async (productId: string) => {
+      setDetailId(productId);
+      setDetail(null);
+      setDetailLoading(true);
+      router.replace(`/admin/products?productId=${productId}`, { scroll: false });
+      try {
+        const res = await fetch(`/api/admin/products/${productId}`, { cache: "no-store" });
+        if (!res.ok) throw new Error("No se pudo cargar el detalle");
+        const payload = await res.json();
+        const nextDetail = payload.product ?? null;
+        setDetail(nextDetail);
+        if (nextDetail?.brand?.id) {
+          setBrandFilter((prev) => (prev === nextDetail.brand.id ? prev : nextDetail.brand.id));
+        }
+      } catch (error) {
+        console.warn(error);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [router],
+  );
 
   const closeDetail = () => {
     setDetailId(null);
     setDetail(null);
+    router.replace("/admin/products", { scroll: false });
   };
+
+  useEffect(() => {
+    if (!productIdFromQuery) return;
+    if (productIdFromQuery === detailId) return;
+    openDetail(productIdFromQuery);
+  }, [productIdFromQuery, detailId, openDetail]);
 
   const pageNumbers = useMemo(() => {
     const pages = [];

@@ -55,6 +55,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Anti-bot; mitigar con user-agent y backoff.
 - Métricas: Tasa de éxito scrape→DB, frescura horas.
 
+### MC-096 Modal marcas: stats reales + preview + delete cascada
+- Historia: Como admin, quiero ver rápidamente cuántos productos tiene una marca, su precio promedio real y una muestra visual del catálogo, y al eliminarla quiero borrar también su catálogo asociado, para tener control operativo y evitar datos huérfanos.
+- Alcance: `GET /api/admin/brands/:id` calcula `productStats` (conteo + promedio por producto desde variantes) y entrega `previewProducts` (10 productos recientes con rango de precio). El modal muestra esos datos y el preview en grilla. Cada tile navega a `/admin/products?productId=<id>` y el panel de productos abre el detalle automáticamente. `DELETE /api/admin/brands/:id` pasa a hard delete con limpieza explícita de eventos/runs/anuncios.
+- CA: El modal muestra conteo de productos y precio promedio aunque `brands.avgPrice` esté vacío; se renderiza un preview de hasta 10 productos con foto; click abre el detalle del producto en `/admin/products`; eliminar una marca borra también sus productos, variantes, historiales y datos asociados (incluye runs/anuncios/eventos ligados).
+- Datos: `products`, `variants.price/currency`, `events`, `product_enrichment_runs`, `announcements`.
+- NF: Queries agregadas no deben bloquear el modal (limit 10 en preview); delete debe ser transaccional.
+- Riesgos: Hard delete elimina datos irrecuperables; mitigación con confirmación explícita en UI y delete transaccional.
+- Métricas: Tiempo para auditar una marca (menos clicks), reducción de marcas con `products=0` tras limpieza manual.
+- Estado: **done (2026-01-27)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

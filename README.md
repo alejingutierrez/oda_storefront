@@ -67,7 +67,10 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Configura `ADMIN_EMAIL` y `ADMIN_PASSWORD` en envs. Al autenticarse se crea un token de sesión (cookie HttpOnly) guardado en Neon.
 - `ADMIN_TOKEN` queda como bypass opcional para llamadas API (Bearer).
 - Panel `/admin/brands` (directorio):
-  - Cards 3×5 por página, modal con detalle completo, CRUD (crear/editar/desactivar).
+  - Cards 3×5 por página, modal con detalle completo, CRUD (crear/editar/eliminar).
+  - El modal ahora muestra conteo de productos, precio promedio real (calculado desde variantes) y un preview de 10 productos con foto.
+  - Al hacer click en un producto del preview, abre el detalle en `/admin/products?productId=<id>`.
+  - Eliminar marca hace **hard delete** en cascada (marca + productos/variantes/historiales + runs/anuncios/eventos asociados).
   - Acciones por marca: **Re‑enriquecer** (método 2 con 14 fuentes y 20k chars por fuente).
   - Check azul cuando una marca tiene revisión manual (guardado en `brands.manualReview`).
 - Panel `/admin/brands/scrape` (scraping):
@@ -122,9 +125,9 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 ## API interna (brands CRUD)
 - `GET /api/admin/brands`: listado paginado con filtros (`filter=processed|unprocessed|all`).
 - `POST /api/admin/brands`: crear marca (slug autogenerado si no se envía).
-- `GET /api/admin/brands/:id`: detalle completo de marca + último job.
+- `GET /api/admin/brands/:id`: detalle completo de marca + último job + `productStats` (conteo y avg real) + `previewProducts` (10 productos).
 - `PATCH /api/admin/brands/:id`: editar campos de marca.
-- `DELETE /api/admin/brands/:id`: desactiva la marca (`isActive=false`).
+- `DELETE /api/admin/brands/:id`: elimina la marca en cascada (hard delete).
 - `POST /api/admin/brands/:id/re-enrich`: re‑enriquecimiento individual con método 2 (14 fuentes, 20k chars).
 
 ## API interna (tech profiler)

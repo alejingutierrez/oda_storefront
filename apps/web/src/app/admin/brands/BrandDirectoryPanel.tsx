@@ -98,6 +98,23 @@ type BrandDetailResponse = {
       changes?: Array<{ field: string; before: unknown; after: unknown }>;
     } | null;
   } | null;
+  productStats?: {
+    productCount: number;
+    avgPrice: number | string | null;
+    avgPriceCurrency: string | null;
+  } | null;
+  previewProducts?: Array<{
+    id: string;
+    name: string;
+    imageCoverUrl: string | null;
+    sourceUrl: string | null;
+    category: string | null;
+    subcategory: string | null;
+    updatedAt: string;
+    minPrice: number | string | null;
+    maxPrice: number | string | null;
+    currency: string | null;
+  }>;
 };
 
 type BrandFormState = {
@@ -211,6 +228,21 @@ const formatMoney = (value: number | string | null) => {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed)) return String(value);
   return `$ ${new Intl.NumberFormat("es-CO").format(parsed)}`;
+};
+
+const toPriceNumber = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const formatPriceRange = (min: number | string | null, max: number | string | null) => {
+  const minValue = toPriceNumber(min);
+  const maxValue = toPriceNumber(max);
+  if (minValue === null && maxValue === null) return "—";
+  if (minValue !== null && (maxValue === null || maxValue === minValue)) return formatMoney(minValue);
+  if (minValue === null && maxValue !== null) return formatMoney(maxValue);
+  return `${formatMoney(minValue)} - ${formatMoney(maxValue)}`;
 };
 
 const formatPlatform = (value: string | null) => {
@@ -565,7 +597,9 @@ export default function BrandDirectoryPanel() {
 
   const handleDelete = async () => {
     if (!activeBrandId) return;
-    const confirmed = window.confirm("¿Seguro quieres eliminar esta marca? (Se desactiva).");
+    const confirmed = window.confirm(
+      "¿Seguro quieres eliminar esta marca? Esto borrará marca, productos, variantes, historiales y runs asociados.",
+    );
     if (!confirmed) return;
     setActionLoading(true);
     try {
@@ -944,6 +978,85 @@ export default function BrandDirectoryPanel() {
               ) : modalMode === "detail" ? (
                 detail?.brand ? (
                   <div className="space-y-6">
+                    {(() => {
+                      const stats = detail.productStats ?? null;
+                      const preview = detail.previewProducts ?? [];
+                      const productCount = stats?.productCount ?? 0;
+                      const avgPriceValue = stats?.avgPrice ?? detail.brand.avgPrice;
+                      return (
+                        <div className="grid gap-4 md:grid-cols-3">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Productos</p>
+                            <p className="mt-1 text-lg font-semibold text-slate-900">
+                              {productCount.toLocaleString("es-CO")}
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 md:col-span-2">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                              Precio promedio (real)
+                            </p>
+                            <p className="mt-1 text-lg font-semibold text-slate-900">
+                              {formatMoney(avgPriceValue)}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Calculado con precios de productos scrapeados.
+                            </p>
+                          </div>
+                          <div className="md:col-span-3 rounded-xl border border-slate-200 bg-white p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                Preview de productos (10)
+                              </p>
+                              <a
+                                href="/admin/products"
+                                className="text-xs font-semibold text-indigo-600 hover:underline"
+                              >
+                                Ver directorio completo
+                              </a>
+                            </div>
+                            {preview.length ? (
+                              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+                                {preview.map((product) => (
+                                  <a
+                                    key={product.id}
+                                    href={`/admin/products?productId=${product.id}`}
+                                    className="group overflow-hidden rounded-xl border border-slate-200 bg-white"
+                                    title={`Ver detalle de ${product.name}`}
+                                  >
+                                    <div className="aspect-[4/5] w-full bg-slate-100">
+                                      {product.imageCoverUrl ? (
+                                        <img
+                                          src={product.imageCoverUrl}
+                                          alt={product.name}
+                                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                                          loading="lazy"
+                                        />
+                                      ) : (
+                                        <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500">
+                                          Sin foto
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="space-y-1 px-2 py-2">
+                                      <p className="line-clamp-2 text-xs font-semibold text-slate-800">
+                                        {product.name}
+                                      </p>
+                                      <p className="text-[11px] text-slate-500">
+                                        {formatPriceRange(product.minPrice, product.maxPrice)}
+                                      </p>
+                                    </div>
+                                  </a>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-3 text-sm text-slate-500">
+                                Esta marca aún no tiene productos scrapeados.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Identidad</p>
@@ -994,8 +1107,12 @@ export default function BrandDirectoryPanel() {
                             {formatPlatform(detail.brand.ecommercePlatform)}
                           </p>
                           <p>
+                            <span className="font-semibold text-slate-800">Productos:</span>{" "}
+                            {(detail.productStats?.productCount ?? 0).toLocaleString("es-CO")}
+                          </p>
+                          <p>
                             <span className="font-semibold text-slate-800">Precio promedio:</span>{" "}
-                            {formatMoney(detail.brand.avgPrice)}
+                            {formatMoney(detail.productStats?.avgPrice ?? detail.brand.avgPrice)}
                           </p>
                         </div>
                       </div>

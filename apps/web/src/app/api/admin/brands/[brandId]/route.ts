@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
 
@@ -69,6 +70,31 @@ type RouteParams = {
   params: Promise<{ brandId: string }>;
 };
 
+type ProductStatsRow = {
+  productCount: number;
+  avgPrice: Prisma.Decimal | number | string | null;
+  avgPriceCurrency: string | null;
+};
+
+type ProductPreviewRow = {
+  id: string;
+  name: string;
+  imageCoverUrl: string | null;
+  sourceUrl: string | null;
+  category: string | null;
+  subcategory: string | null;
+  updatedAt: Date;
+  minPrice: Prisma.Decimal | number | string | null;
+  maxPrice: Prisma.Decimal | number | string | null;
+  currency: string | null;
+};
+
+const toNumber = (value: Prisma.Decimal | number | string | null | undefined) => {
+  if (value === null || value === undefined) return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 export async function GET(req: NextRequest, { params }: RouteParams) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
@@ -90,7 +116,75 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json({ brand, lastJob });
+  const [statsRow] = await prisma.$queryRaw<ProductStatsRow[]>(Prisma.sql`
+    WITH product_min AS (
+      SELECT p.id AS product_id, MIN(v.price)::numeric AS min_price
+      FROM "products" p
+      JOIN "variants" v ON v."productId" = p.id
+      WHERE p."brandId" = ${brandId}
+      GROUP BY p.id
+    )
+    SELECT
+      (SELECT COUNT(*)::int FROM "products" p WHERE p."brandId" = ${brandId}) AS "productCount",
+      (SELECT AVG(min_price) FROM product_min) AS "avgPrice",
+      (
+        SELECT MODE() WITHIN GROUP (ORDER BY v.currency)
+        FROM "variants" v
+        JOIN "products" p ON p.id = v."productId"
+        WHERE p."brandId" = ${brandId}
+      ) AS "avgPriceCurrency"
+  `);
+
+  const previewRows = await prisma.$queryRaw<ProductPreviewRow[]>(Prisma.sql`
+    WITH product_prices AS (
+      SELECT
+        v."productId",
+        MIN(v.price)::numeric AS "minPrice",
+        MAX(v.price)::numeric AS "maxPrice",
+        MODE() WITHIN GROUP (ORDER BY v.currency) AS currency
+      FROM "variants" v
+      JOIN "products" p ON p.id = v."productId"
+      WHERE p."brandId" = ${brandId}
+      GROUP BY v."productId"
+    )
+    SELECT
+      p.id,
+      p.name,
+      p."imageCoverUrl" AS "imageCoverUrl",
+      p."sourceUrl" AS "sourceUrl",
+      p.category,
+      p.subcategory,
+      p."updatedAt" AS "updatedAt",
+      pp."minPrice" AS "minPrice",
+      pp."maxPrice" AS "maxPrice",
+      pp.currency
+    FROM "products" p
+    LEFT JOIN product_prices pp ON pp."productId" = p.id
+    WHERE p."brandId" = ${brandId}
+    ORDER BY p."updatedAt" DESC
+    LIMIT 10
+  `);
+
+  const productStats = {
+    productCount: statsRow?.productCount ?? 0,
+    avgPrice: toNumber(statsRow?.avgPrice),
+    avgPriceCurrency: statsRow?.avgPriceCurrency ?? null,
+  };
+
+  const previewProducts = previewRows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    imageCoverUrl: row.imageCoverUrl,
+    sourceUrl: row.sourceUrl,
+    category: row.category,
+    subcategory: row.subcategory,
+    updatedAt: row.updatedAt,
+    minPrice: toNumber(row.minPrice),
+    maxPrice: toNumber(row.maxPrice),
+    currency: row.currency ?? productStats.avgPriceCurrency,
+  }));
+
+  return NextResponse.json({ brand, lastJob, productStats, previewProducts });
 }
 
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
@@ -197,10 +291,32 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  await prisma.brand.update({
-    where: { id: brandId },
-    data: { isActive: false },
-  });
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Elimina eventos asociados por brandId y tambien por productos/variantes de la marca.
+      await tx.$executeRaw(Prisma.sql`
+        DELETE FROM "events" e
+        USING "products" p
+        WHERE e."productId" = p.id AND p."brandId" = ${brandId}
+      `);
+      await tx.$executeRaw(Prisma.sql`
+        DELETE FROM "events" e
+        USING "variants" v
+        JOIN "products" p ON p.id = v."productId"
+        WHERE e."variantId" = v.id AND p."brandId" = ${brandId}
+      `);
+      await tx.event.deleteMany({ where: { brandId } });
+
+      // Limpia runs y anuncios ligados a la marca antes del delete en cascada.
+      await tx.productEnrichmentRun.deleteMany({ where: { brandId } });
+      await tx.announcement.deleteMany({ where: { brandId } });
+
+      await tx.brand.delete({ where: { id: brandId } });
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "delete_failed";
+    return NextResponse.json({ error: "delete_failed", message }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }
