@@ -199,6 +199,12 @@ const safeJsonParse = (raw: string) => {
   }
 };
 
+const buildRepairSystemPrompt = (basePrompt: string) =>
+  `${basePrompt}\nIMPORTANTE: Estás corrigiendo una salida previa. Devuelve SOLO JSON válido y completo según el esquema. No agregues texto adicional.`;
+
+const buildRepairUserText = (errorNote: string, raw: string) =>
+  `Se detectó un error al validar la salida:\n${errorNote}\n\nCorrige la siguiente salida para que sea JSON válido y cumpla el esquema:\n${raw}`;
+
 const fetchImageAsBase64 = async (url: string) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
@@ -256,6 +262,7 @@ Debes devolver SOLO JSON válido con el siguiente esquema:
 }
 Reglas estrictas:
 - category, subcategory, gender, season y fit deben tener UN SOLO valor.
+- subcategory debe ser una de las subcategorías listadas para la categoría seleccionada; nunca uses "otro".
 - style_tags deben ser EXACTAMENTE 10 elementos.
 - material_tags máximo 3 elementos.
 - pattern_tags máximo 2 elementos.
@@ -560,6 +567,43 @@ export async function enrichProductWithOpenAI(params: {
     })),
   };
 
+  const parseAndNormalize = (raw: string) => {
+    const parsed = safeJsonParse(raw);
+    const validation = enrichmentResponseSchema.safeParse(parsed);
+    if (!validation.success) {
+      throw new Error(`JSON schema validation failed: ${validation.error.message}`);
+    }
+    const product = validation.data.product;
+    const normalized: RawEnrichedProduct = {
+      category: product.category,
+      subcategory: product.subcategory,
+      styleTags: product.style_tags,
+      materialTags: product.material_tags ?? [],
+      patternTags: product.pattern_tags ?? [],
+      occasionTags: product.occasion_tags ?? [],
+      gender: product.gender,
+      season: product.season,
+      seoTitle: product.seo_title ?? "",
+      seoDescription: product.seo_description ?? "",
+      seoTags: product.seo_tags ?? [],
+      variants: product.variants.map((variant) => ({
+        variantId: variant.variant_id,
+        sku: variant.sku ?? null,
+        colorHex: variant.color_hex,
+        colorPantone: variant.color_pantone,
+        fit: variant.fit,
+      })),
+    };
+
+    return normalizeEnrichment(normalized, variantIds, {
+      productName: params.product.name,
+      brandName: params.product.brandName ?? null,
+      description: params.product.description ?? null,
+      category: params.product.category ?? null,
+      subcategory: params.product.subcategory ?? null,
+    });
+  };
+
   const callOpenAI = async () => {
     const client = getOpenAIClient() as OpenAIResponsesClient;
     const response = await client.responses.create({
@@ -582,6 +626,29 @@ export async function enrichProductWithOpenAI(params: {
     const raw = extractOutputText(response);
     if (!raw) throw new Error("Respuesta vacia de OpenAI");
     return raw;
+  };
+
+  const callOpenAIRepair = async (raw: string, errorNote: string) => {
+    const client = getOpenAIClient() as OpenAIResponsesClient;
+    const response = await client.responses.create({
+      model: OPENAI_MODEL,
+      input: [
+        { role: "system", content: buildRepairSystemPrompt(systemPrompt) },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: buildRepairUserText(errorNote, raw),
+            },
+          ],
+        },
+      ],
+      text: { format: { type: "json_object" } },
+    });
+    const repaired = extractOutputText(response);
+    if (!repaired) throw new Error("Respuesta vacia al reparar con OpenAI");
+    return repaired;
   };
 
   const callBedrock = async () => {
@@ -644,44 +711,52 @@ export async function enrichProductWithOpenAI(params: {
     return rawText;
   };
 
+  const callBedrockRepair = async (raw: string, errorNote: string) => {
+    const payload: Record<string, unknown> = {
+      anthropic_version: "bedrock-2023-05-31",
+      max_tokens: 2048,
+      system: buildRepairSystemPrompt(systemPrompt),
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: buildRepairUserText(errorNote, raw),
+            },
+          ],
+        },
+      ],
+    };
+
+    const command = new InvokeModelCommand({
+      modelId: BEDROCK_MODEL_ID,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify(payload),
+    });
+
+    const response = await getBedrockClient().send(command);
+    const body = response.body as Uint8Array;
+    const rawBody = Buffer.from(body ?? []).toString("utf8");
+    const parsed = JSON.parse(rawBody);
+    const rawText = extractBedrockText(parsed);
+    if (!rawText) throw new Error("Respuesta vacia al reparar con Bedrock");
+    console.info("bedrock.enrich.repair.usage", parsed?.usage ?? {});
+    return rawText;
+  };
+
   for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
     try {
-      const raw =
-        provider === "bedrock" ? await callBedrock() : await callOpenAI();
-      const parsed = safeJsonParse(raw);
-      const validation = enrichmentResponseSchema.safeParse(parsed);
-      if (!validation.success) {
-        throw new Error(`JSON validation failed: ${validation.error.message}`);
+      const raw = provider === "bedrock" ? await callBedrock() : await callOpenAI();
+      try {
+        return parseAndNormalize(raw);
+      } catch (error) {
+        const note = error instanceof Error ? error.message : String(error);
+        const repaired =
+          provider === "bedrock" ? await callBedrockRepair(raw, note) : await callOpenAIRepair(raw, note);
+        return parseAndNormalize(repaired);
       }
-      const product = validation.data.product;
-      const normalized: RawEnrichedProduct = {
-        category: product.category,
-        subcategory: product.subcategory,
-        styleTags: product.style_tags,
-        materialTags: product.material_tags ?? [],
-        patternTags: product.pattern_tags ?? [],
-        occasionTags: product.occasion_tags ?? [],
-        gender: product.gender,
-        season: product.season,
-        seoTitle: product.seo_title ?? "",
-        seoDescription: product.seo_description ?? "",
-        seoTags: product.seo_tags ?? [],
-        variants: product.variants.map((variant) => ({
-          variantId: variant.variant_id,
-          sku: variant.sku ?? null,
-          colorHex: variant.color_hex,
-          colorPantone: variant.color_pantone,
-          fit: variant.fit,
-        })),
-      };
-
-      return normalizeEnrichment(normalized, variantIds, {
-        productName: params.product.name,
-        brandName: params.product.brandName ?? null,
-        description: params.product.description ?? null,
-        category: params.product.category ?? null,
-        subcategory: params.product.subcategory ?? null,
-      });
     } catch (error) {
       lastError = error;
       const backoff = Math.pow(2, attempt) * 200;
@@ -695,7 +770,7 @@ export async function enrichProductWithOpenAI(params: {
   );
 }
 
-export const productEnrichmentPromptVersion = "v5";
+export const productEnrichmentPromptVersion = "v6";
 export const productEnrichmentSchemaVersion = "v3";
 
 export const toSlugLabel = (value: string) => slugify(value);
