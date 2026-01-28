@@ -93,7 +93,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - El cierre del modal limpia `productId` de la URL sin reabrirlo en bucle.
   - Persistencia de navegación: la página y el filtro por marca viven en la URL (`page`, `brandId`) y el detalle se puede abrir por `productId`.
 - Panel `/admin/product-enrichment` (enriquecimiento):
-  - Enriquecimiento de atributos por Claude Sonnet 4.5 (Bedrock) para categoría, subcategoría, tags, género, temporada, color hex, Pantone, fit, descripción (texto plano) y campos SEO (meta title/description + seoTags).
+  - Enriquecimiento de atributos por Claude Sonnet 4.5 (Bedrock) para categoría, subcategoría, tags, género, temporada, color hex, Pantone, fit, descripción (texto plano) y campos SEO (meta title/description + seoTags). Taxonomía incluye ropa + accesorios (joyería, calzado, bolsos, gafas).
   - Se puede forzar OpenAI con `PRODUCT_ENRICHMENT_PROVIDER=openai` (usa `PRODUCT_ENRICHMENT_MODEL`).
   - Materiales incluyen metales (oro/plata/bronce/cobre) **solo para joyería o accesorios**.
   - Style tags: **exactamente 10** por producto.
