@@ -187,13 +187,17 @@ const extractBedrockText = (payload: unknown) => {
 };
 
 const safeJsonParse = (raw: string) => {
+  const sanitized = raw
+    .replace(/[“”]/g, "\"")
+    .replace(/[‘’]/g, "'")
+    .replace(/,\s*([}\]])/g, "$1");
   try {
-    return JSON.parse(raw);
+    return JSON.parse(sanitized);
   } catch {
-    const start = raw.indexOf("{");
-    const end = raw.lastIndexOf("}");
+    const start = sanitized.indexOf("{");
+    const end = sanitized.lastIndexOf("}");
     if (start >= 0 && end > start) {
-      return JSON.parse(raw.slice(start, end + 1));
+      return JSON.parse(sanitized.slice(start, end + 1));
     }
     throw new Error("JSON parse failed");
   }
@@ -276,6 +280,7 @@ Reglas estrictas:
 - color_hex debe ser hexadecimal #RRGGBB. Puede ser string o array (1-3). Si hay varios colores, devuelve array con máximo 3 en orden de predominancia.
 - color_pantone debe ser un código Pantone TCX NN-NNNN. Puede ser string o array (1-3). Si hay varios colores, devuelve array con máximo 3 en orden de predominancia.
 - Si hay dudas sobre el género o es mixto, usa "no_binario_unisex".
+- No uses comillas tipográficas ni comentarios. El JSON debe ser válido, sin comas colgantes y con comas entre elementos.
 Reglas de evidencia y consistencia:
 - Prioriza la señal de texto en este orden: product.name, product.description, metadata (og:title, og:description, jsonld, etc.).
 - Si viene product.brand_name úsalo para enriquecer seo_title y seo_description.
@@ -293,6 +298,7 @@ ${STYLE_TAGS.join(", ")}
 
 material_tags:
 ${MATERIAL_TAGS.join(", ")}
+Nota: oro/plata/bronce/cobre solo deben usarse en joyería o accesorios.
 
 pattern_tags:
 ${PATTERN_TAGS.join(", ")}
@@ -691,6 +697,8 @@ export async function enrichProductWithOpenAI(params: {
     const payload: Record<string, unknown> = {
       anthropic_version: "bedrock-2023-05-31",
       max_tokens: 2048,
+      temperature: 0,
+      top_p: 0.1,
       system: systemPrompt,
       messages: [
         {
@@ -731,6 +739,8 @@ export async function enrichProductWithOpenAI(params: {
     const payload: Record<string, unknown> = {
       anthropic_version: "bedrock-2023-05-31",
       max_tokens: 2048,
+      temperature: 0,
+      top_p: 0.1,
       system: buildRepairSystemPrompt(systemPrompt),
       messages: [
         {

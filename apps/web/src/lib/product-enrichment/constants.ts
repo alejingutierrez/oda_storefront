@@ -327,6 +327,10 @@ const rawMaterialTags = [
   "Tul",
   "Cuero (natural)",
   "Cuero sintético / PU",
+  "Oro",
+  "Plata",
+  "Bronce",
+  "Cobre",
   "Otro",
 ];
 

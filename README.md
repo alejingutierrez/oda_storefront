@@ -95,6 +95,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Panel `/admin/product-enrichment` (enriquecimiento):
   - Enriquecimiento de atributos por Claude Sonnet 4.5 (Bedrock) para categoría, subcategoría, tags, género, temporada, color hex, Pantone, fit y campos SEO (meta title/description + seoTags).
   - Se puede forzar OpenAI con `PRODUCT_ENRICHMENT_PROVIDER=openai` (usa `PRODUCT_ENRICHMENT_MODEL`).
+  - Materiales incluyen metales (oro/plata/bronce/cobre) **solo para joyería o accesorios**.
   - Style tags: **exactamente 10** por producto.
   - Colores: admite hasta 3 hex/pantone por variante; el color principal se guarda en `variants.color`/`variants.colorPantone` y el resto en `variants.metadata.enrichment.colors`.
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
