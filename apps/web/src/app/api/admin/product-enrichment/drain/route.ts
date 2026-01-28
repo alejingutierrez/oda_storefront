@@ -19,10 +19,11 @@ const resolveDrainConfig = (body: unknown) => {
   const requestedConcurrency = Number(payload.drainConcurrency ?? payload.concurrency ?? payload.workers);
   const requestedMaxMs = Number(payload.drainMaxMs ?? payload.maxMs ?? payload.timeoutMs);
   const batchDefault = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_BATCH ?? 0);
-  const concurrencyDefault = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY ?? 5);
+  const concurrencyDefault = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY ?? 10);
   const maxMsDefault = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS ?? 20000);
   const batch = Number.isFinite(requestedBatch) ? requestedBatch : batchDefault;
-  const concurrency = Number.isFinite(requestedConcurrency) ? requestedConcurrency : concurrencyDefault;
+  const concurrencyRaw = Number.isFinite(requestedConcurrency) ? requestedConcurrency : concurrencyDefault;
+  const concurrency = Math.max(10, concurrencyRaw);
   const maxMs = Number.isFinite(requestedMaxMs) ? requestedMaxMs : maxMsDefault;
   const queuedStaleMs = Math.max(
     0,
