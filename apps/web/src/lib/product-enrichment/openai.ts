@@ -4,6 +4,7 @@ import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedroc
 import { getOpenAIClient } from "@/lib/openai";
 import {
   CATEGORY_OPTIONS,
+  CATEGORY_DESCRIPTIONS,
   CATEGORY_VALUES,
   FIT_OPTIONS,
   GENDER_OPTIONS,
@@ -13,6 +14,7 @@ import {
   SEASON_OPTIONS,
   STYLE_TAGS,
   SUBCATEGORY_BY_CATEGORY,
+  SUBCATEGORY_DESCRIPTIONS,
   SUBCATEGORY_VALUES,
 } from "@/lib/product-enrichment/constants";
 import {
@@ -253,8 +255,19 @@ const fetchImageAsBase64 = async (url: string) => {
 
 const buildCategoryPrompt = () =>
   CATEGORY_OPTIONS.map((entry) => {
-    const subs = entry.subcategories.map((sub) => sub.value).join(", ");
-    return `- ${entry.value}: [${subs}]`;
+    const categoryDescription = CATEGORY_DESCRIPTIONS[entry.value];
+    const header = categoryDescription
+      ? `- ${entry.value}: ${entry.label}. ${categoryDescription}`
+      : `- ${entry.value}: ${entry.label}.`;
+    const subs = entry.subcategories
+      .map((sub) => {
+        const subDescription = SUBCATEGORY_DESCRIPTIONS[sub.value];
+        return subDescription
+          ? `  - ${sub.value}: ${sub.label}. ${subDescription}`
+          : `  - ${sub.value}: ${sub.label}.`;
+      })
+      .join("\n");
+    return `${header}\n${subs}`;
   }).join("\n");
 
 const buildPrompt = () => {
@@ -308,6 +321,8 @@ Reglas de evidencia y consistencia:
 - Prioriza la señal de texto en este orden: product.name, product.description, metadata (og:title, og:description, jsonld, etc.).
 - Si viene product.brand_name úsalo para enriquecer seo_title y seo_description.
 - Si el texto es claro sobre el tipo de prenda (ej: "top", "camisa", "blusa", "camiseta", "falda", "vestido", "pantalón", "jean", "short", "bikini"), ESA familia manda.
+- Si el texto indica joyería (aretes/pendientes, anillos, collares, pulseras/brazaletes, tobilleras, dijes/charms, broches, piercings, reloj), usa category "joyeria_y_bisuteria".
+- "Accesorios textiles y medias" es solo textil (bandanas, pañuelos, bufandas, gorras, medias). Nunca usarlo para joyería.
 - Las imágenes solo ayudan a desambiguar detalles (fit, color, pattern), nunca para contradecir el texto.
 - Si hay conflicto entre imagen y texto, gana el texto.
 - No clasifiques como falda/pantalón/vestido si el texto indica explícitamente que es un top/camiseta/blusa (y viceversa).
@@ -845,7 +860,7 @@ export async function enrichProductWithOpenAI(params: {
   );
 }
 
-export const productEnrichmentPromptVersion = "v7";
+export const productEnrichmentPromptVersion = "v8";
 export const productEnrichmentSchemaVersion = "v4";
 
 export const toSlugLabel = (value: string) => slugify(value);
