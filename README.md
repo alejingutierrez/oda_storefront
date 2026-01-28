@@ -98,6 +98,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
   - Por defecto omite productos ya enriquecidos (se puede incluirlos manualmente).
   - Controles de **pausa** y **detener**, y botón para **limpiar batches activos**; muestra progreso, errores, estado y cobertura (enriquecidos vs pendientes) con conteo de cola/en‑progreso. Auto‑refresco cada 5s cuando hay run activo.
+  - Al finalizar, el progreso se calcula con conteos reales de items para evitar pendientes fantasma si cambió el catálogo.
   - En el panel, el run no se drena en la misma petición (respuesta rápida); el progreso se ve por polling y por el cron `/api/admin/product-enrichment/drain`.
   - Fallback serverless `/api/admin/product-enrichment/drain` con cron (cada 1 min) para evitar colas “pegadas”.
   - Persistencia de estado: `scope`, `brandId`, `batch` e `includeEnriched` viven en la URL para mantener el contexto tras recarga.

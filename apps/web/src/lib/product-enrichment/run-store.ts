@@ -51,7 +51,11 @@ export const summarizeRun = async (runId: string): Promise<EnrichmentRunSummary 
   counts.forEach((row) => map.set(row.status, row._count._all));
   const completed = map.get("completed") ?? 0;
   const failed = map.get("failed") ?? 0;
-  const total = run.totalItems || counts.reduce((sum, row) => sum + row._count._all, 0);
+  const totalFromItems = counts.reduce((sum, row) => sum + row._count._all, 0);
+  const usesPlannedTotal = ["processing", "paused", "blocked"].includes(run.status);
+  const total = usesPlannedTotal
+    ? (run.totalItems || totalFromItems)
+    : (totalFromItems || run.totalItems);
   const pending = Math.max(0, total - completed - failed);
 
   return {
