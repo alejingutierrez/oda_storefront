@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { getOpenAIClient } from "@/lib/openai";
 import {
   CATEGORY_OPTIONS,
@@ -21,7 +22,18 @@ import {
   slugify,
 } from "@/lib/product-enrichment/utils";
 
+const PRODUCT_ENRICHMENT_PROVIDER = (
+  process.env.PRODUCT_ENRICHMENT_PROVIDER ??
+  (process.env.BEDROCK_INFERENCE_PROFILE_ID ? "bedrock" : "openai")
+).toLowerCase();
 const OPENAI_MODEL = process.env.PRODUCT_ENRICHMENT_MODEL ?? "gpt-5-mini";
+const BEDROCK_MODEL_ID =
+  process.env.BEDROCK_INFERENCE_PROFILE_ID ?? process.env.BEDROCK_MODEL_ID ?? "";
+const BEDROCK_REGION = process.env.AWS_REGION ?? "";
+const BEDROCK_ACCESS_KEY =
+  process.env.AWS_ACCESS_KEY_ID ?? process.env.BEDROCK_ACCESS_KEY ?? "";
+const BEDROCK_SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY ?? "";
+const BEDROCK_SESSION_TOKEN = process.env.AWS_SESSION_TOKEN ?? "";
 const MAX_RETRIES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_RETRIES ?? 3));
 const MAX_IMAGES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_IMAGES ?? 8));
 
@@ -53,6 +65,10 @@ const productSchema = z.object({
 const enrichmentResponseSchema = z.object({
   product: productSchema,
 });
+
+export const productEnrichmentProvider = PRODUCT_ENRICHMENT_PROVIDER;
+export const productEnrichmentModel =
+  PRODUCT_ENRICHMENT_PROVIDER === "bedrock" ? BEDROCK_MODEL_ID : OPENAI_MODEL;
 
 export type RawEnrichedVariant = {
   variantId: string;
@@ -119,6 +135,39 @@ type OpenAIResponsesClient = {
   };
 };
 
+let bedrockClient: BedrockRuntimeClient | null = null;
+
+const getBedrockClient = () => {
+  if (bedrockClient) return bedrockClient;
+  if (!BEDROCK_MODEL_ID) {
+    throw new Error(
+      "BEDROCK_INFERENCE_PROFILE_ID (or BEDROCK_MODEL_ID) is missing for product enrichment.",
+    );
+  }
+  if (!BEDROCK_REGION) {
+    throw new Error("AWS_REGION is missing for Bedrock product enrichment.");
+  }
+  const hasExplicitCreds = Boolean(BEDROCK_ACCESS_KEY && BEDROCK_SECRET_KEY);
+  if (!hasExplicitCreds && !process.env.AWS_PROFILE) {
+    throw new Error(
+      "AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY are missing for Bedrock product enrichment.",
+    );
+  }
+  bedrockClient = new BedrockRuntimeClient({
+    region: BEDROCK_REGION,
+    ...(hasExplicitCreds
+      ? {
+          credentials: {
+            accessKeyId: BEDROCK_ACCESS_KEY,
+            secretAccessKey: BEDROCK_SECRET_KEY,
+            ...(BEDROCK_SESSION_TOKEN ? { sessionToken: BEDROCK_SESSION_TOKEN } : {}),
+          },
+        }
+      : {}),
+  });
+  return bedrockClient;
+};
+
 const extractOutputText = (response: OpenAIResponse | null | undefined) => {
   if (typeof response?.output_text === "string") return response.output_text;
   const message = Array.isArray(response?.output)
@@ -126,6 +175,15 @@ const extractOutputText = (response: OpenAIResponse | null | undefined) => {
     : null;
   const content = message?.content?.find((item) => item.type === "output_text" || item.type === "text");
   return content?.text ?? "";
+};
+
+const extractBedrockText = (payload: unknown) => {
+  if (!payload || typeof payload !== "object") return "";
+  const content = Array.isArray((payload as any).content) ? (payload as any).content : [];
+  const textParts = content
+    .filter((item: any) => item?.type === "text" && typeof item?.text === "string")
+    .map((item: any) => item.text);
+  return textParts.join("\n").trim();
 };
 
 const safeJsonParse = (raw: string) => {
@@ -138,6 +196,27 @@ const safeJsonParse = (raw: string) => {
       return JSON.parse(raw.slice(start, end + 1));
     }
     throw new Error("JSON parse failed");
+  }
+};
+
+const fetchImageAsBase64 = async (url: string) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") || "";
+    const mediaType = contentType.split(";")[0].trim().toLowerCase();
+    if (!["image/jpeg", "image/png", "image/webp"].includes(mediaType)) return null;
+    const arrayBuffer = await res.arrayBuffer();
+    const sizeMb = arrayBuffer.byteLength / (1024 * 1024);
+    if (sizeMb > 4) return null;
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    return { mediaType, base64, sizeMb };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
   }
 };
 
@@ -411,32 +490,40 @@ export async function enrichProductWithOpenAI(params: {
     metadata?: Record<string, unknown> | null;
   }>;
 }): Promise<EnrichedProduct> {
-  const client = getOpenAIClient() as OpenAIResponsesClient;
   const systemPrompt = buildPrompt();
+  const provider = PRODUCT_ENRICHMENT_PROVIDER;
   let lastError: unknown = null;
 
   const variantIds = new Set(params.variants.map((variant) => variant.id));
-  const imageInputs: Array<{ type: "input_image"; image_url: string }> = [];
-  const imageManifest: Array<{ index: number; url: string; variantId?: string | null }> = [];
+  const imageCandidates: Array<{ url: string; variantId?: string | null }> = [];
   const seen = new Set<string>();
 
   const tryAddImage = (url: string | null | undefined, variantId?: string | null) => {
-    if (!url || imageInputs.length >= MAX_IMAGES) return;
+    if (!url || imageCandidates.length >= MAX_IMAGES) return;
     const trimmed = url.trim();
     if (!trimmed || seen.has(trimmed)) return;
     seen.add(trimmed);
-    imageInputs.push({ type: "input_image", image_url: trimmed });
-    imageManifest.push({ index: imageInputs.length, url: trimmed, variantId: variantId ?? null });
+    imageCandidates.push({ url: trimmed, variantId: variantId ?? null });
   };
 
   params.variants.forEach((variant) => {
     (variant.images ?? []).slice(0, 2).forEach((img) => tryAddImage(img, variant.id));
   });
-  if (imageInputs.length < MAX_IMAGES && params.product.imageCoverUrl) {
+  if (imageCandidates.length < MAX_IMAGES && params.product.imageCoverUrl) {
     tryAddImage(params.product.imageCoverUrl, null);
   }
 
-  const userPayload = {
+  const imageInputs = imageCandidates.map((entry) => ({
+    type: "input_image" as const,
+    image_url: entry.url,
+  }));
+  const imageManifest = imageCandidates.map((entry, index) => ({
+    index: index + 1,
+    url: entry.url,
+    variant_id: entry.variantId ?? null,
+  }));
+
+  const userPayloadBase = {
     product: {
       id: params.product.id,
       brand_name: params.product.brandName ?? null,
@@ -471,35 +558,96 @@ export async function enrichProductWithOpenAI(params: {
       images: (variant.images ?? []).slice(0, 5),
       metadata: variant.metadata ?? null,
     })),
-    image_manifest: imageManifest.map((entry) => ({
-      index: entry.index,
-      url: entry.url,
-      variant_id: entry.variantId ?? null,
-    })),
+  };
+
+  const callOpenAI = async () => {
+    const client = getOpenAIClient() as OpenAIResponsesClient;
+    const response = await client.responses.create({
+      model: OPENAI_MODEL,
+      input: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: JSON.stringify({ ...userPayloadBase, image_manifest: imageManifest }, null, 2),
+            },
+            ...imageInputs,
+          ],
+        },
+      ],
+      text: { format: { type: "json_object" } },
+    });
+    const raw = extractOutputText(response);
+    if (!raw) throw new Error("Respuesta vacia de OpenAI");
+    return raw;
+  };
+
+  const callBedrock = async () => {
+    const imageBlocks: Array<{
+      type: "image";
+      source: { type: "base64"; media_type: string; data: string };
+    }> = [];
+    const bedrockManifest: Array<{ index: number; url: string; variant_id?: string | null }> = [];
+
+    for (const entry of imageCandidates) {
+      const loaded = await fetchImageAsBase64(entry.url);
+      if (!loaded) continue;
+      imageBlocks.push({
+        type: "image",
+        source: { type: "base64", media_type: loaded.mediaType, data: loaded.base64 },
+      });
+      bedrockManifest.push({
+        index: imageBlocks.length,
+        url: entry.url,
+        variant_id: entry.variantId ?? null,
+      });
+    }
+
+    const payload: Record<string, unknown> = {
+      anthropic_version: "bedrock-2023-05-31",
+      max_tokens: 2048,
+      system: systemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                { ...userPayloadBase, image_manifest: bedrockManifest },
+                null,
+                2,
+              ),
+            },
+            ...imageBlocks,
+          ],
+        },
+      ],
+    };
+
+    const command = new InvokeModelCommand({
+      modelId: BEDROCK_MODEL_ID,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify(payload),
+    });
+
+    const response = await getBedrockClient().send(command);
+    const body = response.body as Uint8Array;
+    const rawBody = Buffer.from(body ?? []).toString("utf8");
+    const parsed = JSON.parse(rawBody);
+    const rawText = extractBedrockText(parsed);
+    if (!rawText) throw new Error("Respuesta vacia de Bedrock");
+    console.info("bedrock.enrich.usage", parsed?.usage ?? {});
+    return rawText;
   };
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
     try {
-      const response = await client.responses.create({
-        model: OPENAI_MODEL,
-        input: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: JSON.stringify(userPayload, null, 2),
-              },
-              ...imageInputs,
-            ],
-          },
-        ],
-        text: { format: { type: "json_object" } },
-      });
-
-      const raw = extractOutputText(response);
-      if (!raw) throw new Error("Respuesta vacia de OpenAI");
+      const raw =
+        provider === "bedrock" ? await callBedrock() : await callOpenAI();
       const parsed = safeJsonParse(raw);
       const validation = enrichmentResponseSchema.safeParse(parsed);
       if (!validation.success) {
@@ -541,7 +689,10 @@ export async function enrichProductWithOpenAI(params: {
     }
   }
 
-  throw new Error(`OpenAI enrichment failed after ${MAX_RETRIES} attempts: ${String(lastError)}`);
+  const providerLabel = provider === "bedrock" ? "Bedrock" : "OpenAI";
+  throw new Error(
+    `${providerLabel} enrichment failed after ${MAX_RETRIES} attempts: ${String(lastError)}`,
+  );
 }
 
 export const productEnrichmentPromptVersion = "v5";

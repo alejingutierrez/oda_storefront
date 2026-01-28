@@ -135,6 +135,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % de productos con SEO completo y longitud correcta.
 - Estado: **done (2026-01-28)**.
 
+### MC-104 Enriquecimiento productos con Claude (Bedrock)
+- Historia: Como operador, quiero que el enriquecimiento de productos use Claude Sonnet 4.5 vía Bedrock, sin afectar el resto del pipeline OpenAI, para mejorar calidad/costo en esta etapa específica.
+- Alcance: `product-enrichment` consume Bedrock con inference profile (`BEDROCK_INFERENCE_PROFILE_ID`), arma payload con texto e imágenes (base64) y valida JSON; se mantiene OpenAI para otros flujos; metadata guarda `provider` y `model`.
+- CA: Con `PRODUCT_ENRICHMENT_PROVIDER=bedrock` (o `BEDROCK_INFERENCE_PROFILE_ID` definido) el enriquecimiento usa Bedrock y pasa validación; con `PRODUCT_ENRICHMENT_PROVIDER=openai` sigue usando OpenAI; build y Docker pasan.
+- Datos: `products`, `variants`, `product_enrichment_runs/items`, env `AWS_*` y `BEDROCK_*`.
+- NF: Retries y backoff existentes; timeout de imágenes; tamaño máximo 4MB por imagen y tipos `jpeg/png/webp`.
+- Riesgos: Latencia/costos por imágenes; mitigación con límite `PRODUCT_ENRICHMENT_MAX_IMAGES` y sin envío cuando no hay imágenes válidas.
+- Métricas: Tasa de validación JSON, costo por item (tokens), P95 de enriquecimiento.
+- Estado: **done (2026-01-28)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.
