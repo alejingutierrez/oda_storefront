@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-28 | fix | Enrichment progreso sin pendientes fantasma | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-zb7f46bpa-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | MC-103 | done | Campos SEO en productos + enrichment v4 | Docker rebuild ok; logs web/scraper OK; worker local 500 por migracion pendiente; migrate deploy a Neon falló (P1002 advisory lock). Vercel prod Ready: https://oda-storefront-6ee5-8iuwzeuqf-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | MC-102 | done | Enrichment panel: URL state + progreso realtime + reset batches | Docker rebuild ok; logs web/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-8iuwzeuqf-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | MC-101 | done | Default OpenAI gpt-5.1 en scrapers/normalizer y docs | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-dtqz0z3yv-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante la revision).
