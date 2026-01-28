@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-28 | fix | Enrichment: metales en materiales + JSON más estricto | Docker rebuild ok; logs web/worker/scraper OK; lista para deploy Vercel.
+- 2026-01-28 | fix | Enrichment: metales en materiales + JSON más estricto | Docker rebuild ok; logs web/worker/scraper OK; Vercel preview Ready: https://oda-storefront-6ee5-dctailnad-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | fix | Enrichment: fallback para style_tags < 10 | Docker rebuild ok; logs web/worker/scraper OK; Vercel preview Ready: https://oda-storefront-6ee5-npf9jc723-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | fix | Bedrock enrichment: repair JSON + subcategory estricta | Docker rebuild ok; logs web/worker/scraper OK; Vercel preview Ready: https://oda-storefront-6ee5-oyfp0f61c-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | MC-104 | done | Enrichment productos con Claude Bedrock | Docker rebuild ok; logs web/worker/scraper OK; Vercel preview Ready: https://oda-storefront-6ee5-nucgmontm-alejingutierrezs-projects.vercel.app (runtime logs sin eventos); envs AWS/Bedrock creados en Vercel.
