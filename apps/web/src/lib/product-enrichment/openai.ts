@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { jsonrepair } from "jsonrepair";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { getOpenAIClient } from "@/lib/openai";
 import {
@@ -191,16 +192,29 @@ const extractBedrockText = (payload: unknown) => {
 
 const safeJsonParse = (raw: string) => {
   const sanitized = raw
+    .replace(/\u0000/g, "")
     .replace(/[“”]/g, "\"")
     .replace(/[‘’]/g, "'")
     .replace(/,\s*([}\]])/g, "$1");
   try {
     return JSON.parse(sanitized);
   } catch {
+    try {
+      const repaired = jsonrepair(sanitized);
+      return JSON.parse(repaired);
+    } catch {
+      // fallthrough to substring attempt
+    }
     const start = sanitized.indexOf("{");
     const end = sanitized.lastIndexOf("}");
     if (start >= 0 && end > start) {
-      return JSON.parse(sanitized.slice(start, end + 1));
+      const slice = sanitized.slice(start, end + 1);
+      try {
+        return JSON.parse(slice);
+      } catch {
+        const repairedSlice = jsonrepair(slice);
+        return JSON.parse(repairedSlice);
+      }
     }
     throw new Error("JSON parse failed");
   }
