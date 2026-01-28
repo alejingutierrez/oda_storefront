@@ -25,11 +25,13 @@ const OPENAI_MODEL = process.env.PRODUCT_ENRICHMENT_MODEL ?? "gpt-5-mini";
 const MAX_RETRIES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_RETRIES ?? 3));
 const MAX_IMAGES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_IMAGES ?? 8));
 
+const colorField = z.union([z.string(), z.array(z.string()).min(1).max(3)]);
+
 const variantSchema = z.object({
   variant_id: z.string(),
   sku: z.string().nullable().optional(),
-  color_hex: z.string(),
-  color_pantone: z.string(),
+  color_hex: colorField,
+  color_pantone: colorField,
   fit: z.string(),
 });
 
@@ -52,11 +54,36 @@ const enrichmentResponseSchema = z.object({
   product: productSchema,
 });
 
+export type RawEnrichedVariant = {
+  variantId: string;
+  sku?: string | null;
+  colorHex: string | string[];
+  colorPantone: string | string[];
+  fit: string;
+};
+
+export type RawEnrichedProduct = {
+  category: string;
+  subcategory: string;
+  styleTags: string[];
+  materialTags: string[];
+  patternTags: string[];
+  occasionTags: string[];
+  gender: string;
+  season: string;
+  seoTitle: string;
+  seoDescription: string;
+  seoTags: string[];
+  variants: RawEnrichedVariant[];
+};
+
 export type EnrichedVariant = {
   variantId: string;
   sku?: string | null;
   colorHex: string;
   colorPantone: string;
+  colorHexes: string[];
+  colorPantones: string[];
   fit: string;
 };
 
@@ -141,15 +168,15 @@ Debes devolver SOLO JSON válido con el siguiente esquema:
       {
         "variant_id": "string",
         "sku": "string|null",
-        "color_hex": "#RRGGBB",
-        "color_pantone": "NN-NNNN",
+        "color_hex": "#RRGGBB | [\"#RRGGBB\", \"#RRGGBB\"]",
+        "color_pantone": "NN-NNNN | [\"NN-NNNN\", \"NN-NNNN\"]",
         "fit": "string"
       }
     ]
   }
 }
 Reglas estrictas:
-- category, subcategory, gender, season, color_hex, color_pantone y fit deben tener UN SOLO valor.
+- category, subcategory, gender, season y fit deben tener UN SOLO valor.
 - style_tags deben ser EXACTAMENTE 10 elementos.
 - material_tags máximo 3 elementos.
 - pattern_tags máximo 2 elementos.
@@ -160,8 +187,9 @@ Reglas estrictas:
 - Usa SOLO los valores permitidos (en formato slug sin tildes ni espacios) para category/subcategory/style/material/pattern/occasion/gender/season/fit.
 - seo_title, seo_description y seo_tags son libres (texto natural).
 - No inventes variantes: devuelve un objeto por cada variant_id recibido.
-- color_hex debe ser hexadecimal #RRGGBB.
-- color_pantone debe ser un código Pantone TCX NN-NNNN. No puede ser null. Usa el más cercano si no es exacto.
+- color_hex debe ser hexadecimal #RRGGBB. Puede ser string o array (1-3). Si hay varios colores, devuelve array con máximo 3 en orden de predominancia.
+- color_pantone debe ser un código Pantone TCX NN-NNNN. Puede ser string o array (1-3). Si hay varios colores, devuelve array con máximo 3 en orden de predominancia.
+- Si hay dudas sobre el género o es mixto, usa "no_binario_unisex".
 Reglas de evidencia y consistencia:
 - Prioriza la señal de texto en este orden: product.name, product.description, metadata (og:title, og:description, jsonld, etc.).
 - Si viene product.brand_name úsalo para enriquecer seo_title y seo_description.
@@ -229,7 +257,7 @@ const buildFallbackSeoDescription = (description?: string | null, name?: string 
   description?.trim() || name?.trim() || "";
 
 const normalizeEnrichment = (
-  input: EnrichedProduct,
+  input: RawEnrichedProduct,
   variantIds: Set<string>,
   context: {
     productName: string;
@@ -271,6 +299,17 @@ const normalizeEnrichment = (
   if (!season) throw new Error(`Invalid season: ${input.season}`);
 
   const fitAllowed = FIT_OPTIONS.map((entry) => entry.value);
+  const toArray = (value: string | string[]) => (Array.isArray(value) ? value : [value]);
+  const normalizeColorList = (value: string | string[]) =>
+    toArray(value)
+      .map((entry) => normalizeHexColor(entry))
+      .filter(Boolean)
+      .slice(0, 3) as string[];
+  const normalizePantoneList = (value: string | string[]) =>
+    toArray(value)
+      .map((entry) => normalizePantoneCode(entry))
+      .filter(Boolean)
+      .slice(0, 3) as string[];
 
   const seenVariantIds = new Set<string>();
   const variants = input.variants.map((variant) => {
@@ -282,15 +321,19 @@ const normalizeEnrichment = (
       throw new Error(`Duplicate variant_id: ${variantId}`);
     }
     seenVariantIds.add(variantId);
-    const colorHex = normalizeHexColor(variant.colorHex);
-    if (!colorHex) throw new Error(`Invalid color_hex: ${variant.colorHex}`);
-    const colorPantone = normalizePantoneCode(variant.colorPantone) ?? "19-4042";
+    const colorHexes = normalizeColorList(variant.colorHex);
+    if (!colorHexes.length) throw new Error(`Invalid color_hex: ${variant.colorHex}`);
+    const colorPantones = normalizePantoneList(variant.colorPantone);
+    const colorHex = colorHexes[0];
+    const colorPantone = colorPantones[0] ?? "19-4042";
     const fit = normalizeEnumValue(variant.fit, fitAllowed);
     if (!fit) throw new Error(`Invalid fit: ${variant.fit}`);
     return {
       ...variant,
       colorHex,
       colorPantone,
+      colorHexes,
+      colorPantones: colorPantones.length ? colorPantones : [colorPantone],
       fit,
     };
   });
@@ -463,7 +506,7 @@ export async function enrichProductWithOpenAI(params: {
         throw new Error(`JSON validation failed: ${validation.error.message}`);
       }
       const product = validation.data.product;
-      const normalized: EnrichedProduct = {
+      const normalized: RawEnrichedProduct = {
         category: product.category,
         subcategory: product.subcategory,
         styleTags: product.style_tags,
@@ -501,7 +544,7 @@ export async function enrichProductWithOpenAI(params: {
   throw new Error(`OpenAI enrichment failed after ${MAX_RETRIES} attempts: ${String(lastError)}`);
 }
 
-export const productEnrichmentPromptVersion = "v4";
-export const productEnrichmentSchemaVersion = "v2";
+export const productEnrichmentPromptVersion = "v5";
+export const productEnrichmentSchemaVersion = "v3";
 
 export const toSlugLabel = (value: string) => slugify(value);

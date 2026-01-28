@@ -181,12 +181,30 @@ export const processEnrichmentItemById = async (
         if (!enrichedVariant) {
           throw new Error(`Missing enrichment for variant ${variant.id}`);
         }
+        const baseMetadata =
+          variant.metadata && typeof variant.metadata === "object"
+            ? (variant.metadata as Record<string, unknown>)
+            : {};
+        const existingEnrichment =
+          baseMetadata.enrichment && typeof baseMetadata.enrichment === "object"
+            ? (baseMetadata.enrichment as Record<string, unknown>)
+            : {};
         await tx.variant.update({
           where: { id: variant.id },
           data: {
             color: enrichedVariant.colorHex,
             colorPantone: enrichedVariant.colorPantone,
             fit: enrichedVariant.fit,
+            metadata: {
+              ...baseMetadata,
+              enrichment: {
+                ...existingEnrichment,
+                colors: {
+                  hex: enrichedVariant.colorHexes,
+                  pantone: enrichedVariant.colorPantones,
+                },
+              },
+            },
           },
         });
       }

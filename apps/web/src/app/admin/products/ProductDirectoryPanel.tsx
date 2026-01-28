@@ -446,7 +446,7 @@ export default function ProductDirectoryPanel() {
         const nextDetail = payload.product ?? null;
         setDetail(nextDetail);
         if (nextDetail?.brand?.id) {
-          setBrandFilter((prev) => (prev === nextDetail.brand.id ? prev : nextDetail.brand.id));
+          setBrandFilter((prev) => (prev ? (prev === nextDetail.brand.id ? prev : nextDetail.brand.id) : prev));
         }
       } catch (error) {
         console.warn(error);
