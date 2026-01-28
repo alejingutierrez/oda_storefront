@@ -54,8 +54,8 @@ catalogWorker.on('failed', (job, err) => console.error('[catalog-worker] failed'
 
 const enrichmentQueueName = process.env.PRODUCT_ENRICHMENT_QUEUE_NAME || 'product-enrichment';
 const enrichmentConcurrency = Math.max(
-  10,
-  Number(process.env.PRODUCT_ENRICHMENT_WORKER_CONCURRENCY || 10),
+  20,
+  Number(process.env.PRODUCT_ENRICHMENT_WORKER_CONCURRENCY || 20),
 );
 const enrichmentWorker = new Worker(
   enrichmentQueueName,

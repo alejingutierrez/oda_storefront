@@ -106,12 +106,12 @@ export async function POST(req: Request) {
   );
   const drainBatch = Number.isFinite(requestedDrainBatch) ? requestedDrainBatch : drainBatchDefault;
   const drainConcurrencyDefault = Number(
-    process.env.PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY ?? 10,
+    process.env.PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY ?? 20,
   );
   const drainConcurrencyRaw = Number.isFinite(requestedDrainConcurrency)
     ? requestedDrainConcurrency
     : drainConcurrencyDefault;
-  const drainConcurrency = Math.max(10, drainConcurrencyRaw);
+  const drainConcurrency = Math.max(20, drainConcurrencyRaw);
   const drainMaxMsDefault = Number(
     process.env.PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS ?? 20000,
   );
