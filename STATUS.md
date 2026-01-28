@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-28 | fix | Enrichment: batch/queue floor a concurrencia efectiva | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-non20si0r-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante la revisión).
+- 2026-01-28 | fix | Enrichment: batch/queue floor a concurrencia efectiva | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-6mix5s7ab-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante la revisión).
 - 2026-01-28 | fix | Duplicar concurrencia product-enrichment a 20 | Drain y worker con clamp mínimo 20; requiere redeploy worker/containers + Vercel.
 - 2026-01-28 | fix | Concurrencia worker product-enrichment mínimo 10 | Ajuste default + clamp en worker; requiere redeploy de worker/containers.
 - 2026-01-28 | fix | Concurrencia mínima 10 en drain de product-enrichment | Vercel prod Ready: https://oda-storefront-6ee5-m336ytr9u-alejingutierrezs-projects.vercel.app.
