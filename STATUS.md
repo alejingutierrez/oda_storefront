@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-28 | fix | Enrichment: quitar sesgo de category/subcategory + nueva taxonomía (calzado/bolsos/gafas) | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-lgivhj99i-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | fix | Enrichment: descripciones detalladas de categoría/subcategoría | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-6ta234wdj-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | fix | Enrichment: timeout Bedrock para evitar timeouts en drain | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-3qro7ms4r-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | fix | Enrichment: jsonrepair para JSON no estricto en Bedrock | Docker rebuild ok; logs web/worker/scraper OK; Vercel preview Ready: https://oda-storefront-6ee5-bh957xdwt-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
