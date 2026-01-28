@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Brand } from "@prisma/client";
 import { getOpenAIClient } from "@/lib/openai";
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.2";
+const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.1";
 const DEFAULT_TIMEOUT_MS = 12000;
 const MAX_HTML_CHARS = 200_000;
 const MAX_HELPER_CHARS = 250_000;

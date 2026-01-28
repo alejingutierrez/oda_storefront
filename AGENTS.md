@@ -4,7 +4,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 
 ## 1) Visión y propósito
 - Construir el mejor agregador y recomendador de moda colombiana, indexando ~500 marcas locales y su catálogo completo (productos, variaciones, precios, stock, tallas, colores, fotos, descripciones, enlaces originales, datos de tienda física y digital).
-- Mantener la información siempre actualizada mediante scraping continuo + enriquecimiento con modelos de OpenAI (modelo principal **GPT-5.2** en JSON mode) que devuelvan JSON determinista y estable.
+- Mantener la información siempre actualizada mediante scraping continuo + enriquecimiento con modelos de OpenAI (modelo principal **GPT-5.1** en JSON mode) que devuelvan JSON determinista y estable.
 - Entregar a los usuarios un descubrimiento guiado (recomendaciones proactivas), opciones de anuncios, y experiencias premium (try-on con IA y asesoría personalizada), llevando el tráfico a las tiendas oficiales.
 
 ## 2) Modelo de negocio
@@ -15,7 +15,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 ## 3) Alcance funcional
 - **Scraping & monitoreo**: rastrear catálogos y metadatos de tiendas (web, redes, datos de contacto, horarios, direcciones). Detectar cambios de stock/precio, nuevas colecciones, cierres temporales.
 - **Descubrimiento de URLs**: leer `robots.txt`, localizar y priorizar sitemaps XML/JSON/Atom; si no existen, crawler controlado (BFS/priority) con heurísticas para identificar páginas de producto; cachear y versionar sitemaps.
-- **Normalización asistida por IA**: extraer descripciones, materiales, patrones, siluetas, colores, estilo y ocasión; generar captions de imágenes; producir JSON estable para ingestión (GPT-5.2 JSON mode + validación de esquema).
+- **Normalización asistida por IA**: extraer descripciones, materiales, patrones, siluetas, colores, estilo y ocasión; generar captions de imágenes; producir JSON estable para ingestión (GPT-5.1 JSON mode + validación de esquema).
 - **Catálogo unificado**: productos, variantes, imágenes, histórico de precios/stock, taxonomía uniforme (categoría, fit, material, patrón, ocasión, temporada), enlaces al ítem original.
 - **Recomendador**: modelos híbridos (contenido + comportamiento). Similaridad semántica de texto/imágenes y señales de clic/guardar/compra redirigida. Soporte para “proactividad” (alertas, drops, back-in-stock).
 - **Búsqueda y filtrado**: texto libre, filtros por categoría, talla, color, material, precio, disponibilidad, ubicación de la tienda, estilo.
@@ -27,7 +27,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - **BFF/API**: Next.js (app router, API routes o server actions) actuando como backend principal: autenticación, orquestación de catálogos, endpoints de búsqueda y recomendaciones, billing, webhooks.
 - **Middleware de orquestación**: capa de colas y workers (p.ej., Redis/Upstash + workers en contenedores) para scraping, ingestión IA, enriquecimiento y tareas programadas.
 - **Scraper service**: microservicio dockerizado con rotación de proxies, manejo de robots, parsers específicos por marca y fallback genérico; emite eventos de cambio (stock/precio/nuevos productos). Incluye módulo de descubrimiento de sitemap y crawler de respaldo.
-- **Ingestión IA**: jobs que envían HTML/JSON crudo + imágenes a OpenAI GPT-5.2 (JSON mode) para obtener objetos normalizados, captions y clasificación semántica; refuerzo con pocas tomas a modelos de visión para atributos visuales finos.
+- **Ingestión IA**: jobs que envían HTML/JSON crudo + imágenes a OpenAI GPT-5.1 (JSON mode) para obtener objetos normalizados, captions y clasificación semántica; refuerzo con pocas tomas a modelos de visión para atributos visuales finos.
 - **Recomendador**: servicio que mantiene embeddings (texto/imágenes) y modelos colaborativos; expone API para similares, outfits sugeridos y re-rank personalizado.
 - **Storage**: Neon Postgres (rama prod/stg) para datos transaccionales; extensiones recomendadas: `pgvector` para embeddings, `postgis` opcional para geodatos. Vercel Blob para imágenes generadas/derivadas y assets de correo.
 - **CDN/Edge**: Vercel para caché de páginas y APIs con revalidación; headers de `stale-while-revalidate` para catálogo público.
@@ -37,7 +37,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 ### Diagrama textual de flujos
 1) Scheduler → Encola jobs de scraping por marca/endpoint (prioridad basada en frescura/rotación).
 2) Worker Scraper → Descubre sitemap/URLs → Descarga HTML/JSON → Parser marca → Publica payload crudo.
-3) Job Ingestión IA → Envía payload + imágenes a GPT-5.2 (JSON mode) → Recibe objeto normalizado + captions → Valida contra JSON Schema.
+3) Job Ingestión IA → Envía payload + imágenes a GPT-5.1 (JSON mode) → Recibe objeto normalizado + captions → Valida contra JSON Schema.
 4) Upsert en Postgres (productos, variantes, precios, stock, medios, metadatos de tienda) + guarda assets derivados en Vercel Blob.
 5) Indexación de embeddings (pgvector) → Recomendador/Búsqueda semántica.
 6) Front/Apps consumen API → Revalidación de ISR/Cache.
@@ -68,7 +68,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - `announcements/placements` para anuncios y su performance.
 - `billing_payments` y `webhook_logs` (Wompi).
 - `crawl_runs(id, brand_id, sitemap_url, depth, status, fetched_at, delta_hash, pages_seen, pages_changed)`
-- `ai_normalizations(id, brand_id, product_external_id, prompt_version, model='gpt-5.2', input_hash, output_schema_version, status, cost, created_at)`
+- `ai_normalizations(id, brand_id, product_external_id, prompt_version, model='gpt-5.1', input_hash, output_schema_version, status, cost, created_at)`
 - `reco_models(id, version, type, metrics, activated_at, rollback_to)`
 
 ## 7) Scraping & frescura
@@ -80,7 +80,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - Preferir fuentes estructuradas (sitemaps, feeds, APIs públicas) antes que crawling profundo; fallback headless sólo cuando sea necesario.
 
 ## 8) Ingestión IA (OpenAI)
-- Modelo por defecto: **GPT-5.2** (JSON mode). Backups: 4.1/4.0 si hay degradación.
+- Modelo por defecto: **GPT-5.1** (JSON mode). Backups: 4.1/4.0 si hay degradación.
 - Enriquecimiento de atributos (admin): **GPT-5 mini** (JSON mode) con catálogo cerrado de categorías/tags/gender/season y color hex + Pantone (formato 19‑4042, nunca null; usar el más cercano disponible).
 - Usar JSON mode y esquemas versionados; validar con JSON Schema antes de persistir; rechazar y reintentar con prompt de reparación cuando falle.
 - Prompts que exijan: categorías normalizadas, materiales, patrones, silueta/fit, ocasión, temporada, tono/estilo, calidad de estampado, cierres, bolsillos, forro, instrucciones de cuidado.

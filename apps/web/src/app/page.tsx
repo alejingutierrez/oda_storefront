@@ -12,7 +12,7 @@ export default function Home() {
           </h1>
           <p className="max-w-3xl text-lg text-slate-700">
             Plataforma headless en Next.js + Vue Storefront, scrapers
-            dockerizados, ingestión con GPT-5.2 en JSON mode y catálogo
+            dockerizados, ingestión con GPT-5.1 en JSON mode y catálogo
             normalizado en Neon + pgvector. Todo preparado para despliegue en
             Vercel y pipelines de recomendación.
           </p>
@@ -32,7 +32,7 @@ export default function Home() {
             <ul className="mt-3 space-y-2 text-sm text-slate-700">
               <li>→ Definir taxonomía inicial y publicar catálogos</li>
               <li>→ Integrar búsqueda + pgvector y primeras 10–20 marcas</li>
-              <li>→ Versionar prompts GPT-5.2 y monitorear costos</li>
+              <li>→ Versionar prompts GPT-5.1 y monitorear costos</li>
             </ul>
           </div>
         </div>

@@ -1,6 +1,6 @@
 # Historias de Usuario · ODA Storefront
 
-Basadas en `AGENTS.md` y `BACKLOG.md`. Estructuradas por fase (F0–F3), stack: Next.js + Vue Storefront en Vercel, BFF/API en Next, scrapers/workers dockerizados, Neon+pgvector, Vercel Blob, OpenAI GPT-5.2 JSON mode, Wompi, Redis/colas.
+Basadas en `AGENTS.md` y `BACKLOG.md`. Estructuradas por fase (F0–F3), stack: Next.js + Vue Storefront en Vercel, BFF/API en Next, scrapers/workers dockerizados, Neon+pgvector, Vercel Blob, OpenAI GPT-5.1 JSON mode, Wompi, Redis/colas.
 
 Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA), datos, no funcionales (NF), riesgos/mitigación, métricas/telemetría.
 
@@ -48,7 +48,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 
 ### MC-005 Primer scraper E2E
 - Historia: Como operador, quiero scrapear 1 marca desde su sitemap y ver el producto en el front, para validar el pipeline completo.
-- Alcance: Descubrimiento de sitemap/robots, parser mínimo, publicación de payload crudo, llamada a GPT-5.2, upsert en DB, render en VSF con ISR.
+- Alcance: Descubrimiento de sitemap/robots, parser mínimo, publicación de payload crudo, llamada a GPT-5.1, upsert en DB, render en VSF con ISR.
 - CA: Al menos 1 producto visible en ficha VSF con datos y foto; stock/precio guardados; logs del pipeline accesibles.
 - Datos: URL original, imágenes, variantes (color/talla), price/stock.
 - NF: Ciclo E2E <15 min; reintento en fallas de red.
@@ -104,6 +104,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Categorias vacias o inconsistentes; mitigacion: trim y deduplicacion en API, UI muestra "Sin categorias" cuando no hay valores.
 - Métricas: Menos tiempo para encontrar marcas por categoria o volumen de catalogo.
 - Estado: **done (2026-01-27)**.
+
+### MC-101 Default OpenAI gpt-5.1 en scrapers y normalización
+- Historia: Como operador, quiero que el modelo por defecto sea gpt-5.1 en scrapers de marcas/tech y normalización, para alinear calidad/costos con la decisión actual.
+- Alcance: Default `OPENAI_MODEL` pasa a `gpt-5.1` en brand scraper, tech profiler y helper OpenAI; actualizar `.env.example`, README y AGENTS.
+- CA: Si no se define `OPENAI_MODEL`, se usa `gpt-5.1` en scraping de marcas, profiler y normalización.
+- Datos: `OPENAI_MODEL`, documentación pública.
+- NF: No cambia prompts ni schemas; solo el modelo por defecto.
+- Riesgos: Diferencias en calidad/costo respecto a 5.2; mitigación con override por env.
+- Métricas: Estabilidad de resultados y costo por item.
+- Estado: **done (2026-01-28)**.
 
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.

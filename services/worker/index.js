@@ -10,7 +10,7 @@ const worker = new Worker(
   queueName,
   async (job) => {
     console.log('[worker-stub] processing job', job.id, job.name);
-    // Placeholder: real pipeline will call GPT-5.2 and persist in Neon.
+    // Placeholder: real pipeline will call GPT-5.1 and persist in Neon.
   },
   { connection },
 );

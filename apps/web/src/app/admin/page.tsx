@@ -84,7 +84,7 @@ function AdminPanel() {
         <div className="mt-6">
           <p className="text-sm font-medium text-slate-800">Próximo:</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-            <li>Revisar respuestas JSON de GPT-5.2 para normalización.</li>
+            <li>Revisar respuestas JSON de GPT-5.1 para normalización.</li>
             <li>Listar jobs de scraping e ingestión con su estado.</li>
             <li>Panel de aprobaciones manuales de producto.</li>
           </ul>

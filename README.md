@@ -1,6 +1,6 @@
 # ODA Storefront
 
-Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar catálogos vía OpenAI GPT-5.2 (JSON mode) y servir búsqueda/recomendaciones en Next.js + Vue Storefront, con backend BFF, scrapers y workers dockerizados. Despliegue objetivo: Vercel (web/BFF) + contenedores para scrapers/workers.
+Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar catálogos vía OpenAI GPT-5.1 (JSON mode) y servir búsqueda/recomendaciones en Next.js + Vue Storefront, con backend BFF, scrapers y workers dockerizados. Despliegue objetivo: Vercel (web/BFF) + contenedores para scrapers/workers.
 
 ## Estructura
 - `apps/web` – Front + BFF en Next.js (App Router, TS, Tailwind).
@@ -15,7 +15,7 @@ Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar cat�
 
 ## Variables de entorno
 Copiar `.env.example` a `.env`/`.env.local` y completar:
-- Core: `OPENAI_API_KEY`, `OPENAI_MODEL` (opcional, default `gpt-5.2`), `OPENAI_WEB_SEARCH` (opcional), `NEXTAUTH_SECRET`, `VERCEL_TEAM_ID`, `VERCEL_TOKEN`.
+- Core: `OPENAI_API_KEY`, `OPENAI_MODEL` (opcional, default `gpt-5.1`), `OPENAI_WEB_SEARCH` (opcional), `NEXTAUTH_SECRET`, `VERCEL_TEAM_ID`, `VERCEL_TOKEN`.
 - Base de datos (Neon): `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `NEON_DATABASE_URL`, `PGHOST`, `PGHOST_UNPOOLED`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`, `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL_NO_SSL`, `POSTGRES_PRISMA_URL`, `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`.
 - Redis: `REDIS_URL`.
 - Storage: `VERCEL_BLOB_READ_WRITE_TOKEN`, `BLOB_READ_WRITE_TOKEN`.
@@ -123,7 +123,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Endpoint: `POST /api/normalize` (runtime Node).
 - Autorización: header `Authorization: Bearer <ADMIN_TOKEN>` (fallback a `NEXTAUTH_SECRET` si no se define). Middleware protege `/api/normalize`.
 - Payload: `{ productHtml: string, images: string[], sourceUrl?: string }`.
-- Respuesta: objeto `{ product, cost }` normalizado por GPT-5.2 (JSON mode).
+- Respuesta: objeto `{ product, cost }` normalizado por GPT-5.1 (JSON mode).
 
 ## API interna (scraper de marcas)
 - `GET /api/admin/brands/scrape`: estado de cola (requiere sesión admin o `ADMIN_TOKEN`).
