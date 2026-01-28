@@ -158,6 +158,7 @@ export const processEnrichmentItemById = async (
       await tx.product.update({
         where: { id: item.productId },
         data: {
+          description: enriched.description,
           category: enriched.category,
           subcategory: enriched.subcategory,
           styleTags: enriched.styleTags,

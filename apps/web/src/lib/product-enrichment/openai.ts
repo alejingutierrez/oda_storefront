@@ -48,6 +48,7 @@ const variantSchema = z.object({
 });
 
 const productSchema = z.object({
+  description: z.string().optional().default(""),
   category: z.string(),
   subcategory: z.string(),
   style_tags: z.array(z.string()).min(10).max(10),
@@ -79,6 +80,7 @@ export type RawEnrichedVariant = {
 };
 
 export type RawEnrichedProduct = {
+  description: string;
   category: string;
   subcategory: string;
   styleTags: string[];
@@ -104,6 +106,7 @@ export type EnrichedVariant = {
 };
 
 export type EnrichedProduct = {
+  description: string;
   category: string;
   subcategory: string;
   styleTags: string[];
@@ -242,6 +245,7 @@ const buildPrompt = () => {
 Debes devolver SOLO JSON válido con el siguiente esquema:
 {
   "product": {
+    "description": "string",
     "category": "string",
     "subcategory": "string",
     "style_tags": ["string"],
@@ -265,6 +269,7 @@ Debes devolver SOLO JSON válido con el siguiente esquema:
   }
 }
 Reglas estrictas:
+- description debe ser SOLO texto plano (sin HTML, sin etiquetas).
 - category, subcategory, gender, season y fit deben tener UN SOLO valor.
 - subcategory debe ser una de las subcategorías listadas para la categoría seleccionada; nunca uses "otro".
 - style_tags deben ser EXACTAMENTE 10 elementos.
@@ -348,6 +353,18 @@ const buildFallbackSeoTitle = (name: string, brand?: string | null) =>
 const buildFallbackSeoDescription = (description?: string | null, name?: string | null) =>
   description?.trim() || name?.trim() || "";
 
+const stripHtml = (value: string) => {
+  if (!value) return "";
+  return value
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
 const normalizeEnrichment = (
   input: RawEnrichedProduct,
   variantIds: Set<string>,
@@ -359,6 +376,8 @@ const normalizeEnrichment = (
     subcategory?: string | null;
   },
 ) => {
+  const plainDescription =
+    stripHtml(input.description) || stripHtml(context.description ?? "") || "";
   if (input.variants.length !== variantIds.size) {
     throw new Error(
       `Variant count mismatch: expected ${variantIds.size}, got ${input.variants.length}`,
@@ -452,7 +471,7 @@ const normalizeEnrichment = (
 
   const fallbackTitle = buildFallbackSeoTitle(context.productName, context.brandName);
   const seoTitle = clampText(input.seoTitle || fallbackTitle, 70) || clampText(fallbackTitle, 70);
-  const fallbackDescription = buildFallbackSeoDescription(context.description, context.productName);
+  const fallbackDescription = buildFallbackSeoDescription(plainDescription, context.productName);
   const seoDescription = clampText(
     input.seoDescription || fallbackDescription,
     160,
@@ -468,6 +487,7 @@ const normalizeEnrichment = (
   ]);
 
   return {
+    description: plainDescription,
     category,
     subcategory,
     styleTags: fixedStyleTags,
@@ -597,6 +617,7 @@ export async function enrichProductWithOpenAI(params: {
     }
     const product = validation.data.product;
     const normalized: RawEnrichedProduct = {
+      description: product.description ?? "",
       category: product.category,
       subcategory: product.subcategory,
       styleTags: product.style_tags,
@@ -698,7 +719,6 @@ export async function enrichProductWithOpenAI(params: {
       anthropic_version: "bedrock-2023-05-31",
       max_tokens: 2048,
       temperature: 0,
-      top_p: 0.1,
       system: systemPrompt,
       messages: [
         {
@@ -740,7 +760,6 @@ export async function enrichProductWithOpenAI(params: {
       anthropic_version: "bedrock-2023-05-31",
       max_tokens: 2048,
       temperature: 0,
-      top_p: 0.1,
       system: buildRepairSystemPrompt(systemPrompt),
       messages: [
         {
@@ -796,7 +815,7 @@ export async function enrichProductWithOpenAI(params: {
   );
 }
 
-export const productEnrichmentPromptVersion = "v6";
-export const productEnrichmentSchemaVersion = "v3";
+export const productEnrichmentPromptVersion = "v7";
+export const productEnrichmentSchemaVersion = "v4";
 
 export const toSlugLabel = (value: string) => slugify(value);
