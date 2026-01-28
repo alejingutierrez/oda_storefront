@@ -73,6 +73,9 @@ type ProductDetail = {
   care: string | null;
   origin: string | null;
   status: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  seoTags: string[];
   sourceUrl: string | null;
   currency: string | null;
   imageCoverUrl: string | null;
@@ -246,6 +249,22 @@ const renderFriendlyTags = (
           </span>
         ))}
       </div>
+    </div>
+  );
+};
+
+const renderSeoTags = (tags: string[]) => {
+  if (!tags.length) return <span className="text-xs text-slate-500">—</span>;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {tags.slice(0, 12).map((tag) => (
+        <span
+          key={tag}
+          className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600"
+        >
+          {tag}
+        </span>
+      ))}
     </div>
   );
 };
@@ -843,6 +862,24 @@ export default function ProductDirectoryPanel() {
                         {renderFriendlyTags("Material", detail.materialTags, MATERIAL_TAG_FRIENDLY)}
                         {renderFriendlyTags("Patrón", detail.patternTags, PATTERN_TAG_FRIENDLY)}
                         {renderFriendlyTags("Ocasión", detail.occasionTags, OCCASION_TAG_FRIENDLY)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">SEO</p>
+                    <div className="mt-3 space-y-3 text-sm text-slate-700">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Meta title</p>
+                        <p className="mt-2">{toText(detail.seoTitle)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Meta description</p>
+                        <p className="mt-2">{toText(detail.seoDescription)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">SEO tags</p>
+                        <div className="mt-2">{renderSeoTags(detail.seoTags ?? [])}</div>
                       </div>
                     </div>
                   </div>

@@ -57,7 +57,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 ## 6) Datos y esquemas sugeridos
 - `brands(id, name, slug, site_url, description, logo_url, contact_phone, contact_email, instagram, tiktok, facebook, whatsapp, address, city, lat, lng, opening_hours, metadata, is_active)`
 - `stores(id, brand_id, name, address, lat, lng, phone, schedule, website, channel_links, metadata)`
-- `products(id, brand_id, external_id, name, description, category, subcategory, style_tags[], material_tags[], pattern_tags[], occasion_tags[], gender, season, care, origin, status, source_url, image_cover_url, metadata, created_at, updated_at)`
+- `products(id, brand_id, external_id, name, description, category, subcategory, style_tags[], material_tags[], pattern_tags[], occasion_tags[], gender, season, care, origin, status, seo_title, seo_description, seo_tags[], source_url, image_cover_url, metadata, created_at, updated_at)`
 - `variants(id, product_id, sku, color, color_pantone, size, fit, material, price, currency, stock, stock_status, images[], metadata)`
 - `price_history(id, variant_id, price, currency, captured_at)`
 - `stock_history(id, variant_id, stock, captured_at)`
@@ -83,7 +83,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - Modelo por defecto: **GPT-5.1** (JSON mode). Backups: 4.1/4.0 si hay degradación.
 - Enriquecimiento de atributos (admin): **GPT-5 mini** (JSON mode) con catálogo cerrado de categorías/tags/gender/season y color hex + Pantone (formato 19‑4042, nunca null; usar el más cercano disponible).
 - Usar JSON mode y esquemas versionados; validar con JSON Schema antes de persistir; rechazar y reintentar con prompt de reparación cuando falle.
-- Prompts que exijan: categorías normalizadas, materiales, patrones, silueta/fit, ocasión, temporada, tono/estilo, calidad de estampado, cierres, bolsillos, forro, instrucciones de cuidado.
+- Prompts que exijan: categorías normalizadas, materiales, patrones, silueta/fit, ocasión, temporada, tono/estilo, calidad de estampado, cierres, bolsillos, forro, instrucciones de cuidado, título SEO y metadescripción.
 - Captioning de imágenes (visión) para enriquecer búsqueda y recomendaciones; extracción de rasgos finos (texturas, acabados, tipo de cuello/tirante, largo, calce).
 - Filtros de seguridad para datos no confiables; fallback a reglas manuales cuando IA falle.
 - Guardar `prompt_version` y `schema_version`; comparar salidas para detectar drift de modelo; registrar costo por item.

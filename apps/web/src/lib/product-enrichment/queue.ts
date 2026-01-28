@@ -83,3 +83,17 @@ export const enqueueEnrichmentItems = async (items: Array<{ id: string }>) => {
     }
   }
 };
+
+export const clearEnrichmentQueue = async () => {
+  if (!isEnrichmentQueueEnabled()) {
+    return { cleared: false, reason: "queue_disabled" as const };
+  }
+  try {
+    const queue = getEnrichmentQueue();
+    await queue.obliterate({ force: true });
+    return { cleared: true as const };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { cleared: false as const, reason: message };
+  }
+};

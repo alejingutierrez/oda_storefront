@@ -50,7 +50,7 @@ export const processEnrichmentItemById = async (
 ): Promise<ProcessEnrichmentItemResult> => {
   const item = await prisma.productEnrichmentItem.findUnique({
     where: { id: itemId },
-    include: { run: true, product: { include: { variants: true } } },
+    include: { run: true, product: { include: { variants: true, brand: true } } },
   });
 
   if (!item) return { status: "not_found" };
@@ -104,6 +104,7 @@ export const processEnrichmentItemById = async (
     const enriched = await enrichProductWithOpenAI({
       product: {
         id: item.product.id,
+        brandName: item.product.brand?.name ?? null,
         name: item.product.name,
         description: item.product.description,
         category: item.product.category,
@@ -152,6 +153,9 @@ export const processEnrichmentItemById = async (
           occasionTags: enriched.occasionTags,
           gender: enriched.gender,
           season: enriched.season,
+          seoTitle: enriched.seoTitle,
+          seoDescription: enriched.seoDescription,
+          seoTags: enriched.seoTags,
           metadata: {
             ...(item.product.metadata && typeof item.product.metadata === "object" ? item.product.metadata : {}),
             enrichment: {

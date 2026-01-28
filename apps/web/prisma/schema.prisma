@@ -159,6 +159,9 @@ model Product {
   care              String?
   origin            String?
   status            String?   // active, archived, etc.
+  seoTitle          String?
+  seoDescription    String?
+  seoTags           String[]  @default([])
   currency          String?   // COP, USD, etc.
   sourceUrl         String?
   imageCoverUrl     String?

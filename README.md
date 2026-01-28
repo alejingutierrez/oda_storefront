@@ -93,13 +93,14 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - El cierre del modal limpia `productId` de la URL sin reabrirlo en bucle.
   - Persistencia de navegación: la página y el filtro por marca viven en la URL (`page`, `brandId`) y el detalle se puede abrir por `productId`.
 - Panel `/admin/product-enrichment` (enriquecimiento):
-  - Enriquecimiento de atributos por GPT‑5 mini (categoría, subcategoría, tags, género, temporada, color hex, Pantone y fit).
+  - Enriquecimiento de atributos por GPT‑5 mini (categoría, subcategoría, tags, género, temporada, color hex, Pantone, fit y campos SEO: meta title/description + seoTags).
   - Style tags: **exactamente 10** por producto.
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
   - Por defecto omite productos ya enriquecidos (se puede incluirlos manualmente).
-  - Controles de **pausa** y **detener**; muestra progreso, errores, estado y cobertura (enriquecidos vs pendientes). Auto‑refresco cada 15s cuando hay run en processing.
+  - Controles de **pausa** y **detener**, y botón para **limpiar batches activos**; muestra progreso, errores, estado y cobertura (enriquecidos vs pendientes) con conteo de cola/en‑progreso. Auto‑refresco cada 5s cuando hay run activo.
   - En el panel, el run no se drena en la misma petición (respuesta rápida); el progreso se ve por polling y por el cron `/api/admin/product-enrichment/drain`.
   - Fallback serverless `/api/admin/product-enrichment/drain` con cron (cada 1 min) para evitar colas “pegadas”.
+  - Persistencia de estado: `scope`, `brandId`, `batch` e `includeEnriched` viven en la URL para mantener el contexto tras recarga.
 - Panel `/admin/catalog-extractor` (catalog extractor):
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.
   - Controles Play/Pausar/Detener (detener conserva estado para reanudar), reanudación automática y sitemap‑first.

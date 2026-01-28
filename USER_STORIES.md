@@ -115,6 +115,26 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Estabilidad de resultados y costo por item.
 - Estado: **done (2026-01-28)**.
 
+### MC-102 Enriquecimiento productos: estado persistente + progreso realtime + reset batches
+- Historia: Como operador, quiero que el panel de enriquecimiento mantenga el estado al recargar y muestre progreso en tiempo real, para monitorear sin perder contexto.
+- Alcance: `/admin/product-enrichment` sincroniza `scope/brandId/batch/includeEnriched` en la URL; `/api/admin/product-enrichment/state` expone conteos por status (`pending/queued/in_progress/completed/failed`) y timestamps; botón para limpiar batches activos con endpoint `/api/admin/product-enrichment/reset`.
+- CA: El panel conserva selección al recargar; la barra muestra completados/fallidos, cola y en progreso; se puede limpiar batches activos sin afectar productos enriquecidos.
+- Datos: `product_enrichment_runs`, `product_enrichment_items`, cola Redis.
+- NF: Polling solo cuando el run está activo; intervalos cortos (~5s).
+- Riesgos: Limpiar batches elimina historial de runs activos; mitigación con confirmación en UI.
+- Métricas: Menor tiempo de monitoreo y menos bloqueos por batches atascados.
+- Estado: **done (2026-01-28)**.
+
+### MC-103 Campos SEO en productos + enriquecimiento IA
+- Historia: Como operador, quiero guardar meta title/description y tags SEO por producto, para mejorar posicionamiento y páginas de producto.
+- Alcance: Nuevas columnas `seoTitle`, `seoDescription`, `seoTags[]` en `products`; prompt de enriquecimiento genera estos campos usando nombre/descripcion/marca; UI de producto muestra bloque SEO.
+- CA: Los campos quedan poblados al enriquecer productos y se persisten en DB; el detalle admin muestra los valores.
+- Datos: Tabla `products`, `product_enrichment_runs/items`.
+- NF: SEO tags se deduplican y recortan; meta title/description se limitan por longitud.
+- Riesgos: Cambios de calidad del texto SEO; mitigación con fallback a nombre/descripcion.
+- Métricas: % de productos con SEO completo y longitud correcta.
+- Estado: **done (2026-01-28)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

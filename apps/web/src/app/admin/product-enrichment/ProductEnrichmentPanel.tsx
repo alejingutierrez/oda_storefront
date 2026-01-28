@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 const BATCH_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
 type BrandOption = {
@@ -23,6 +24,25 @@ type RunSummary = {
   consecutiveErrors?: number;
 };
 
+type RunMeta = {
+  id: string;
+  status: string;
+  scope: string;
+  brandId?: string | null;
+  startedAt?: string | null;
+  updatedAt?: string | null;
+  finishedAt?: string | null;
+};
+
+type ItemCounts = {
+  total?: number;
+  pending?: number;
+  queued?: number;
+  in_progress?: number;
+  completed?: number;
+  failed?: number;
+};
+
 type CoverageCounts = {
   total: number;
   enriched: number;
@@ -39,25 +59,58 @@ const buildProgress = (summary: RunSummary | null) => {
   return { total, completed, failed, pending, percent };
 };
 
+const parsePositiveInt = (value: string | null, fallback: number) => {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.floor(parsed);
+};
+
+const normalizeBatchSize = (value: number) => {
+  if (BATCH_OPTIONS.includes(value)) return value;
+  return BATCH_OPTIONS[0] ?? 10;
+};
+
+const formatDateTime = (value: string | null | undefined) => {
+  if (!value) return "—";
+  return new Date(value).toLocaleString("es-CO");
+};
+
 export default function ProductEnrichmentPanel() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialScope = searchParams.get("scope") === "all" ? "all" : "brand";
+  const initialBrand = searchParams.get("brandId") ?? "";
+  const initialBatch = normalizeBatchSize(
+    parsePositiveInt(searchParams.get("batch"), BATCH_OPTIONS[0] ?? 10),
+  );
+  const initialInclude = searchParams.get("includeEnriched") === "1";
   const [brands, setBrands] = useState<BrandOption[]>([]);
-  const [selectedBrand, setSelectedBrand] = useState<string>("");
-  const [scope, setScope] = useState<"brand" | "all">("brand");
-  const [batchSize, setBatchSize] = useState<number>(BATCH_OPTIONS[0] ?? 10);
+  const [selectedBrand, setSelectedBrand] = useState<string>(initialBrand);
+  const [scope, setScope] = useState<"brand" | "all">(initialScope);
+  const [batchSize, setBatchSize] = useState<number>(initialBatch);
   const [summary, setSummary] = useState<RunSummary | null>(null);
+  const [runMeta, setRunMeta] = useState<RunMeta | null>(null);
   const [counts, setCounts] = useState<CoverageCounts | null>(null);
+  const [itemCounts, setItemCounts] = useState<ItemCounts | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [includeEnriched, setIncludeEnriched] = useState(false);
+  const [includeEnriched, setIncludeEnriched] = useState(initialInclude);
+  const suppressQueryRef = useRef(false);
 
   const fetchBrands = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/products/brands", { cache: "no-store" });
       if (!res.ok) throw new Error("No se pudieron cargar marcas");
       const payload = await res.json();
-      setBrands(payload.brands ?? []);
-      if (!selectedBrand && payload.brands?.length) {
-        setSelectedBrand(payload.brands[0].id);
+      const nextBrands: BrandOption[] = payload.brands ?? [];
+      setBrands(nextBrands);
+      if (!nextBrands.length) return;
+      const hasSelection = selectedBrand
+        ? nextBrands.some((brand: BrandOption) => brand.id === selectedBrand)
+        : false;
+      if (!selectedBrand || !hasSelection) {
+        setSelectedBrand(nextBrands[0].id);
       }
     } catch (err) {
       console.warn(err);
@@ -76,7 +129,9 @@ export default function ProductEnrichmentPanel() {
       if (!res.ok) return;
       const payload = await res.json();
       setSummary(payload.summary ?? null);
+      setRunMeta(payload.run ?? null);
       setCounts(payload.counts ?? null);
+      setItemCounts(payload.itemCounts ?? null);
     } catch (err) {
       console.warn(err);
     }
@@ -97,19 +152,57 @@ export default function ProductEnrichmentPanel() {
   }, [fetchSummary]);
 
   useEffect(() => {
-    if (summary?.status !== "processing") return;
+    const queued = itemCounts?.queued ?? 0;
+    const inProgress = itemCounts?.in_progress ?? 0;
+    if (summary?.status !== "processing" && queued + inProgress === 0) return;
     const interval = setInterval(() => {
       fetchSummary();
-    }, 15000);
+    }, 5000);
     return () => clearInterval(interval);
-  }, [fetchSummary, summary?.status]);
+  }, [fetchSummary, summary?.status, itemCounts]);
 
   const progress = useMemo(() => buildProgress(summary), [summary]);
+  const processedCount = progress.completed + progress.failed;
+  const queuedCount = itemCounts?.queued ?? 0;
+  const inProgressCount = itemCounts?.in_progress ?? 0;
 
   const shouldResume = useMemo(() => {
     if (!summary) return false;
     return summary.status === "paused" || summary.status === "stopped";
   }, [summary]);
+
+  useEffect(() => {
+    const nextScope = searchParams.get("scope") === "all" ? "all" : "brand";
+    const nextBrand = searchParams.get("brandId") ?? "";
+    const nextBatch = normalizeBatchSize(
+      parsePositiveInt(searchParams.get("batch"), BATCH_OPTIONS[0] ?? 10),
+    );
+    const nextInclude = searchParams.get("includeEnriched") === "1";
+    setScope((prev) => (prev === nextScope ? prev : nextScope));
+    setSelectedBrand((prev) => (prev === nextBrand ? prev : nextBrand));
+    setBatchSize((prev) => (prev === nextBatch ? prev : nextBatch));
+    setIncludeEnriched((prev) => (prev === nextInclude ? prev : nextInclude));
+  }, [searchParams]);
+
+  const replaceUrl = useCallback(() => {
+    if (suppressQueryRef.current) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("scope", scope);
+    if (scope === "brand" && selectedBrand) params.set("brandId", selectedBrand);
+    else params.delete("brandId");
+    params.set("batch", String(batchSize));
+    if (includeEnriched) params.set("includeEnriched", "1");
+    else params.delete("includeEnriched");
+    const next = params.toString();
+    const current = searchParams.toString();
+    if (next !== current) {
+      router.replace(`/admin/product-enrichment?${next}`, { scroll: false });
+    }
+  }, [batchSize, includeEnriched, router, scope, searchParams, selectedBrand]);
+
+  useEffect(() => {
+    replaceUrl();
+  }, [replaceUrl]);
 
   const handleRun = async (mode: "batch" | "all") => {
     setLoading(true);
@@ -185,6 +278,36 @@ export default function ProductEnrichmentPanel() {
     }
   };
 
+  const handleReset = async () => {
+    if (loading) return;
+    const message =
+      scope === "brand"
+        ? "Esto eliminará los batches activos de esta marca y limpiará la cola. ¿Continuar?"
+        : "Esto eliminará los batches activos de todas las marcas y limpiará la cola. ¿Continuar?";
+    if (!confirm(message)) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const payload: Record<string, unknown> = { scope, mode: "delete" };
+      if (scope === "brand") payload.brandId = selectedBrand;
+      const res = await fetch("/api/admin/product-enrichment/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const responsePayload = await res.json();
+      if (!res.ok) {
+        throw new Error(responsePayload.error || "No se pudo limpiar los batches");
+      }
+      await fetchSummary();
+    } catch (err) {
+      console.warn(err);
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -192,7 +315,8 @@ export default function ProductEnrichmentPanel() {
           <h2 className="text-lg font-semibold text-slate-900">Enriquecimiento de características</h2>
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
             Ejecuta GPT-5 mini sobre productos y variantes para reemplazar categoría, tags, género,
-            temporada y colores (HEX + Pantone). Se puede correr por marca, por batch o global.
+            temporada y colores (HEX + Pantone). Se puede correr por marca, por batch o global; el
+            procesamiento continúa en background vía cron aunque no haya un navegador abierto.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -202,6 +326,13 @@ export default function ProductEnrichmentPanel() {
             className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
           >
             Refrescar estado
+          </button>
+          <button
+            type="button"
+            onClick={handleReset}
+            className="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600"
+          >
+            Limpiar batches activos
           </button>
         </div>
       </div>
@@ -277,7 +408,16 @@ export default function ProductEnrichmentPanel() {
               Fallidos: <span className="font-semibold text-slate-900">{progress.failed}</span>
             </p>
             <p>
-              Pendientes: <span className="font-semibold text-slate-900">{progress.pending}</span>
+              Pendientes: <span className="font-semibold text-slate-900">{progress.pending}</span> ·
+              Procesados: <span className="font-semibold text-slate-900">{processedCount}</span>
+            </p>
+            <p>
+              En cola: <span className="font-semibold text-slate-900">{queuedCount}</span> ·
+              En progreso: <span className="font-semibold text-slate-900">{inProgressCount}</span>
+            </p>
+            <p>
+              Última actualización:{" "}
+              <span className="font-semibold text-slate-900">{formatDateTime(runMeta?.updatedAt)}</span>
             </p>
             {summary?.lastError && (
               <p className="text-xs text-rose-600">Último error: {summary.lastError}</p>

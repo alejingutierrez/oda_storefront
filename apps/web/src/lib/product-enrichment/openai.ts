@@ -42,6 +42,9 @@ const productSchema = z.object({
   occasion_tags: z.array(z.string()).max(2).default([]),
   gender: z.string(),
   season: z.string(),
+  seo_title: z.string().optional().default(""),
+  seo_description: z.string().optional().default(""),
+  seo_tags: z.array(z.string()).optional().default([]),
   variants: z.array(variantSchema).min(1),
 });
 
@@ -66,6 +69,9 @@ export type EnrichedProduct = {
   occasionTags: string[];
   gender: string;
   season: string;
+  seoTitle: string;
+  seoDescription: string;
+  seoTags: string[];
   variants: EnrichedVariant[];
 };
 
@@ -128,6 +134,9 @@ Debes devolver SOLO JSON válido con el siguiente esquema:
     "occasion_tags": ["string"],
     "gender": "string",
     "season": "string",
+    "seo_title": "string",
+    "seo_description": "string",
+    "seo_tags": ["string"],
     "variants": [
       {
         "variant_id": "string",
@@ -145,12 +154,17 @@ Reglas estrictas:
 - material_tags máximo 3 elementos.
 - pattern_tags máximo 2 elementos.
 - occasion_tags máximo 2 elementos.
-- Usa SOLO los valores permitidos (en formato slug sin tildes ni espacios).
+- seo_title debe ser conciso (<= 70 caracteres) y combinar nombre del producto + marca si existe.
+- seo_description debe tener entre 120-160 caracteres, sin emojis, en español neutro.
+- seo_tags debe tener entre 6-12 etiquetas, en español, sin duplicados.
+- Usa SOLO los valores permitidos (en formato slug sin tildes ni espacios) para category/subcategory/style/material/pattern/occasion/gender/season/fit.
+- seo_title, seo_description y seo_tags son libres (texto natural).
 - No inventes variantes: devuelve un objeto por cada variant_id recibido.
 - color_hex debe ser hexadecimal #RRGGBB.
 - color_pantone debe ser un código Pantone TCX NN-NNNN. No puede ser null. Usa el más cercano si no es exacto.
 Reglas de evidencia y consistencia:
 - Prioriza la señal de texto en este orden: product.name, product.description, metadata (og:title, og:description, jsonld, etc.).
+- Si viene product.brand_name úsalo para enriquecer seo_title y seo_description.
 - Si el texto es claro sobre el tipo de prenda (ej: "top", "camisa", "blusa", "camiseta", "falda", "vestido", "pantalón", "jean", "short", "bikini"), ESA familia manda.
 - Las imágenes solo ayudan a desambiguar detalles (fit, color, pattern), nunca para contradecir el texto.
 - Si hay conflicto entre imagen y texto, gana el texto.
@@ -184,7 +198,47 @@ ${FIT_OPTIONS.map((entry) => entry.value).join(", ")}
 Si no hay suficiente evidencia para material/pattern/occasion, usa "otro" cuando esté disponible.`;
 };
 
-const normalizeEnrichment = (input: EnrichedProduct, variantIds: Set<string>) => {
+const clampText = (value: string, maxLength: number) => {
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+  if (cleaned.length <= maxLength) return cleaned;
+  return cleaned.slice(0, maxLength).replace(/\s+\S*$/, "").trim();
+};
+
+const normalizeSeoTags = (tags: string[], fallback: Array<string | null | undefined>) => {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  const pushTag = (value: string | null | undefined) => {
+    if (!value) return;
+    const cleaned = value.replace(/\s+/g, " ").trim();
+    if (!cleaned) return;
+    const normalized = cleaned.toLowerCase();
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    output.push(normalized);
+  };
+  tags.forEach((tag) => pushTag(tag));
+  fallback.forEach((tag) => pushTag(tag));
+  return output.slice(0, 12);
+};
+
+const buildFallbackSeoTitle = (name: string, brand?: string | null) =>
+  [name, brand].filter(Boolean).join(" | ");
+
+const buildFallbackSeoDescription = (description?: string | null, name?: string | null) =>
+  description?.trim() || name?.trim() || "";
+
+const normalizeEnrichment = (
+  input: EnrichedProduct,
+  variantIds: Set<string>,
+  context: {
+    productName: string;
+    brandName?: string | null;
+    description?: string | null;
+    category?: string | null;
+    subcategory?: string | null;
+  },
+) => {
   if (input.variants.length !== variantIds.size) {
     throw new Error(
       `Variant count mismatch: expected ${variantIds.size}, got ${input.variants.length}`,
@@ -245,6 +299,23 @@ const normalizeEnrichment = (input: EnrichedProduct, variantIds: Set<string>) =>
     throw new Error("Missing variants in enrichment output");
   }
 
+  const fallbackTitle = buildFallbackSeoTitle(context.productName, context.brandName);
+  const seoTitle = clampText(input.seoTitle || fallbackTitle, 70) || clampText(fallbackTitle, 70);
+  const fallbackDescription = buildFallbackSeoDescription(context.description, context.productName);
+  const seoDescription = clampText(
+    input.seoDescription || fallbackDescription,
+    160,
+  );
+  const seoTags = normalizeSeoTags(input.seoTags ?? [], [
+    context.brandName,
+    category,
+    subcategory,
+    ...styleTags,
+    ...materialTags,
+    ...patternTags,
+    ...occasionTags,
+  ]);
+
   return {
     category,
     subcategory,
@@ -254,6 +325,9 @@ const normalizeEnrichment = (input: EnrichedProduct, variantIds: Set<string>) =>
     occasionTags,
     gender,
     season,
+    seoTitle,
+    seoDescription,
+    seoTags,
     variants,
   };
 };
@@ -261,6 +335,7 @@ const normalizeEnrichment = (input: EnrichedProduct, variantIds: Set<string>) =>
 export async function enrichProductWithOpenAI(params: {
   product: {
     id: string;
+    brandName?: string | null;
     name: string;
     description?: string | null;
     category?: string | null;
@@ -321,6 +396,7 @@ export async function enrichProductWithOpenAI(params: {
   const userPayload = {
     product: {
       id: params.product.id,
+      brand_name: params.product.brandName ?? null,
       name: params.product.name,
       description: params.product.description ?? null,
       category: params.product.category ?? null,
@@ -396,6 +472,9 @@ export async function enrichProductWithOpenAI(params: {
         occasionTags: product.occasion_tags ?? [],
         gender: product.gender,
         season: product.season,
+        seoTitle: product.seo_title ?? "",
+        seoDescription: product.seo_description ?? "",
+        seoTags: product.seo_tags ?? [],
         variants: product.variants.map((variant) => ({
           variantId: variant.variant_id,
           sku: variant.sku ?? null,
@@ -405,7 +484,13 @@ export async function enrichProductWithOpenAI(params: {
         })),
       };
 
-      return normalizeEnrichment(normalized, variantIds);
+      return normalizeEnrichment(normalized, variantIds, {
+        productName: params.product.name,
+        brandName: params.product.brandName ?? null,
+        description: params.product.description ?? null,
+        category: params.product.category ?? null,
+        subcategory: params.product.subcategory ?? null,
+      });
     } catch (error) {
       lastError = error;
       const backoff = Math.pow(2, attempt) * 200;
@@ -416,7 +501,7 @@ export async function enrichProductWithOpenAI(params: {
   throw new Error(`OpenAI enrichment failed after ${MAX_RETRIES} attempts: ${String(lastError)}`);
 }
 
-export const productEnrichmentPromptVersion = "v3";
-export const productEnrichmentSchemaVersion = "v1";
+export const productEnrichmentPromptVersion = "v4";
+export const productEnrichmentSchemaVersion = "v2";
 
 export const toSlugLabel = (value: string) => slugify(value);

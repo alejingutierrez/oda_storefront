@@ -19,6 +19,23 @@ export async function GET(req: Request) {
 
   const run = await findLatestRun({ scope, brandId });
   const summary = run ? await summarizeRun(run.id) : null;
+  let itemCounts: Record<string, number> | null = null;
+  if (run) {
+    const items = await prisma.productEnrichmentItem.groupBy({
+      by: ["status"],
+      where: { runId: run.id },
+      _count: { _all: true },
+    });
+    const map: Record<string, number> = {};
+    let total = 0;
+    items.forEach((row) => {
+      const count = row._count._all ?? 0;
+      map[row.status] = count;
+      total += count;
+    });
+    map.total = total;
+    itemCounts = map;
+  }
   const filters: Prisma.Sql[] = [];
   if (scope === "brand" && brandId) {
     filters.push(Prisma.sql`"brandId" = ${brandId}`);
@@ -45,9 +62,12 @@ export async function GET(req: Request) {
           status: run.status,
           scope: run.scope,
           brandId: run.brandId,
+          startedAt: run.startedAt,
           updatedAt: run.updatedAt,
+          finishedAt: run.finishedAt,
         }
       : null,
+    itemCounts,
     counts: {
       total,
       enriched,
