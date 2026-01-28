@@ -53,7 +53,10 @@ catalogWorker.on('completed', (job) => console.log('[catalog-worker] completed',
 catalogWorker.on('failed', (job, err) => console.error('[catalog-worker] failed', job?.id, err));
 
 const enrichmentQueueName = process.env.PRODUCT_ENRICHMENT_QUEUE_NAME || 'product-enrichment';
-const enrichmentConcurrency = Number(process.env.PRODUCT_ENRICHMENT_WORKER_CONCURRENCY || 5);
+const enrichmentConcurrency = Math.max(
+  10,
+  Number(process.env.PRODUCT_ENRICHMENT_WORKER_CONCURRENCY || 10),
+);
 const enrichmentWorker = new Worker(
   enrichmentQueueName,
   async (job) => {
