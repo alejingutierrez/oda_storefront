@@ -370,8 +370,24 @@ const normalizeEnrichment = (
   }
 
   const styleTags = normalizeEnumArray(input.styleTags, STYLE_TAGS);
+  let fixedStyleTags = styleTags;
   if (styleTags.length !== 10) {
-    throw new Error(`Invalid style_tags length: ${styleTags.length}`);
+    const seen = new Set(styleTags);
+    const padded = [...styleTags];
+    for (const tag of STYLE_TAGS) {
+      if (padded.length >= 10) break;
+      if (seen.has(tag)) continue;
+      padded.push(tag);
+      seen.add(tag);
+    }
+    fixedStyleTags = padded.slice(0, 10);
+    console.warn("enrichment.style_tags.adjusted", {
+      before: styleTags.length,
+      after: fixedStyleTags.length,
+    });
+    if (fixedStyleTags.length !== 10) {
+      throw new Error(`Invalid style_tags length: ${styleTags.length}`);
+    }
   }
 
   const materialTags = normalizeEnumArray(input.materialTags ?? [], MATERIAL_TAGS).slice(0, 3);
@@ -439,7 +455,7 @@ const normalizeEnrichment = (
     context.brandName,
     category,
     subcategory,
-    ...styleTags,
+    ...fixedStyleTags,
     ...materialTags,
     ...patternTags,
     ...occasionTags,
@@ -448,7 +464,7 @@ const normalizeEnrichment = (
   return {
     category,
     subcategory,
-    styleTags,
+    styleTags: fixedStyleTags,
     materialTags,
     patternTags,
     occasionTags,
