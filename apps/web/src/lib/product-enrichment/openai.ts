@@ -35,6 +35,10 @@ const BEDROCK_ACCESS_KEY =
   process.env.AWS_ACCESS_KEY_ID ?? process.env.BEDROCK_ACCESS_KEY ?? "";
 const BEDROCK_SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY ?? "";
 const BEDROCK_SESSION_TOKEN = process.env.AWS_SESSION_TOKEN ?? "";
+const BEDROCK_TIMEOUT_MS = Math.max(
+  5000,
+  Number(process.env.PRODUCT_ENRICHMENT_BEDROCK_TIMEOUT_MS ?? 25000),
+);
 const MAX_RETRIES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_RETRIES ?? 3));
 const MAX_IMAGES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_IMAGES ?? 8));
 
@@ -759,14 +763,20 @@ export async function enrichProductWithOpenAI(params: {
       body: JSON.stringify(payload),
     });
 
-    const response = await getBedrockClient().send(command);
-    const body = response.body as Uint8Array;
-    const rawBody = Buffer.from(body ?? []).toString("utf8");
-    const parsed = JSON.parse(rawBody);
-    const rawText = extractBedrockText(parsed);
-    if (!rawText) throw new Error("Respuesta vacia de Bedrock");
-    console.info("bedrock.enrich.usage", parsed?.usage ?? {});
-    return rawText;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), BEDROCK_TIMEOUT_MS);
+    try {
+      const response = await getBedrockClient().send(command, { abortSignal: controller.signal });
+      const body = response.body as Uint8Array;
+      const rawBody = Buffer.from(body ?? []).toString("utf8");
+      const parsed = JSON.parse(rawBody);
+      const rawText = extractBedrockText(parsed);
+      if (!rawText) throw new Error("Respuesta vacia de Bedrock");
+      console.info("bedrock.enrich.usage", parsed?.usage ?? {});
+      return rawText;
+    } finally {
+      clearTimeout(timeout);
+    }
   };
 
   const callBedrockRepair = async (raw: string, errorNote: string) => {
@@ -795,14 +805,20 @@ export async function enrichProductWithOpenAI(params: {
       body: JSON.stringify(payload),
     });
 
-    const response = await getBedrockClient().send(command);
-    const body = response.body as Uint8Array;
-    const rawBody = Buffer.from(body ?? []).toString("utf8");
-    const parsed = JSON.parse(rawBody);
-    const rawText = extractBedrockText(parsed);
-    if (!rawText) throw new Error("Respuesta vacia al reparar con Bedrock");
-    console.info("bedrock.enrich.repair.usage", parsed?.usage ?? {});
-    return rawText;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), BEDROCK_TIMEOUT_MS);
+    try {
+      const response = await getBedrockClient().send(command, { abortSignal: controller.signal });
+      const body = response.body as Uint8Array;
+      const rawBody = Buffer.from(body ?? []).toString("utf8");
+      const parsed = JSON.parse(rawBody);
+      const rawText = extractBedrockText(parsed);
+      if (!rawText) throw new Error("Respuesta vacia al reparar con Bedrock");
+      console.info("bedrock.enrich.repair.usage", parsed?.usage ?? {});
+      return rawText;
+    } finally {
+      clearTimeout(timeout);
+    }
   };
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
