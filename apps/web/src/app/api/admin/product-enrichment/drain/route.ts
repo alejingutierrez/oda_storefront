@@ -24,6 +24,13 @@ const resolveDrainConfig = (body: unknown) => {
   const batch = Number.isFinite(requestedBatch) ? requestedBatch : batchDefault;
   const concurrencyRaw = Number.isFinite(requestedConcurrency) ? requestedConcurrency : concurrencyDefault;
   const concurrency = Math.max(20, concurrencyRaw);
+  const workerConcurrency = Number(process.env.PRODUCT_ENRICHMENT_WORKER_CONCURRENCY ?? NaN);
+  const minConcurrency = Math.max(
+    20,
+    concurrency,
+    Number.isFinite(workerConcurrency) ? workerConcurrency : 0,
+  );
+  const batchFloor = batch <= 0 ? batch : Math.max(batch, minConcurrency);
   const maxMs = Number.isFinite(requestedMaxMs) ? requestedMaxMs : maxMsDefault;
   const queuedStaleMs = Math.max(
     0,
@@ -33,7 +40,7 @@ const resolveDrainConfig = (body: unknown) => {
     0,
     Number(process.env.PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES ?? 30) * 60 * 1000,
   );
-  return { batch, concurrency, maxMs, queuedStaleMs, stuckMs };
+  return { batch: batchFloor, concurrency, maxMs, queuedStaleMs, stuckMs };
 };
 
 export async function POST(req: Request) {

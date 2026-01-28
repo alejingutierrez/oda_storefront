@@ -103,6 +103,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Fallback serverless `/api/admin/product-enrichment/drain` con cron (cada 1 min) para evitar colas “pegadas”.
   - El drenado aplica concurrencia mínima 20 (clamp) vía `PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY`.
   - El worker BullMQ aplica concurrencia mínima 20 vía `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`.
+  - El batch de drenado y el enqueue limit se elevan automáticamente al nivel de concurrencia para evitar cuellos por configuración baja.
   - Persistencia de estado: `scope`, `brandId`, `batch` e `includeEnriched` viven en la URL para mantener el contexto tras recarga.
 - Panel `/admin/catalog-extractor` (catalog extractor):
   - Ejecuta extracción por **tecnología** con auto‑selección de marca.

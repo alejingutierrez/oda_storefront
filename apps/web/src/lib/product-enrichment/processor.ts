@@ -15,6 +15,12 @@ const CONSECUTIVE_ERROR_LIMIT = Math.max(
   2,
   Number(process.env.PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT ?? 5),
 );
+const resolveMinConcurrency = () => {
+  const worker = Number(process.env.PRODUCT_ENRICHMENT_WORKER_CONCURRENCY ?? NaN);
+  const drain = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY ?? NaN);
+  const candidates = [20, worker, drain].filter((value) => Number.isFinite(value));
+  return Math.max(...candidates);
+};
 
 export type ProcessEnrichmentItemResult = {
   status: string;
@@ -70,8 +76,9 @@ export const processEnrichmentItemById = async (
   if (item.status === "completed") return { status: "already_completed" };
   if (item.attempts >= MAX_ATTEMPTS) return { status: "max_attempts" };
 
+  const minConcurrency = resolveMinConcurrency();
   const enqueueLimit = Math.max(
-    1,
+    minConcurrency,
     Number(options.enqueueLimit ?? process.env.PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT ?? 50),
   );
   const queuedStaleMs = Math.max(

@@ -92,10 +92,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "queue_disabled" }, { status: 503 });
   }
 
-  const enqueueLimit = Math.max(
-    1,
-    Number(process.env.PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT ?? 50),
-  );
   const drainOnRunDefault =
     process.env.PRODUCT_ENRICHMENT_DRAIN_ON_RUN !== "false" &&
     process.env.PRODUCT_ENRICHMENT_DRAIN_DISABLED !== "true";
@@ -112,6 +108,18 @@ export async function POST(req: Request) {
     ? requestedDrainConcurrency
     : drainConcurrencyDefault;
   const drainConcurrency = Math.max(20, drainConcurrencyRaw);
+  const workerConcurrency = Number(process.env.PRODUCT_ENRICHMENT_WORKER_CONCURRENCY ?? NaN);
+  const minConcurrency = Math.max(
+    20,
+    drainConcurrency,
+    Number.isFinite(workerConcurrency) ? workerConcurrency : 0,
+  );
+  const enqueueLimit = Math.max(
+    minConcurrency,
+    Number(process.env.PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT ?? 50),
+  );
+  const drainBatchFloor =
+    drainBatch <= 0 ? drainBatch : Math.max(drainBatch, minConcurrency);
   const drainMaxMsDefault = Number(
     process.env.PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS ?? 20000,
   );
@@ -162,7 +170,7 @@ export async function POST(req: Request) {
     if (drainOnRun) {
       await drainEnrichmentRun({
         runId: existing.id,
-        batch: drainBatch <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, drainBatch),
+        batch: drainBatchFloor <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, drainBatchFloor),
         concurrency: Math.max(1, drainConcurrency),
         maxMs: Math.max(1000, drainMaxMs),
         queuedStaleMs: effectiveQueuedStaleMs,
@@ -209,7 +217,7 @@ export async function POST(req: Request) {
   if (drainOnRun) {
     await drainEnrichmentRun({
       runId: run.id,
-      batch: drainBatch <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, drainBatch),
+      batch: drainBatchFloor <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, drainBatchFloor),
       concurrency: Math.max(1, drainConcurrency),
       maxMs: Math.max(1000, drainMaxMs),
       queuedStaleMs,
