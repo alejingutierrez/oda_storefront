@@ -29,7 +29,6 @@ type CombinationItem = {
 type FilterOptions = {
   seasons: string[];
   temperatures: string[];
-  layouts: string[];
   contrasts: string[];
   moods: string[];
 };
@@ -88,10 +87,8 @@ export default function ColorCombinationsPanel() {
   const searchParams = useSearchParams();
   const [season, setSeason] = useState(searchParams.get("season") ?? "");
   const [temperature, setTemperature] = useState(searchParams.get("temperature") ?? "");
-  const [layout, setLayout] = useState(searchParams.get("layout") ?? "");
   const [contrast, setContrast] = useState(searchParams.get("contrast") ?? "");
   const [mood, setMood] = useState(searchParams.get("mood") ?? "");
-  const [colorsCount, setColorsCount] = useState(searchParams.get("colorsCount") ?? "");
   const [page, setPage] = useState(parsePositiveInt(searchParams.get("page"), 1));
   const [items, setItems] = useState<CombinationItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -99,7 +96,6 @@ export default function ColorCombinationsPanel() {
   const [filters, setFilters] = useState<FilterOptions>({
     seasons: [],
     temperatures: [],
-    layouts: [],
     contrasts: [],
     moods: [],
   });
@@ -111,14 +107,12 @@ export default function ColorCombinationsPanel() {
     const params = new URLSearchParams();
     if (season) params.set("season", season);
     if (temperature) params.set("temperature", temperature);
-    if (layout) params.set("layout", layout);
     if (contrast) params.set("contrast", contrast);
     if (mood) params.set("mood", mood);
-    if (colorsCount) params.set("colorsCount", colorsCount);
     params.set("page", String(page));
     params.set("pageSize", String(PAGE_SIZE));
     return params;
-  }, [season, temperature, layout, contrast, mood, colorsCount, page]);
+  }, [season, temperature, contrast, mood, page]);
 
   const fetchCombos = useCallback(async () => {
     setLoading(true);
@@ -136,7 +130,7 @@ export default function ColorCombinationsPanel() {
       setTotal(payload.total ?? 0);
       setTotalPages(payload.totalPages ?? 1);
       setFilters(
-        payload.filters ?? { seasons: [], temperatures: [], layouts: [], contrasts: [], moods: [] },
+        payload.filters ?? { seasons: [], temperatures: [], contrasts: [], moods: [] },
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
@@ -160,21 +154,21 @@ export default function ColorCombinationsPanel() {
   }, [buildParams, router, searchParams]);
 
   useEffect(() => {
-    setSeason((prev) => (prev === (searchParams.get("season") ?? "") ? prev : searchParams.get("season") ?? ""));
-    setTemperature((prev) =>
-      prev === (searchParams.get("temperature") ?? "") ? prev : searchParams.get("temperature") ?? "",
+    setSeason((prev) =>
+      prev === (searchParams.get("season") ?? "") ? prev : searchParams.get("season") ?? "",
     );
-    setLayout((prev) =>
-      prev === (searchParams.get("layout") ?? "") ? prev : searchParams.get("layout") ?? "",
+    setTemperature((prev) =>
+      prev === (searchParams.get("temperature") ?? "")
+        ? prev
+        : searchParams.get("temperature") ?? "",
     );
     setContrast((prev) =>
-      prev === (searchParams.get("contrast") ?? "") ? prev : searchParams.get("contrast") ?? "",
-    );
-    setMood((prev) => (prev === (searchParams.get("mood") ?? "") ? prev : searchParams.get("mood") ?? ""));
-    setColorsCount((prev) =>
-      prev === (searchParams.get("colorsCount") ?? "")
+      prev === (searchParams.get("contrast") ?? "")
         ? prev
-        : searchParams.get("colorsCount") ?? "",
+        : searchParams.get("contrast") ?? "",
+    );
+    setMood((prev) =>
+      prev === (searchParams.get("mood") ?? "") ? prev : searchParams.get("mood") ?? "",
     );
     setPage((prev) =>
       prev === parsePositiveInt(searchParams.get("page"), 1)
@@ -187,26 +181,20 @@ export default function ColorCombinationsPanel() {
     suppressUrlRef.current = true;
     setSeason("");
     setTemperature("");
-    setLayout("");
     setContrast("");
     setMood("");
-    setColorsCount("");
     setPage(1);
     suppressUrlRef.current = false;
   };
 
-  const activeFilters = useMemo(() =>
-    [season, temperature, layout, contrast, mood, colorsCount].filter(Boolean).length,
-  [season, temperature, layout, contrast, mood, colorsCount]);
+  const activeFilters = useMemo(
+    () => [season, temperature, contrast, mood].filter(Boolean).length,
+    [season, temperature, contrast, mood],
+  );
 
   const handlePageChange = (nextPage: number) => {
     setPage(nextPage);
   };
-
-  const colorCountOptions: SelectOption[] = [
-    { value: "2", label: "Dúos (2)" },
-    { value: "4", label: "Cuartetos (4)" },
-  ];
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -225,7 +213,7 @@ export default function ColorCombinationsPanel() {
       </div>
 
       <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <FilterSelect
             label="Temporada"
             value={season}
@@ -259,24 +247,6 @@ export default function ColorCombinationsPanel() {
             options={filters.moods.map((value) => ({ value, label: value }))}
             onChange={(value) => {
               setMood(value);
-              setPage(1);
-            }}
-          />
-          <FilterSelect
-            label="Layout"
-            value={layout}
-            options={filters.layouts.map((value) => ({ value, label: value }))}
-            onChange={(value) => {
-              setLayout(value);
-              setPage(1);
-            }}
-          />
-          <FilterSelect
-            label="Cantidad de colores"
-            value={colorsCount}
-            options={colorCountOptions}
-            onChange={(value) => {
-              setColorsCount(value);
               setPage(1);
             }}
           />

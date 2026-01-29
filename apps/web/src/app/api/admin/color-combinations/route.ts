@@ -34,13 +34,10 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const page = toInt(url.searchParams.get("page"), 1);
   const pageSize = Math.min(toInt(url.searchParams.get("pageSize"), 24), 60);
-  const query = url.searchParams.get("q")?.trim() ?? "";
   const seasons = normalizeListParam(url.searchParams.getAll("season"));
   const temperatures = normalizeListParam(url.searchParams.getAll("temperature"));
-  const layouts = normalizeListParam(url.searchParams.getAll("layout"));
   const contrasts = normalizeListParam(url.searchParams.getAll("contrast"));
   const moods = normalizeListParam(url.searchParams.getAll("mood"));
-  const colorsCount = url.searchParams.get("colorsCount")?.trim();
 
   const where: Prisma.ColorCombinationWhereInput = {};
 
@@ -50,35 +47,11 @@ export async function GET(req: Request) {
   if (temperatures.length) {
     where.temperature = { in: temperatures };
   }
-  if (layouts.length) {
-    where.detectedLayout = { in: layouts };
-  }
   if (contrasts.length) {
     where.contrast = { in: contrasts };
   }
   if (moods.length) {
     where.mood = { in: moods };
-  }
-
-  if (query) {
-    where.OR = [
-      { imageFilename: { contains: query, mode: "insensitive" } },
-      { comboKey: { contains: query, mode: "insensitive" } },
-      { season: { contains: query, mode: "insensitive" } },
-      { temperature: { contains: query, mode: "insensitive" } },
-      { mood: { contains: query, mode: "insensitive" } },
-      {
-        colors: {
-          some: {
-            OR: [
-              { pantoneName: { contains: query, mode: "insensitive" } },
-              { pantoneCode: { contains: query, mode: "insensitive" } },
-              { hex: { contains: query, mode: "insensitive" } },
-            ],
-          },
-        },
-      },
-    ];
   }
 
   const combos = await prisma.colorCombination.findMany({
@@ -91,21 +64,13 @@ export async function GET(req: Request) {
     orderBy: [{ imageFilename: "asc" }, { comboKey: "asc" }],
   });
 
-  let filtered = combos;
-  const desiredCount = colorsCount ? Number(colorsCount) : null;
-  if (desiredCount && Number.isFinite(desiredCount)) {
-    filtered = combos.filter((combo) => combo.colors.length === desiredCount);
-  }
-
-  const total = filtered.length;
+  const total = combos.length;
   const offset = (page - 1) * pageSize;
-  const paged = filtered.slice(offset, offset + pageSize);
+  const paged = combos.slice(offset, offset + pageSize);
 
-  const [seasonOptions, temperatureOptions, layoutOptions, contrastOptions, moodOptions] =
-    await Promise.all([
+  const [seasonOptions, temperatureOptions, contrastOptions, moodOptions] = await Promise.all([
     prisma.colorCombination.findMany({ distinct: ["season"], select: { season: true } }),
     prisma.colorCombination.findMany({ distinct: ["temperature"], select: { temperature: true } }),
-    prisma.colorCombination.findMany({ distinct: ["detectedLayout"], select: { detectedLayout: true } }),
     prisma.colorCombination.findMany({ distinct: ["contrast"], select: { contrast: true } }),
     prisma.colorCombination.findMany({ distinct: ["mood"], select: { mood: true } }),
   ]);
@@ -113,7 +78,6 @@ export async function GET(req: Request) {
   const filters = {
     seasons: sortStrings(seasonOptions.map((row) => row.season)),
     temperatures: sortStrings(temperatureOptions.map((row) => row.temperature)),
-    layouts: sortStrings(layoutOptions.map((row) => row.detectedLayout)),
     contrasts: sortStrings(contrastOptions.map((row) => row.contrast)),
     moods: sortStrings(moodOptions.map((row) => row.mood)),
   };
