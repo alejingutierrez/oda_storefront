@@ -48,6 +48,14 @@ const BEDROCK_MAX_IMAGES = Math.max(
   Number(process.env.PRODUCT_ENRICHMENT_BEDROCK_MAX_IMAGES ?? Math.min(MAX_IMAGES, 4)),
 );
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const jitterDelay = async (minMs = 100, maxMs = 400) => {
+  const min = Math.max(0, minMs);
+  const max = Math.max(min, maxMs);
+  const value = Math.floor(min + Math.random() * (max - min + 1));
+  await sleep(value);
+};
+
 const colorField = z.union([z.string(), z.array(z.string()).min(1).max(3)]);
 
 const variantSchema = z.object({
@@ -734,14 +742,13 @@ export async function enrichProductWithOpenAI(params: {
   };
 
   const callBedrock = async () => {
-    const shouldIncludeImages = true;
     const imageBlocks: Array<{
       type: "image";
       source: { type: "base64"; media_type: string; data: string };
     }> = [];
     const bedrockManifest: Array<{ index: number; url: string; variant_id?: string | null }> = [];
 
-    for (const entry of shouldIncludeImages ? imageCandidates.slice(0, BEDROCK_MAX_IMAGES) : []) {
+    for (const entry of imageCandidates.slice(0, BEDROCK_MAX_IMAGES)) {
       const loaded = await fetchImageAsBase64(entry.url);
       if (!loaded) continue;
       imageBlocks.push({
@@ -788,6 +795,7 @@ export async function enrichProductWithOpenAI(params: {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), BEDROCK_TIMEOUT_MS);
     try {
+      await jitterDelay();
       const response = await getBedrockClient().send(command, { abortSignal: controller.signal });
       const body = response.body as Uint8Array;
       const rawBody = Buffer.from(body ?? []).toString("utf8");
@@ -795,59 +803,6 @@ export async function enrichProductWithOpenAI(params: {
       const rawText = extractBedrockText(parsed);
       if (!rawText) throw new Error("Respuesta vacia de Bedrock");
       console.info("bedrock.enrich.usage", parsed?.usage ?? {});
-      return rawText;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const isAbort =
-        error instanceof Error
-          ? error.name === "AbortError" || message.includes("Request aborted")
-          : message.includes("Request aborted");
-      if (isAbort && shouldIncludeImages && BEDROCK_MAX_IMAGES > 0) {
-        console.warn("bedrock.enrich.abort.retry_without_images");
-        return callBedrockWithoutImages();
-      }
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
-  };
-
-  const callBedrockWithoutImages = async () => {
-    const payload: Record<string, unknown> = {
-      anthropic_version: "bedrock-2023-05-31",
-      max_tokens: 2048,
-      temperature: 0,
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({ ...userPayloadBase, image_manifest: [] }, null, 2),
-            },
-          ],
-        },
-      ],
-    };
-
-    const command = new InvokeModelCommand({
-      modelId: BEDROCK_MODEL_ID,
-      contentType: "application/json",
-      accept: "application/json",
-      body: JSON.stringify(payload),
-    });
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), BEDROCK_TIMEOUT_MS);
-    try {
-      const response = await getBedrockClient().send(command, { abortSignal: controller.signal });
-      const body = response.body as Uint8Array;
-      const rawBody = Buffer.from(body ?? []).toString("utf8");
-      const parsed = JSON.parse(rawBody);
-      const rawText = extractBedrockText(parsed);
-      if (!rawText) throw new Error("Respuesta vacia de Bedrock");
-      console.info("bedrock.enrich.no_images.usage", parsed?.usage ?? {});
       return rawText;
     } finally {
       clearTimeout(timeout);
@@ -883,6 +838,7 @@ export async function enrichProductWithOpenAI(params: {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), BEDROCK_TIMEOUT_MS);
     try {
+      await jitterDelay();
       const response = await getBedrockClient().send(command, { abortSignal: controller.signal });
       const body = response.body as Uint8Array;
       const rawBody = Buffer.from(body ?? []).toString("utf8");
