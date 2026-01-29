@@ -310,6 +310,45 @@ model TaxonomyTag {
   @@map("taxonomy_tags")
 }
 
+model ColorCombination {
+  id             String   @id @default(uuid())
+  imageFilename  String
+  detectedLayout String
+  comboKey       String
+  season         String?
+  temperature    String?
+  contrast       String?
+  mood           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  colors         ColorCombinationColor[]
+
+  @@unique([imageFilename, comboKey])
+  @@index([detectedLayout])
+  @@index([season])
+  @@index([temperature])
+  @@map("color_combinations")
+}
+
+model ColorCombinationColor {
+  id            String           @id @default(uuid())
+  combinationId String
+  combination   ColorCombination @relation(fields: [combinationId], references: [id], onDelete: Cascade)
+  position      Int
+  role          String?
+  hex           String
+  pantoneCode   String?
+  pantoneName   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([combinationId, position])
+  @@index([combinationId])
+  @@index([hex])
+  @@index([pantoneCode])
+  @@map("color_combination_colors")
+}
+
 model User {
   id          String   @id @default(uuid())
   email       String   @unique
