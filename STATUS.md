@@ -15,7 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-01-29 | MC-105 | done | Filtro por rol de color en combinaciones | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel preview Ready: https://oda-storefront-6ee5-jmc3cik10-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
+- 2026-01-29 | MC-105 | done | Filtro por rol de color en combinaciones | Docker rebuild ok; logs web/worker/scraper OK (warning sslmode); Vercel preview Ready: https://oda-storefront-6ee5-ijobh21ni-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | fix | Bedrock AbortError: retry sin imágenes + límite imágenes | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-plzxe6lv9-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | fix | Enrichment: quitar sesgo de category/subcategory + nueva taxonomía (calzado/bolsos/gafas) | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-lgivhj99i-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
 - 2026-01-28 | fix | Enrichment: descripciones detalladas de categoría/subcategoría | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-6ta234wdj-alejingutierrezs-projects.vercel.app (runtime logs sin eventos).
