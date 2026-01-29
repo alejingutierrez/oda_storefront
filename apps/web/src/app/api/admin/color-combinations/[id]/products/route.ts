@@ -166,6 +166,10 @@ const categoryAllowListByRole: Record<string, Set<string>> = {
   ]),
 };
 
+const categoryAllowListAll = new Set(
+  Object.values(categoryAllowListByRole).flatMap((set) => Array.from(set)),
+);
+
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(req: NextRequest, context: RouteContext) {
@@ -282,14 +286,13 @@ export async function GET(req: NextRequest, context: RouteContext) {
     const brandName = product?.brand?.name ?? "";
     const name = product?.name ?? "Producto";
     const imageUrl = variant.images?.[0] ?? product?.imageCoverUrl ?? null;
-    const productCategory = product?.category ?? null;
+    const productCategory = product?.category?.trim().toLowerCase() ?? null;
 
     for (const color of comboColors) {
       const roleKey = normalizeRole(color.role);
       const allowList = roleKey ? categoryAllowListByRole[roleKey] : null;
-      if (allowList) {
-        if (!productCategory || !allowList.has(productCategory)) continue;
-      }
+      if (!productCategory || !categoryAllowListAll.has(productCategory)) continue;
+      if (allowList && !allowList.has(productCategory)) continue;
       if (!color.lab) continue;
       let minDistance = Number.POSITIVE_INFINITY;
       for (const vector of vectorsForVariant) {

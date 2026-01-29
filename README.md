@@ -94,6 +94,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Persistencia de navegación: la página y el filtro por marca viven en la URL (`page`, `brandId`) y el detalle se puede abrir por `productId`.
 - Panel `/admin/color-combinations` (combinaciones de color):
   - Al hacer click en un color, lista productos asociados y filtra por rol del color con categorías permitidas:
+    - Siempre descarta categorías fuera del set permitido global (si el rol viene inesperado).
     - Dominante: `blazers_y_sastreria`, `buzos_hoodies_y_sueteres`, `camisas_y_blusas`, `chaquetas_y_abrigos`, `enterizos_y_overoles`, `faldas`, `jeans_y_denim`, `pantalones_no_denim`, `vestidos`.
     - Secundario: `shorts_y_bermudas`, `pantalones_no_denim`, `jeans_y_denim`, `camisetas_y_tops`, `blazers_y_sastreria`.
     - Acento: `accesorios_textiles_y_medias`, `bolsos_y_marroquineria`, `calzado`, `gafas_y_optica`, `joyeria_y_bisuteria`.
