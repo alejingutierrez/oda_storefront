@@ -128,6 +128,44 @@ const deltaE2000 = (lab1: { L: number; a: number; b: number }, lab2: { L: number
   return deltaE;
 };
 
+const normalizeRole = (role: string | null | undefined) => {
+  if (!role) return null;
+  const value = role.trim().toLowerCase();
+  if (!value) return null;
+  if (["dominante", "dominant", "primary", "principal"].includes(value)) return "dominant";
+  if (["secundario", "secondary"].includes(value)) return "secondary";
+  if (["acento", "accent"].includes(value)) return "accent";
+  return value;
+};
+
+const categoryAllowListByRole: Record<string, Set<string>> = {
+  dominant: new Set([
+    "blazers_y_sastreria",
+    "buzos_hoodies_y_sueteres",
+    "camisas_y_blusas",
+    "chaquetas_y_abrigos",
+    "enterizos_y_overoles",
+    "faldas",
+    "jeans_y_denim",
+    "pantalones_no_denim",
+    "vestidos",
+  ]),
+  secondary: new Set([
+    "shorts_y_bermudas",
+    "pantalones_no_denim",
+    "jeans_y_denim",
+    "camisetas_y_tops",
+    "blazers_y_sastreria",
+  ]),
+  accent: new Set([
+    "accesorios_textiles_y_medias",
+    "bolsos_y_marroquineria",
+    "calzado",
+    "gafas_y_optica",
+    "joyeria_y_bisuteria",
+  ]),
+};
+
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(req: NextRequest, context: RouteContext) {
@@ -163,6 +201,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
             select: {
               id: true,
               name: true,
+              category: true,
               imageCoverUrl: true,
               brand: { select: { name: true } },
             },
@@ -243,8 +282,14 @@ export async function GET(req: NextRequest, context: RouteContext) {
     const brandName = product?.brand?.name ?? "";
     const name = product?.name ?? "Producto";
     const imageUrl = variant.images?.[0] ?? product?.imageCoverUrl ?? null;
+    const productCategory = product?.category ?? null;
 
     for (const color of comboColors) {
+      const roleKey = normalizeRole(color.role);
+      const allowList = roleKey ? categoryAllowListByRole[roleKey] : null;
+      if (allowList) {
+        if (!productCategory || !allowList.has(productCategory)) continue;
+      }
       if (!color.lab) continue;
       let minDistance = Number.POSITIVE_INFINITY;
       for (const vector of vectorsForVariant) {

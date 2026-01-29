@@ -92,6 +92,11 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Las imágenes servidas por `/api/image-proxy` se muestran como `unoptimized` para evitar 400 en `_next/image` con URLs proxy.
   - El cierre del modal limpia `productId` de la URL sin reabrirlo en bucle.
   - Persistencia de navegación: la página y el filtro por marca viven en la URL (`page`, `brandId`) y el detalle se puede abrir por `productId`.
+- Panel `/admin/color-combinations` (combinaciones de color):
+  - Al hacer click en un color, lista productos asociados y filtra por rol del color con categorías permitidas:
+    - Dominante: `blazers_y_sastreria`, `buzos_hoodies_y_sueteres`, `camisas_y_blusas`, `chaquetas_y_abrigos`, `enterizos_y_overoles`, `faldas`, `jeans_y_denim`, `pantalones_no_denim`, `vestidos`.
+    - Secundario: `shorts_y_bermudas`, `pantalones_no_denim`, `jeans_y_denim`, `camisetas_y_tops`, `blazers_y_sastreria`.
+    - Acento: `accesorios_textiles_y_medias`, `bolsos_y_marroquineria`, `calzado`, `gafas_y_optica`, `joyeria_y_bisuteria`.
 - Panel `/admin/product-enrichment` (enriquecimiento):
   - Enriquecimiento de atributos por Claude Sonnet 4.5 (Bedrock) para categoría, subcategoría, tags, género, temporada, color hex, Pantone, fit, descripción (texto plano) y campos SEO (meta title/description + seoTags). Taxonomía incluye ropa + accesorios (joyería, calzado, bolsos, gafas).
   - Se puede forzar OpenAI con `PRODUCT_ENRICHMENT_PROVIDER=openai` (usa `PRODUCT_ENRICHMENT_MODEL`).

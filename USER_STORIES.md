@@ -945,6 +945,13 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Fallbacks que ocultan fallas reales; mitigar con alertas y circuit breakers.
 - Métricas: CWV, error rate front, tiempo de recuperación de fallos simulados.
 
+### MC-105 Filtro por rol de color en combinaciones
+- Historia: Como admin, quiero que los productos asociados a un color respeten categorías por rol (dominante/secundario/acento), para evitar recomendaciones erróneas.
+- Alcance: El endpoint `/api/admin/color-combinations/[id]/products` filtra por `products.category` según el rol del color (`color_combination_colors.role`).
+- CA: Al hacer click en un color, solo se listan categorías permitidas por rol; si el rol no se reconoce, no se aplica filtro; productos sin categoría se excluyen cuando hay filtro activo.
+- Datos: `color_combination_colors.role`, `products.category`, `variant_color_combination_matches`.
+- Estado: done (2026-01-29).
+
 ---
 **Protocolo al desarrollar cualquier historia**  
 0) Pedir al solicitante requisitos previos: credenciales/API keys, definiciones o datos faltantes, accesos (Vercel, Neon, Wompi, Blob), variables de entorno.  
