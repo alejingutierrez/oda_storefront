@@ -166,7 +166,7 @@ export const processEnrichmentItemById = async (
           metadata: {
             ...(item.product.metadata && typeof item.product.metadata === "object" ? item.product.metadata : {}),
             enrichment: {
-              model: OPENAI_MODEL,
+              model: ENRICHMENT_MODEL,
               prompt_version: productEnrichmentPromptVersion,
               schema_version: productEnrichmentSchemaVersion,
               completed_at: new Date().toISOString(),
@@ -371,4 +371,7 @@ export const drainEnrichmentRun = async ({
   return { processed, completed, failed, skipped };
 };
 
-const OPENAI_MODEL = process.env.PRODUCT_ENRICHMENT_MODEL ?? "gpt-5-mini";
+const ENRICHMENT_MODEL =
+  process.env.BEDROCK_INFERENCE_PROFILE_ID ??
+  process.env.PRODUCT_ENRICHMENT_MODEL ??
+  "bedrock";

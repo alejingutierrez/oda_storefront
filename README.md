@@ -1,6 +1,6 @@
 # ODA Storefront
 
-Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar catálogos vía OpenAI GPT-5.1 (JSON mode) y servir búsqueda/recomendaciones en Next.js + Vue Storefront, con backend BFF, scrapers y workers dockerizados. Despliegue objetivo: Vercel (web/BFF) + contenedores para scrapers/workers.
+Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar catálogos vía OpenAI GPT-5.1 (JSON mode), enriquecer productos vía Bedrock y servir búsqueda/recomendaciones en Next.js + Vue Storefront, con backend BFF, scrapers y workers dockerizados. Despliegue objetivo: Vercel (web/BFF) + contenedores para scrapers/workers.
 
 ## Estructura
 - `apps/web` – Front + BFF en Next.js (App Router, TS, Tailwind).
@@ -25,7 +25,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Scraper: `BRAND_SCRAPE_STALE_MINUTES` (re-encola jobs en `processing` con más de N minutos).
 - Catalog extractor: `CATALOG_TRY_SITEMAP_FIRST` (true|false), `CATALOG_FORCE_SITEMAP` (true|false), `CATALOG_EXTRACT_SITEMAP_BUDGET_MS`, `CATALOG_EXTRACT_SITEMAP_LIMIT` (0 = sin límite), `CATALOG_EXTRACT_SITEMAP_MAX_FILES`, `CATALOG_EXTRACT_SITEMAP_SCAN_MAX_URLS` (0 = sin límite por sitemap), `CATALOG_EXTRACT_DISCOVERY_LIMIT`, `CATALOG_EXTRACT_MAX_RUNTIME_MS`, `CATALOG_EXTRACT_CONSECUTIVE_ERROR_LIMIT`, `CATALOG_AUTO_PAUSE_ON_ERRORS`, `CATALOG_QUEUE_ENQUEUE_LIMIT`, `CATALOG_QUEUE_NAME`, `CATALOG_QUEUE_STALE_MINUTES`, `CATALOG_ITEM_STUCK_MINUTES`, `CATALOG_RESUME_STUCK_MINUTES`, `CATALOG_QUEUE_TIMEOUT_MS`, `CATALOG_QUEUE_DISABLED`, `CATALOG_QUEUE_ATTEMPTS`, `CATALOG_QUEUE_BACKOFF_MS`, `CATALOG_DRAIN_BATCH`, `CATALOG_DRAIN_MAX_RUNTIME_MS`, `CATALOG_DRAIN_CONCURRENCY`, `CATALOG_DRAIN_ON_RUN`, `CATALOG_DRAIN_ON_RUN_BATCH`, `CATALOG_DRAIN_ON_RUN_MAX_RUNTIME_MS`, `CATALOG_DRAIN_ON_RUN_CONCURRENCY`, `CATALOG_DRAIN_DISABLED`, `CATALOG_WORKER_CONCURRENCY`, `CATALOG_WORKER_API_URL`, `CATALOG_LLM_NORMALIZE_MODE` (auto|always|never), `CATALOG_LLM_NORMALIZE_MAX_DESC_CHARS`, `CATALOG_LLM_NORMALIZE_MAX_IMAGES`, `CATALOG_LLM_NORMALIZE_MAX_VARIANTS`, `CATALOG_LLM_NORMALIZE_MAX_OPTION_VALUES`.
 - Catalog extractor (PDP LLM): `CATALOG_OPENAI_MODEL`, `CATALOG_OPENAI_TEMPERATURE`, `CATALOG_OPENAI_DISABLE_TEMPERATURE`, `CATALOG_PDP_LLM_ENABLED`, `CATALOG_PDP_LLM_CONFIDENCE_MIN`, `CATALOG_PDP_LLM_MAX_HTML_CHARS`, `CATALOG_PDP_LLM_MAX_TEXT_CHARS`, `CATALOG_PDP_LLM_MAX_IMAGES`.
-- Product enrichment: `PRODUCT_ENRICHMENT_MODEL`, `PRODUCT_ENRICHMENT_MAX_RETRIES`, `PRODUCT_ENRICHMENT_MAX_ATTEMPTS`, `PRODUCT_ENRICHMENT_MAX_IMAGES`, `PRODUCT_ENRICHMENT_QUEUE_NAME`, `PRODUCT_ENRICHMENT_QUEUE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_QUEUE_DISABLED`, `PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT`, `PRODUCT_ENRICHMENT_QUEUE_STALE_MINUTES`, `PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_RESUME_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_AUTO_PAUSE_ON_ERRORS`, `PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT`, `PRODUCT_ENRICHMENT_DRAIN_ON_RUN`, `PRODUCT_ENRICHMENT_DRAIN_BATCH`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS`, `PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY`, `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`, `PRODUCT_ENRICHMENT_WORKER_API_URL`.
+- Product enrichment (Bedrock): `BEDROCK_INFERENCE_PROFILE_ID`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `PRODUCT_ENRICHMENT_MODEL`, `PRODUCT_ENRICHMENT_TEMPERATURE`, `PRODUCT_ENRICHMENT_MAX_TOKENS`, `PRODUCT_ENRICHMENT_MAX_RETRIES`, `PRODUCT_ENRICHMENT_MAX_ATTEMPTS`, `PRODUCT_ENRICHMENT_MAX_IMAGES`, `PRODUCT_ENRICHMENT_BEDROCK_INCLUDE_IMAGES`, `PRODUCT_ENRICHMENT_BEDROCK_IMAGE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_BEDROCK_IMAGE_MAX_BYTES`, `PRODUCT_ENRICHMENT_VARIANT_CHUNK_SIZE`, `PRODUCT_ENRICHMENT_REPAIR_MAX_CHARS`, `PRODUCT_ENRICHMENT_QUEUE_NAME`, `PRODUCT_ENRICHMENT_QUEUE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_QUEUE_DISABLED`, `PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT`, `PRODUCT_ENRICHMENT_QUEUE_STALE_MINUTES`, `PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_RESUME_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_AUTO_PAUSE_ON_ERRORS`, `PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT`, `PRODUCT_ENRICHMENT_DRAIN_ON_RUN`, `PRODUCT_ENRICHMENT_DRAIN_BATCH`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS`, `PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY`, `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`, `PRODUCT_ENRICHMENT_WORKER_API_URL`.
 - Sweep tech profiler: `TECH_PROFILE_SWEEP_LIMIT`, `TECH_PROFILE_SWEEP_PLATFORM` (all|unknown|null|shopify|...).
 - Dry-run LLM: `UNKNOWN_LLM_DRY_RUN_LIMIT`, `UNKNOWN_LLM_DRY_RUN_CANDIDATES`.
 No commitees credenciales reales.
@@ -40,6 +40,7 @@ npm run build
 npm run db:import:brands   # importa Marcas colombianas.xlsx a Neon
 npm run db:seed:users      # crea/actualiza usuario admin en Neon
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/smoke-catalog-adapters.ts  # smoke test por tecnología
+npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/smoke-product-enrichment.ts  # smoke test de enriquecimiento (Bedrock)
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/unknown-llm-dry-run.ts     # dry-run LLM PDP (unknown)
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/tech-profiler-sweep.ts     # perfila y elimina marcas no procesables
 node scripts/build-style-assignments.mjs  # seed style_profiles + backfill estilos principal/secundario
@@ -96,7 +97,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - El cierre del modal limpia `productId` de la URL sin reabrirlo en bucle.
   - Persistencia de navegación: la página y el filtro por marca viven en la URL (`page`, `brandId`) y el detalle se puede abrir por `productId`.
 - Panel `/admin/product-enrichment` (enriquecimiento):
-  - Enriquecimiento de atributos por GPT‑5 mini (categoría, subcategoría, tags, género, temporada, color hex, Pantone, fit y campos SEO: meta title/description + seoTags).
+  - Enriquecimiento de atributos por Bedrock (categoría, subcategoría, tags, género, temporada, color hex, Pantone, fit y campos SEO: meta title/description + seoTags).
   - Style tags: **exactamente 10** por producto.
   - Colores: admite hasta 3 hex/pantone por variante; el color principal se guarda en `variants.color`/`variants.colorPantone` y el resto en `variants.metadata.enrichment.colors`.
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.

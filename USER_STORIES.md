@@ -155,6 +155,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % de productos con estilo asignado y distribución por estilo.
 - Estado: **done (2026-01-29)**.
 
+### MC-107 Enrichment Bedrock: esquema estricto + repair/chunking
+- Historia: Como operador, quiero que el enriquecimiento con Bedrock entregue JSON válido siempre (schema estricto), para evitar fallos por parseo o conteo de variantes.
+- Alcance: Prompt reforzado, reparación automática en errores de JSON/validación, fallback de subcategoría y style_tags, chunking por variantes, límite 1 imagen por variante y smoke test Bedrock.
+- CA: Enriquecimiento no falla por `style_tags` incompletos o subcategorías inválidas; repara JSON inválido y completa variantes; smoke test Bedrock 20/20 OK; concurrencia product-enrichment en prod a 40.
+- Datos: `product_enrichment_runs/items`, envs `BEDROCK_INFERENCE_PROFILE_ID`, `PRODUCT_ENRICHMENT_VARIANT_CHUNK_SIZE`, `PRODUCT_ENRICHMENT_REPAIR_MAX_CHARS`.
+- NF: Evitar payloads gigantes; mantener retries/backoff; chunking controlado por env.
+- Riesgos: Latencia mayor en productos con muchas variantes; mitigación: chunk size configurable.
+- Métricas: % de validación JSON y tasa de fallos por esquema.
+- Estado: **done (2026-01-29)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

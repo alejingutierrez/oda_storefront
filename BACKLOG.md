@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-107 | done | P1 | Enrichment: esquema estricto + repair/chunking Bedrock | 1 imagen por variante, repair pass y chunking por variantes; smoke test Bedrock; concurrencia 40 en envs prod.
 - MC-106 | done | P1 | Estilos principal/secundario por styleTags | Tabla style_profiles + trigger + backfill; labels humanos en admin.
 - MC-105 | done | P1 | Filtro por rol de color en combinaciones | `/api/admin/color-combinations/[id]/products` filtra por categorias permitidas segun rol (dominante/secundario/acento).
 - MC-104 | done | P1 | Enrichment productos con Claude (Bedrock) | Product enrichment usa Bedrock (Claude Sonnet 4.5) vía inference profile; OpenAI queda para el resto.
