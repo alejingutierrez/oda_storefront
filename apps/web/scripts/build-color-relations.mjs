@@ -173,8 +173,10 @@ const extractHexes = (row) => {
   const normalized = list
     .map((entry) => normalizeHex(entry))
     .filter(Boolean)
-    .filter((value, index, self) => self.indexOf(value) === index)
-    .slice(0, 3);
+    .filter((value, index, self) => self.indexOf(value) === index);
+  if (maxVariantHexes > 0) {
+    return normalized.slice(0, maxVariantHexes);
+  }
   return normalized;
 };
 
@@ -184,8 +186,13 @@ const minCandidates = Number(process.env.COLOR_MATCH_MIN_CANDIDATES ?? 40);
 const batchSize = Number(process.env.COLOR_MATCH_BATCH ?? 500);
 const threshold = Number(process.env.COLOR_MATCH_THRESHOLD ?? 12);
 const penaltyWeight = Number(process.env.COLOR_MATCH_PENALTY ?? 12);
-const topK = Number(process.env.COLOR_MATCH_TOP_K ?? 12);
+const topK = Number(process.env.COLOR_MATCH_TOP_K ?? 20);
+const minCoverage = Number(process.env.COLOR_MATCH_MIN_COVERAGE ?? 0.6);
+const maxAvgDistance = Number(process.env.COLOR_MATCH_MAX_AVG ?? 12);
+const maxMaxDistance = Number(process.env.COLOR_MATCH_MAX_DIST ?? 22);
+const allowFallback = process.env.COLOR_MATCH_ALLOW_FALLBACK === "1";
 const logEvery = Number(process.env.COLOR_MATCH_LOG_EVERY ?? 2000);
+const maxVariantHexes = Number(process.env.COLOR_MATCH_MAX_HEXES ?? 0);
 const startId = process.env.COLOR_MATCH_START_ID ?? "";
 const stopAfter = Number(process.env.COLOR_MATCH_STOP_AFTER ?? 0);
 
@@ -345,7 +352,7 @@ const run = async () => {
   const totalVariants = totalResult.rows[0]?.count ?? 0;
   console.log(`Combos loaded: ${combos.size}. Variants: ${totalVariants}.`);
   console.log(
-    `Config: batch=${batchSize} threshold=${threshold} penalty=${penaltyWeight} topK=${topK} bucket=${bucketSize} radius=${bucketRadius} minCandidates=${minCandidates} startId=${startId || "begin"}`,
+    `Config: batch=${batchSize} threshold=${threshold} penalty=${penaltyWeight} topK=${topK} minCoverage=${minCoverage} maxAvg=${maxAvgDistance} maxDist=${maxMaxDistance} bucket=${bucketSize} radius=${bucketRadius} minCandidates=${minCandidates} maxHexes=${maxVariantHexes || "all"} startId=${startId || "begin"} fallback=${allowFallback ? "yes" : "no"}`,
   );
 
   let lastId = startId;
@@ -419,7 +426,14 @@ const run = async () => {
       }
 
       scores.sort((a, b) => a.score - b.score || a.avgDistance - b.avgDistance);
-      const topMatches = scores.slice(0, topK);
+      const filtered = scores.filter(
+        (entry) =>
+          entry.coverage >= minCoverage &&
+          entry.avgDistance <= maxAvgDistance &&
+          entry.maxDistance <= maxMaxDistance,
+      );
+      const pool = filtered.length || !allowFallback ? filtered : scores;
+      const topMatches = pool.slice(0, topK);
       for (const match of topMatches) {
         matchRows.push({
           id: crypto.randomUUID(),

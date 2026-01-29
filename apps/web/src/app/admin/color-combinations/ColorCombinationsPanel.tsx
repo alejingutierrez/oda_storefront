@@ -42,6 +42,28 @@ type ApiResponse = {
   filters: FilterOptions;
 };
 
+type ProductMatch = {
+  productId: string;
+  variantId: string;
+  name: string;
+  brand: string;
+  imageUrl: string | null;
+  distance: number;
+};
+
+type ColorGroup = {
+  color: ColorItem;
+  productCount: number;
+  variantCount: number;
+  items: ProductMatch[];
+};
+
+type DetailResponse = {
+  combinationId: string;
+  colors: ColorItem[];
+  groups: ColorGroup[];
+};
+
 const parsePositiveInt = (value: string | null, fallback: number) => {
   if (!value) return fallback;
   const parsed = Number(value);
@@ -101,6 +123,10 @@ export default function ColorCombinationsPanel() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeCombo, setActiveCombo] = useState<CombinationItem | null>(null);
+  const [detail, setDetail] = useState<DetailResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const suppressUrlRef = useRef(false);
 
   const buildParams = useCallback(() => {
@@ -194,6 +220,33 @@ export default function ColorCombinationsPanel() {
 
   const handlePageChange = (nextPage: number) => {
     setPage(nextPage);
+  };
+
+  const closeModal = () => {
+    setActiveCombo(null);
+    setDetail(null);
+    setDetailError(null);
+  };
+
+  const openCombo = async (combo: CombinationItem) => {
+    setActiveCombo(combo);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/admin/color-combinations/${combo.id}/products`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        throw new Error("No se pudieron cargar los productos asociados");
+      }
+      const payload = (await res.json()) as DetailResponse;
+      setDetail(payload);
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : "Error inesperado");
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   return (
@@ -302,7 +355,8 @@ export default function ColorCombinationsPanel() {
           {items.map((combo) => (
             <article
               key={combo.id}
-              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+              className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+              onClick={() => openCombo(combo)}
             >
               <div className="grid gap-3">
                 {combo.colors.map((color) => (
@@ -361,6 +415,108 @@ export default function ColorCombinationsPanel() {
           </button>
         </div>
       </div>
+
+      {activeCombo && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4"
+          onClick={closeModal}
+        >
+          <div
+            className="mt-6 w-full max-w-6xl overflow-hidden rounded-3xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-6 py-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Combinación</p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-900">Detalle de productos</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {formatLabel(activeCombo.season)} · {formatLabel(activeCombo.temperature)} · {formatLabel(activeCombo.contrast)} · {formatLabel(activeCombo.mood)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="max-h-[75vh] overflow-y-auto px-6 py-6">
+              {detailLoading ? (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                  Cargando productos asociados…
+                </div>
+              ) : detailError ? (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {detailError}
+                </div>
+              ) : detail ? (
+                <div className="space-y-8">
+                  {detail.groups.map((group) => (
+                    <section key={group.color.id} className="space-y-4">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div
+                          className="h-12 w-12 rounded-xl border border-slate-200"
+                          style={{ backgroundColor: group.color.hex }}
+                        />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {formatLabel(group.color.pantoneName)}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {formatLabel(group.color.pantoneCode)} · {group.color.hex}
+                          </p>
+                        </div>
+                        <span className="ml-auto text-xs text-slate-500">
+                          {group.productCount} productos · {group.variantCount} variantes
+                        </span>
+                      </div>
+
+                      {group.items.length ? (
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                          {group.items.map((item) => (
+                            <div
+                              key={`${group.color.id}-${item.productId}`}
+                              className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
+                            >
+                              <div className="aspect-[4/5] w-full bg-slate-100">
+                                {item.imageUrl ? (
+                                  <img
+                                    src={item.imageUrl}
+                                    alt={item.name}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+                                    Sin imagen
+                                  </div>
+                                )}
+                              </div>
+                              <div className="px-3 py-3">
+                                <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+                                <p className="text-xs text-slate-500">{formatLabel(item.brand)}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                          Sin productos asociados.
+                        </div>
+                      )}
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                  Selecciona una combinación para ver detalles.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
