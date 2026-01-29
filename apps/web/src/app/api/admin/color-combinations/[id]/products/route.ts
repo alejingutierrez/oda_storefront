@@ -215,6 +215,8 @@ export async function GET(req: Request, context: { params: { id: string } }) {
     };
   });
 
+  const colorThreshold = Number(process.env.COLOR_MATCH_COLOR_THRESHOLD ?? 12);
+
   const groupMap = new Map<
     string,
     {
@@ -234,8 +236,11 @@ export async function GET(req: Request, context: { params: { id: string } }) {
     const vectorsForVariant = vectorMap.get(match.variantId) ?? [];
     if (!vectorsForVariant.length) continue;
 
-    let bestColor: (typeof comboColors)[number] | null = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
+    const product = variant.product;
+    const productId = product?.id ?? match.variantId;
+    const brandName = product?.brand?.name ?? "";
+    const name = product?.name ?? "Producto";
+    const imageUrl = variant.images?.[0] ?? product?.imageCoverUrl ?? null;
 
     for (const color of comboColors) {
       if (!color.lab) continue;
@@ -244,34 +249,24 @@ export async function GET(req: Request, context: { params: { id: string } }) {
         const distance = deltaE2000(color.lab, vector.lab);
         if (distance < minDistance) minDistance = distance;
       }
-      if (minDistance < bestDistance) {
-        bestDistance = minDistance;
-        bestColor = color;
+
+      if (minDistance > colorThreshold) continue;
+      const group = groupMap.get(color.id);
+      if (!group) continue;
+
+      group.variantCount += 1;
+
+      const existing = group.items.get(productId);
+      if (!existing || minDistance < existing.distance) {
+        group.items.set(productId, {
+          productId,
+          variantId: variant.id,
+          name,
+          brand: brandName,
+          imageUrl,
+          distance: minDistance,
+        });
       }
-    }
-
-    if (!bestColor) continue;
-    const group = groupMap.get(bestColor.id);
-    if (!group) continue;
-
-    const product = variant.product;
-    const productId = product?.id ?? match.variantId;
-    const brandName = product?.brand?.name ?? "";
-    const name = product?.name ?? "Producto";
-    const imageUrl = variant.images?.[0] ?? product?.imageCoverUrl ?? null;
-
-    group.variantCount += 1;
-
-    const existing = group.items.get(productId);
-    if (!existing || bestDistance < existing.distance) {
-      group.items.set(productId, {
-        productId,
-        variantId: variant.id,
-        name,
-        brand: brandName,
-        imageUrl,
-        distance: bestDistance,
-      });
     }
   }
 
