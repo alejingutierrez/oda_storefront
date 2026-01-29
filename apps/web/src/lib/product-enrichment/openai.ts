@@ -754,6 +754,7 @@ export async function enrichProductWithOpenAI(params: {
         fit: variant.fit,
       })),
     };
+    return normalized;
   };
 
   const normalizeParsed = (normalized: RawEnrichedProduct) =>
