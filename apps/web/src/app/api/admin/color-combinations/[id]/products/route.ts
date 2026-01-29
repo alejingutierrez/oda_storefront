@@ -217,7 +217,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
     };
   });
 
-  const colorThreshold = Number(process.env.COLOR_MATCH_COLOR_THRESHOLD ?? 12);
+  const colorThreshold = Number(process.env.COLOR_MATCH_COLOR_THRESHOLD ?? 22);
 
   const groupMap = new Map<
     string,

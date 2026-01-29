@@ -187,10 +187,10 @@ Script: `apps/web/scripts/build-color-relations.mjs`
 ### Variables de control (re‑ejecución)
 Se pueden ajustar por env al correr el script:
 - `COLOR_MATCH_TOP_K` (default 20)
-- `COLOR_MATCH_THRESHOLD` (default 12) → distancia para “coverage”
-- `COLOR_MATCH_MIN_COVERAGE` (default 0.6)
-- `COLOR_MATCH_MAX_AVG` (default 12)
-- `COLOR_MATCH_MAX_DIST` (default 22)
+- `COLOR_MATCH_THRESHOLD` (default 20) → distancia para “coverage”
+- `COLOR_MATCH_MIN_COVERAGE` (default 0.5)
+- `COLOR_MATCH_MAX_AVG` (default 18)
+- `COLOR_MATCH_MAX_DIST` (default 32)
 - `COLOR_MATCH_PENALTY` (default 12)
 - `COLOR_MATCH_BUCKET_SIZE` (default 6)
 - `COLOR_MATCH_BUCKET_RADIUS` (default 2)
@@ -210,7 +210,7 @@ Endpoint: `GET /api/admin/color-combinations/[id]/products`
 - Usa los matches de `variant_color_combination_matches` para acotar variantes.
 - Para cada color de la combinación:
   - Calcula DeltaE con todos los hexes de la variante.
-  - Si la distancia mínima ≤ `COLOR_MATCH_COLOR_THRESHOLD` (default 12), el producto entra en el grupo del color.
+  - Si la distancia mínima ≤ `COLOR_MATCH_COLOR_THRESHOLD` (default 22), el producto entra en el grupo del color.
   - Se deduplica por producto; se conserva la variante con menor distancia.
 
 Este endpoint alimenta el modal en el admin, mostrando una galería por color (con nombre Pantone, hex, conteos y cards de producto).
