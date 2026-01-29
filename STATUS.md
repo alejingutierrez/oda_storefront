@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-01-29 | MC-106 | done | Estilos principal/secundario por styleTags | Docker rebuild ok; logs web/scraper OK; worker local con Redis OOM (maxmemory); migración aplicada manualmente en Neon por lock de Prisma; Vercel prod Ready: https://oda-storefront-6ee5-6bprvqgcq-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante observación).
 - 2026-01-28 | fix | Productos: filtro no fuerza brandId + prompt enrichment multicolor/unisex | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-iwekfjqq9-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante la revisión).
 - 2026-01-28 | fix | Enrichment: batch/queue floor a concurrencia efectiva | Docker rebuild ok; logs web/worker/scraper OK; Vercel prod Ready: https://oda-storefront-6ee5-6mix5s7ab-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante la revisión).
 - 2026-01-28 | fix | Duplicar concurrencia product-enrichment a 20 | Drain y worker con clamp mínimo 20; requiere redeploy worker/containers + Vercel.
