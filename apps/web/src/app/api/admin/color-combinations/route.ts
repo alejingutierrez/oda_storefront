@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
 
@@ -40,7 +41,7 @@ export async function GET(req: Request) {
   const contrasts = normalizeListParam(url.searchParams.getAll("contrast"));
   const colorsCount = url.searchParams.get("colorsCount")?.trim();
 
-  const where: Parameters<typeof prisma.colorCombination.findMany>[0]["where"] = {};
+  const where: Prisma.ColorCombinationWhereInput = {};
 
   if (seasons.length) {
     where.season = { in: seasons };
