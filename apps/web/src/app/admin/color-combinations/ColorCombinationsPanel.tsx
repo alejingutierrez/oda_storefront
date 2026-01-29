@@ -31,6 +31,7 @@ type FilterOptions = {
   temperatures: string[];
   layouts: string[];
   contrasts: string[];
+  moods: string[];
 };
 
 type ApiResponse = {
@@ -42,14 +43,6 @@ type ApiResponse = {
   filters: FilterOptions;
 };
 
-const parseCsv = (value: string | null) =>
-  value
-    ? value
-        .split(",")
-        .map((item) => item.trim())
-        .filter((item) => item.length)
-    : [];
-
 const parsePositiveInt = (value: string | null, fallback: number) => {
   if (!value) return fallback;
   const parsed = Number(value);
@@ -57,30 +50,49 @@ const parsePositiveInt = (value: string | null, fallback: number) => {
   return Math.floor(parsed);
 };
 
-const toggleValue = (values: string[], value: string) =>
-  values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
-
 const formatLabel = (value: string | null | undefined, fallback = "—") =>
   value && value.trim().length ? value : fallback;
+
+type SelectOption = {
+  value: string;
+  label: string;
+};
+
+type FilterSelectProps = {
+  label: string;
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+};
+
+const FilterSelect = ({ label, value, options, onChange }: FilterSelectProps) => (
+  <label className="block">
+    <span className="text-xs uppercase tracking-[0.2em] text-slate-500">{label}</span>
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+    >
+      <option value="">Todos</option>
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  </label>
+);
 
 export default function ColorCombinationsPanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialQuery = searchParams.get("q") ?? "";
-  const initialSeasons = parseCsv(searchParams.get("season"));
-  const initialTemps = parseCsv(searchParams.get("temperature"));
-  const initialLayouts = parseCsv(searchParams.get("layout"));
-  const initialContrasts = parseCsv(searchParams.get("contrast"));
-  const initialColorsCount = searchParams.get("colorsCount") ?? "";
-  const initialPage = parsePositiveInt(searchParams.get("page"), 1);
-
-  const [query, setQuery] = useState(initialQuery);
-  const [seasons, setSeasons] = useState<string[]>(initialSeasons);
-  const [temperatures, setTemperatures] = useState<string[]>(initialTemps);
-  const [layouts, setLayouts] = useState<string[]>(initialLayouts);
-  const [contrasts, setContrasts] = useState<string[]>(initialContrasts);
-  const [colorsCount, setColorsCount] = useState(initialColorsCount);
-  const [page, setPage] = useState(initialPage);
+  const [season, setSeason] = useState(searchParams.get("season") ?? "");
+  const [temperature, setTemperature] = useState(searchParams.get("temperature") ?? "");
+  const [layout, setLayout] = useState(searchParams.get("layout") ?? "");
+  const [contrast, setContrast] = useState(searchParams.get("contrast") ?? "");
+  const [mood, setMood] = useState(searchParams.get("mood") ?? "");
+  const [colorsCount, setColorsCount] = useState(searchParams.get("colorsCount") ?? "");
+  const [page, setPage] = useState(parsePositiveInt(searchParams.get("page"), 1));
   const [items, setItems] = useState<CombinationItem[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -89,6 +101,7 @@ export default function ColorCombinationsPanel() {
     temperatures: [],
     layouts: [],
     contrasts: [],
+    moods: [],
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,16 +109,16 @@ export default function ColorCombinationsPanel() {
 
   const buildParams = useCallback(() => {
     const params = new URLSearchParams();
-    if (query.trim().length) params.set("q", query.trim());
-    if (seasons.length) params.set("season", seasons.join(","));
-    if (temperatures.length) params.set("temperature", temperatures.join(","));
-    if (layouts.length) params.set("layout", layouts.join(","));
-    if (contrasts.length) params.set("contrast", contrasts.join(","));
+    if (season) params.set("season", season);
+    if (temperature) params.set("temperature", temperature);
+    if (layout) params.set("layout", layout);
+    if (contrast) params.set("contrast", contrast);
+    if (mood) params.set("mood", mood);
     if (colorsCount) params.set("colorsCount", colorsCount);
     params.set("page", String(page));
     params.set("pageSize", String(PAGE_SIZE));
     return params;
-  }, [query, seasons, temperatures, layouts, contrasts, colorsCount, page]);
+  }, [season, temperature, layout, contrast, mood, colorsCount, page]);
 
   const fetchCombos = useCallback(async () => {
     setLoading(true);
@@ -122,7 +135,9 @@ export default function ColorCombinationsPanel() {
       setItems(payload.items ?? []);
       setTotal(payload.total ?? 0);
       setTotalPages(payload.totalPages ?? 1);
-      setFilters(payload.filters ?? { seasons: [], temperatures: [], layouts: [], contrasts: [] });
+      setFilters(
+        payload.filters ?? { seasons: [], temperatures: [], layouts: [], contrasts: [], moods: [] },
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
     } finally {
@@ -145,52 +160,53 @@ export default function ColorCombinationsPanel() {
   }, [buildParams, router, searchParams]);
 
   useEffect(() => {
-    const nextQuery = searchParams.get("q") ?? "";
-    const nextSeasons = parseCsv(searchParams.get("season"));
-    const nextTemps = parseCsv(searchParams.get("temperature"));
-    const nextLayouts = parseCsv(searchParams.get("layout"));
-    const nextContrasts = parseCsv(searchParams.get("contrast"));
-    const nextColorsCount = searchParams.get("colorsCount") ?? "";
-    const nextPage = parsePositiveInt(searchParams.get("page"), 1);
-
-    setQuery((prev) => (prev === nextQuery ? prev : nextQuery));
-    setSeasons((prev) => (prev.join(",") === nextSeasons.join(",") ? prev : nextSeasons));
-    setTemperatures((prev) =>
-      prev.join(",") === nextTemps.join(",") ? prev : nextTemps,
+    setSeason((prev) => (prev === (searchParams.get("season") ?? "") ? prev : searchParams.get("season") ?? ""));
+    setTemperature((prev) =>
+      prev === (searchParams.get("temperature") ?? "") ? prev : searchParams.get("temperature") ?? "",
     );
-    setLayouts((prev) => (prev.join(",") === nextLayouts.join(",") ? prev : nextLayouts));
-    setContrasts((prev) =>
-      prev.join(",") === nextContrasts.join(",") ? prev : nextContrasts,
+    setLayout((prev) =>
+      prev === (searchParams.get("layout") ?? "") ? prev : searchParams.get("layout") ?? "",
     );
-    setColorsCount((prev) => (prev === nextColorsCount ? prev : nextColorsCount));
-    setPage((prev) => (prev === nextPage ? prev : nextPage));
+    setContrast((prev) =>
+      prev === (searchParams.get("contrast") ?? "") ? prev : searchParams.get("contrast") ?? "",
+    );
+    setMood((prev) => (prev === (searchParams.get("mood") ?? "") ? prev : searchParams.get("mood") ?? ""));
+    setColorsCount((prev) =>
+      prev === (searchParams.get("colorsCount") ?? "")
+        ? prev
+        : searchParams.get("colorsCount") ?? "",
+    );
+    setPage((prev) =>
+      prev === parsePositiveInt(searchParams.get("page"), 1)
+        ? prev
+        : parsePositiveInt(searchParams.get("page"), 1),
+    );
   }, [searchParams]);
 
   const clearFilters = () => {
     suppressUrlRef.current = true;
-    setQuery("");
-    setSeasons([]);
-    setTemperatures([]);
-    setLayouts([]);
-    setContrasts([]);
+    setSeason("");
+    setTemperature("");
+    setLayout("");
+    setContrast("");
+    setMood("");
     setColorsCount("");
     setPage(1);
     suppressUrlRef.current = false;
   };
 
+  const activeFilters = useMemo(() =>
+    [season, temperature, layout, contrast, mood, colorsCount].filter(Boolean).length,
+  [season, temperature, layout, contrast, mood, colorsCount]);
+
   const handlePageChange = (nextPage: number) => {
     setPage(nextPage);
   };
 
-  const colorCountOptions = [
+  const colorCountOptions: SelectOption[] = [
     { value: "2", label: "Dúos (2)" },
     { value: "4", label: "Cuartetos (4)" },
   ];
-
-  const activeFilters = useMemo(
-    () => seasons.length + temperatures.length + layouts.length + contrasts.length + (colorsCount ? 1 : 0),
-    [seasons, temperatures, layouts, contrasts, colorsCount],
-  );
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -198,8 +214,8 @@ export default function ColorCombinationsPanel() {
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Combinaciones de color</h2>
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Explora combinaciones Pantone/HEX detectadas con Claude. Filtra por temporada,
-            temperatura, layout o busca por nombre Pantone, código o hex.
+            Navega combinaciones de color con swatches y nombres Pantone. Usa los filtros para
+            encontrar combinaciones por temporada, mood o temperatura.
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -208,20 +224,64 @@ export default function ColorCombinationsPanel() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-        <div>
-          <label className="text-xs uppercase tracking-[0.2em] text-slate-500">Buscar</label>
-          <input
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <FilterSelect
+            label="Temporada"
+            value={season}
+            options={filters.seasons.map((value) => ({ value, label: value }))}
+            onChange={(value) => {
+              setSeason(value);
               setPage(1);
             }}
-            placeholder="Pantone, nombre, hex o archivo"
-            className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+          />
+          <FilterSelect
+            label="Temperatura"
+            value={temperature}
+            options={filters.temperatures.map((value) => ({ value, label: value }))}
+            onChange={(value) => {
+              setTemperature(value);
+              setPage(1);
+            }}
+          />
+          <FilterSelect
+            label="Contraste"
+            value={contrast}
+            options={filters.contrasts.map((value) => ({ value, label: value }))}
+            onChange={(value) => {
+              setContrast(value);
+              setPage(1);
+            }}
+          />
+          <FilterSelect
+            label="Mood"
+            value={mood}
+            options={filters.moods.map((value) => ({ value, label: value }))}
+            onChange={(value) => {
+              setMood(value);
+              setPage(1);
+            }}
+          />
+          <FilterSelect
+            label="Layout"
+            value={layout}
+            options={filters.layouts.map((value) => ({ value, label: value }))}
+            onChange={(value) => {
+              setLayout(value);
+              setPage(1);
+            }}
+          />
+          <FilterSelect
+            label="Cantidad de colores"
+            value={colorsCount}
+            options={colorCountOptions}
+            onChange={(value) => {
+              setColorsCount(value);
+              setPage(1);
+            }}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <span>Filtros activos: {activeFilters}</span>
           <button
             type="button"
@@ -230,124 +290,6 @@ export default function ColorCombinationsPanel() {
           >
             Limpiar filtros
           </button>
-        </div>
-      </div>
-
-      <div className="mt-6 space-y-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Layout</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {filters.layouts.map((layout) => (
-              <button
-                key={layout}
-                type="button"
-                onClick={() => {
-                  setLayouts((prev) => toggleValue(prev, layout));
-                  setPage(1);
-                }}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                  layouts.includes(layout)
-                    ? "border-indigo-600 bg-indigo-600 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                {layout}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Temporada</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {filters.seasons.map((season) => (
-              <button
-                key={season}
-                type="button"
-                onClick={() => {
-                  setSeasons((prev) => toggleValue(prev, season));
-                  setPage(1);
-                }}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                  seasons.includes(season)
-                    ? "border-emerald-600 bg-emerald-600 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                {season}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid gap-3 lg:grid-cols-2">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Temperatura</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {filters.temperatures.map((temp) => (
-                <button
-                  key={temp}
-                  type="button"
-                  onClick={() => {
-                    setTemperatures((prev) => toggleValue(prev, temp));
-                    setPage(1);
-                  }}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                    temperatures.includes(temp)
-                      ? "border-amber-500 bg-amber-500 text-white"
-                      : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  {temp}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Contraste</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {filters.contrasts.map((contrast) => (
-                <button
-                  key={contrast}
-                  type="button"
-                  onClick={() => {
-                    setContrasts((prev) => toggleValue(prev, contrast));
-                    setPage(1);
-                  }}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                    contrasts.includes(contrast)
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  {contrast}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Cantidad de colores</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {colorCountOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  setColorsCount((prev) => (prev === option.value ? "" : option.value));
-                  setPage(1);
-                }}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                  colorsCount === option.value
-                    ? "border-indigo-600 bg-indigo-600 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -392,19 +334,7 @@ export default function ColorCombinationsPanel() {
               key={combo.id}
               className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
             >
-              <header className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{combo.imageFilename}</p>
-                  <h3 className="mt-1 text-base font-semibold text-slate-900">
-                    Combo {combo.comboKey} · {combo.colors.length} colores
-                  </h3>
-                </div>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {combo.detectedLayout}
-                </span>
-              </header>
-
-              <div className="mt-4 grid gap-3">
+              <div className="grid gap-3">
                 {combo.colors.map((color) => (
                   <div
                     key={color.id}
@@ -428,23 +358,6 @@ export default function ColorCombinationsPanel() {
                     </p>
                   </div>
                 ))}
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-600">
-                  {formatLabel(combo.season)}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-600">
-                  {formatLabel(combo.temperature)}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-600">
-                  Contraste {formatLabel(combo.contrast)}
-                </span>
-                {combo.mood && (
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-600">
-                    {combo.mood}
-                  </span>
-                )}
               </div>
             </article>
           ))}

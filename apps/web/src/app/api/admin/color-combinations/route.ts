@@ -39,6 +39,7 @@ export async function GET(req: Request) {
   const temperatures = normalizeListParam(url.searchParams.getAll("temperature"));
   const layouts = normalizeListParam(url.searchParams.getAll("layout"));
   const contrasts = normalizeListParam(url.searchParams.getAll("contrast"));
+  const moods = normalizeListParam(url.searchParams.getAll("mood"));
   const colorsCount = url.searchParams.get("colorsCount")?.trim();
 
   const where: Prisma.ColorCombinationWhereInput = {};
@@ -54,6 +55,9 @@ export async function GET(req: Request) {
   }
   if (contrasts.length) {
     where.contrast = { in: contrasts };
+  }
+  if (moods.length) {
+    where.mood = { in: moods };
   }
 
   if (query) {
@@ -97,11 +101,13 @@ export async function GET(req: Request) {
   const offset = (page - 1) * pageSize;
   const paged = filtered.slice(offset, offset + pageSize);
 
-  const [seasonOptions, temperatureOptions, layoutOptions, contrastOptions] = await Promise.all([
+  const [seasonOptions, temperatureOptions, layoutOptions, contrastOptions, moodOptions] =
+    await Promise.all([
     prisma.colorCombination.findMany({ distinct: ["season"], select: { season: true } }),
     prisma.colorCombination.findMany({ distinct: ["temperature"], select: { temperature: true } }),
     prisma.colorCombination.findMany({ distinct: ["detectedLayout"], select: { detectedLayout: true } }),
     prisma.colorCombination.findMany({ distinct: ["contrast"], select: { contrast: true } }),
+    prisma.colorCombination.findMany({ distinct: ["mood"], select: { mood: true } }),
   ]);
 
   const filters = {
@@ -109,6 +115,7 @@ export async function GET(req: Request) {
     temperatures: sortStrings(temperatureOptions.map((row) => row.temperature)),
     layouts: sortStrings(layoutOptions.map((row) => row.detectedLayout)),
     contrasts: sortStrings(contrastOptions.map((row) => row.contrast)),
+    moods: sortStrings(moodOptions.map((row) => row.mood)),
   };
 
   return NextResponse.json({
