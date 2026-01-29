@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
 
@@ -128,13 +128,15 @@ const deltaE2000 = (lab1: { L: number; a: number; b: number }, lab2: { L: number
   return deltaE;
 };
 
-export async function GET(req: Request, context: { params: { id: string } }) {
+type RouteContext = { params: Promise<{ id: string }> };
+
+export async function GET(req: NextRequest, context: RouteContext) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const { id } = context.params;
+  const { id } = await context.params;
 
   const combination = await prisma.colorCombination.findUnique({
     where: { id },
