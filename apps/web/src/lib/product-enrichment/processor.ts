@@ -1,5 +1,11 @@
 import { prisma } from "@/lib/prisma";
-import { enrichProductWithOpenAI, productEnrichmentPromptVersion, productEnrichmentSchemaVersion } from "@/lib/product-enrichment/openai";
+import {
+  enrichProductWithOpenAI,
+  productEnrichmentModel,
+  productEnrichmentPromptVersion,
+  productEnrichmentProvider,
+  productEnrichmentSchemaVersion,
+} from "@/lib/product-enrichment/openai";
 import { enqueueEnrichmentItems } from "@/lib/product-enrichment/queue";
 import {
   listPendingItems,
@@ -152,6 +158,7 @@ export const processEnrichmentItemById = async (
       await tx.product.update({
         where: { id: item.productId },
         data: {
+          description: enriched.description,
           category: enriched.category,
           subcategory: enriched.subcategory,
           styleTags: enriched.styleTags,
@@ -166,7 +173,8 @@ export const processEnrichmentItemById = async (
           metadata: {
             ...(item.product.metadata && typeof item.product.metadata === "object" ? item.product.metadata : {}),
             enrichment: {
-              model: ENRICHMENT_MODEL,
+              model: productEnrichmentModel,
+              provider: productEnrichmentProvider,
               prompt_version: productEnrichmentPromptVersion,
               schema_version: productEnrichmentSchemaVersion,
               completed_at: new Date().toISOString(),
@@ -370,8 +378,3 @@ export const drainEnrichmentRun = async ({
 
   return { processed, completed, failed, skipped };
 };
-
-const ENRICHMENT_MODEL =
-  process.env.BEDROCK_INFERENCE_PROFILE_ID ??
-  process.env.PRODUCT_ENRICHMENT_MODEL ??
-  "bedrock";

@@ -216,6 +216,8 @@ model Variant {
   stockHistory StockHistory[]
   assets       Asset[]
   events       Event[]
+  colorVectors VariantColorVector[]
+  colorMatches VariantColorCombinationMatch[]
 
   @@index([productId])
   @@unique([productId, sku])
@@ -324,6 +326,88 @@ model TaxonomyTag {
   @@unique([type, value])
   @@index([type])
   @@map("taxonomy_tags")
+}
+
+model ColorCombination {
+  id             String   @id @default(uuid())
+  imageFilename  String
+  detectedLayout String
+  comboKey       String
+  season         String?
+  temperature    String?
+  contrast       String?
+  mood           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  colors         ColorCombinationColor[]
+  variantMatches VariantColorCombinationMatch[]
+
+  @@unique([imageFilename, comboKey])
+  @@index([detectedLayout])
+  @@index([season])
+  @@index([temperature])
+  @@map("color_combinations")
+}
+
+model ColorCombinationColor {
+  id            String           @id @default(uuid())
+  combinationId String
+  combination   ColorCombination @relation(fields: [combinationId], references: [id], onDelete: Cascade)
+  position      Int
+  role          String?
+  hex           String
+  pantoneCode   String?
+  pantoneName   String?
+  labL          Float?
+  labA          Float?
+  labB          Float?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([combinationId, position])
+  @@index([combinationId])
+  @@index([hex])
+  @@index([pantoneCode])
+  @@map("color_combination_colors")
+}
+
+model VariantColorVector {
+  id        String   @id @default(uuid())
+  variantId String
+  variant   Variant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  position  Int
+  hex       String
+  labL      Float
+  labA      Float
+  labB      Float
+  source    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([variantId, position])
+  @@index([variantId])
+  @@map("variant_color_vectors")
+}
+
+model VariantColorCombinationMatch {
+  id               String           @id @default(uuid())
+  variantId        String
+  variant          Variant          @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  combinationId    String
+  combination      ColorCombination @relation(fields: [combinationId], references: [id], onDelete: Cascade)
+  score            Float
+  coverage         Float
+  avgDistance      Float
+  maxDistance      Float
+  matchedColors    Int
+  totalComboColors Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([variantId, combinationId])
+  @@index([variantId])
+  @@index([combinationId])
+  @@map("variant_color_combination_matches")
 }
 
 model User {

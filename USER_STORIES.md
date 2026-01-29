@@ -164,7 +164,6 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Latencia mayor en productos con muchas variantes; mitigación: chunk size configurable.
 - Métricas: % de validación JSON y tasa de fallos por esquema.
 - Estado: **done (2026-01-29)**.
-
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.
@@ -964,6 +963,13 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: P95 navigation <1s cache hit; sin saltos visuales (CLS).
 - Riesgos: Fallbacks que ocultan fallas reales; mitigar con alertas y circuit breakers.
 - Métricas: CWV, error rate front, tiempo de recuperación de fallos simulados.
+
+### MC-105 Filtro por rol de color en combinaciones
+- Historia: Como admin, quiero que los productos asociados a un color respeten categorías por rol (dominante/secundario/acento), para evitar recomendaciones erróneas.
+- Alcance: El endpoint `/api/admin/color-combinations/[id]/products` filtra por `products.category` según el rol del color (`color_combination_colors.role`).
+- CA: Al hacer click en un color, solo se listan categorías permitidas por rol; si el rol no se reconoce, no se aplica filtro; productos sin categoría se excluyen cuando hay filtro activo.
+- Datos: `color_combination_colors.role`, `products.category`, `variant_color_combination_matches`.
+- Estado: done (2026-01-29).
 
 ---
 **Protocolo al desarrollar cualquier historia**  

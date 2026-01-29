@@ -156,9 +156,75 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - CTR en recomendaciones y anuncios; tasa de click-out a tiendas; ratio de back-in-stock alert opt-ins satisfechos.
 - Latencia P95 de búsqueda y ficha de producto (<400ms desde edge cache; <900ms sin cache).
 
+## 20) Agrupación de colores ↔ productos (proceso actual)
+Este proceso crea relaciones muchos‑a‑muchos entre variantes y combinaciones de color, y permite ver en el admin qué productos se asocian a cada color dentro de una combinación.
+
+### Tablas involucradas
+- `color_combinations` y `color_combination_colors`: combinaciones base y sus colores.
+- `variant_color_vectors`: hex + Lab por variante (normalizados).
+- `variant_color_combination_matches`: top matches de variante → combinación con métricas de calidad.
+
+### Cómo se construyen las relaciones (batch)
+Script: `apps/web/scripts/build-color-relations.mjs`
+
+1) **Normalizar colores de combinaciones**
+   - Cada `color_combination_colors.hex` se convierte a Lab (D65).
+   - Se persiste en `labL/labA/labB`.
+
+2) **Extraer hexes de variantes**
+   - Fuente principal: `variants.metadata.enrichment.colors.hex` (array o string).
+   - Fallback: `variants.color`.
+   - Normaliza hex (`#RRGGBB`) y elimina duplicados.
+   - Se inserta en `variant_color_vectors` con posición y Lab.
+
+3) **Matching variante → combinación**
+   - Distancia **DeltaE2000** entre cada color de la combinación y los hexes de la variante.
+   - Se calcula:
+     - `avgDistance`, `maxDistance`
+     - `coverage` = % de colores de la combinación dentro del umbral
+     - `score` = `avgDistance + (1 - coverage) * penalty`
+   - Se guardan los **Top‑K** matches en `variant_color_combination_matches`.
+
+### Variables de control (re‑ejecución)
+Se pueden ajustar por env al correr el script:
+- `COLOR_MATCH_TOP_K` (default 20)
+- `COLOR_MATCH_THRESHOLD` (default 24) → distancia para “coverage”
+- `COLOR_MATCH_MIN_COVERAGE` (default 0.4)
+- `COLOR_MATCH_MAX_AVG` (default 20)
+- `COLOR_MATCH_MAX_DIST` (default 36)
+- `COLOR_MATCH_PENALTY` (default 12)
+- `COLOR_MATCH_BUCKET_SIZE` (default 6)
+- `COLOR_MATCH_BUCKET_RADIUS` (default 2)
+- `COLOR_MATCH_MIN_CANDIDATES` (default 40)
+- `COLOR_MATCH_BATCH` (default 500)
+- `COLOR_MATCH_LOG_EVERY` (default 2000)
+- `COLOR_MATCH_MAX_HEXES` (0 = sin límite)
+
+Ejemplo de ejecución (desde `apps/web`):
+```
+COLOR_MATCH_MIN_COVERAGE=0.5 COLOR_MATCH_MAX_AVG=14 COLOR_MATCH_MAX_DIST=24 node scripts/build-color-relations.mjs
+```
+
+### Cómo se agrupan productos por color (admin)
+Endpoint: `GET /api/admin/color-combinations/[id]/products`
+
+- Usa los matches de `variant_color_combination_matches` para acotar variantes.
+- Para cada color de la combinación:
+  - Calcula DeltaE con todos los hexes de la variante.
+  - Si la distancia mínima ≤ `COLOR_MATCH_COLOR_THRESHOLD` (default 26), el producto entra en el grupo del color.
+  - Se deduplica por producto; se conserva la variante con menor distancia.
+
+Este endpoint alimenta el modal en el admin, mostrando una galería por color (con nombre Pantone, hex, conteos y cards de producto).
+
+### Re‑correr tras enriquecimiento
+Cuando el enriquecimiento genere nuevos hexes en `metadata.enrichment.colors.hex`, re‑correr:
+1) `node scripts/build-color-relations.mjs`  
+2) Validar métricas de cobertura/calidad.  
+3) Ajustar umbrales si se requiere más/menos recall.
+
 Mantener este archivo actualizado a medida que se decidan tecnologías, proveedores y políticas definitivas.
 
-## 20) Protocolo obligatorio al trabajar historias de usuario
+## 21) Protocolo obligatorio al trabajar historias de usuario
 Para cada historia (nueva o en curso) se debe:
 0) Pedir al solicitante requisitos previos: credenciales/API keys necesarias, definiciones o datos faltantes para contexto, accesos a Vercel/Neon/Wompi/Blob, y cualquier variable de entorno requerida.
 1) Rebuild de contenedores/docker tras los cambios.

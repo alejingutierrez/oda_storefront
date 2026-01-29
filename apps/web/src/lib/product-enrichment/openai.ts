@@ -1,7 +1,10 @@
 import { z } from "zod";
+import { jsonrepair } from "jsonrepair";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { getOpenAIClient } from "@/lib/openai";
 import {
   CATEGORY_OPTIONS,
+  CATEGORY_DESCRIPTIONS,
   CATEGORY_VALUES,
   FIT_OPTIONS,
   GENDER_OPTIONS,
@@ -11,6 +14,7 @@ import {
   SEASON_OPTIONS,
   STYLE_TAGS,
   SUBCATEGORY_BY_CATEGORY,
+  SUBCATEGORY_DESCRIPTIONS,
   SUBCATEGORY_VALUES,
 } from "@/lib/product-enrichment/constants";
 import {
@@ -22,10 +26,18 @@ import {
   slugify,
 } from "@/lib/product-enrichment/utils";
 
+const PRODUCT_ENRICHMENT_PROVIDER = (
+  process.env.PRODUCT_ENRICHMENT_PROVIDER ??
+  (process.env.BEDROCK_INFERENCE_PROFILE_ID ? "bedrock" : "openai")
+).toLowerCase();
+const OPENAI_MODEL = process.env.PRODUCT_ENRICHMENT_MODEL ?? "gpt-5-mini";
 const BEDROCK_MODEL_ID =
-  process.env.BEDROCK_INFERENCE_PROFILE_ID ??
-  process.env.PRODUCT_ENRICHMENT_MODEL ??
-  "";
+  process.env.BEDROCK_INFERENCE_PROFILE_ID ?? process.env.BEDROCK_MODEL_ID ?? "";
+const BEDROCK_REGION = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "";
+const BEDROCK_ACCESS_KEY =
+  process.env.AWS_ACCESS_KEY_ID ?? process.env.BEDROCK_ACCESS_KEY ?? "";
+const BEDROCK_SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY ?? "";
+const BEDROCK_SESSION_TOKEN = process.env.AWS_SESSION_TOKEN ?? "";
 const MAX_RETRIES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_RETRIES ?? 3));
 const MAX_IMAGES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_IMAGES ?? 8));
 const MAX_TOKENS = Math.max(256, Number(process.env.PRODUCT_ENRICHMENT_MAX_TOKENS ?? 1200));
@@ -46,6 +58,22 @@ const REPAIR_MAX_CHARS = Math.max(
   4000,
   Number(process.env.PRODUCT_ENRICHMENT_REPAIR_MAX_CHARS ?? 12000),
 );
+const BEDROCK_TIMEOUT_MS = Math.max(
+  5000,
+  Number(process.env.PRODUCT_ENRICHMENT_BEDROCK_TIMEOUT_MS ?? 25000),
+);
+const BEDROCK_MAX_IMAGES = Math.max(
+  0,
+  Number(process.env.PRODUCT_ENRICHMENT_BEDROCK_MAX_IMAGES ?? Math.min(MAX_IMAGES, 4)),
+);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const jitterDelay = async (minMs = 100, maxMs = 400) => {
+  const min = Math.max(0, minMs);
+  const max = Math.max(min, maxMs);
+  const value = Math.floor(min + Math.random() * (max - min + 1));
+  await sleep(value);
+};
 
 const colorField = z.union([z.string(), z.array(z.string()).min(1).max(3)]);
 
@@ -58,6 +86,7 @@ const variantSchema = z.object({
 });
 
 const productSchema = z.object({
+  description: z.string().optional().default(""),
   category: z.string(),
   subcategory: z.string(),
   style_tags: z.array(z.string()).min(10).max(10),
@@ -76,6 +105,10 @@ const enrichmentResponseSchema = z.object({
   product: productSchema,
 });
 
+export const productEnrichmentProvider = PRODUCT_ENRICHMENT_PROVIDER;
+export const productEnrichmentModel =
+  PRODUCT_ENRICHMENT_PROVIDER === "bedrock" ? BEDROCK_MODEL_ID : OPENAI_MODEL;
+
 export type RawEnrichedVariant = {
   variantId: string;
   sku?: string | null;
@@ -85,6 +118,7 @@ export type RawEnrichedVariant = {
 };
 
 export type RawEnrichedProduct = {
+  description: string;
   category: string;
   subcategory: string;
   styleTags: string[];
@@ -110,6 +144,7 @@ export type EnrichedVariant = {
 };
 
 export type EnrichedProduct = {
+  description: string;
   category: string;
   subcategory: string;
   styleTags: string[];
@@ -124,24 +159,69 @@ export type EnrichedProduct = {
   variants: EnrichedVariant[];
 };
 
+type OpenAIResponse = {
+  output_text?: string;
+  output?: Array<{
+    type?: string;
+    content?: Array<{
+      type?: string;
+      text?: string;
+    }>;
+  }>;
+};
+
+type OpenAIResponsesClient = {
+  responses: {
+    create: (input: Record<string, unknown>) => Promise<OpenAIResponse>;
+  };
+};
+
 type BedrockResponse = {
   content?: Array<{ type?: string; text?: string }>;
   completion?: string;
   output_text?: string;
 };
 
-type BedrockImageInput = {
-  type: "image";
-  source: { type: "base64"; media_type: string; data: string };
-};
-
 let bedrockClient: BedrockRuntimeClient | null = null;
 
 const getBedrockClient = () => {
   if (bedrockClient) return bedrockClient;
-  const region = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "us-east-1";
-  bedrockClient = new BedrockRuntimeClient({ region });
+  if (!BEDROCK_MODEL_ID) {
+    throw new Error(
+      "BEDROCK_INFERENCE_PROFILE_ID (or BEDROCK_MODEL_ID) is missing for product enrichment.",
+    );
+  }
+  if (!BEDROCK_REGION) {
+    throw new Error("AWS_REGION is missing for Bedrock product enrichment.");
+  }
+  const hasExplicitCreds = Boolean(BEDROCK_ACCESS_KEY && BEDROCK_SECRET_KEY);
+  if (!hasExplicitCreds && !process.env.AWS_PROFILE) {
+    throw new Error(
+      "AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY are missing for Bedrock product enrichment.",
+    );
+  }
+  bedrockClient = new BedrockRuntimeClient({
+    region: BEDROCK_REGION,
+    ...(hasExplicitCreds
+      ? {
+          credentials: {
+            accessKeyId: BEDROCK_ACCESS_KEY,
+            secretAccessKey: BEDROCK_SECRET_KEY,
+            ...(BEDROCK_SESSION_TOKEN ? { sessionToken: BEDROCK_SESSION_TOKEN } : {}),
+          },
+        }
+      : {}),
+  });
   return bedrockClient;
+};
+
+const extractOutputText = (response: OpenAIResponse | null | undefined) => {
+  if (typeof response?.output_text === "string") return response.output_text;
+  const message = Array.isArray(response?.output)
+    ? response.output.find((item) => item.type === "message")
+    : null;
+  const content = message?.content?.find((item) => item.type === "output_text" || item.type === "text");
+  return content?.text ?? "";
 };
 
 const extractBedrockText = (payload: BedrockResponse | null | undefined) => {
@@ -152,11 +232,6 @@ const extractBedrockText = (payload: BedrockResponse | null | undefined) => {
     if (text) return text;
   }
   return "";
-};
-
-const trimForRepair = (value: string) => {
-  if (value.length <= REPAIR_MAX_CHARS) return value;
-  return value.slice(0, REPAIR_MAX_CHARS);
 };
 
 const readBedrockBody = async (body: unknown) => {
@@ -180,65 +255,85 @@ const readBedrockBody = async (body: unknown) => {
   return Buffer.concat(chunks).toString("utf8");
 };
 
-const invokeBedrock = async (params: {
-  systemPrompt: string;
-  userText: string;
-  imageInputs: BedrockImageInput[];
-}) => {
-  const response = await getBedrockClient().send(
-    new InvokeModelCommand({
-      modelId: BEDROCK_MODEL_ID,
-      contentType: "application/json",
-      accept: "application/json",
-      body: JSON.stringify({
-        anthropic_version: "bedrock-2023-05-31",
-        max_tokens: MAX_TOKENS,
-        temperature: Number(process.env.PRODUCT_ENRICHMENT_TEMPERATURE ?? 0) || 0,
-        system: params.systemPrompt,
-        messages: [
-          {
-            role: "user",
-            content: [{ type: "text", text: params.userText }, ...params.imageInputs],
-          },
-        ],
-      }),
-    }),
-  );
-
-  const rawBody = await readBedrockBody(response.body);
-  if (!rawBody) throw new Error("Respuesta vacia de Bedrock");
-  let raw = "";
-  try {
-    const payload = JSON.parse(rawBody) as BedrockResponse;
-    raw = extractBedrockText(payload) || "";
-  } catch {
-    raw = rawBody;
-  }
-  if (!raw) throw new Error("Respuesta vacia de Bedrock");
-  return raw;
-};
-
 const safeJsonParse = (raw: string) => {
+  const sanitized = raw
+    .replace(/\u0000/g, "")
+    .replace(/[“”]/g, "\"")
+    .replace(/[‘’]/g, "'")
+    .replace(/,\s*([}\]])/g, "$1");
   try {
-    return JSON.parse(raw);
+    return JSON.parse(sanitized);
   } catch {
-    const start = raw.indexOf("{");
-    const end = raw.lastIndexOf("}");
+    try {
+      const repaired = jsonrepair(sanitized);
+      return JSON.parse(repaired);
+    } catch {
+      // fallthrough to substring attempt
+    }
+    const start = sanitized.indexOf("{");
+    const end = sanitized.lastIndexOf("}");
     if (start >= 0 && end > start) {
+      const slice = sanitized.slice(start, end + 1);
       try {
-        return JSON.parse(raw.slice(start, end + 1));
+        return JSON.parse(slice);
       } catch {
-        throw new Error("JSON parse failed");
+        const repairedSlice = jsonrepair(slice);
+        return JSON.parse(repairedSlice);
       }
     }
     throw new Error("JSON parse failed");
   }
 };
 
+const trimForRepair = (value: string) => {
+  if (value.length <= REPAIR_MAX_CHARS) return value;
+  return value.slice(0, REPAIR_MAX_CHARS);
+};
+
+const buildRepairSystemPrompt = (basePrompt: string) =>
+  `${basePrompt}\nIMPORTANTE: Estás corrigiendo una salida previa. Devuelve SOLO JSON válido y completo según el esquema. No agregues texto adicional.`;
+
+const buildRepairUserText = (errorNote: string, raw: string) =>
+  `Se detectó un error al validar la salida:\n${errorNote}\n\nCorrige la siguiente salida para que sea JSON válido y cumpla el esquema:\n${raw}`;
+
+const fetchImageAsBase64 = async (url: string) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), IMAGE_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") || "";
+    const mediaType = contentType.split(";")[0].trim().toLowerCase();
+    if (!["image/jpeg", "image/png", "image/webp"].includes(mediaType)) return null;
+    const contentLength = res.headers.get("content-length");
+    if (contentLength && Number(contentLength) > IMAGE_MAX_BYTES) return null;
+    const arrayBuffer = await res.arrayBuffer();
+    if (arrayBuffer.byteLength > IMAGE_MAX_BYTES) return null;
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    const sizeMb = arrayBuffer.byteLength / (1024 * 1024);
+    return { mediaType, base64, sizeMb };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
 const buildCategoryPrompt = () =>
   CATEGORY_OPTIONS.map((entry) => {
-    const subs = entry.subcategories.map((sub) => sub.value).join(", ");
-    return `- ${entry.value}: [${subs}]`;
+    const categoryDescription = CATEGORY_DESCRIPTIONS[entry.value];
+    const header = categoryDescription
+      ? `- ${entry.value}: ${entry.label}. ${categoryDescription}`
+      : `- ${entry.value}: ${entry.label}.`;
+    const subs = entry.subcategories
+      .map((sub) => {
+        const subDescription = SUBCATEGORY_DESCRIPTIONS[sub.value];
+        return subDescription
+          ? `  - ${sub.value}: ${sub.label}. ${subDescription}`
+          : `  - ${sub.value}: ${sub.label}.`;
+      })
+      .join("\n");
+    return `${header}\n${subs}`;
   }).join("\n");
 
 const buildPrompt = () => {
@@ -247,6 +342,7 @@ const buildPrompt = () => {
 Debes devolver SOLO JSON válido con el siguiente esquema:
 {
   "product": {
+    "description": "string",
     "category": "string",
     "subcategory": "string",
     "style_tags": ["string"],
@@ -270,7 +366,9 @@ Debes devolver SOLO JSON válido con el siguiente esquema:
   }
 }
 Reglas estrictas:
+- description debe ser SOLO texto plano (sin HTML, sin etiquetas).
 - category, subcategory, gender, season y fit deben tener UN SOLO valor.
+- subcategory debe ser una de las subcategorías listadas para la categoría seleccionada; nunca uses "otro".
 - style_tags deben ser EXACTAMENTE 10 elementos.
 - material_tags máximo 3 elementos.
 - pattern_tags máximo 2 elementos.
@@ -284,12 +382,17 @@ Reglas estrictas:
 - color_hex debe ser hexadecimal #RRGGBB. Puede ser string o array (1-3). Si hay varios colores, devuelve array con máximo 3 en orden de predominancia.
 - color_pantone debe ser un código Pantone TCX NN-NNNN. Puede ser string o array (1-3). Si hay varios colores, devuelve array con máximo 3 en orden de predominancia.
 - Si hay dudas sobre el género o es mixto, usa "no_binario_unisex".
-- Si no estás seguro de subcategory, elige la subcategoría más general que pertenezca a la categoría; NUNCA uses "otro".
-- Si no hay evidencia para completar style_tags, rellena hasta 10 usando tags neutrales de la lista permitida (no inventes).
+- No uses comillas tipográficas ni comentarios. El JSON debe ser válido, sin comas colgantes y con comas entre elementos.
 Reglas de evidencia y consistencia:
 - Prioriza la señal de texto en este orden: product.name, product.description, metadata (og:title, og:description, jsonld, etc.).
 - Si viene product.brand_name úsalo para enriquecer seo_title y seo_description.
 - Si el texto es claro sobre el tipo de prenda (ej: "top", "camisa", "blusa", "camiseta", "falda", "vestido", "pantalón", "jean", "short", "bikini"), ESA familia manda.
+- Si llega category/subcategory en el input, asúmelas como NO confiables y no las uses como señal principal.
+- Si el texto indica joyería (aretes/pendientes, anillos, collares, pulseras/brazaletes, tobilleras, dijes/charms, broches, piercings, reloj), usa category "joyeria_y_bisuteria".
+- "Accesorios textiles y medias" es solo textil (bandanas, pañuelos, bufandas, gorras, medias). Nunca usarlo para joyería.
+- Si el texto indica calzado (botas, botines, tenis, sandalias, tacones, mocasines, balerinas, zapatos), usa category "calzado".
+- Si el texto indica bolsos o marroquinería (bolso, cartera, bandolera, mochila, morral, riñonera, clutch, billetera), usa category "bolsos_y_marroquineria".
+- Si el texto indica gafas/lentes/óptica, usa category "gafas_y_optica".
 - Las imágenes solo ayudan a desambiguar detalles (fit, color, pattern), nunca para contradecir el texto.
 - Si hay conflicto entre imagen y texto, gana el texto.
 - No clasifiques como falda/pantalón/vestido si el texto indica explícitamente que es un top/camiseta/blusa (y viceversa).
@@ -303,6 +406,7 @@ ${STYLE_TAGS.join(", ")}
 
 material_tags:
 ${MATERIAL_TAGS.join(", ")}
+Nota: oro/plata/bronce/cobre solo deben usarse en joyería o accesorios.
 
 pattern_tags:
 ${PATTERN_TAGS.join(", ")}
@@ -320,15 +424,6 @@ fit:
 ${FIT_OPTIONS.map((entry) => entry.value).join(", ")}
 
 Si no hay suficiente evidencia para material/pattern/occasion, usa "otro" cuando esté disponible.`;
-};
-
-const buildRepairPrompt = (errorMessage: string) => {
-  return `${buildPrompt()}
-
-Tu salida anterior fue invalida y no cumple el esquema. Corrige el JSON respetando todas las reglas.
-Devuelve SOLO JSON valido (sin markdown, sin texto extra).
-Debes devolver EXACTAMENTE las variantes solicitadas en el mismo conteo.
-Error detectado: ${errorMessage}`;
 };
 
 const clampText = (value: string, maxLength: number) => {
@@ -355,95 +450,82 @@ const normalizeSeoTags = (tags: string[], fallback: Array<string | null | undefi
   return output.slice(0, 12);
 };
 
-const STYLE_TAGS_FALLBACK = [
-  "estetica_minimalista",
-  "estetica_normcore",
-  "vibra_sobria",
-  "vibra_relajada",
-  "vibra_fresca",
-  "vibra_ligera",
-  "formalidad_casual",
-  "formalidad_smart_casual",
-  "contexto_fin_de_semana",
-  "contexto_oficina",
-];
-
-const repairStyleTags = (tags: string[]) => {
-  const unique = [...new Set(tags)];
-  if (unique.length >= 10) return unique.slice(0, 10);
-  const fallback = STYLE_TAGS_FALLBACK.filter((tag) => STYLE_TAGS.includes(tag));
-  for (const tag of fallback) {
-    if (unique.length >= 10) break;
-    if (!unique.includes(tag)) unique.push(tag);
-  }
-  for (const tag of STYLE_TAGS) {
-    if (unique.length >= 10) break;
-    if (!unique.includes(tag)) unique.push(tag);
-  }
-  return unique.slice(0, 10);
-};
-
 const buildFallbackSeoTitle = (name: string, brand?: string | null) =>
   [name, brand].filter(Boolean).join(" | ");
 
 const buildFallbackSeoDescription = (description?: string | null, name?: string | null) =>
   description?.trim() || name?.trim() || "";
 
+const stripHtml = (value: string) => {
+  if (!value) return "";
+  return value
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
 const normalizeEnrichment = (
   input: RawEnrichedProduct,
   variantIds: Set<string>,
-  variantIdList: string[],
   context: {
     productName: string;
     brandName?: string | null;
     description?: string | null;
     category?: string | null;
     subcategory?: string | null;
-    gender?: string | null;
-    season?: string | null;
   },
 ) => {
+  const plainDescription =
+    stripHtml(input.description) || stripHtml(context.description ?? "") || "";
   if (input.variants.length !== variantIds.size) {
     throw new Error(
       `Variant count mismatch: expected ${variantIds.size}, got ${input.variants.length}`,
     );
   }
-  const contextCategory = normalizeEnumValue(context.category ?? null, CATEGORY_VALUES);
-  const category = normalizeEnumValue(input.category, CATEGORY_VALUES) ?? contextCategory;
+  const category = normalizeEnumValue(input.category, CATEGORY_VALUES);
   if (!category) throw new Error(`Invalid category: ${input.category}`);
 
-  const allowedSubs = SUBCATEGORY_BY_CATEGORY[category] ?? [];
-  const inputSubcategory = normalizeEnumValue(input.subcategory, SUBCATEGORY_VALUES);
-  const contextSubcategory = normalizeEnumValue(context.subcategory ?? null, SUBCATEGORY_VALUES);
-  let subcategory = inputSubcategory;
-  if (!subcategory || !allowedSubs.includes(subcategory)) {
-    if (contextSubcategory && allowedSubs.includes(contextSubcategory)) {
-      subcategory = contextSubcategory;
-    } else {
-      subcategory = allowedSubs[0];
-    }
-  }
+  const subcategory = normalizeEnumValue(input.subcategory, SUBCATEGORY_VALUES);
   if (!subcategory) throw new Error(`Invalid subcategory: ${input.subcategory}`);
 
-  const styleTags = repairStyleTags(normalizeEnumArray(input.styleTags, STYLE_TAGS));
+  const allowedSubs = SUBCATEGORY_BY_CATEGORY[category] ?? [];
+  if (!allowedSubs.includes(subcategory)) {
+    throw new Error(`Subcategory ${subcategory} does not belong to ${category}`);
+  }
+
+  const styleTags = normalizeEnumArray(input.styleTags, STYLE_TAGS);
+  let fixedStyleTags = styleTags;
   if (styleTags.length !== 10) {
-    throw new Error(`Invalid style_tags length: ${styleTags.length}`);
+    const seen = new Set(styleTags);
+    const padded = [...styleTags];
+    for (const tag of STYLE_TAGS) {
+      if (padded.length >= 10) break;
+      if (seen.has(tag)) continue;
+      padded.push(tag);
+      seen.add(tag);
+    }
+    fixedStyleTags = padded.slice(0, 10);
+    console.warn("enrichment.style_tags.adjusted", {
+      before: styleTags.length,
+      after: fixedStyleTags.length,
+    });
+    if (fixedStyleTags.length !== 10) {
+      throw new Error(`Invalid style_tags length: ${styleTags.length}`);
+    }
   }
 
   const materialTags = normalizeEnumArray(input.materialTags ?? [], MATERIAL_TAGS).slice(0, 3);
   const patternTags = normalizeEnumArray(input.patternTags ?? [], PATTERN_TAGS).slice(0, 2);
   const occasionTags = normalizeEnumArray(input.occasionTags ?? [], OCCASION_TAGS).slice(0, 2);
 
-  const gender =
-    normalizeEnumValue(input.gender, GENDER_OPTIONS.map((entry) => entry.value)) ??
-    normalizeEnumValue(context.gender ?? null, GENDER_OPTIONS.map((entry) => entry.value)) ??
-    "no_binario_unisex";
+  const gender = normalizeEnumValue(input.gender, GENDER_OPTIONS.map((entry) => entry.value));
   if (!gender) throw new Error(`Invalid gender: ${input.gender}`);
 
-  const season =
-    normalizeEnumValue(input.season, SEASON_OPTIONS.map((entry) => entry.value)) ??
-    normalizeEnumValue(context.season ?? null, SEASON_OPTIONS.map((entry) => entry.value)) ??
-    SEASON_OPTIONS[0]?.value;
+  const season = normalizeEnumValue(input.season, SEASON_OPTIONS.map((entry) => entry.value));
   if (!season) throw new Error(`Invalid season: ${input.season}`);
 
   const fitAllowed = FIT_OPTIONS.map((entry) => entry.value);
@@ -460,30 +542,13 @@ const normalizeEnrichment = (
       .slice(0, 3) as string[];
 
   const seenVariantIds = new Set<string>();
-  const outputValidIds = new Set(
-    input.variants.map((variant) => variant.variantId).filter((id) => variantIds.has(id)),
-  );
-  const missingIds = variantIdList.filter((id) => !outputValidIds.has(id));
-  const missingQueue = [...missingIds];
-
-  const assignVariantId = (candidate: string, index: number) => {
-    if (variantIds.has(candidate) && !seenVariantIds.has(candidate)) return candidate;
-    while (missingQueue.length) {
-      const next = missingQueue.shift();
-      if (next && !seenVariantIds.has(next)) return next;
-    }
-    const fallback = variantIdList[index];
-    if (fallback && !seenVariantIds.has(fallback)) return fallback;
-    return candidate;
-  };
-
-  const variants = input.variants.map((variant, index) => {
-    const variantId = assignVariantId(variant.variantId, index);
+  const variants = input.variants.map((variant) => {
+    const variantId = variant.variantId;
     if (!variantIds.has(variantId)) {
-      throw new Error(`Unknown variant_id: ${variant.variantId}`);
+      throw new Error(`Unknown variant_id: ${variantId}`);
     }
     if (seenVariantIds.has(variantId)) {
-      throw new Error(`Duplicate variant_id: ${variant.variantId}`);
+      throw new Error(`Duplicate variant_id: ${variantId}`);
     }
     seenVariantIds.add(variantId);
     const colorHexes = normalizeColorList(variant.colorHex);
@@ -491,11 +556,10 @@ const normalizeEnrichment = (
     const colorPantones = normalizePantoneList(variant.colorPantone);
     const colorHex = colorHexes[0];
     const colorPantone = colorPantones[0] ?? "19-4042";
-    const fit = normalizeEnumValue(variant.fit, fitAllowed) ?? "normal";
+    const fit = normalizeEnumValue(variant.fit, fitAllowed);
     if (!fit) throw new Error(`Invalid fit: ${variant.fit}`);
     return {
       ...variant,
-      variantId,
       colorHex,
       colorPantone,
       colorHexes,
@@ -510,7 +574,7 @@ const normalizeEnrichment = (
 
   const fallbackTitle = buildFallbackSeoTitle(context.productName, context.brandName);
   const seoTitle = clampText(input.seoTitle || fallbackTitle, 70) || clampText(fallbackTitle, 70);
-  const fallbackDescription = buildFallbackSeoDescription(context.description, context.productName);
+  const fallbackDescription = buildFallbackSeoDescription(plainDescription, context.productName);
   const seoDescription = clampText(
     input.seoDescription || fallbackDescription,
     160,
@@ -519,16 +583,17 @@ const normalizeEnrichment = (
     context.brandName,
     category,
     subcategory,
-    ...styleTags,
+    ...fixedStyleTags,
     ...materialTags,
     ...patternTags,
     ...occasionTags,
   ]);
 
   return {
+    description: plainDescription,
     category,
     subcategory,
-    styleTags,
+    styleTags: fixedStyleTags,
     materialTags,
     patternTags,
     occasionTags,
@@ -577,129 +642,99 @@ export async function enrichProductWithOpenAI(params: {
     metadata?: Record<string, unknown> | null;
   }>;
 }): Promise<EnrichedProduct> {
-  if (!BEDROCK_MODEL_ID) {
-    throw new Error(
-      "BEDROCK_INFERENCE_PROFILE_ID is required for product enrichment (Bedrock).",
-    );
-  }
   const systemPrompt = buildPrompt();
+  const provider = PRODUCT_ENRICHMENT_PROVIDER;
   let lastError: unknown = null;
 
   const variantIdList = params.variants.map((variant) => variant.id);
   const variantIds = new Set(variantIdList);
-  const baseProductPayload = {
-    product: {
-      id: params.product.id,
-      brand_name: params.product.brandName ?? null,
-      name: params.product.name,
-      description: params.product.description ?? null,
-      category: params.product.category ?? null,
-      subcategory: params.product.subcategory ?? null,
-      styleTags: params.product.styleTags ?? [],
-      materialTags: params.product.materialTags ?? [],
-      patternTags: params.product.patternTags ?? [],
-      occasionTags: params.product.occasionTags ?? [],
-      gender: params.product.gender ?? null,
-      season: params.product.season ?? null,
-      care: params.product.care ?? null,
-      origin: params.product.origin ?? null,
-      status: params.product.status ?? null,
-      sourceUrl: params.product.sourceUrl ?? null,
-      imageCoverUrl: params.product.imageCoverUrl ?? null,
-      metadata: params.product.metadata ?? null,
-    },
+
+  const productPayload = {
+    id: params.product.id,
+    brand_name: params.product.brandName ?? null,
+    name: params.product.name,
+    description: params.product.description ?? null,
+    styleTags: params.product.styleTags ?? [],
+    materialTags: params.product.materialTags ?? [],
+    patternTags: params.product.patternTags ?? [],
+    occasionTags: params.product.occasionTags ?? [],
+    gender: params.product.gender ?? null,
+    season: params.product.season ?? null,
+    care: params.product.care ?? null,
+    origin: params.product.origin ?? null,
+    status: params.product.status ?? null,
+    sourceUrl: params.product.sourceUrl ?? null,
+    imageCoverUrl: params.product.imageCoverUrl ?? null,
+    metadata: params.product.metadata ?? null,
   };
 
-  const buildUserPayload = (variantsSubset: typeof params.variants) => {
-    const imageManifest: Array<{ index: number; url: string; variantId?: string | null }> = [];
-    const imageUrls: Array<{ url: string; variantId?: string | null }> = [];
-    const seen = new Set<string>();
+  const buildVariantPayload = (
+    variantsSubset: typeof params.variants,
+    imageLimit = 5,
+  ) =>
+    variantsSubset.map((variant) => ({
+      id: variant.id,
+      sku: variant.sku ?? null,
+      color: variant.color ?? null,
+      size: variant.size ?? null,
+      fit: variant.fit ?? null,
+      material: variant.material ?? null,
+      price: variant.price ?? null,
+      currency: variant.currency ?? null,
+      stock: variant.stock ?? null,
+      stockStatus: variant.stockStatus ?? null,
+      images: (variant.images ?? []).slice(0, imageLimit),
+      metadata: variant.metadata ?? null,
+    }));
 
-    const tryAddImage = (url: string | null | undefined, variantId?: string | null) => {
-      if (!url || imageUrls.length >= MAX_IMAGES) return;
-      const trimmed = url.trim();
-      if (!trimmed || seen.has(trimmed)) return;
-      seen.add(trimmed);
-      imageUrls.push({ url: trimmed, variantId: variantId ?? null });
-      imageManifest.push({ index: imageUrls.length, url: trimmed, variantId: variantId ?? null });
-    };
+  const buildUserPayload = (
+    variantsSubset: typeof params.variants,
+    imageManifestEntries: Array<{ index: number; url: string; variant_id?: string | null }>,
+    imageLimit = 5,
+  ) => ({
+    product: productPayload,
+    variants: buildVariantPayload(variantsSubset, imageLimit),
+    image_manifest: imageManifestEntries,
+  });
+  const imageCandidates: Array<{ url: string; variantId?: string | null }> = [];
+  const seen = new Set<string>();
 
-    variantsSubset.forEach((variant) => {
-      (variant.images ?? []).slice(0, 1).forEach((img) => tryAddImage(img, variant.id));
-    });
-    if (imageUrls.length < MAX_IMAGES && params.product.imageCoverUrl) {
-      tryAddImage(params.product.imageCoverUrl, null);
-    }
-
-    return {
-      userPayload: {
-        ...baseProductPayload,
-        variants: variantsSubset.map((variant) => ({
-          id: variant.id,
-          sku: variant.sku ?? null,
-          color: variant.color ?? null,
-          size: variant.size ?? null,
-          fit: variant.fit ?? null,
-          material: variant.material ?? null,
-          price: variant.price ?? null,
-          currency: variant.currency ?? null,
-          stock: variant.stock ?? null,
-          stockStatus: variant.stockStatus ?? null,
-          images: (variant.images ?? []).slice(0, 1),
-          metadata: variant.metadata ?? null,
-        })),
-        image_manifest: imageManifest.map((entry) => ({
-          index: entry.index,
-          url: entry.url,
-          variant_id: entry.variantId ?? null,
-        })),
-      },
-      imageUrls,
-    };
+  const tryAddImage = (url: string | null | undefined, variantId?: string | null) => {
+    if (!url || imageCandidates.length >= MAX_IMAGES) return;
+    const trimmed = url.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    imageCandidates.push({ url: trimmed, variantId: variantId ?? null });
   };
 
-  const toBedrockImage = async (url: string): Promise<BedrockImageInput | null> => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), IMAGE_TIMEOUT_MS);
-    try {
-      const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) return null;
-      const contentLength = res.headers.get("content-length");
-      if (contentLength && Number(contentLength) > IMAGE_MAX_BYTES) return null;
-      const contentType = res.headers.get("content-type") ?? "";
-      const buffer = await res.arrayBuffer();
-      if (buffer.byteLength > IMAGE_MAX_BYTES) return null;
-      const lowerUrl = url.toLowerCase();
-      const mediaType =
-        contentType.split(";")[0] ||
-        (lowerUrl.endsWith(".png")
-          ? "image/png"
-          : lowerUrl.endsWith(".webp")
-            ? "image/webp"
-            : "image/jpeg");
-      return {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: mediaType,
-          data: Buffer.from(buffer).toString("base64"),
-        },
-      };
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timeout);
-    }
-  };
+  params.variants.forEach((variant) => {
+    (variant.images ?? []).slice(0, 2).forEach((img) => tryAddImage(img, variant.id));
+  });
+  if (imageCandidates.length < MAX_IMAGES && params.product.imageCoverUrl) {
+    tryAddImage(params.product.imageCoverUrl, null);
+  }
 
-  const parseRawProduct = (raw: string) => {
+  const imageInputs = imageCandidates.map((entry) => ({
+    type: "input_image" as const,
+    image_url: entry.url,
+  }));
+  const imageManifest = imageCandidates.map((entry, index) => ({
+    index: index + 1,
+    url: entry.url,
+    variant_id: entry.variantId ?? null,
+  }));
+
+  const openAiPayload = buildUserPayload(params.variants, imageManifest, 5);
+
+  const parseRawProduct = (raw: string): RawEnrichedProduct => {
     const parsed = safeJsonParse(raw);
     const validation = enrichmentResponseSchema.safeParse(parsed);
     if (!validation.success) {
-      throw new Error(`JSON validation failed: ${validation.error.message}`);
+      throw new Error(`JSON schema validation failed: ${validation.error.message}`);
     }
     const product = validation.data.product;
-    return {
+    const normalized: RawEnrichedProduct = {
+      description: product.description ?? "",
       category: product.category,
       subcategory: product.subcategory,
       styleTags: product.style_tags,
@@ -718,42 +753,190 @@ export async function enrichProductWithOpenAI(params: {
         colorPantone: variant.color_pantone,
         fit: variant.fit,
       })),
-    } satisfies RawEnrichedProduct;
+    };
+  };
+
+  const normalizeParsed = (normalized: RawEnrichedProduct) =>
+    normalizeEnrichment(normalized, variantIds, {
+      productName: params.product.name,
+      brandName: params.product.brandName ?? null,
+      description: params.product.description ?? null,
+      category: params.product.category ?? null,
+      subcategory: params.product.subcategory ?? null,
+    });
+
+  const callOpenAI = async () => {
+    const client = getOpenAIClient() as OpenAIResponsesClient;
+    const response = await client.responses.create({
+      model: OPENAI_MODEL,
+      input: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: JSON.stringify(openAiPayload, null, 2),
+            },
+            ...imageInputs,
+          ],
+        },
+      ],
+      text: { format: { type: "json_object" } },
+    });
+    const raw = extractOutputText(response);
+    if (!raw) throw new Error("Respuesta vacia de OpenAI");
+    return raw;
+  };
+
+  const callOpenAIRepair = async (raw: string, errorNote: string) => {
+    const client = getOpenAIClient() as OpenAIResponsesClient;
+    const trimmed = trimForRepair(raw);
+    const response = await client.responses.create({
+      model: OPENAI_MODEL,
+      input: [
+        { role: "system", content: buildRepairSystemPrompt(systemPrompt) },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: buildRepairUserText(errorNote, trimmed),
+            },
+          ],
+        },
+      ],
+      text: { format: { type: "json_object" } },
+    });
+    const repaired = extractOutputText(response);
+    if (!repaired) throw new Error("Respuesta vacia al reparar con OpenAI");
+    return repaired;
+  };
+
+  const invokeBedrock = async (options: {
+    systemPrompt: string;
+    userText: string;
+    imageInputs: Array<{
+      type: "image";
+      source: { type: "base64"; media_type: string; data: string };
+    }>;
+    usageLabel?: string;
+  }) => {
+    const payload: Record<string, unknown> = {
+      anthropic_version: "bedrock-2023-05-31",
+      max_tokens: MAX_TOKENS,
+      temperature: 0,
+      system: options.systemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: options.userText },
+            ...options.imageInputs,
+          ],
+        },
+      ],
+    };
+
+    const command = new InvokeModelCommand({
+      modelId: BEDROCK_MODEL_ID,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify(payload),
+    });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), BEDROCK_TIMEOUT_MS);
+    try {
+      await jitterDelay();
+      const response = await getBedrockClient().send(command, { abortSignal: controller.signal });
+      const rawBody = await readBedrockBody(response.body);
+      const parsed = JSON.parse(rawBody);
+      const rawText = extractBedrockText(parsed);
+      if (!rawText) throw new Error("Respuesta vacia de Bedrock");
+      if (options.usageLabel) {
+        console.info(options.usageLabel, parsed?.usage ?? {});
+      }
+      return rawText;
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  const buildBedrockPayload = (variantsSubset: typeof params.variants) => {
+    const imageUrls: Array<{ url: string; variantId?: string | null }> = [];
+    const seenBedrock = new Set<string>();
+    const tryAddBedrockImage = (url: string | null | undefined, variantId?: string | null) => {
+      if (!url || imageUrls.length >= MAX_IMAGES) return;
+      const trimmed = url.trim();
+      if (!trimmed || seenBedrock.has(trimmed)) return;
+      seenBedrock.add(trimmed);
+      imageUrls.push({ url: trimmed, variantId: variantId ?? null });
+    };
+
+    variantsSubset.forEach((variant) => {
+      (variant.images ?? []).slice(0, 1).forEach((img) => tryAddBedrockImage(img, variant.id));
+    });
+    if (imageUrls.length < MAX_IMAGES && params.product.imageCoverUrl) {
+      tryAddBedrockImage(params.product.imageCoverUrl, null);
+    }
+
+    return {
+      userPayload: buildUserPayload(variantsSubset, [], 1),
+      imageUrls,
+      requiredVariantIds: variantsSubset.map((variant) => variant.id),
+    };
   };
 
   const callBedrockForChunk = async (
     variantsSubset: typeof params.variants,
   ): Promise<RawEnrichedProduct> => {
-    const { userPayload, imageUrls } = buildUserPayload(variantsSubset);
-    const userText = JSON.stringify(userPayload, null, 2);
-    const requiredVariantIds = variantsSubset.map((variant) => variant.id);
+    const { userPayload, imageUrls, requiredVariantIds } = buildBedrockPayload(variantsSubset);
+    let chunkError: unknown = null;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
       try {
-        const imageInputs: BedrockImageInput[] = INCLUDE_IMAGES
-          ? (
-              await Promise.all(imageUrls.map((entry) => toBedrockImage(entry.url)))
-            ).filter((entry): entry is BedrockImageInput => Boolean(entry))
-          : [];
+        const imageBlocks: Array<{
+          type: "image";
+          source: { type: "base64"; media_type: string; data: string };
+        }> = [];
+        const bedrockManifest: Array<{ index: number; url: string; variant_id?: string | null }> =
+          [];
 
+        if (INCLUDE_IMAGES) {
+          for (const entry of imageUrls) {
+            if (imageBlocks.length >= BEDROCK_MAX_IMAGES) break;
+            const loaded = await fetchImageAsBase64(entry.url);
+            if (!loaded) continue;
+            imageBlocks.push({
+              type: "image",
+              source: { type: "base64", media_type: loaded.mediaType, data: loaded.base64 },
+            });
+            bedrockManifest.push({
+              index: imageBlocks.length,
+              url: entry.url,
+              variant_id: entry.variantId ?? null,
+            });
+          }
+        }
+
+        const userText = JSON.stringify(
+          { ...userPayload, image_manifest: bedrockManifest },
+          null,
+          2,
+        );
         const raw = await invokeBedrock({
           systemPrompt,
           userText,
-          imageInputs,
+          imageInputs: imageBlocks,
+          usageLabel: "bedrock.enrich.usage",
         });
 
         try {
           return parseRawProduct(raw);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          if (
-            !/JSON parse failed|JSON validation failed|Variant count mismatch|Unknown variant_id|Duplicate variant_id/i.test(
-              message,
-            )
-          ) {
-            throw error;
-          }
-          const repairPrompt = buildRepairPrompt(message);
+          const repairPrompt = buildRepairSystemPrompt(systemPrompt);
           const repairText = [
             "Corrige el siguiente JSON para que cumpla el esquema:",
             "variant_ids requeridos (usa exactamente estos):",
@@ -764,8 +947,58 @@ export async function enrichProductWithOpenAI(params: {
             systemPrompt: repairPrompt,
             userText: repairText,
             imageInputs: [],
+            usageLabel: "bedrock.enrich.repair.usage",
           });
           return parseRawProduct(repaired);
+        }
+      } catch (error) {
+        chunkError = error;
+        const backoff = Math.pow(2, attempt) * 200;
+        await new Promise((res) => setTimeout(res, backoff));
+      }
+    }
+
+    throw new Error(`Bedrock chunk failed after ${MAX_RETRIES} attempts: ${String(chunkError)}`);
+  };
+
+  const runBedrock = async () => {
+    const chunks =
+      params.variants.length > VARIANT_CHUNK_SIZE
+        ? chunkArray(params.variants, VARIANT_CHUNK_SIZE)
+        : [params.variants];
+    const aggregatedVariants: RawEnrichedVariant[] = [];
+    let baseProduct: RawEnrichedProduct | null = null;
+
+    for (const chunk of chunks) {
+      const rawProduct = await callBedrockForChunk(chunk);
+      if (!baseProduct) {
+        baseProduct = rawProduct;
+      }
+      aggregatedVariants.push(...rawProduct.variants);
+    }
+
+    if (!baseProduct) {
+      throw new Error("Bedrock enrichment failed: missing base product output.");
+    }
+
+    const merged: RawEnrichedProduct = {
+      ...baseProduct,
+      variants: aggregatedVariants,
+    };
+
+    return normalizeParsed(merged);
+  };
+
+  const runOpenAI = async () => {
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
+      try {
+        const raw = await callOpenAI();
+        try {
+          return normalizeParsed(parseRawProduct(raw));
+        } catch (error) {
+          const note = error instanceof Error ? error.message : String(error);
+          const repaired = await callOpenAIRepair(raw, note);
+          return normalizeParsed(parseRawProduct(repaired));
         }
       } catch (error) {
         lastError = error;
@@ -773,51 +1006,19 @@ export async function enrichProductWithOpenAI(params: {
         await new Promise((res) => setTimeout(res, backoff));
       }
     }
-
-    throw new Error(`Bedrock chunk failed after ${MAX_RETRIES} attempts: ${String(lastError)}`);
+    throw new Error(
+      `OpenAI enrichment failed after ${MAX_RETRIES} attempts: ${String(lastError)}`,
+    );
   };
 
-  const chunks =
-    params.variants.length > VARIANT_CHUNK_SIZE
-      ? chunkArray(params.variants, VARIANT_CHUNK_SIZE)
-      : [params.variants];
-
-  const aggregatedVariants: RawEnrichedVariant[] = [];
-  let baseProduct: RawEnrichedProduct | null = null;
-
-  for (const chunk of chunks) {
-    const rawProduct = await callBedrockForChunk(chunk);
-    if (!baseProduct) {
-      baseProduct = rawProduct;
-    }
-    aggregatedVariants.push(...rawProduct.variants);
+  if (provider === "bedrock") {
+    return runBedrock();
   }
 
-  if (!baseProduct) {
-    throw new Error("Bedrock enrichment failed: missing base product output.");
-  }
-
-  const merged: RawEnrichedProduct = {
-    ...baseProduct,
-    variants: aggregatedVariants,
-  };
-
-  return normalizeEnrichment(merged, variantIds, variantIdList, {
-    productName: params.product.name,
-    brandName: params.product.brandName ?? null,
-    description: params.product.description ?? null,
-    category: params.product.category ?? null,
-    subcategory: params.product.subcategory ?? null,
-    gender: params.product.gender ?? null,
-    season: params.product.season ?? null,
-  });
-
-  throw new Error(
-    `Bedrock enrichment failed after ${MAX_RETRIES} attempts: ${String(lastError)}`,
-  );
+  return runOpenAI();
 }
 
-export const productEnrichmentPromptVersion = "v5";
-export const productEnrichmentSchemaVersion = "v3";
+export const productEnrichmentPromptVersion = "v9";
+export const productEnrichmentSchemaVersion = "v4";
 
 export const toSlugLabel = (value: string) => slugify(value);

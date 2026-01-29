@@ -304,7 +304,167 @@ const rawCategories = [
       "Chales / pashminas",
     ],
   },
+  {
+    label: "Calzado",
+    subcategories: [
+      "Botas",
+      "Botines",
+      "Tenis / sneakers",
+      "Zapatos deportivos",
+      "Zapatos formales",
+      "Sandalias",
+      "Tacones",
+      "Mocasines / loafers",
+      "Balerinas / flats",
+      "Alpargatas / espadrilles",
+      "Zuecos",
+      "Chanclas / flip-flops",
+    ],
+  },
+  {
+    label: "Bolsos y marroquinería",
+    subcategories: [
+      "Cartera / bolso de mano",
+      "Bolso tote",
+      "Bolso bandolera / crossbody",
+      "Mochila",
+      "Morral",
+      "Riñonera / canguro",
+      "Clutch / sobre",
+      "Billetera",
+      "Portadocumentos / porta pasaporte",
+      "Bolso de viaje / duffel",
+    ],
+  },
+  {
+    label: "Gafas y óptica",
+    subcategories: [
+      "Gafas de sol",
+      "Gafas ópticas / formuladas",
+      "Monturas",
+      "Goggles / deportivas",
+      "Lentes de protección",
+    ],
+  },
+  {
+    label: "Joyería y bisutería",
+    subcategories: [
+      "Aretes / pendientes",
+      "Collares",
+      "Pulseras / brazaletes",
+      "Anillos",
+      "Tobilleras",
+      "Dijes / charms",
+      "Broches / prendedores",
+      "Sets de joyería",
+      "Piercings",
+      "Relojes",
+    ],
+  },
 ];
+
+const rawCategoryDescriptions: Record<string, string> = {
+  "Camisetas y tops":
+    "Prendas superiores de punto o jersey, casuales y suaves. Incluye camisetas, tank tops, crop tops, bodys y polos. Excluye camisas/blusas de tejido plano y prendas exteriores estructuradas.",
+  "Camisas y blusas":
+    "Prendas superiores de tejido plano, con cuello, botones o puños. Blusas suelen ser más fluidas y con caídas. Excluye camisetas/tops de punto y buzos.",
+  "Buzos, hoodies y suéteres":
+    "Prendas superiores de abrigo en felpa o tejido (punto), con o sin capucha. Incluye hoodie, suéter, cardigan, chaleco tejido. Excluye chaquetas con forro/estructura rígida.",
+  "Chaquetas y abrigos":
+    "Prendas exteriores para abrigo, con cierres, forro o capas. Incluye bomber, parka, impermeable, puffer, trench. Excluye suéteres y blazers.",
+  "Blazers y sastrería":
+    "Prendas estructuradas de sastrería (blazer, saco, chaleco sastre, traje). Telas más rígidas y corte formal. Excluye chaquetas casuales.",
+  "Pantalones (no denim)":
+    "Pantalones de tela que no sean jean/denim (lino, dril, sarga, algodón, vestir). Excluye cualquier prenda en denim.",
+  "Jeans y denim":
+    "Prendas en denim/jean (principalmente pantalones). Incluye variantes de fit. Excluye pantalones de tela no denim.",
+  "Shorts y bermudas":
+    "Prendas inferiores cortas por encima o cerca de la rodilla (short/bermuda). Excluye faldas.",
+  "Faldas":
+    "Prendas inferiores sin entrepierna (mini/midi/maxi). Excluye shorts y skorts cuando tengan entrepierna visible.",
+  "Vestidos":
+    "Prenda completa de una sola pieza que cubre torso y parte inferior (falda integrada). Excluye conjuntos de dos piezas.",
+  "Enterizos y overoles":
+    "Prendas de una pieza con parte superior e inferior unidas y entrepierna (jumpsuit/overol). Excluye vestidos.",
+  "Conjuntos y sets (2+ piezas)":
+    "Conjuntos coordinados de dos o más piezas (mismo set). Excluye prendas sueltas.",
+  "Ropa deportiva y performance":
+    "Prendas técnicas/deportivas para entrenamiento o performance (telas elásticas, compresión, transpirables).",
+  "Ropa interior (básica)":
+    "Prendas interiores de uso diario (brasier, panty, bóxer). Excluye lencería sexy y fajas.",
+  "Lencería y fajas (shapewear)":
+    "Lencería y prendas moldeadoras/compresivas (corsés, bodies lenceros, fajas). Materiales delicados/encaje.",
+  "Pijamas y ropa de descanso (loungewear)":
+    "Prendas para dormir o estar en casa (pijamas, camisones, batas). Telas suaves.",
+  "Trajes de baño y playa":
+    "Swimwear y salidas de playa/piscina (bikini, entero, rashguard, pareo).",
+  "Ropa de bebé (0-24 meses)":
+    "Prendas para bebés de 0 a 24 meses. Tallas y cortes específicos de bebé.",
+  "Uniformes y ropa de trabajo/escolar":
+    "Uniformes y dotación para trabajo o estudio (scrubs, delantales, uniformes escolares).",
+  "Accesorios textiles y medias":
+    "Accesorios de tela/cuero flexible y medias. Incluye bandanas, pañuelos, bufandas, gorras, medias. Excluye joyería, gafas, bolsos y calzado.",
+  Calzado:
+    "Prendas para los pies con suela. Incluye botas/botines, tenis, sandalias, tacones, mocasines y zapatos formales. Excluye accesorios y ropa.",
+  "Bolsos y marroquinería":
+    "Accesorios para transportar objetos (bolsos, carteras, mochilas, riñoneras). Generalmente en cuero, sintético o textil. Excluye joyería, gafas y calzado.",
+  "Gafas y óptica":
+    "Accesorios para ojos/rostro con lentes o monturas. Incluye gafas de sol y ópticas. Excluye gorras/sombreros y joyería.",
+  "Joyería y bisutería":
+    "Accesorios no textiles (metal, piedras, resina) para el cuerpo: aretes, collares, pulseras, anillos, piercings. Excluye bandanas o textiles.",
+};
+
+const rawSubcategoryDescriptions: Record<string, string> = {
+  "Medias / calcetines": "Prenda textil para pies, corta o media.",
+  "Pantimedias / medias veladas": "Media larga elástica/transparente para piernas.",
+  Cinturones: "Accesorio para cintura con hebilla o broche; cuero/textil.",
+  Gorras: "Accesorio textil para cabeza con visera; no sombrero rígido.",
+  Sombreros: "Accesorio para cabeza con ala rígida; no gorra con visera.",
+  Bufandas: "Accesorio textil largo para cuello; tejidos suaves.",
+  Guantes: "Accesorio textil para manos; no joyería.",
+  "Pañuelos / bandanas": "Textil cuadrado/triangular para cuello o cabeza; nunca joyería.",
+  Corbatas: "Accesorio textil formal para cuello (corbata larga).",
+  "Pajaritas / moños": "Corbatín/moño para cuello, generalmente formal.",
+  Tirantes: "Tirantes elásticos para sostener pantalón.",
+  "Chales / pashminas": "Textil grande para cubrir hombros o espalda.",
+  Botas: "Calzado alto que cubre tobillo o pantorrilla.",
+  Botines: "Calzado hasta el tobillo.",
+  "Tenis / sneakers": "Calzado deportivo o casual con suela de goma.",
+  "Zapatos deportivos": "Calzado para deporte/entrenamiento.",
+  "Zapatos formales": "Calzado de vestir (oxford, derby, etc.).",
+  Sandalias: "Calzado abierto con tiras.",
+  Tacones: "Calzado de tacón alto o medio.",
+  "Mocasines / loafers": "Calzado sin cordones, clásico.",
+  "Balerinas / flats": "Calzado plano y ligero.",
+  "Alpargatas / espadrilles": "Calzado de lona con suela de yute.",
+  Zuecos: "Calzado tipo clog, cerrado en punta.",
+  "Chanclas / flip-flops": "Calzado abierto de playa con tira entre dedos.",
+  "Cartera / bolso de mano": "Bolso para mano o antebrazo, tamaño medio.",
+  "Bolso tote": "Bolso grande tipo tote, abierto o con cierre.",
+  "Bolso bandolera / crossbody": "Bolso con correa larga cruzada.",
+  Mochila: "Bolso con dos tiras para espalda.",
+  Morral: "Bolso tipo mochila, a veces más casual/artesanal.",
+  "Riñonera / canguro": "Bolso pequeño para cintura o crossbody.",
+  "Clutch / sobre": "Bolso pequeño tipo sobre, sin correa.",
+  Billetera: "Accesorio para dinero y tarjetas.",
+  "Portadocumentos / porta pasaporte": "Accesorio pequeño para documentos.",
+  "Bolso de viaje / duffel": "Bolso grande para viaje o gimnasio.",
+  "Gafas de sol": "Gafas con lentes oscuros para sol.",
+  "Gafas ópticas / formuladas": "Gafas con receta o lentes transparentes.",
+  Monturas: "Estructura de gafas sin lentes o genérica.",
+  "Goggles / deportivas": "Gafas deportivas o de protección cerrada.",
+  "Lentes de protección": "Gafas de seguridad o protección.",
+  "Aretes / pendientes": "Joyería para orejas (studs, argollas, ear cuffs). No textil.",
+  Collares: "Joyería para cuello (cadenas, gargantillas, collares).",
+  "Pulseras / brazaletes": "Joyería para muñeca o brazo (pulsera, bangle).",
+  Anillos: "Joyería para dedos (anillos).",
+  Tobilleras: "Joyería para tobillo.",
+  "Dijes / charms": "Piezas pequeñas colgantes para cadenas o pulseras.",
+  "Broches / prendedores": "Pieza metálica con pin para fijar prendas.",
+  "Sets de joyería": "Conjunto de piezas (aretes + collar, etc.).",
+  Piercings: "Joyería para perforaciones (barbell, stud).",
+  Relojes: "Accesorio de reloj de pulsera; puede ser metal o cuero.",
+};
 
 const rawMaterialTags = [
   "Algodón",
@@ -327,6 +487,10 @@ const rawMaterialTags = [
   "Tul",
   "Cuero (natural)",
   "Cuero sintético / PU",
+  "Oro",
+  "Plata",
+  "Bronce",
+  "Cobre",
   "Otro",
 ];
 
@@ -588,6 +752,20 @@ export const CATEGORY_OPTIONS = rawCategories.map((entry) => ({
 }));
 
 export const CATEGORY_VALUES = CATEGORY_OPTIONS.map((entry) => entry.value);
+
+export const CATEGORY_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
+  Object.entries(rawCategoryDescriptions).map(([label, description]) => [
+    slugify(label),
+    description,
+  ]),
+);
+
+export const SUBCATEGORY_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
+  Object.entries(rawSubcategoryDescriptions).map(([label, description]) => [
+    slugify(label),
+    description,
+  ]),
+);
 
 export const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
   CATEGORY_OPTIONS.map((entry) => [entry.value, entry.label]),

@@ -119,6 +119,12 @@ function AdminPanel() {
             Ver productos
           </a>
           <a
+            href="/admin/color-combinations"
+            className="inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+          >
+            Combinaciones de color
+          </a>
+          <a
             href="/admin/catalog-extractor"
             className="inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
           >
