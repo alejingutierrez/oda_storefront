@@ -15,6 +15,7 @@ import {
   PATTERN_TAG_FRIENDLY,
   OCCASION_TAG_FRIENDLY,
 } from "@/lib/product-enrichment/constants";
+import { STYLE_PROFILE_LABELS } from "@/lib/product-enrichment/style-profiles";
 
 type BrandOption = {
   id: string;
@@ -68,6 +69,10 @@ type ProductDetail = {
   materialTags: string[];
   patternTags: string[];
   occasionTags: string[];
+  stylePrimary: string | null;
+  styleSecondary: string | null;
+  stylePrimaryCount: number | null;
+  styleSecondaryCount: number | null;
   gender: string | null;
   season: string | null;
   care: string | null;
@@ -108,6 +113,16 @@ const parsePositiveInt = (value: string | null, fallback: number) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 1) return fallback;
   return Math.floor(parsed);
+};
+
+const formatStyleProfile = (key: string | null) => {
+  if (!key) return "—";
+  return STYLE_PROFILE_LABELS[key] ?? key;
+};
+
+const formatStyleCount = (count: number | null) => {
+  if (count === null || count === undefined) return "";
+  return ` (${count})`;
 };
 
 const COLOR_SWATCHES: Record<string, string> = {
@@ -750,6 +765,16 @@ export default function ProductDirectoryPanel() {
                         <p>
                           <span className="font-semibold text-slate-800">Origen:</span>{" "}
                           {toText(detail.origin)}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-800">Estilo principal:</span>{" "}
+                          {formatStyleProfile(detail.stylePrimary)}
+                          {formatStyleCount(detail.stylePrimaryCount)}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-800">Estilo secundario:</span>{" "}
+                          {formatStyleProfile(detail.styleSecondary)}
+                          {formatStyleCount(detail.styleSecondaryCount)}
                         </p>
                       </div>
                     </div>

@@ -105,6 +105,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - **Storage**: Vercel Blob para imágenes procesadas y uploads de usuarios (try-on). Cache CDN con expiración corta + revalidación en background.
 - **Mensajería**: Redis/Upstash para colas; opcional Kafka si crece el throughput.
 - **CI/CD**: GitHub Actions para lint/tests/build, push a Vercel y al registro de contenedores.
+- **Git**: trabajar siempre sobre `main`; no crear ramas nuevas salvo solicitud explícita.
 - **Docker**: `docker-compose` para local (db, redis, scraper, api, admin-ui). Variables en `.env.local` no versionadas.
 - **FinOps**: límites diarios de tokens OpenAI por ambiente; tableros de costo por marca y por etapa (scrape → IA → upsert); caché de inferencias si no hay cambios.
 

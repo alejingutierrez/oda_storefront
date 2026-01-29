@@ -461,6 +461,7 @@ export const STYLE_TAGS = [
   "contexto_universidad",
   "contexto_ciudad",
   "contexto_noche",
+  "contexto_cena",
   "contexto_fiesta",
   "contexto_concierto",
   "contexto_festival",

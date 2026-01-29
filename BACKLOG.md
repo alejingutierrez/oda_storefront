@@ -36,6 +36,9 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-01)
+- MC-106 | done | P1 | Estilos principal/secundario por styleTags | Tabla style_profiles + trigger + backfill; labels humanos en admin.
+- MC-105 | done | P1 | Filtro por rol de color en combinaciones | `/api/admin/color-combinations/[id]/products` filtra por categorias permitidas segun rol (dominante/secundario/acento).
+- MC-104 | done | P1 | Enrichment productos con Claude (Bedrock) | Product enrichment usa Bedrock (Claude Sonnet 4.5) vía inference profile; OpenAI queda para el resto.
 - MC-103 | done | P1 | Campos SEO en productos + enriquecimiento IA | Nuevas columnas seoTitle/seoDescription/seoTags[] y prompt de enrichment genera meta title/description + tags.
 - MC-102 | done | P1 | Enriquecimiento productos: persistencia + progreso realtime + reset batches | URL state, conteos por status en UI y endpoint para limpiar batches activos.
 - MC-100 | done | P1 | Filtro de categorias + orden por productos en /admin/brands | Multiselect `brands.category` y sort `productCount` asc/desc.

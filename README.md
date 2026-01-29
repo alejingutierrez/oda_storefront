@@ -42,6 +42,7 @@ npm run db:seed:users      # crea/actualiza usuario admin en Neon
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/smoke-catalog-adapters.ts  # smoke test por tecnología
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/unknown-llm-dry-run.ts     # dry-run LLM PDP (unknown)
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/tech-profiler-sweep.ts     # perfila y elimina marcas no procesables
+node scripts/build-style-assignments.mjs  # seed style_profiles + backfill estilos principal/secundario
 ```
 
 ### Docker Compose (stack completo)
@@ -55,6 +56,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 ## Base de datos y Prisma
 - Esquema definido en `apps/web/prisma/schema.prisma`, cliente generado en `@prisma/client` (adapter `@prisma/adapter-pg`).
 - Migración inicial (`20260115125012_init_schema`) crea tablas core y habilita `pgvector`.
+- Tabla `style_profiles`: catálogo de estilos con tags; `products` guarda `stylePrimary/styleSecondary` + conteos.
 - Comandos (contra Neon):
   ```bash
   cd apps/web
@@ -87,6 +89,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Si detecta `social`, `bot_protection`, `unreachable`, `parked_domain`, `landing_no_store`, `no_pdp_candidates` o review `manual_review_no_products`, elimina la marca automáticamente.
 - Panel `/admin/products` (productos):
   - Directorio de productos scrapeados con cards (carrusel de imágenes si hay múltiples fotos), modal de detalle enriquecido (precio/stock, tallas y colores visibles con swatches, fit/material por variante) y filtros por marca.
+  - El modal muestra estilo principal/secundario (derivado de `styleTags`) con labels humanos.
   - Las imágenes de cards pasan por `/api/image-proxy` (cache a Blob) y se renderizan con `next/image`.
   - `next.config.ts` incluye allowlist para dominios `*.public.blob.vercel-storage.com` usados por Vercel Blob.
   - Las imágenes servidas por `/api/image-proxy` se muestran como `unoptimized` para evitar 400 en `_next/image` con URLs proxy.

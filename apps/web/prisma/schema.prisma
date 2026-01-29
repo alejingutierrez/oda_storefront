@@ -151,6 +151,10 @@ model Product {
   category          String?
   subcategory       String?
   styleTags         String[]
+  stylePrimary      String?
+  styleSecondary    String?
+  stylePrimaryCount Int?
+  styleSecondaryCount Int?
   materialTags      String[]
   patternTags       String[]
   occasionTags      String[]
@@ -175,7 +179,19 @@ model Product {
 
   @@index([brandId])
   @@index([externalId])
+  @@index([stylePrimary])
+  @@index([styleSecondary])
   @@map("products")
+}
+
+model StyleProfile {
+  key       String   @id
+  label     String
+  tags      String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("style_profiles")
 }
 
 model Variant {
