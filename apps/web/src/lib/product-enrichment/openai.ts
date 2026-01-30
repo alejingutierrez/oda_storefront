@@ -255,34 +255,89 @@ const readBedrockBody = async (body: unknown) => {
   return Buffer.concat(chunks).toString("utf8");
 };
 
-const safeJsonParse = (raw: string) => {
-  const sanitized = raw
+const sanitizeJsonText = (raw: string) =>
+  raw
+    .replace(/^\uFEFF/, "")
     .replace(/\u0000/g, "")
     .replace(/[“”]/g, "\"")
     .replace(/[‘’]/g, "'")
-    .replace(/,\s*([}\]])/g, "$1");
-  try {
-    return JSON.parse(sanitized);
-  } catch {
+    .replace(/,\s*([}\]])/g, "$1")
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+
+const findMatchingBrace = (value: string, startIndex: number) => {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = startIndex; i < value.length; i += 1) {
+    const char = value[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+};
+
+const extractJsonCandidates = (raw: string) => {
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  const candidates: string[] = [];
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch?.[1]) candidates.push(fenceMatch[1].trim());
+  const tagMatch = trimmed.match(/<json>\s*([\s\S]*?)\s*<\/json>/i);
+  if (tagMatch?.[1]) candidates.push(tagMatch[1].trim());
+  const productIndex = trimmed.indexOf("\"product\"");
+  if (productIndex !== -1) {
+    const start = trimmed.lastIndexOf("{", productIndex);
+    if (start !== -1) {
+      const end = findMatchingBrace(trimmed, start);
+      if (end !== -1) candidates.push(trimmed.slice(start, end + 1));
+    }
+  }
+  const firstBrace = trimmed.indexOf("{");
+  if (firstBrace !== -1) {
+    const end = findMatchingBrace(trimmed, firstBrace);
+    if (end !== -1) candidates.push(trimmed.slice(firstBrace, end + 1));
+  }
+  candidates.push(trimmed);
+  return [...new Set(candidates)];
+};
+
+const safeJsonParse = (raw: string) => {
+  const candidates = extractJsonCandidates(raw);
+  for (const candidate of candidates) {
+    const sanitized = sanitizeJsonText(candidate);
+    try {
+      return JSON.parse(sanitized);
+    } catch {
+    }
     try {
       const repaired = jsonrepair(sanitized);
       return JSON.parse(repaired);
     } catch {
-      // fallthrough to substring attempt
     }
-    const start = sanitized.indexOf("{");
-    const end = sanitized.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      const slice = sanitized.slice(start, end + 1);
-      try {
-        return JSON.parse(slice);
-      } catch {
-        const repairedSlice = jsonrepair(slice);
-        return JSON.parse(repairedSlice);
-      }
-    }
-    throw new Error("JSON parse failed");
   }
+  throw new Error("JSON parse failed");
 };
 
 const trimForRepair = (value: string) => {
@@ -291,7 +346,7 @@ const trimForRepair = (value: string) => {
 };
 
 const buildRepairSystemPrompt = (basePrompt: string) =>
-  `${basePrompt}\nIMPORTANTE: Estás corrigiendo una salida previa. Devuelve SOLO JSON válido y completo según el esquema. No agregues texto adicional.`;
+  `${basePrompt}\nIMPORTANTE: Estás corrigiendo una salida previa. Devuelve SOLO JSON válido y completo según el esquema. No agregues texto adicional ni uses markdown o bloques de código.`;
 
 const buildRepairUserText = (errorNote: string, raw: string) =>
   `Se detectó un error al validar la salida:\n${errorNote}\n\nCorrige la siguiente salida para que sea JSON válido y cumpla el esquema:\n${raw}`;
@@ -383,6 +438,7 @@ Reglas estrictas:
 - color_pantone debe ser un código Pantone TCX NN-NNNN. Puede ser string o array (1-3). Si hay varios colores, devuelve array con máximo 3 en orden de predominancia.
 - Si hay dudas sobre el género o es mixto, usa "no_binario_unisex".
 - No uses comillas tipográficas ni comentarios. El JSON debe ser válido, sin comas colgantes y con comas entre elementos.
+- No uses markdown ni bloques de código. No envuelvas el JSON en etiquetas.
 Reglas de evidencia y consistencia:
 - Prioriza la señal de texto en este orden: product.name, product.description, metadata (og:title, og:description, jsonld, etc.).
 - Si viene product.brand_name úsalo para enriquecer seo_title y seo_description.
