@@ -186,9 +186,7 @@ export const processEnrichmentItemById = async (
 
       for (const variant of item.product.variants) {
         const enrichedVariant = enrichedVariantMap.get(variant.id);
-        if (!enrichedVariant) {
-          throw new Error(`Missing enrichment for variant ${variant.id}`);
-        }
+        if (!enrichedVariant) continue;
         const baseMetadata =
           variant.metadata && typeof variant.metadata === "object"
             ? (variant.metadata as Record<string, unknown>)

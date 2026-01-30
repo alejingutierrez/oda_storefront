@@ -41,6 +41,10 @@ const BEDROCK_SESSION_TOKEN = process.env.AWS_SESSION_TOKEN ?? "";
 const MAX_RETRIES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_RETRIES ?? 3));
 const MAX_IMAGES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_IMAGES ?? 8));
 const MAX_TOKENS = Math.max(256, Number(process.env.PRODUCT_ENRICHMENT_MAX_TOKENS ?? 1200));
+const VARIANT_LIMIT = Math.max(
+  1,
+  Number(process.env.PRODUCT_ENRICHMENT_VARIANT_LIMIT ?? 2),
+);
 const VARIANT_CHUNK_SIZE = Math.max(
   1,
   Number(process.env.PRODUCT_ENRICHMENT_VARIANT_CHUNK_SIZE ?? 8),
@@ -73,6 +77,26 @@ const jitterDelay = async (minMs = 100, maxMs = 400) => {
   const max = Math.max(min, maxMs);
   const value = Math.floor(min + Math.random() * (max - min + 1));
   await sleep(value);
+};
+
+const selectVariantsForEnrichment = <T extends { id: string; images?: string[] | null }>(
+  variants: T[],
+  limit: number,
+) => {
+  if (variants.length <= limit) return variants;
+  const picked: T[] = [];
+  const seen = new Set<string>();
+  const push = (variant: T) => {
+    if (picked.length >= limit) return;
+    if (seen.has(variant.id)) return;
+    seen.add(variant.id);
+    picked.push(variant);
+  };
+  variants.forEach((variant) => {
+    if ((variant.images ?? []).length) push(variant);
+  });
+  variants.forEach((variant) => push(variant));
+  return picked;
 };
 
 const coerceStringArray = (max: number) =>
@@ -742,7 +766,12 @@ export async function enrichProductWithOpenAI(params: {
   const provider = PRODUCT_ENRICHMENT_PROVIDER;
   let lastError: unknown = null;
 
-  const variantIdList = params.variants.map((variant) => variant.id);
+  if (!params.variants.length) {
+    throw new Error("Missing variants for product enrichment.");
+  }
+
+  const selectedVariants = selectVariantsForEnrichment(params.variants, VARIANT_LIMIT);
+  const variantIdList = selectedVariants.map((variant) => variant.id);
   const variantIds = new Set(variantIdList);
 
   const productPayload = {
@@ -803,7 +832,7 @@ export async function enrichProductWithOpenAI(params: {
     imageCandidates.push({ url: trimmed, variantId: variantId ?? null });
   };
 
-  params.variants.forEach((variant) => {
+  selectedVariants.forEach((variant) => {
     (variant.images ?? []).slice(0, 2).forEach((img) => tryAddImage(img, variant.id));
   });
   if (imageCandidates.length < MAX_IMAGES && params.product.imageCoverUrl) {
@@ -820,7 +849,7 @@ export async function enrichProductWithOpenAI(params: {
     variant_id: entry.variantId ?? null,
   }));
 
-  const openAiPayload = buildUserPayload(params.variants, imageManifest, 5);
+  const openAiPayload = buildUserPayload(selectedVariants, imageManifest, 5);
 
   const parseRawProduct = (raw: string): RawEnrichedProduct => {
     const parsed = safeJsonParse(raw);
@@ -1079,9 +1108,9 @@ export async function enrichProductWithOpenAI(params: {
 
   const runBedrock = async () => {
     const chunks =
-      params.variants.length > VARIANT_CHUNK_SIZE
-        ? chunkArray(params.variants, VARIANT_CHUNK_SIZE)
-        : [params.variants];
+      selectedVariants.length > VARIANT_CHUNK_SIZE
+        ? chunkArray(selectedVariants, VARIANT_CHUNK_SIZE)
+        : [selectedVariants];
     const aggregatedVariants: RawEnrichedVariant[] = [];
     let baseProduct: RawEnrichedProduct | null = null;
 
