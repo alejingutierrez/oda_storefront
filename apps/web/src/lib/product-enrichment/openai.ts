@@ -75,29 +75,56 @@ const jitterDelay = async (minMs = 100, maxMs = 400) => {
   await sleep(value);
 };
 
-const colorField = z.union([z.string(), z.array(z.string()).min(1).max(3)]);
+const coerceStringArray = (max: number) =>
+  z.preprocess(
+    (value) => {
+      if (Array.isArray(value)) return value.filter((entry) => typeof entry === "string");
+      if (typeof value === "string") return [value];
+      return [];
+    },
+    z.array(z.string()).max(max),
+  );
+
+const coerceString = z.preprocess((value) => {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    const first = value.find((entry) => typeof entry === "string");
+    return first ?? "";
+  }
+  if (value == null) return "";
+  return String(value);
+}, z.string());
+
+const colorField = z.preprocess((value) => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => (typeof entry === "string" ? entry : String(entry)));
+  }
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  return String(value);
+}, z.union([z.string(), z.array(z.string()).min(1).max(3)]));
 
 const variantSchema = z.object({
   variant_id: z.string(),
   sku: z.string().nullable().optional(),
   color_hex: colorField,
   color_pantone: colorField,
-  fit: z.string(),
+  fit: coerceString,
 });
 
 const productSchema = z.object({
-  description: z.string().optional().default(""),
-  category: z.string(),
-  subcategory: z.string(),
-  style_tags: z.array(z.string()).min(10).max(10),
-  material_tags: z.array(z.string()).max(3).default([]),
-  pattern_tags: z.array(z.string()).max(2).default([]),
-  occasion_tags: z.array(z.string()).max(2).default([]),
-  gender: z.string(),
-  season: z.string(),
-  seo_title: z.string().optional().default(""),
-  seo_description: z.string().optional().default(""),
-  seo_tags: z.array(z.string()).optional().default([]),
+  description: z.string().nullable().optional().default(""),
+  category: coerceString,
+  subcategory: coerceString,
+  style_tags: coerceStringArray(20),
+  material_tags: coerceStringArray(10),
+  pattern_tags: coerceStringArray(10),
+  occasion_tags: coerceStringArray(10),
+  gender: coerceString,
+  season: coerceString,
+  seo_title: z.string().nullable().optional().default(""),
+  seo_description: z.string().nullable().optional().default(""),
+  seo_tags: coerceStringArray(20),
   variants: z.array(variantSchema).min(1),
 });
 
@@ -350,6 +377,19 @@ const buildRepairSystemPrompt = (basePrompt: string) =>
 
 const buildRepairUserText = (errorNote: string, raw: string) =>
   `Se detectó un error al validar la salida:\n${errorNote}\n\nCorrige la siguiente salida para que sea JSON válido y cumpla el esquema:\n${raw}`;
+
+const buildBedrockRepairText = (
+  requiredVariantIds: string[],
+  raw: string,
+  errorNote?: string,
+) => {
+  const parts = ["Corrige el siguiente JSON para que cumpla el esquema:"];
+  if (errorNote) parts.push(`Error detectado: ${errorNote}`);
+  parts.push("variant_ids requeridos (usa exactamente estos):");
+  parts.push(JSON.stringify(requiredVariantIds));
+  parts.push(trimForRepair(raw));
+  return parts.join("\n\n");
+};
 
 const fetchImageAsBase64 = async (url: string) => {
   const controller = new AbortController();
@@ -813,6 +853,30 @@ export async function enrichProductWithOpenAI(params: {
     return normalized;
   };
 
+  const serializeRawProduct = (raw: RawEnrichedProduct) => ({
+    product: {
+      description: raw.description ?? "",
+      category: raw.category,
+      subcategory: raw.subcategory,
+      style_tags: raw.styleTags ?? [],
+      material_tags: raw.materialTags ?? [],
+      pattern_tags: raw.patternTags ?? [],
+      occasion_tags: raw.occasionTags ?? [],
+      gender: raw.gender,
+      season: raw.season,
+      seo_title: raw.seoTitle ?? "",
+      seo_description: raw.seoDescription ?? "",
+      seo_tags: raw.seoTags ?? [],
+      variants: raw.variants.map((variant) => ({
+        variant_id: variant.variantId,
+        sku: variant.sku ?? null,
+        color_hex: variant.colorHex,
+        color_pantone: variant.colorPantone,
+        fit: variant.fit,
+      })),
+    },
+  });
+
   const normalizeParsed = (normalized: RawEnrichedProduct) =>
     normalizeEnrichment(normalized, variantIds, {
       productName: params.product.name,
@@ -994,12 +1058,7 @@ export async function enrichProductWithOpenAI(params: {
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           const repairPrompt = buildRepairSystemPrompt(systemPrompt);
-          const repairText = [
-            "Corrige el siguiente JSON para que cumpla el esquema:",
-            "variant_ids requeridos (usa exactamente estos):",
-            JSON.stringify(requiredVariantIds),
-            trimForRepair(raw),
-          ].join("\n\n");
+          const repairText = buildBedrockRepairText(requiredVariantIds, raw, message);
           const repaired = await invokeBedrock({
             systemPrompt: repairPrompt,
             userText: repairText,
@@ -1043,7 +1102,24 @@ export async function enrichProductWithOpenAI(params: {
       variants: aggregatedVariants,
     };
 
-    return normalizeParsed(merged);
+    try {
+      return normalizeParsed(merged);
+    } catch (error) {
+      const note = error instanceof Error ? error.message : String(error);
+      const repairPrompt = buildRepairSystemPrompt(systemPrompt);
+      const repairText = buildBedrockRepairText(
+        variantIdList,
+        JSON.stringify(serializeRawProduct(merged), null, 2),
+        note,
+      );
+      const repaired = await invokeBedrock({
+        systemPrompt: repairPrompt,
+        userText: repairText,
+        imageInputs: [],
+        usageLabel: "bedrock.enrich.repair.usage",
+      });
+      return normalizeParsed(parseRawProduct(repaired));
+    }
   };
 
   const runOpenAI = async () => {
@@ -1075,7 +1151,7 @@ export async function enrichProductWithOpenAI(params: {
   return runOpenAI();
 }
 
-export const productEnrichmentPromptVersion = "v9";
+export const productEnrichmentPromptVersion = "v10";
 export const productEnrichmentSchemaVersion = "v4";
 
 export const toSlugLabel = (value: string) => slugify(value);
