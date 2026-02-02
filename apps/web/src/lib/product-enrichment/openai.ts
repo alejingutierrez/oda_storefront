@@ -403,7 +403,11 @@ const findBedrockToolUse = (payload: unknown, toolName: string) => {
     }
 
     const candidate = node as BedrockToolUse & { [key: string]: unknown };
-    if (candidate.type === "tool_use" && (!toolName || candidate.name === toolName)) {
+    const nameMatches = !toolName || candidate.name === toolName;
+    if (candidate.type === "tool_use" && nameMatches) {
+      return candidate;
+    }
+    if (nameMatches && typeof candidate.name === "string" && "input" in candidate) {
       return candidate;
     }
 
