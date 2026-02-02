@@ -79,6 +79,31 @@ const jitterDelay = async (minMs = 100, maxMs = 400) => {
   await sleep(value);
 };
 
+const patchVariantIds = (value: unknown, requiredVariantIds: string[]) => {
+  if (!value || typeof value !== "object") return;
+  const product = (value as { product?: unknown }).product;
+  if (!product || typeof product !== "object") return;
+  const variants = (product as { variants?: unknown }).variants;
+  if (!Array.isArray(variants)) return;
+
+  const used = new Set<string>();
+  variants.forEach((variant) => {
+    const id = (variant as { variant_id?: unknown })?.variant_id;
+    if (typeof id === "string" && id.trim()) used.add(id);
+  });
+
+  for (let i = 0; i < variants.length && i < requiredVariantIds.length; i += 1) {
+    const variant = variants[i];
+    if (!variant || typeof variant !== "object") continue;
+    const current = (variant as { variant_id?: unknown }).variant_id;
+    if (typeof current === "string" && current.trim()) continue;
+    const fallback = requiredVariantIds[i];
+    if (!fallback || used.has(fallback)) continue;
+    (variant as { variant_id?: string }).variant_id = fallback;
+    used.add(fallback);
+  }
+};
+
 const selectVariantsForEnrichment = <T extends { id: string; images?: string[] | null }>(
   variants: T[],
   limit: number,
@@ -853,6 +878,7 @@ export async function enrichProductWithOpenAI(params: {
 
   const parseRawProduct = (raw: string): RawEnrichedProduct => {
     const parsed = safeJsonParse(raw);
+    patchVariantIds(parsed, variantIdList);
     const validation = enrichmentResponseSchema.safeParse(parsed);
     if (!validation.success) {
       throw new Error(`JSON schema validation failed: ${validation.error.message}`);
