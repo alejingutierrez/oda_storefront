@@ -258,6 +258,84 @@ type BedrockResponse = {
   output_text?: string;
 };
 
+type BedrockToolUse = {
+  type?: string;
+  name?: string;
+  input?: unknown;
+};
+
+const BEDROCK_TOOL_NAME = "enrich_product";
+
+const bedrockToolSchema = {
+  name: BEDROCK_TOOL_NAME,
+  description: "Devuelve el enriquecimiento normalizado del producto según el esquema.",
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["product"],
+    properties: {
+      product: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "description",
+          "category",
+          "subcategory",
+          "style_tags",
+          "material_tags",
+          "pattern_tags",
+          "occasion_tags",
+          "gender",
+          "season",
+          "seo_title",
+          "seo_description",
+          "seo_tags",
+          "variants",
+        ],
+        properties: {
+          description: { type: "string" },
+          category: { type: "string" },
+          subcategory: { type: "string" },
+          style_tags: { type: "array", items: { type: "string" } },
+          material_tags: { type: "array", items: { type: "string" } },
+          pattern_tags: { type: "array", items: { type: "string" } },
+          occasion_tags: { type: "array", items: { type: "string" } },
+          gender: { type: "string" },
+          season: { type: "string" },
+          seo_title: { type: "string" },
+          seo_description: { type: "string" },
+          seo_tags: { type: "array", items: { type: "string" } },
+          variants: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["variant_id", "color_hex", "color_pantone", "fit"],
+              properties: {
+                variant_id: { type: "string" },
+                sku: { type: ["string", "null"] },
+                color_hex: {
+                  anyOf: [
+                    { type: "string" },
+                    { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
+                  ],
+                },
+                color_pantone: {
+                  anyOf: [
+                    { type: "string" },
+                    { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
+                  ],
+                },
+                fit: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
 let bedrockClient: BedrockRuntimeClient | null = null;
 
 const getBedrockClient = () => {
@@ -308,6 +386,12 @@ const extractBedrockText = (payload: BedrockResponse | null | undefined) => {
     if (text) return text;
   }
   return "";
+};
+
+const extractBedrockToolInput = (payload: any, toolName: string) => {
+  const content = Array.isArray(payload?.content) ? payload.content : [];
+  const tool = content.find((entry: BedrockToolUse) => entry?.type === "tool_use" && entry?.name === toolName);
+  return tool?.input ?? null;
 };
 
 const readBedrockBody = async (body: unknown) => {
@@ -427,18 +511,6 @@ const buildRepairSystemPrompt = (basePrompt: string) =>
 const buildRepairUserText = (errorNote: string, raw: string) =>
   `Se detectó un error al validar la salida:\n${errorNote}\n\nCorrige la siguiente salida para que sea JSON válido y cumpla el esquema:\n${raw}`;
 
-const buildBedrockRepairText = (
-  requiredVariantIds: string[],
-  raw: string,
-  errorNote?: string,
-) => {
-  const parts = ["Corrige el siguiente JSON para que cumpla el esquema:"];
-  if (errorNote) parts.push(`Error detectado: ${errorNote}`);
-  parts.push("variant_ids requeridos (usa exactamente estos):");
-  parts.push(JSON.stringify(requiredVariantIds));
-  parts.push(trimForRepair(raw));
-  return parts.join("\n\n");
-};
 
 const fetchImageAsBase64 = async (url: string) => {
   const controller = new AbortController();
@@ -878,13 +950,17 @@ export async function enrichProductWithOpenAI(params: {
 
   const parseRawProduct = (raw: string): RawEnrichedProduct => {
     const parsed = safeJsonParse(raw);
-    patchVariantIds(parsed, variantIdList);
-    const validation = enrichmentResponseSchema.safeParse(parsed);
+    return parseRawProductValue(parsed);
+  };
+
+  const parseRawProductValue = (value: unknown): RawEnrichedProduct => {
+    patchVariantIds(value, variantIdList);
+    const validation = enrichmentResponseSchema.safeParse(value);
     if (!validation.success) {
       throw new Error(`JSON schema validation failed: ${validation.error.message}`);
     }
     const product = validation.data.product;
-    const normalized: RawEnrichedProduct = {
+    return {
       description: product.description ?? "",
       category: product.category,
       subcategory: product.subcategory,
@@ -905,32 +981,7 @@ export async function enrichProductWithOpenAI(params: {
         fit: variant.fit,
       })),
     };
-    return normalized;
   };
-
-  const serializeRawProduct = (raw: RawEnrichedProduct) => ({
-    product: {
-      description: raw.description ?? "",
-      category: raw.category,
-      subcategory: raw.subcategory,
-      style_tags: raw.styleTags ?? [],
-      material_tags: raw.materialTags ?? [],
-      pattern_tags: raw.patternTags ?? [],
-      occasion_tags: raw.occasionTags ?? [],
-      gender: raw.gender,
-      season: raw.season,
-      seo_title: raw.seoTitle ?? "",
-      seo_description: raw.seoDescription ?? "",
-      seo_tags: raw.seoTags ?? [],
-      variants: raw.variants.map((variant) => ({
-        variant_id: variant.variantId,
-        sku: variant.sku ?? null,
-        color_hex: variant.colorHex,
-        color_pantone: variant.colorPantone,
-        fit: variant.fit,
-      })),
-    },
-  });
 
   const normalizeParsed = (normalized: RawEnrichedProduct) =>
     normalizeEnrichment(normalized, variantIds, {
@@ -997,6 +1048,7 @@ export async function enrichProductWithOpenAI(params: {
       source: { type: "base64"; media_type: string; data: string };
     }>;
     usageLabel?: string;
+    useTool?: boolean;
   }) => {
     const payload: Record<string, unknown> = {
       anthropic_version: "bedrock-2023-05-31",
@@ -1013,6 +1065,10 @@ export async function enrichProductWithOpenAI(params: {
         },
       ],
     };
+    if (options.useTool) {
+      payload.tools = [bedrockToolSchema];
+      payload.tool_choice = { type: "tool", name: BEDROCK_TOOL_NAME };
+    }
 
     const command = new InvokeModelCommand({
       modelId: BEDROCK_MODEL_ID,
@@ -1028,12 +1084,13 @@ export async function enrichProductWithOpenAI(params: {
       const response = await getBedrockClient().send(command, { abortSignal: controller.signal });
       const rawBody = await readBedrockBody(response.body);
       const parsed = JSON.parse(rawBody);
+      const toolInput = options.useTool ? extractBedrockToolInput(parsed, BEDROCK_TOOL_NAME) : null;
       const rawText = extractBedrockText(parsed);
-      if (!rawText) throw new Error("Respuesta vacia de Bedrock");
+      if (!toolInput && !rawText) throw new Error("Respuesta vacia de Bedrock");
       if (options.usageLabel) {
         console.info(options.usageLabel, parsed?.usage ?? {});
       }
-      return rawText;
+      return { rawText, toolInput };
     } finally {
       clearTimeout(timeout);
     }
@@ -1101,27 +1158,20 @@ export async function enrichProductWithOpenAI(params: {
           null,
           2,
         );
-        const raw = await invokeBedrock({
+        const response = await invokeBedrock({
           systemPrompt,
           userText,
           imageInputs: imageBlocks,
           usageLabel: "bedrock.enrich.usage",
+          useTool: true,
         });
-
-        try {
-          return parseRawProduct(raw);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          const repairPrompt = buildRepairSystemPrompt(systemPrompt);
-          const repairText = buildBedrockRepairText(requiredVariantIds, raw, message);
-          const repaired = await invokeBedrock({
-            systemPrompt: repairPrompt,
-            userText: repairText,
-            imageInputs: [],
-            usageLabel: "bedrock.enrich.repair.usage",
-          });
-          return parseRawProduct(repaired);
+        if (response.toolInput) {
+          return parseRawProductValue(response.toolInput);
         }
+        if (!response.rawText) {
+          throw new Error("Respuesta vacia de Bedrock");
+        }
+        return parseRawProduct(response.rawText);
       } catch (error) {
         chunkError = error;
         const backoff = Math.pow(2, attempt) * 200;
@@ -1157,24 +1207,7 @@ export async function enrichProductWithOpenAI(params: {
       variants: aggregatedVariants,
     };
 
-    try {
-      return normalizeParsed(merged);
-    } catch (error) {
-      const note = error instanceof Error ? error.message : String(error);
-      const repairPrompt = buildRepairSystemPrompt(systemPrompt);
-      const repairText = buildBedrockRepairText(
-        variantIdList,
-        JSON.stringify(serializeRawProduct(merged), null, 2),
-        note,
-      );
-      const repaired = await invokeBedrock({
-        systemPrompt: repairPrompt,
-        userText: repairText,
-        imageInputs: [],
-        usageLabel: "bedrock.enrich.repair.usage",
-      });
-      return normalizeParsed(parseRawProduct(repaired));
-    }
+    return normalizeParsed(merged);
   };
 
   const runOpenAI = async () => {
@@ -1206,7 +1239,7 @@ export async function enrichProductWithOpenAI(params: {
   return runOpenAI();
 }
 
-export const productEnrichmentPromptVersion = "v10";
+export const productEnrichmentPromptVersion = "v11";
 export const productEnrichmentSchemaVersion = "v4";
 
 export const toSlugLabel = (value: string) => slugify(value);
