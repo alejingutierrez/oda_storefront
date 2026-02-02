@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { jsonrepair } from "jsonrepair";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { getOpenAIClient } from "@/lib/openai";
 import {
   CATEGORY_OPTIONS,
@@ -356,6 +357,10 @@ const getBedrockClient = () => {
   }
   bedrockClient = new BedrockRuntimeClient({
     region: BEDROCK_REGION,
+    requestHandler: new NodeHttpHandler({
+      connectionTimeout: BEDROCK_TIMEOUT_MS,
+      socketTimeout: BEDROCK_TIMEOUT_MS,
+    }),
     ...(hasExplicitCreds
       ? {
           credentials: {
