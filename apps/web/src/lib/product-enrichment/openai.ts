@@ -337,6 +337,8 @@ const bedrockToolSchema = {
   },
 };
 
+const openAiResponseSchema = bedrockToolSchema.input_schema;
+
 let bedrockClient: BedrockRuntimeClient | null = null;
 
 const getBedrockClient = () => {
@@ -1054,7 +1056,14 @@ export async function enrichProductWithOpenAI(params: {
           ],
         },
       ],
-      text: { format: { type: "json_object" } },
+      text: {
+        format: {
+          type: "json_schema",
+          name: "product_enrichment",
+          strict: true,
+          schema: openAiResponseSchema,
+        },
+      },
     });
     const raw = extractOutputText(response);
     if (!raw) throw new Error("Respuesta vacia de OpenAI");
@@ -1078,7 +1087,14 @@ export async function enrichProductWithOpenAI(params: {
           ],
         },
       ],
-      text: { format: { type: "json_object" } },
+      text: {
+        format: {
+          type: "json_schema",
+          name: "product_enrichment_repair",
+          strict: true,
+          schema: openAiResponseSchema,
+        },
+      },
     });
     const repaired = extractOutputText(response);
     if (!repaired) throw new Error("Respuesta vacia al reparar con OpenAI");
