@@ -388,10 +388,46 @@ const extractBedrockText = (payload: BedrockResponse | null | undefined) => {
   return "";
 };
 
-const extractBedrockToolInput = (payload: any, toolName: string) => {
-  const content = Array.isArray(payload?.content) ? payload.content : [];
-  const tool = content.find((entry: BedrockToolUse) => entry?.type === "tool_use" && entry?.name === toolName);
-  return tool?.input ?? null;
+const findBedrockToolUse = (payload: unknown, toolName: string) => {
+  const queue: unknown[] = [payload];
+  const seen = new Set<unknown>();
+  while (queue.length) {
+    const node = queue.pop();
+    if (!node || typeof node !== "object") continue;
+    if (seen.has(node)) continue;
+    seen.add(node);
+
+    if (Array.isArray(node)) {
+      queue.push(...node);
+      continue;
+    }
+
+    const candidate = node as BedrockToolUse & { [key: string]: unknown };
+    if (candidate.type === "tool_use" && (!toolName || candidate.name === toolName)) {
+      return candidate;
+    }
+
+    queue.push(...Object.values(node as Record<string, unknown>));
+  }
+  return null;
+};
+
+const extractBedrockToolInput = (payload: unknown, toolName: string) => {
+  const tool = findBedrockToolUse(payload, toolName);
+  if (!tool) return null;
+  const input =
+    (tool as { input?: unknown }).input ??
+    (tool as { arguments?: unknown }).arguments ??
+    (tool as { input_json?: unknown }).input_json ??
+    null;
+  if (typeof input === "string") {
+    try {
+      return safeJsonParse(input);
+    } catch {
+      return null;
+    }
+  }
+  return input ?? null;
 };
 
 const readBedrockBody = async (body: unknown) => {
