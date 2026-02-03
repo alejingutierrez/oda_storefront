@@ -21,6 +21,46 @@ const CONSECUTIVE_ERROR_LIMIT = Math.max(
   2,
   Number(process.env.PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT ?? 5),
 );
+
+const finalizeRunIfDone = async (runId: string) => {
+  const remaining = await prisma.productEnrichmentItem.count({
+    where: {
+      runId,
+      status: { in: ["pending", "queued", "in_progress", "failed"] },
+      attempts: { lt: MAX_ATTEMPTS },
+    },
+  });
+
+  if (remaining > 0) return null;
+
+  const terminalFailed = await prisma.productEnrichmentItem.count({
+    where: {
+      runId,
+      status: "failed",
+      attempts: { gte: MAX_ATTEMPTS },
+    },
+  });
+
+  const now = new Date();
+  if (terminalFailed > 0) {
+    await prisma.productEnrichmentRun.update({
+      where: { id: runId },
+      data: {
+        status: "blocked",
+        blockReason: `max_attempts:${terminalFailed}`,
+        finishedAt: now,
+        updatedAt: now,
+      },
+    });
+    return { status: "blocked", terminalFailed };
+  }
+
+  await prisma.productEnrichmentRun.update({
+    where: { id: runId },
+    data: { status: "completed", finishedAt: now, updatedAt: now },
+  });
+  return { status: "completed", terminalFailed: 0 };
+};
 const resolveMinConcurrency = () => {
   const worker = Number(process.env.PRODUCT_ENRICHMENT_WORKER_CONCURRENCY ?? NaN);
   const drain = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY ?? NaN);
@@ -240,19 +280,8 @@ export const processEnrichmentItemById = async (
 
     await resetQueuedItems(run.id, queuedStaleMs);
     await resetStuckItems(run.id, stuckMs);
-    const remaining = await prisma.productEnrichmentItem.count({
-      where: {
-        runId: run.id,
-        status: { in: ["pending", "queued", "in_progress", "failed"] },
-      },
-    });
-
-    if (remaining === 0) {
-      await prisma.productEnrichmentRun.update({
-        where: { id: run.id },
-        data: { status: "completed", finishedAt: new Date(), updatedAt: new Date() },
-      });
-    } else if (options.allowQueueRefill) {
+    const finalized = await finalizeRunIfDone(run.id);
+    if (!finalized && options.allowQueueRefill) {
       const pendingItems = await listPendingItems(run.id, enqueueLimit);
       await markItemsQueued(pendingItems.map((candidate) => candidate.id));
       await enqueueEnrichmentItems(pendingItems);
@@ -289,18 +318,8 @@ export const processEnrichmentItemById = async (
     if (!shouldPause) {
       await resetQueuedItems(run.id, queuedStaleMs);
       await resetStuckItems(run.id, stuckMs);
-      const remaining = await prisma.productEnrichmentItem.count({
-        where: {
-          runId: run.id,
-          status: { in: ["pending", "queued", "in_progress", "failed"] },
-        },
-      });
-      if (remaining === 0) {
-        await prisma.productEnrichmentRun.update({
-          where: { id: run.id },
-          data: { status: "completed", finishedAt: new Date(), updatedAt: new Date() },
-        });
-      } else if (options.allowQueueRefill) {
+      const finalized = await finalizeRunIfDone(run.id);
+      if (!finalized && options.allowQueueRefill) {
         const pendingItems = await listPendingItems(run.id, enqueueLimit);
         await markItemsQueued(pendingItems.map((candidate) => candidate.id));
         await enqueueEnrichmentItems(pendingItems);
@@ -335,7 +354,10 @@ export const drainEnrichmentRun = async ({
 
     const remaining = safeBatch - processed;
     const items = await listRunnableItems(runId, Math.min(safeConcurrency, remaining), true);
-    if (!items.length) break;
+    if (!items.length) {
+      await finalizeRunIfDone(runId);
+      break;
+    }
 
     const results = await Promise.allSettled(
       items.map((item) =>
