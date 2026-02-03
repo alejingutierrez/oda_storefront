@@ -235,3 +235,12 @@ Para cada historia (nueva o en curso) se debe:
 6) Revisar logs de Vercel del deploy resultante para confirmar que no hay errores en runtime.
 7) Actualizar el README del proyecto con cualquier cambio relevante (instalación, variables, comandos, decisiones).
 8) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y registrarla también en `STATUS.md` (resumen global).
+
+## 22) Lecciones operativas (evitar errores repetidos)
+- **Hooks/TS en React**: no referenciar funciones `const` antes de su declaración. Si un `useEffect` depende de un handler, declarar el handler **antes** o usar `function` declarations.
+- **Prisma JSON**: al persistir en columnas JSON (`brands.metadata`), usar tipos `Prisma.JsonValue` y serializar (`JSON.parse(JSON.stringify(obj))`) para garantizar `InputJsonValue` válido. Evitar `Record<string, unknown>` directo si contiene estructuras anidadas complejas.
+- **Vercel logs**: `vercel logs` solo funciona para **runtime logs** de deployments **Ready**. Para errores de build usar **Vercel UI** o **API**:
+  - Obtener `deploymentId` (p. ej. con `vercel inspect <url> --token $VERCEL_TOKEN`).
+  - Consultar eventos de build: `curl -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v2/deployments/<deploymentId>/events"`.
+- **.env no shell‑safe**: no usar `source .env` si contiene caracteres especiales (`&`, espacios o rutas). En su lugar, leer variables puntuales con un script (`python3`) y exportarlas al comando.
+- **Lint/build colgados**: si `npm run lint` o `npm run build` no responde, esperar un tiempo razonable y cortar el proceso; registrar en `STATUS.md` y reintentar con comandos más específicos (`npx next build`, `npx eslint <paths>`).
