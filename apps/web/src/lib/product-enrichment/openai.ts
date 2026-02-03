@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { jsonrepair } from "jsonrepair";
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { getOpenAIClient } from "@/lib/openai";
 import {
@@ -339,9 +338,18 @@ const bedrockToolSchema = {
 
 const openAiResponseSchema = bedrockToolSchema.input_schema;
 
-let bedrockClient: BedrockRuntimeClient | null = null;
+type BedrockModule = any;
+let bedrockModulePromise: Promise<BedrockModule> | null = null;
+let bedrockClient: any = null;
 
-const getBedrockClient = () => {
+const loadBedrockModule = async () => {
+  if (!bedrockModulePromise) {
+    bedrockModulePromise = import("@aws-sdk/client-bedrock-runtime");
+  }
+  return bedrockModulePromise;
+};
+
+const getBedrockClient = async () => {
   if (bedrockClient) return bedrockClient;
   if (!BEDROCK_MODEL_ID) {
     throw new Error(
@@ -357,6 +365,7 @@ const getBedrockClient = () => {
       "AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY are missing for Bedrock product enrichment.",
     );
   }
+  const { BedrockRuntimeClient } = await loadBedrockModule();
   bedrockClient = new BedrockRuntimeClient({
     region: BEDROCK_REGION,
     requestHandler: new NodeHttpHandler({
@@ -1131,6 +1140,7 @@ export async function enrichProductWithOpenAI(params: {
       payload.tool_choice = { type: "tool", name: BEDROCK_TOOL_NAME };
     }
 
+    const { InvokeModelCommand } = await loadBedrockModule();
     const command = new InvokeModelCommand({
       modelId: BEDROCK_MODEL_ID,
       contentType: "application/json",
@@ -1142,7 +1152,8 @@ export async function enrichProductWithOpenAI(params: {
     const timeout = setTimeout(() => controller.abort(), BEDROCK_TIMEOUT_MS);
     try {
       await jitterDelay();
-      const response = await getBedrockClient().send(command, { abortSignal: controller.signal });
+      const client = await getBedrockClient();
+      const response = await client.send(command, { abortSignal: controller.signal });
       const rawBody = await readBedrockBody(response.body);
       const parsed = JSON.parse(rawBody);
       const toolInput = options.useTool ? extractBedrockToolInput(parsed, BEDROCK_TOOL_NAME) : null;
