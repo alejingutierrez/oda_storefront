@@ -27,7 +27,7 @@ import {
 } from "@/lib/product-enrichment/utils";
 
 const RAW_PROVIDER = (process.env.PRODUCT_ENRICHMENT_PROVIDER ?? "openai").toLowerCase();
-const PRODUCT_ENRICHMENT_PROVIDER = "openai";
+const PRODUCT_ENRICHMENT_PROVIDER: "openai" | "bedrock" = "openai";
 if (RAW_PROVIDER !== PRODUCT_ENRICHMENT_PROVIDER) {
   console.warn("[product-enrichment] provider override", {
     requested: RAW_PROVIDER,
