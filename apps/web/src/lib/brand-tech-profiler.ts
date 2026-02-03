@@ -4,7 +4,7 @@ import { getOpenAIClient } from "@/lib/openai";
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.1";
 const DEFAULT_TIMEOUT_MS = 12000;
-const MAX_HTML_CHARS = 200_000;
+const MAX_HTML_CHARS = 350_000;
 const MAX_HELPER_CHARS = 250_000;
 const MAX_SITEMAP_URLS = 40;
 
@@ -829,9 +829,10 @@ const buildFeatureSet = async (brand: Brand): Promise<FeatureSet> => {
   const productUrls = sitemapEntries.filter((entry) => isLikelyProductUrl(entry));
   const productPathMatches = linkPaths.filter((path) => isLikelyProductPath(path)).length;
   const vtexProductMatches = unique(
-    (combinedText.match(/Product:[A-Za-z0-9_-]+/g) ?? []).map((item) => item.trim()),
+    (combinedText.match(/product:[A-Za-z0-9_-]+/gi) ?? []).map((item) => item.trim()),
   );
-  const jsonLdProductMatches = combinedText.match(/\"@type\"\\s*:\\s*\"Product\"/g) ?? [];
+  const jsonLdProductMatches =
+    combinedText.match(/["@']@type["@']\s*:\s*["@']Product["@']/gi) ?? [];
   const productCandidates =
     productHandles.length +
     productUrls.length +
