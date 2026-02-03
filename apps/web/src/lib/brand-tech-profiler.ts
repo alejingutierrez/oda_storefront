@@ -828,7 +828,16 @@ const buildFeatureSet = async (brand: Brand): Promise<FeatureSet> => {
   const sitemapEntries = sitemapText ? extractSitemapUrls(sitemapText) : [];
   const productUrls = sitemapEntries.filter((entry) => isLikelyProductUrl(entry));
   const productPathMatches = linkPaths.filter((path) => isLikelyProductPath(path)).length;
-  const productCandidates = productHandles.length + productUrls.length + productPathMatches;
+  const vtexProductMatches = unique(
+    (combinedText.match(/Product:[A-Za-z0-9_-]+/g) ?? []).map((item) => item.trim()),
+  );
+  const jsonLdProductMatches = combinedText.match(/\"@type\"\\s*:\\s*\"Product\"/g) ?? [];
+  const productCandidates =
+    productHandles.length +
+    productUrls.length +
+    productPathMatches +
+    vtexProductMatches.length +
+    jsonLdProductMatches.length;
 
   return {
     baseUrl: normalized,

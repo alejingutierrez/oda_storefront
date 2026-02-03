@@ -486,6 +486,7 @@ export default function BrandDirectoryPanel() {
   const [onboardingState, setOnboardingState] = useState<OnboardingState | null>(null);
   const [onboardingProgress, setOnboardingProgress] = useState<OnboardingProgress | null>(null);
   const [onboardingBrandId, setOnboardingBrandId] = useState<string | null>(null);
+  const [rehydratedBrandId, setRehydratedBrandId] = useState<string | null>(null);
   const [onboardingMessage, setOnboardingMessage] = useState<string | null>(null);
   const [onboardingLoading, setOnboardingLoading] = useState(false);
   const [manualReviewLoading, setManualReviewLoading] = useState(false);
@@ -693,6 +694,7 @@ export default function BrandDirectoryPanel() {
     setOnboardingState(null);
     setOnboardingProgress(null);
     setOnboardingBrandId(null);
+    setRehydratedBrandId(null);
     setOnboardingMessage(null);
     setOnboardingLoading(false);
   }, []);
@@ -716,6 +718,42 @@ export default function BrandDirectoryPanel() {
     [fetchBrandDetail, openModal],
   );
 
+  const buildFormStateFromBrand = useCallback((brand: BrandDetail): BrandFormState => {
+    return {
+      name: brand.name ?? "",
+      slug: brand.slug ?? "",
+      siteUrl: brand.siteUrl ?? "",
+      category: brand.category ?? "",
+      productCategory: brand.productCategory ?? "",
+      market: brand.market ?? "",
+      style: brand.style ?? "",
+      scale: brand.scale ?? "",
+      ecommercePlatform: brand.ecommercePlatform ?? "",
+      manualReview: brand.manualReview ?? false,
+      avgPrice: brand.avgPrice ? String(brand.avgPrice) : "",
+      reviewed: brand.reviewed ?? "",
+      ratingStars: brand.ratingStars ?? "",
+      ratingScore: brand.ratingScore ? String(brand.ratingScore) : "",
+      sourceSheet: brand.sourceSheet ?? "",
+      sourceFile: brand.sourceFile ?? "",
+      description: brand.description ?? "",
+      logoUrl: brand.logoUrl ?? "",
+      contactPhone: brand.contactPhone ?? "",
+      contactEmail: brand.contactEmail ?? "",
+      instagram: brand.instagram ?? "",
+      tiktok: brand.tiktok ?? "",
+      facebook: brand.facebook ?? "",
+      whatsapp: brand.whatsapp ?? "",
+      address: brand.address ?? "",
+      city: brand.city ?? "",
+      lat: brand.lat ? String(brand.lat) : "",
+      lng: brand.lng ? String(brand.lng) : "",
+      openingHours: jsonToText(brand.openingHours),
+      metadata: jsonToText(brand.metadata),
+      isActive: brand.isActive,
+    };
+  }, []);
+
   const openEdit = useCallback(
     async (brandId: string) => {
       setModalMode("edit");
@@ -723,42 +761,10 @@ export default function BrandDirectoryPanel() {
       openModal();
       const payload = await fetchBrandDetail(brandId);
       if (payload?.brand) {
-        setFormState({
-          name: payload.brand.name ?? "",
-          slug: payload.brand.slug ?? "",
-          siteUrl: payload.brand.siteUrl ?? "",
-          category: payload.brand.category ?? "",
-          productCategory: payload.brand.productCategory ?? "",
-          market: payload.brand.market ?? "",
-          style: payload.brand.style ?? "",
-          scale: payload.brand.scale ?? "",
-          ecommercePlatform: payload.brand.ecommercePlatform ?? "",
-          manualReview: payload.brand.manualReview ?? false,
-          avgPrice: payload.brand.avgPrice ? String(payload.brand.avgPrice) : "",
-          reviewed: payload.brand.reviewed ?? "",
-          ratingStars: payload.brand.ratingStars ?? "",
-          ratingScore: payload.brand.ratingScore ? String(payload.brand.ratingScore) : "",
-          sourceSheet: payload.brand.sourceSheet ?? "",
-          sourceFile: payload.brand.sourceFile ?? "",
-          description: payload.brand.description ?? "",
-          logoUrl: payload.brand.logoUrl ?? "",
-          contactPhone: payload.brand.contactPhone ?? "",
-          contactEmail: payload.brand.contactEmail ?? "",
-          instagram: payload.brand.instagram ?? "",
-          tiktok: payload.brand.tiktok ?? "",
-          facebook: payload.brand.facebook ?? "",
-          whatsapp: payload.brand.whatsapp ?? "",
-          address: payload.brand.address ?? "",
-          city: payload.brand.city ?? "",
-          lat: payload.brand.lat ? String(payload.brand.lat) : "",
-          lng: payload.brand.lng ? String(payload.brand.lng) : "",
-          openingHours: jsonToText(payload.brand.openingHours),
-          metadata: jsonToText(payload.brand.metadata),
-          isActive: payload.brand.isActive,
-        });
+        setFormState(buildFormStateFromBrand(payload.brand));
       }
     },
-    [fetchBrandDetail, openModal],
+    [fetchBrandDetail, openModal, buildFormStateFromBrand],
   );
 
   const openCreate = useCallback(() => {
@@ -768,6 +774,7 @@ export default function BrandDirectoryPanel() {
     setOnboardingState(null);
     setOnboardingProgress(null);
     setOnboardingBrandId(null);
+    setRehydratedBrandId(null);
     setOnboardingMessage(null);
     setOnboardingLoading(false);
     openModal();
@@ -942,6 +949,32 @@ export default function BrandDirectoryPanel() {
       setOnboardingLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (modalMode !== "create") return;
+    if (!onboardingBrandId) return;
+    if (rehydratedBrandId === onboardingBrandId) return;
+    if (onboardingState?.steps?.brand_enrich?.status !== "completed") return;
+
+    let cancelled = false;
+    const run = async () => {
+      const payload = await fetchBrandDetail(onboardingBrandId);
+      if (!payload?.brand || cancelled) return;
+      setFormState(buildFormStateFromBrand(payload.brand));
+      setRehydratedBrandId(onboardingBrandId);
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    modalMode,
+    onboardingBrandId,
+    onboardingState,
+    rehydratedBrandId,
+    fetchBrandDetail,
+    buildFormStateFromBrand,
+  ]);
 
   const shouldPollOnboarding =
     modalOpen &&
