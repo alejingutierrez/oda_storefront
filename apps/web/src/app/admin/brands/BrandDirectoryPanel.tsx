@@ -773,20 +773,6 @@ export default function BrandDirectoryPanel() {
     openModal();
   }, [openModal]);
 
-  const shouldPollOnboarding =
-    modalOpen &&
-    modalMode === "create" &&
-    !!onboardingBrandId &&
-    onboardingState?.status === "processing";
-
-  useEffect(() => {
-    if (!shouldPollOnboarding || !onboardingBrandId) return;
-    const interval = window.setInterval(() => {
-      refreshOnboardingState(onboardingBrandId, { silent: true });
-    }, 8000);
-    return () => window.clearInterval(interval);
-  }, [shouldPollOnboarding, onboardingBrandId, refreshOnboardingState]);
-
   const handleFormChange = (field: keyof BrandFormState, value: string | boolean) => {
     setFormState((prev) => ({ ...prev, [field]: value }));
   };
@@ -956,6 +942,20 @@ export default function BrandDirectoryPanel() {
       setOnboardingLoading(false);
     }
   };
+
+  const shouldPollOnboarding =
+    modalOpen &&
+    modalMode === "create" &&
+    !!onboardingBrandId &&
+    onboardingState?.status === "processing";
+
+  useEffect(() => {
+    if (!shouldPollOnboarding || !onboardingBrandId) return;
+    const interval = window.setInterval(() => {
+      refreshOnboardingState(onboardingBrandId, { silent: true });
+    }, 8000);
+    return () => window.clearInterval(interval);
+  }, [shouldPollOnboarding, onboardingBrandId, refreshOnboardingState]);
 
   const handleSave = async () => {
     setFormError(null);
