@@ -57,7 +57,7 @@ export type OnboardingStepInfo = {
   error?: string | null;
   jobId?: string | null;
   runId?: string | null;
-  detail?: Record<string, unknown> | null;
+  detail?: Prisma.JsonValue | null;
 };
 
 export type OnboardingState = {
@@ -195,10 +195,13 @@ const persistOnboarding = async (
     select: { metadata: true },
   });
   const base = getMetadataObject(brand?.metadata);
+  const onboardingPayload = JSON.parse(
+    JSON.stringify(onboarding),
+  ) as Prisma.InputJsonValue;
   const nextMetadata: Prisma.InputJsonValue = {
     ...base,
     ...(metadataPatch ?? {}),
-    onboarding,
+    onboarding: onboardingPayload,
   };
   await prisma.brand.update({
     where: { id: brandId },

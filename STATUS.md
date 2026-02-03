@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-02-03 | fix | Prisma JSON typing en onboarding | `OnboardingStepInfo.detail` ahora usa `Prisma.JsonValue` y persistencia serializa `onboarding` antes de guardar metadata.
 - 2026-02-03 | fix | Vercel build: refreshOnboardingState before declaration | Ajustado orden de hooks en BrandDirectoryPanel para resolver TypeScript error de build.
 - 2026-02-03 | MC-109 | done | Onboarding de marca desde modal (pipeline secuencial + progreso) | Docker rebuild omitido por solicitud; lint se colgó y se detuvo; build local se quedó en `prisma generate` y se detuvo; Vercel prod: deploy en Error `https://oda-storefront-6ee5-36esxrxdc-alejingutierrezs-projects.vercel.app` (inspect muestra dpl_D4giyXA4896pEheTo7B5hyP9xz17; CLI no devuelve logs porque está en Error); `vercel --prod` falla por `vercel.json` fuera de `apps/web` (rootDirectory).
 - 2026-02-03 | MC-108 | done | Cola scraping marcas: encolar solo pendientes + drenar cola existente | Docker rebuild omitido por solicitud; smoke test DB OK (old eligible 440 vs new 6). Vercel prod Ready: https://oda-storefront-6ee5-i768gw7ga-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante la observación).
