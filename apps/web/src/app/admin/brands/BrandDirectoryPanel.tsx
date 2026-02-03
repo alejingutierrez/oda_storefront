@@ -126,6 +126,102 @@ type BrandDetailResponse = {
   }>;
 };
 
+type OnboardingStepKey =
+  | "brand_enrich"
+  | "tech_profile"
+  | "catalog_extract"
+  | "product_enrich";
+
+type OnboardingStepStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "blocked";
+
+type OnboardingStatus =
+  | "idle"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "blocked";
+
+type OnboardingStepInfo = {
+  status: OnboardingStepStatus;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  error?: string | null;
+  jobId?: string | null;
+  runId?: string | null;
+  detail?: Record<string, unknown> | null;
+};
+
+type OnboardingState = {
+  status: OnboardingStatus;
+  step: OnboardingStepKey | null;
+  steps: Record<OnboardingStepKey, OnboardingStepInfo>;
+  updatedAt: string;
+};
+
+type OnboardingProgress = {
+  brandEnrich?: {
+    jobStatus?: string | null;
+    changes?: number;
+    jobId?: string | null;
+    startedAt?: string | null;
+    finishedAt?: string | null;
+  };
+  techProfile?: {
+    platform?: string | null;
+    confidence?: number | null;
+    risks?: string[];
+  };
+  catalog?: {
+    runId: string;
+    status: string;
+    total: number;
+    completed: number;
+    failed: number;
+    pending: number;
+    lastError?: string | null;
+    blockReason?: string | null;
+    lastUrl?: string | null;
+    lastStage?: string | null;
+    consecutiveErrors?: number;
+  } | null;
+  productEnrichment?: {
+    summary?: {
+      runId: string;
+      status: string;
+      total: number;
+      completed: number;
+      failed: number;
+      pending: number;
+      lastError?: string | null;
+      blockReason?: string | null;
+      lastProductId?: string | null;
+      lastStage?: string | null;
+      consecutiveErrors?: number;
+    } | null;
+    counts?: {
+      total: number;
+      enriched: number;
+      remaining: number;
+    };
+  };
+};
+
+type OnboardingResponse = {
+  onboarding: OnboardingState;
+  progress: OnboardingProgress;
+  brand: {
+    id: string;
+    name: string;
+    ecommercePlatform: string | null;
+    manualReview: boolean;
+  };
+};
+
 type BrandFormState = {
   name: string;
   slug: string;
@@ -161,6 +257,21 @@ type BrandFormState = {
 };
 
 const PAGE_SIZE = 15;
+
+const ONBOARDING_STEPS: Array<{ key: OnboardingStepKey; label: string }> = [
+  { key: "brand_enrich", label: "Enriquecimiento de marca" },
+  { key: "tech_profile", label: "Tech profiler" },
+  { key: "catalog_extract", label: "Extracción de catálogo" },
+  { key: "product_enrich", label: "Enriquecimiento de productos" },
+];
+
+const STATUS_LABELS: Record<OnboardingStepStatus, string> = {
+  pending: "Pendiente",
+  processing: "En progreso",
+  completed: "Listo",
+  failed: "Falló",
+  blocked: "Bloqueado",
+};
 
 const EMPTY_FORM: BrandFormState = {
   name: "",
@@ -372,6 +483,11 @@ export default function BrandDirectoryPanel() {
   const [formState, setFormState] = useState<BrandFormState>({ ...EMPTY_FORM });
   const [formError, setFormError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [onboardingState, setOnboardingState] = useState<OnboardingState | null>(null);
+  const [onboardingProgress, setOnboardingProgress] = useState<OnboardingProgress | null>(null);
+  const [onboardingBrandId, setOnboardingBrandId] = useState<string | null>(null);
+  const [onboardingMessage, setOnboardingMessage] = useState<string | null>(null);
+  const [onboardingLoading, setOnboardingLoading] = useState(false);
   const [manualReviewLoading, setManualReviewLoading] = useState(false);
   const [reEnrichState, setReEnrichState] = useState<
     Record<string, { status: "processing" | "completed" | "failed"; message?: string }>
@@ -574,6 +690,11 @@ export default function BrandDirectoryPanel() {
     setActiveBrandId(null);
     setDetailLoading(false);
     setFormError(null);
+    setOnboardingState(null);
+    setOnboardingProgress(null);
+    setOnboardingBrandId(null);
+    setOnboardingMessage(null);
+    setOnboardingLoading(false);
   }, []);
 
   useEffect(() => {
@@ -644,8 +765,27 @@ export default function BrandDirectoryPanel() {
     setModalMode("create");
     setActiveBrandId(null);
     setFormState({ ...EMPTY_FORM });
+    setOnboardingState(null);
+    setOnboardingProgress(null);
+    setOnboardingBrandId(null);
+    setOnboardingMessage(null);
+    setOnboardingLoading(false);
     openModal();
   }, [openModal]);
+
+  const shouldPollOnboarding =
+    modalOpen &&
+    modalMode === "create" &&
+    !!onboardingBrandId &&
+    onboardingState?.status === "processing";
+
+  useEffect(() => {
+    if (!shouldPollOnboarding || !onboardingBrandId) return;
+    const interval = window.setInterval(() => {
+      refreshOnboardingState(onboardingBrandId, { silent: true });
+    }, 8000);
+    return () => window.clearInterval(interval);
+  }, [shouldPollOnboarding, onboardingBrandId, refreshOnboardingState]);
 
   const handleFormChange = (field: keyof BrandFormState, value: string | boolean) => {
     setFormState((prev) => ({ ...prev, [field]: value }));
@@ -711,6 +851,110 @@ export default function BrandDirectoryPanel() {
       metadata,
       isActive: formState.isActive,
     };
+  };
+
+  const applyOnboardingPayload = useCallback((payload: OnboardingResponse) => {
+    setOnboardingState(payload.onboarding);
+    setOnboardingProgress(payload.progress);
+    setOnboardingBrandId(payload.brand.id);
+    setActiveBrandId(payload.brand.id);
+  }, []);
+
+  const refreshOnboardingState = useCallback(
+    async (brandId: string, options?: { silent?: boolean }) => {
+      if (!options?.silent) {
+        setOnboardingLoading(true);
+      }
+      try {
+        const res = await fetch(`/api/admin/brands/${brandId}/onboard/state`, {
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          const errorPayload = await res.json().catch(() => null);
+          throw new Error(errorPayload?.error ?? "No se pudo consultar el estado de onboarding");
+        }
+        const payload = (await res.json()) as OnboardingResponse;
+        applyOnboardingPayload(payload);
+        setOnboardingMessage(null);
+      } catch (err) {
+        setOnboardingMessage(
+          err instanceof Error ? err.message : "Error al actualizar el onboarding",
+        );
+      } finally {
+        if (!options?.silent) {
+          setOnboardingLoading(false);
+        }
+      }
+    },
+    [applyOnboardingPayload],
+  );
+
+  const handleCreateAndOnboard = async () => {
+    setFormError(null);
+    setOnboardingMessage(null);
+    const payload = buildPayload();
+    if (!payload) return;
+
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/admin/brands", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, skipTechProfile: true }),
+      });
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => null);
+        throw new Error(errorPayload?.error ?? "No se pudo crear la marca");
+      }
+      const created = (await res.json()) as { brand: BrandDetail };
+      if (!created?.brand?.id) {
+        throw new Error("Respuesta inválida al crear la marca");
+      }
+      setOnboardingBrandId(created.brand.id);
+      setActiveBrandId(created.brand.id);
+
+      const onboardRes = await fetch(`/api/admin/brands/${created.brand.id}/onboard/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: true }),
+      });
+      if (!onboardRes.ok) {
+        const errorPayload = await onboardRes.json().catch(() => null);
+        throw new Error(errorPayload?.error ?? "No se pudo iniciar el onboarding");
+      }
+      const onboardPayload = (await onboardRes.json()) as OnboardingResponse;
+      applyOnboardingPayload(onboardPayload);
+      await fetchBrands();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Error inesperado al crear la marca");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRestartOnboarding = async () => {
+    if (!onboardingBrandId) return;
+    setOnboardingLoading(true);
+    setOnboardingMessage(null);
+    try {
+      const res = await fetch(`/api/admin/brands/${onboardingBrandId}/onboard/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: true }),
+      });
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => null);
+        throw new Error(errorPayload?.error ?? "No se pudo reintentar el onboarding");
+      }
+      const payload = (await res.json()) as OnboardingResponse;
+      applyOnboardingPayload(payload);
+    } catch (err) {
+      setOnboardingMessage(
+        err instanceof Error ? err.message : "Error al reintentar el onboarding",
+      );
+    } finally {
+      setOnboardingLoading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -798,6 +1042,100 @@ export default function BrandDirectoryPanel() {
     } finally {
       setManualReviewLoading(false);
     }
+  };
+
+  const onboardingPercent = useMemo(() => {
+    if (!onboardingState) return 0;
+    const completed = ONBOARDING_STEPS.filter(
+      (step) => onboardingState.steps?.[step.key]?.status === "completed",
+    ).length;
+    return Math.round((completed / ONBOARDING_STEPS.length) * 100);
+  }, [onboardingState]);
+
+  const overallStatusLabel = useMemo(() => {
+    if (!onboardingState) return "Sin iniciar";
+    if (onboardingState.status === "idle") return "Pendiente";
+    if (onboardingState.status === "processing") return "En progreso";
+    if (onboardingState.status === "completed") return "Completado";
+    if (onboardingState.status === "blocked") return "Bloqueado";
+    return "Fallido";
+  }, [onboardingState]);
+
+  const blockedStep = useMemo(() => {
+    if (!onboardingState) return null;
+    return ONBOARDING_STEPS.find(
+      (step) => onboardingState.steps?.[step.key]?.status === "blocked",
+    );
+  }, [onboardingState]);
+
+  const renderStepDetail = (stepKey: OnboardingStepKey, step: OnboardingStepInfo) => {
+    const started = step.startedAt ? formatDate(step.startedAt) : null;
+    const finished = step.finishedAt ? formatDate(step.finishedAt) : null;
+
+    if (stepKey === "brand_enrich") {
+      return (
+        <div className="mt-2 space-y-1 text-xs text-slate-500">
+          <p>
+            Job: {onboardingProgress?.brandEnrich?.jobStatus ?? "—"} · Cambios detectados:{" "}
+            {onboardingProgress?.brandEnrich?.changes ?? 0}
+          </p>
+          {started && <p>Inicio: {started}</p>}
+          {finished && <p>Fin: {finished}</p>}
+        </div>
+      );
+    }
+    if (stepKey === "tech_profile") {
+      const tech = onboardingProgress?.techProfile;
+      const risks = tech?.risks ?? [];
+      return (
+        <div className="mt-2 space-y-1 text-xs text-slate-500">
+          <p>Plataforma: {tech?.platform ?? "—"}</p>
+          <p>Confianza: {typeof tech?.confidence === "number" ? tech.confidence : "—"}</p>
+          <p>Riesgos: {risks.length ? risks.join(", ") : "—"}</p>
+          {started && <p>Inicio: {started}</p>}
+          {finished && <p>Fin: {finished}</p>}
+        </div>
+      );
+    }
+    if (stepKey === "catalog_extract") {
+      const summary = onboardingProgress?.catalog;
+      return (
+        <div className="mt-2 space-y-1 text-xs text-slate-500">
+          <p>
+            Items: {summary?.completed ?? 0}/{summary?.total ?? 0} · Pendientes:{" "}
+            {summary?.pending ?? 0} · Fallas: {summary?.failed ?? 0}
+          </p>
+          {summary?.lastStage && <p>Última etapa: {summary.lastStage}</p>}
+          {summary?.lastError && <p>Error: {summary.lastError}</p>}
+          {summary?.blockReason && <p>Bloqueo: {summary.blockReason}</p>}
+          {started && <p>Inicio: {started}</p>}
+          {finished && <p>Fin: {finished}</p>}
+        </div>
+      );
+    }
+    if (stepKey === "product_enrich") {
+      const summary = onboardingProgress?.productEnrichment?.summary;
+      const counts = onboardingProgress?.productEnrichment?.counts;
+      return (
+        <div className="mt-2 space-y-1 text-xs text-slate-500">
+          <p>
+            Productos enriquecidos: {counts?.enriched ?? 0}/{counts?.total ?? 0} · Pendientes:{" "}
+            {counts?.remaining ?? 0}
+          </p>
+          {summary && (
+            <p>
+              Items: {summary.completed}/{summary.total} · Pendientes: {summary.pending} ·
+              Fallas: {summary.failed}
+            </p>
+          )}
+          {summary?.lastError && <p>Error: {summary.lastError}</p>}
+          {summary?.blockReason && <p>Bloqueo: {summary.blockReason}</p>}
+          {started && <p>Inicio: {started}</p>}
+          {finished && <p>Fin: {finished}</p>}
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
@@ -1502,6 +1840,106 @@ export default function BrandDirectoryPanel() {
                 )
               ) : (
                 <div className="space-y-4">
+                  {modalMode === "create" && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                            Onboarding de marca
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-slate-900">
+                            Estado general: {overallStatusLabel}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {onboardingBrandId
+                              ? "El flujo se actualiza automáticamente cada pocos segundos."
+                              : "Completa el formulario y pulsa \"Crear y enriquecer\" para iniciar el flujo completo."}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {onboardingBrandId && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onboardingBrandId &&
+                                refreshOnboardingState(onboardingBrandId, { silent: false })
+                              }
+                              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+                            >
+                              {onboardingLoading ? "Actualizando..." : "Refrescar"}
+                            </button>
+                          )}
+                          {(onboardingState?.status === "blocked" ||
+                            onboardingState?.status === "failed") && (
+                            <button
+                              type="button"
+                              onClick={handleRestartOnboarding}
+                              className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
+                            >
+                              Reintentar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <div className="h-2 w-full rounded-full bg-white">
+                          <div
+                            className="h-2 rounded-full bg-indigo-500 transition-all"
+                            style={{ width: `${onboardingPercent}%` }}
+                          />
+                        </div>
+                        <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                          <span>{onboardingPercent}% completado</span>
+                          {onboardingBrandId && <span>ID: {onboardingBrandId}</span>}
+                        </div>
+                      </div>
+
+                      {onboardingMessage && (
+                        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                          {onboardingMessage}
+                        </div>
+                      )}
+
+                      {blockedStep && (
+                        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          El flujo se bloqueó en: {blockedStep.label}. Revisa la causa y reintenta o
+                          corrige la marca.
+                        </div>
+                      )}
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        {ONBOARDING_STEPS.map((step) => {
+                          const info = onboardingState?.steps?.[step.key];
+                          const status = info?.status ?? "pending";
+                          const pillClass =
+                            status === "completed"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : status === "failed"
+                                ? "bg-rose-100 text-rose-700"
+                                : status === "blocked"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : status === "processing"
+                                    ? "bg-indigo-100 text-indigo-700"
+                                    : "bg-slate-200 text-slate-600";
+                          return (
+                            <div key={step.key} className="rounded-xl border border-slate-200 bg-white p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-semibold text-slate-900">{step.label}</p>
+                                <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${pillClass}`}>
+                                  {STATUS_LABELS[status]}
+                                </span>
+                              </div>
+                              {info?.error && (
+                                <p className="mt-2 text-xs text-rose-600">Detalle: {info.error}</p>
+                              )}
+                              {info ? renderStepDetail(step.key, info) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
                       <label className="text-xs uppercase tracking-wide text-slate-500">Nombre</label>
@@ -1811,14 +2249,27 @@ export default function BrandDirectoryPanel() {
                 )}
               </div>
               {modalMode !== "detail" && (
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={actionLoading}
-                  className="rounded-full bg-slate-900 px-5 py-2 text-xs font-semibold text-white disabled:opacity-60"
-                >
-                  {actionLoading ? "Guardando..." : "Guardar"}
-                </button>
+                <>
+                  {modalMode === "create" ? (
+                    <button
+                      type="button"
+                      onClick={handleCreateAndOnboard}
+                      disabled={actionLoading || Boolean(onboardingBrandId)}
+                      className="rounded-full bg-slate-900 px-5 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                    >
+                      {actionLoading ? "Creando..." : "Crear y enriquecer"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      disabled={actionLoading}
+                      className="rounded-full bg-slate-900 px-5 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                    >
+                      {actionLoading ? "Guardando..." : "Guardar"}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>

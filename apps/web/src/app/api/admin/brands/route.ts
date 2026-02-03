@@ -319,8 +319,9 @@ export async function POST(req: Request) {
   const slug = await ensureUniqueSlug(baseSlug);
 
   const siteUrl = normalizeString(payload.siteUrl);
+  const skipTechProfile = normalizeBoolean(payload.skipTechProfile, false) ?? false;
   let techProfile: Awaited<ReturnType<typeof profileBrandTechnology>> | null = null;
-  if (siteUrl) {
+  if (siteUrl && !skipTechProfile) {
     techProfile = await profileBrandTechnology({ siteUrl } as any);
     const deleteSignals = new Set([
       "social",

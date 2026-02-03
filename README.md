@@ -81,15 +81,11 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Persistencia de navegación: la página y filtros se guardan en la URL (`page`, `filter`, `category`, `sort`, `order`) para mantener el punto exacto tras reload/acciones.
   - Acciones por marca: **Re‑enriquecer** (método 2 con 14 fuentes y 20k chars por fuente).
   - Check azul cuando una marca tiene revisión manual (guardado en `brands.manualReview`).
-- Panel `/admin/brands/scrape` (scraping):
-  - Encolado y ejecución de scraping/enriquecimiento de marcas (1/5/10/25/50).
-  - La cola solo encola marcas sin job `completed`; "Encolar y ejecutar" drena primero la cola existente.
-  - Auto‑resume tras recarga y recuperación de jobs atascados.
-  - El batch continua aunque haya fallos; se detiene tras 3 errores consecutivos (configurable con `BRAND_SCRAPE_MAX_FAILURES`).
-- Panel `/admin/brands/tech` (tech profiler):
-  - Ejecuta perfilado de tecnología ecommerce (Shopify/Woo/Magento/VTEX/Tiendanube/Wix/custom).
-  - Actualiza `brands.ecommercePlatform` y guarda detalle en `brands.metadata.tech_profile`.
-  - Si detecta `social`, `bot_protection`, `unreachable`, `parked_domain`, `landing_no_store`, `no_pdp_candidates` o review `manual_review_no_products`, elimina la marca automáticamente.
+  - Al crear marca, el botón **Crear y enriquecer** dispara el onboarding completo:
+    1) enriquecimiento de marca → 2) tech profiler → 3) extracción de catálogo → 4) enriquecimiento de productos.
+    El modal muestra barra de progreso, estados por paso y bloqueos (si el catálogo o tech profiler quedan en `blocked`, el flujo se detiene y avisa).
+    El estado vive en `brands.metadata.onboarding`.
+- Los paneles de Scraping/Tech profiler/Catalog extractor se ocultaron del menú: el flujo vive en el modal de creación.
 - Panel `/admin/products` (productos):
   - Directorio de productos scrapeados con cards (carrusel de imágenes si hay múltiples fotos), modal de detalle enriquecido (precio/stock, tallas y colores visibles con swatches, fit/material por variante) y filtros por marca.
   - El modal muestra estilo principal/secundario (derivado de `styleTags`) con labels humanos.
@@ -120,24 +116,6 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - El worker BullMQ aplica concurrencia mínima 20 vía `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`.
   - El batch de drenado y el enqueue limit se elevan automáticamente al nivel de concurrencia para evitar cuellos por configuración baja.
   - Persistencia de estado: `scope`, `brandId`, `batch` e `includeEnriched` viven en la URL para mantener el contexto tras recarga.
-- Panel `/admin/catalog-extractor` (catalog extractor):
-  - Ejecuta extracción por **tecnología** con auto‑selección de marca.
-  - Controles Play/Pausar/Detener (detener conserva estado para reanudar), reanudación automática y sitemap‑first.
-  - Mientras está en `processing`, el panel drena lotes pequeños para progreso casi en tiempo real (poll ~2s).
-  - Toggle para ver **todas** las marcas sin run, agrupadas por tecnología.
-  - Permite **finalizar** una marca para sacarla de la cola y registrar `metadata.catalog_extract_finished`.
-  - Usa cola Redis/BullMQ para procesar URLs en paralelo (workers externos).
-  - Para `unknown`, intenta inferencia rápida de plataforma (sin LLM) desde la home y guarda `catalog_extract_inferred_platform` en `brands.metadata`.
-  - Para `unknown/custom`, si el adapter no puede extraer, usa LLM para clasificar PDP y extraer RawProduct (HTML+texto).
-  - Si no hay URLs producto en sitemap, hace fallback broad y filtra con LLM (solo si PDP LLM está habilitado).
-  - Si el sitemap no contiene URLs de producto, se omite (no procesa listados/portafolios) y cae a fallback o manual review.
-  - Subida de imágenes reintenta con `referer` y `user-agent` para evitar hotlinking.
-  - Normaliza imágenes (acepta JSON-LD ImageObject y extrae `contentUrl`) antes de subir a Blob.
-  - Sube imágenes a Vercel Blob y guarda productos/variantes en Neon.
-  - Muestra último error y errores recientes para diagnosticar fallas.
-  - No pausa la corrida por errores de producto (HTML/imagenes/LLM no-PDP); el auto‑pause queda solo para fallas sistémicas si se habilita.
-  - Moneda se infiere por regla (<=999 USD, >=10000 COP) si no viene explícita.
-  - Normalizacion determinista para Shopify/Woo; LLM solo se usa para custom/unknown o cuando `CATALOG_LLM_NORMALIZE_MODE=always`.
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).
@@ -154,11 +132,13 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 
 ## API interna (brands CRUD)
 - `GET /api/admin/brands`: listado paginado con filtros (`filter=processed|unprocessed|all`), categorias multi‑select (`category=...` repetible) y orden por productos (`sort=productCount&order=asc|desc`).
-- `POST /api/admin/brands`: crear marca (slug autogenerado si no se envía).
+- `POST /api/admin/brands`: crear marca (slug autogenerado si no se envía). Soporta `skipTechProfile=true` para crear sin bloquear por tech profiler.
 - `GET /api/admin/brands/:id`: detalle completo de marca + último job + `productStats` (conteo y avg real) + `previewProducts` (10 productos).
 - `PATCH /api/admin/brands/:id`: editar campos de marca.
 - `DELETE /api/admin/brands/:id`: elimina la marca en cascada (hard delete).
 - `POST /api/admin/brands/:id/re-enrich`: re‑enriquecimiento individual con método 2 (14 fuentes, 20k chars).
+- `POST /api/admin/brands/:id/onboard/start`: inicia onboarding completo (body opcional `{ force: true }`).
+- `GET /api/admin/brands/:id/onboard/state`: consulta estado y avanza pasos cuando aplica.
 
 ## API interna (tech profiler)
 - `GET /api/admin/brands/tech`: estado de marcas con sitio (total/procesadas/pendientes).

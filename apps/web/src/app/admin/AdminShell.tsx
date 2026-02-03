@@ -3,12 +3,9 @@ import Link from "next/link";
 const navItems = [
   { key: "dashboard", label: "Dashboard", href: "/admin" },
   { key: "brands", label: "Marcas", href: "/admin/brands" },
-  { key: "brand-scrape", label: "Scraping", href: "/admin/brands/scrape" },
-  { key: "brand-tech", label: "Tech profiler", href: "/admin/brands/tech" },
   { key: "products", label: "Productos", href: "/admin/products" },
   { key: "product-enrichment", label: "Enriquecimiento", href: "/admin/product-enrichment" },
   { key: "color-combinations", label: "Combinaciones", href: "/admin/color-combinations" },
-  { key: "catalog-extractor", label: "Catalog extractor", href: "/admin/catalog-extractor" },
 ];
 
 type AdminShellProps = {

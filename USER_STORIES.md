@@ -115,6 +115,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Pendientes convergen a 0 (o fallidas) tras batch completo.
 - Estado: **done (2026-02-03)**.
 
+### MC-109 Onboarding de marca desde modal de creación
+- Historia: Como operador, quiero que al crear una nueva marca se dispare automáticamente el pipeline completo (enriquecimiento de marca → tech profiler → extracción de catálogo → enriquecimiento de productos), con una barra de progreso clara, para monitorear todo el flujo sin saltar entre paneles.
+- Alcance: Botón **Crear y enriquecer** en el modal; endpoints de onboarding por marca; estado persistido en `brands.metadata.onboarding`; avance automático por pasos y bloqueo si el catálogo o tech profiler quedan en `blocked`.
+- CA: Al crear marca el flujo arranca inmediatamente; el progreso muestra estado por paso y métricas (jobs, runs, conteos); el enriquecimiento de productos no inicia hasta completar catálogo; si se bloquea, el UI informa causa y permite reintentar.
+- Datos: `brands.metadata.onboarding`, `brand_scrape_jobs`, `catalog_runs/items`, `product_enrichment_runs/items`.
+- NF: Polling liviano (auto‑refresh solo mientras esté en `processing`); sin tabla nueva; UX clara en el modal.
+- Riesgos: Step bloqueado por URL inválida o catálogo vacío; mitigación con mensajes claros y reintento manual tras corregir datos.
+- Métricas: Tiempo total de onboarding por marca; % de bloqueos en tech profiler o catálogo.
+- Estado: **done (2026-02-03)**.
+
 ### MC-101 Default OpenAI gpt-5.1 en scrapers y normalización
 - Historia: Como operador, quiero que el modelo por defecto sea gpt-5.1 en scrapers de marcas/tech y normalización, para alinear calidad/costos con la decisión actual.
 - Alcance: Default `OPENAI_MODEL` pasa a `gpt-5.1` en brand scraper, tech profiler y helper OpenAI; actualizar `.env.example`, README y AGENTS.
