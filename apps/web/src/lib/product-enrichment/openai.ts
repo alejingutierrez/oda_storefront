@@ -27,8 +27,7 @@ import {
 } from "@/lib/product-enrichment/utils";
 
 const PRODUCT_ENRICHMENT_PROVIDER = (
-  process.env.PRODUCT_ENRICHMENT_PROVIDER ??
-  (process.env.BEDROCK_INFERENCE_PROFILE_ID ? "bedrock" : "openai")
+  process.env.PRODUCT_ENRICHMENT_PROVIDER ?? "openai"
 ).toLowerCase();
 const OPENAI_MODEL = process.env.PRODUCT_ENRICHMENT_MODEL ?? "gpt-5-mini";
 const BEDROCK_MODEL_ID =
