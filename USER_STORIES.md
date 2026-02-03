@@ -105,6 +105,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Menos tiempo para encontrar marcas por categoria o volumen de catalogo.
 - Estado: **done (2026-01-27)**.
 
+### MC-108 Cola de scraping: encolar solo pendientes + drenar cola existente
+- Historia: Como operador, quiero que el scraping de marcas procese primero la cola existente y solo encole marcas realmente pendientes (sin job completed), para evitar loops y que el contador de pendientes baje.
+- Alcance: `POST /api/admin/brands/scrape` filtra marcas sin job `completed` y excluye en vuelo; el botón “Encolar y ejecutar” procesa primero la cola existente antes de crear un nuevo batch.
+- CA: Al ejecutar el panel, la cola existente se procesa antes del nuevo batch; las marcas ya enriquecidas no se re‑encolan; el contador de pendientes baja cuando se completan los jobs.
+- Datos: `brand_scrape_jobs`, `brands.isActive`.
+- NF: Misma UX, sin cambios en endpoints públicos.
+- Riesgos: Si quedan marcas fallidas, permanecen en pendientes hasta reintento; mitigación con re‑encolado manual.
+- Métricas: Pendientes convergen a 0 (o fallidas) tras batch completo.
+- Estado: **done (2026-02-03)**.
+
 ### MC-101 Default OpenAI gpt-5.1 en scrapers y normalización
 - Historia: Como operador, quiero que el modelo por defecto sea gpt-5.1 en scrapers de marcas/tech y normalización, para alinear calidad/costos con la decisión actual.
 - Alcance: Default `OPENAI_MODEL` pasa a `gpt-5.1` en brand scraper, tech profiler y helper OpenAI; actualizar `.env.example`, README y AGENTS.

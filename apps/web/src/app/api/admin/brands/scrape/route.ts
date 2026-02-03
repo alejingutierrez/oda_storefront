@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
 import { recoverStaleBrandScrapeJobs } from "@/lib/brand-scrape-queue";
@@ -91,22 +92,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_count" }, { status: 400 });
   }
 
-  const inQueue = await prisma.brandScrapeJob.findMany({
-    where: { status: { in: ["queued", "processing"] } },
-    select: { brandId: true },
-  });
-
-  const queuedIds = inQueue.map((job) => job.brandId);
-
-  const brands = await prisma.brand.findMany({
-    where: {
-      isActive: true,
-      id: queuedIds.length ? { notIn: queuedIds } : undefined,
-    },
-    orderBy: { updatedAt: "asc" },
-    take: count,
-    select: { id: true, name: true, slug: true },
-  });
+  const brands = await prisma.$queryRaw<
+    Array<{ id: string; name: string; slug: string }>
+  >(Prisma.sql`
+    WITH active_brands AS (
+        SELECT id, name, slug, "updatedAt"
+        FROM "brands"
+        WHERE "isActive" = true
+      ),
+      completed_brand AS (
+        SELECT DISTINCT "brandId"
+        FROM "brand_scrape_jobs"
+        WHERE status = 'completed'
+      ),
+      inflight_brand AS (
+        SELECT DISTINCT "brandId"
+        FROM "brand_scrape_jobs"
+        WHERE status IN ('queued', 'processing')
+      )
+      SELECT b.id, b.name, b.slug
+      FROM active_brands b
+      LEFT JOIN completed_brand cb ON cb."brandId" = b.id
+      LEFT JOIN inflight_brand ib ON ib."brandId" = b.id
+      WHERE cb."brandId" IS NULL
+        AND ib."brandId" IS NULL
+      ORDER BY b."updatedAt" ASC
+      LIMIT ${count}
+  `);
 
   if (!brands.length) {
     return NextResponse.json({ batchId: null, enqueued: 0, brands: [] });

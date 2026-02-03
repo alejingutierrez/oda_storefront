@@ -83,6 +83,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
   - Check azul cuando una marca tiene revisión manual (guardado en `brands.manualReview`).
 - Panel `/admin/brands/scrape` (scraping):
   - Encolado y ejecución de scraping/enriquecimiento de marcas (1/5/10/25/50).
+  - La cola solo encola marcas sin job `completed`; "Encolar y ejecutar" drena primero la cola existente.
   - Auto‑resume tras recarga y recuperación de jobs atascados.
   - El batch continua aunque haya fallos; se detiene tras 3 errores consecutivos (configurable con `BRAND_SCRAPE_MAX_FAILURES`).
 - Panel `/admin/brands/tech` (tech profiler):

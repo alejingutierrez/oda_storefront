@@ -35,6 +35,9 @@
 - MC-033 | todo | P2 | Legal/compliance y políticas | Términos, privacidad, manejo de robots, procesos de takedown, retención de datos.
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
+## Done (2026-02)
+- MC-108 | done | P1 | Fix cola de scraping de marcas | Encolar solo marcas sin job completed y drenar cola existente desde UI.
+
 ## Done (2026-01)
 - MC-107 | done | P1 | Enrichment: esquema estricto + repair/chunking Bedrock | 1 imagen por variante, repair pass y chunking por variantes; smoke test Bedrock; concurrencia 40 en envs prod.
 - MC-106 | done | P1 | Estilos principal/secundario por styleTags | Tabla style_profiles + trigger + backfill; labels humanos en admin.

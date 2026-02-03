@@ -79,7 +79,7 @@ export default function BrandScrapePanel() {
     async (targetBatchId?: string | null) => {
       try {
         const params = new URLSearchParams();
-        const activeBatch = targetBatchId ?? batchId;
+        const activeBatch = targetBatchId === undefined ? batchId : targetBatchId;
         if (activeBatch) params.set("batchId", activeBatch);
         const res = await fetch(`/api/admin/brands/scrape?${params.toString()}`, { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudo cargar el estado de la cola");
@@ -201,8 +201,23 @@ export default function BrandScrapePanel() {
     setRunning(true);
     setError(null);
     try {
+      const initialStatus = await fetchStatus(null);
+      const existingQueued = initialStatus?.counts?.queued ?? 0;
+      if (existingQueued > 0) {
+        appendLog(`Hay ${existingQueued} jobs en cola. Procesando cola existente...`);
+        const processedExisting = await runBatch(null);
+        appendLog(`Cola existente completada (${processedExisting}).`);
+      }
+
       const enqueueResult = await enqueue();
       if (!enqueueResult || enqueueResult.enqueued === 0) {
+        const afterStatus = await fetchStatus(null);
+        const remainingQueued = afterStatus?.counts?.queued ?? 0;
+        if (remainingQueued > 0) {
+          appendLog(`Aún quedan ${remainingQueued} jobs en cola. Procesándolos...`);
+          const processedRemaining = await runBatch(null);
+          appendLog(`Cola completada (${processedRemaining}).`);
+        }
         setRunning(false);
         return;
       }
