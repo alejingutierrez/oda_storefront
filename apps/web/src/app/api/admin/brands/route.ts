@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
 import { profileBrandTechnology } from "@/lib/brand-tech-profiler";
+import { normalizeSiteUrl } from "@/lib/brand-site";
 
 export const runtime = "nodejs";
 
@@ -318,7 +319,35 @@ export async function POST(req: Request) {
 
   const slug = await ensureUniqueSlug(baseSlug);
 
-  const siteUrl = normalizeString(payload.siteUrl);
+  const siteInfo = normalizeSiteUrl(payload.siteUrl);
+  if (payload.siteUrl && !siteInfo) {
+    return NextResponse.json({ error: "URL de sitio inválida." }, { status: 400 });
+  }
+  const siteUrl = siteInfo?.normalized ?? null;
+  if (siteInfo?.host) {
+    const existing = await prisma.brand.findMany({
+      where: { siteUrl: { not: null } },
+      select: { id: true, name: true, siteUrl: true, isActive: true },
+    });
+    const duplicate = existing.find((brand) => {
+      const host = normalizeSiteUrl(brand.siteUrl)?.host;
+      return host === siteInfo.host;
+    });
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          error: `Ya existe una marca con el dominio ${siteInfo.host}.`,
+          existing: {
+            id: duplicate.id,
+            name: duplicate.name,
+            siteUrl: duplicate.siteUrl,
+            isActive: duplicate.isActive,
+          },
+        },
+        { status: 409 },
+      );
+    }
+  }
   const skipTechProfile = normalizeBoolean(payload.skipTechProfile, false) ?? false;
   let techProfile: Awaited<ReturnType<typeof profileBrandTechnology>> | null = null;
   if (siteUrl && !skipTechProfile) {

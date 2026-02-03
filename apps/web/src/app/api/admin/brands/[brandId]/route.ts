@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { normalizeSiteUrl } from "@/lib/brand-site";
 import { validateAdminRequest } from "@/lib/auth";
 
 const normalizeString = (value: unknown) => {
@@ -222,7 +223,41 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     data.slug = await ensureUniqueSlug(baseSlug, brandId);
   }
 
-  if ("siteUrl" in payload) data.siteUrl = normalizeString(payload.siteUrl);
+  if ("siteUrl" in payload) {
+    const siteInfo = normalizeSiteUrl(payload.siteUrl);
+    const hasSiteValue =
+      payload.siteUrl !== null &&
+      payload.siteUrl !== undefined &&
+      String(payload.siteUrl).trim().length > 0;
+    if (hasSiteValue && !siteInfo) {
+      return NextResponse.json({ error: "URL de sitio inválida." }, { status: 400 });
+    }
+    if (siteInfo?.host) {
+      const existing = await prisma.brand.findMany({
+        where: { siteUrl: { not: null }, NOT: { id: brandId } },
+        select: { id: true, name: true, siteUrl: true, isActive: true },
+      });
+      const duplicate = existing.find((brand) => {
+        const host = normalizeSiteUrl(brand.siteUrl)?.host;
+        return host === siteInfo.host;
+      });
+      if (duplicate) {
+        return NextResponse.json(
+          {
+            error: `Ya existe una marca con el dominio ${siteInfo.host}.`,
+            existing: {
+              id: duplicate.id,
+              name: duplicate.name,
+              siteUrl: duplicate.siteUrl,
+              isActive: duplicate.isActive,
+            },
+          },
+          { status: 409 },
+        );
+      }
+    }
+    data.siteUrl = siteInfo?.normalized ?? null;
+  }
   if ("category" in payload) data.category = normalizeString(payload.category);
   if ("productCategory" in payload) data.productCategory = normalizeString(payload.productCategory);
   if ("market" in payload) data.market = normalizeString(payload.market);

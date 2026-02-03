@@ -897,7 +897,11 @@ export default function BrandDirectoryPanel() {
       });
       if (!res.ok) {
         const errorPayload = await res.json().catch(() => null);
-        throw new Error(errorPayload?.error ?? "No se pudo crear la marca");
+        throw new Error(
+          errorPayload?.message ??
+            errorPayload?.error ??
+            "No se pudo crear la marca",
+        );
       }
       const created = (await res.json()) as { brand: BrandDetail };
       if (!created?.brand?.id) {
