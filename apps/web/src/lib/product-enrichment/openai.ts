@@ -186,8 +186,7 @@ const enrichmentResponseSchema = z.object({
 });
 
 export const productEnrichmentProvider = PRODUCT_ENRICHMENT_PROVIDER;
-export const productEnrichmentModel =
-  PRODUCT_ENRICHMENT_PROVIDER === "bedrock" ? BEDROCK_MODEL_ID : OPENAI_MODEL;
+export const productEnrichmentModel = OPENAI_MODEL;
 
 export type RawEnrichedVariant = {
   variantId: string;
