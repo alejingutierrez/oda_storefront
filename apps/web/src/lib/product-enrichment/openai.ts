@@ -26,9 +26,14 @@ import {
   slugify,
 } from "@/lib/product-enrichment/utils";
 
-const PRODUCT_ENRICHMENT_PROVIDER = (
-  process.env.PRODUCT_ENRICHMENT_PROVIDER ?? "openai"
-).toLowerCase();
+const RAW_PROVIDER = (process.env.PRODUCT_ENRICHMENT_PROVIDER ?? "openai").toLowerCase();
+const PRODUCT_ENRICHMENT_PROVIDER = "openai";
+if (RAW_PROVIDER !== PRODUCT_ENRICHMENT_PROVIDER) {
+  console.warn("[product-enrichment] provider override", {
+    requested: RAW_PROVIDER,
+    effective: PRODUCT_ENRICHMENT_PROVIDER,
+  });
+}
 const OPENAI_MODEL = process.env.PRODUCT_ENRICHMENT_MODEL ?? "gpt-5-mini";
 const BEDROCK_MODEL_ID =
   process.env.BEDROCK_INFERENCE_PROFILE_ID ?? process.env.BEDROCK_MODEL_ID ?? "";

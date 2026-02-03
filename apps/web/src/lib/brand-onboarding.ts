@@ -29,6 +29,12 @@ import {
   type EnrichmentRunSummary,
 } from "@/lib/product-enrichment/run-store";
 import { drainEnrichmentRun } from "@/lib/product-enrichment/processor";
+import {
+  productEnrichmentModel,
+  productEnrichmentPromptVersion,
+  productEnrichmentProvider,
+  productEnrichmentSchemaVersion,
+} from "@/lib/product-enrichment/openai";
 
 export type OnboardingStepKey =
   | "brand_enrich"
@@ -684,6 +690,10 @@ const startProductEnrichStep = async (brandId: string, state: OnboardingState) =
     metadata: {
       mode: "all",
       created_at: new Date().toISOString(),
+      provider: productEnrichmentProvider,
+      model: productEnrichmentModel,
+      prompt_version: productEnrichmentPromptVersion,
+      schema_version: productEnrichmentSchemaVersion,
     },
   });
 

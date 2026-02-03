@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { findLatestRun, summarizeRun } from "@/lib/product-enrichment/run-store";
+import { finalizeRunIfDone } from "@/lib/product-enrichment/processor";
 
 export const runtime = "nodejs";
 
@@ -17,7 +18,11 @@ export async function GET(req: Request) {
   const brandId = url.searchParams.get("brandId") ?? undefined;
   const scope = scopeParam === "brand" || scopeParam === "all" ? scopeParam : brandId ? "brand" : "all";
 
-  const run = await findLatestRun({ scope, brandId });
+  let run = await findLatestRun({ scope, brandId });
+  if (run && run.status === "processing") {
+    await finalizeRunIfDone(run.id);
+    run = await findLatestRun({ scope, brandId });
+  }
   const summary = run ? await summarizeRun(run.id) : null;
   let itemCounts: Record<string, number> | null = null;
   if (run) {

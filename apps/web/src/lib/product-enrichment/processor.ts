@@ -22,7 +22,7 @@ const CONSECUTIVE_ERROR_LIMIT = Math.max(
   Number(process.env.PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT ?? 5),
 );
 
-const finalizeRunIfDone = async (runId: string) => {
+export const finalizeRunIfDone = async (runId: string) => {
   const remaining = await prisma.productEnrichmentItem.count({
     where: {
       runId,
@@ -153,7 +153,7 @@ export const processEnrichmentItemById = async (
 
   let lastStage: string | null = null;
   try {
-    lastStage = "openai";
+    lastStage = productEnrichmentProvider;
     const enriched = await enrichProductWithOpenAI({
       product: {
         id: item.product.id,

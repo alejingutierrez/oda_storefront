@@ -1152,8 +1152,8 @@ export default function BrandDirectoryPanel() {
       return (
         <div className="mt-2 space-y-1 text-xs text-slate-500">
           <p>
-            Productos enriquecidos: {counts?.enriched ?? 0}/{counts?.total ?? 0} · Pendientes:{" "}
-            {counts?.remaining ?? 0}
+            Productos enriquecidos: {counts?.enriched ?? 0}/{counts?.total ?? 0} · Restantes sin
+            enrichment: {counts?.remaining ?? 0}
           </p>
           {summary && (
             <p>

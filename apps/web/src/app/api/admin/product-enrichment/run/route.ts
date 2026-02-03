@@ -4,6 +4,12 @@ import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { enqueueEnrichmentItems, isEnrichmentQueueEnabled } from "@/lib/product-enrichment/queue";
 import {
+  productEnrichmentModel,
+  productEnrichmentPromptVersion,
+  productEnrichmentProvider,
+  productEnrichmentSchemaVersion,
+} from "@/lib/product-enrichment/openai";
+import {
   createRunWithItems,
   findActiveRun,
   listPendingItems,
@@ -204,6 +210,10 @@ export async function POST(req: Request) {
       mode,
       limit: effectiveLimit || null,
       created_at: new Date().toISOString(),
+      provider: productEnrichmentProvider,
+      model: productEnrichmentModel,
+      prompt_version: productEnrichmentPromptVersion,
+      schema_version: productEnrichmentSchemaVersion,
     },
   });
 

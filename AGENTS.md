@@ -236,6 +236,11 @@ Para cada historia (nueva o en curso) se debe:
 7) Actualizar el README del proyecto con cualquier cambio relevante (instalación, variables, comandos, decisiones).
 8) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y registrarla también en `STATUS.md` (resumen global).
 
+## 22) Lecciones recientes (2026-02-03)
+- El enriquecimiento de productos no debe ejecutarse con Bedrock en este proyecto. Forzar `OpenAI` como proveedor efectivo y registrar en cada run `provider/model/prompt_version/schema_version` evita confusiones y facilita auditoría.
+- Los runs pueden quedar “processing” aunque sólo existan fallas terminales (intentos agotados). Debe auto-bloquearse el run y mostrar el conteo de fallas terminales para evitar la sensación de “loop”.
+- En UI, distinguir entre “pendientes de cola” y “productos sin enrichment” reduce inconsistencias de lectura.
+
 ## 22) Lecciones operativas (evitar errores repetidos)
 - **Hooks/TS en React**: no referenciar funciones `const` antes de su declaración. Si un `useEffect` depende de un handler, declarar el handler **antes** o usar `function` declarations.
 - **Prisma JSON**: al persistir en columnas JSON (`brands.metadata`), usar tipos `Prisma.JsonValue` y serializar (`JSON.parse(JSON.stringify(obj))`) para garantizar `InputJsonValue` válido. Evitar `Record<string, unknown>` directo si contiene estructuras anidadas complejas.
