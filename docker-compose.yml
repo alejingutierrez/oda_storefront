@@ -1,0 +1,87 @@
+services:
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: ./Dockerfile
+    container_name: oda_web
+    env_file:
+      - .env
+      - .env.local
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      VERCEL_BLOB_READ_WRITE_TOKEN: ${VERCEL_BLOB_READ_WRITE_TOKEN}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-dev-secret}
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "3080:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    command: "npm run start"
+
+  scraper:
+    build:
+      context: ./services/scraper
+      dockerfile: ./Dockerfile
+    container_name: oda_scraper
+    env_file:
+      - .env
+      - .env.local
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - USER_AGENT=${USER_AGENT:-ODA-Storefront-Scraper/0.1}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('node:net').createConnection(6379, 'redis').on('connect',()=>process.exit(0))\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: ./services/worker
+      dockerfile: ./Dockerfile
+    container_name: oda_worker
+    env_file:
+      - .env
+      - .env.local
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('node:net').createConnection(6379, 'redis').on('connect',()=>process.exit(0))\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: oda_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  redisdata:

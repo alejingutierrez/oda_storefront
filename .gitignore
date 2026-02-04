@@ -1,0 +1,19 @@
+# Root ignores
+.DS_Store
+node_modules
+.env
+.env.local
+Marcas colombianas.xlsx
+# keep the template tracked
+!.env.example
+npm-debug.log*
+yarn-error.log*
+.vercel
+.next
+.turbo
+dist
+coverage
+/apps/web/.next
+/apps/web/node_modules
+/services/*/node_modules
+/services/*/dist

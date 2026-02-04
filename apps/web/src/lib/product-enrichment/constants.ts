@@ -1,0 +1,915 @@
+import { slugify } from "./utils";
+
+const rawCategories = [
+  {
+    label: "Camisetas y tops",
+    subcategories: [
+      "Camiseta manga corta",
+      "Camiseta manga larga",
+      "Camiseta cuello alto / tortuga",
+      "Camisilla / esqueleto (sin mangas)",
+      "Tank top",
+      "Crop top",
+      "Top básico (strap/top tiras)",
+      "Body (bodysuit)",
+      "Polo",
+      "Henley (camiseta con botones)",
+    ],
+  },
+  {
+    label: "Camisas y blusas",
+    subcategories: [
+      "Camisa formal",
+      "Camisa casual",
+      "Camisa de lino",
+      "Camisa denim",
+      "Camisa estampada",
+      "Guayabera",
+      "Blusa manga corta",
+      "Blusa manga larga",
+      "Blusa tipo túnica",
+      "Blusa off-shoulder (hombros descubiertos)",
+      "Blusa cuello alto",
+    ],
+  },
+  {
+    label: "Buzos, hoodies y suéteres",
+    subcategories: [
+      "Hoodie / canguro",
+      "Hoodie con cremallera",
+      "Buzo cuello redondo",
+      "Buzo cuello alto / half-zip",
+      "Suéter tejido",
+      "Cardigan",
+      "Chaleco tejido",
+      "Saco cuello V",
+      "Buzo polar",
+      "Ruana / poncho",
+    ],
+  },
+  {
+    label: "Chaquetas y abrigos",
+    subcategories: [
+      "Chaqueta denim",
+      "Chaqueta tipo cuero (cuero o sintético)",
+      "Bomber",
+      "Parka",
+      "Rompevientos",
+      "Impermeable",
+      "Puffer / acolchada",
+      "Abrigo largo",
+      "Trench / gabardina",
+      "Chaleco acolchado",
+    ],
+  },
+  {
+    label: "Blazers y sastrería",
+    subcategories: [
+      "Blazer clásico",
+      "Blazer entallado",
+      "Blazer oversize",
+      "Saco de vestir",
+      "Smoking / tuxedo jacket",
+      "Chaleco de vestir",
+      "Traje sastre (conjunto blazer + pantalón/falda)",
+      "Pantalón sastre",
+      "Falda sastre",
+    ],
+  },
+  {
+    label: "Pantalones (no denim)",
+    subcategories: [
+      "Pantalón chino",
+      "Pantalón cargo",
+      "Jogger (casual)",
+      "Palazzo",
+      "Culotte",
+      "Leggings (casual)",
+      "Pantalón de lino",
+      "Pantalón de dril",
+      "Pantalón skinny (no denim)",
+      "Pantalón flare (no denim)",
+    ],
+  },
+  {
+    label: "Jeans y denim",
+    subcategories: [
+      "Jean skinny",
+      "Jean slim",
+      "Jean straight",
+      "Jean regular",
+      "Jean mom",
+      "Jean boyfriend",
+      "Jean bootcut",
+      "Jean flare",
+      "Jean wide leg",
+      "Jean \"distressed\" / rotos",
+      "Jean infantil",
+    ],
+  },
+  {
+    label: "Shorts y bermudas",
+    subcategories: [
+      "Short denim",
+      "Short casual (algodón)",
+      "Short de lino",
+      "Bermuda",
+      "Short cargo",
+      "Short de vestir",
+      "Biker short",
+      "Short deportivo",
+      "Short infantil",
+    ],
+  },
+  {
+    label: "Faldas",
+    subcategories: [
+      "Mini falda",
+      "Falda midi",
+      "Falda maxi",
+      "Falda lápiz",
+      "Falda plisada",
+      "Falda skater",
+      "Falda cruzada / wrap",
+      "Falda-short (skort)",
+      "Falda denim",
+      "Falda tutú (niña)",
+    ],
+  },
+  {
+    label: "Vestidos",
+    subcategories: [
+      "Vestido casual",
+      "Vestido camisero",
+      "Vestido de verano",
+      "Vestido de fiesta",
+      "Vestido coctel",
+      "Vestido formal / noche",
+      "Vestido suéter",
+      "Vestido maxi",
+      "Vestido midi",
+      "Vestido mini",
+      "Vestido infantil",
+    ],
+  },
+  {
+    label: "Enterizos y overoles",
+    subcategories: [
+      "Jumpsuit largo",
+      "Romper (jumpsuit corto)",
+      "Overol denim",
+      "Overol en dril/lino",
+      "Jardinera (overall tipo tiras)",
+      "Enterizo deportivo",
+      "Enterizo de fiesta",
+      "Pelele / enterizo bebé",
+    ],
+  },
+  {
+    label: "Conjuntos y sets (2+ piezas)",
+    subcategories: [
+      "Conjunto camiseta + pantalón",
+      "Conjunto camisa + pantalón",
+      "Conjunto falda + top",
+      "Conjunto short + top",
+      "Conjunto \"matching set\" casual",
+      "Conjunto deportivo (2 piezas)",
+      "Conjunto pijama",
+      "Set bebé (2-3 piezas)",
+      "Set formal (chaleco + pantalón / sastre)",
+    ],
+  },
+  {
+    label: "Ropa deportiva y performance",
+    subcategories: [
+      "Camiseta deportiva",
+      "Top deportivo / bra deportivo",
+      "Leggings deportivos",
+      "Shorts deportivos",
+      "Sudadera / pants deportivos",
+      "Chaqueta deportiva",
+      "Conjunto deportivo",
+      "Ropa de compresión",
+      "Ropa de running",
+      "Ropa de ciclismo",
+      "Ropa de fútbol / entrenamiento",
+    ],
+  },
+  {
+    label: "Ropa interior (básica)",
+    subcategories: [
+      "Brasier",
+      "Bralette",
+      "Panty / trusa",
+      "Tanga",
+      "Brasilera",
+      "Bóxer",
+      "Brief",
+      "Boxer largo / \"long leg\"",
+      "Camisilla interior",
+      "Interior infantil",
+    ],
+  },
+  {
+    label: "Lencería y fajas (shapewear)",
+    subcategories: [
+      "Body lencero",
+      "Corsé",
+      "Conjunto lencería",
+      "Babydoll",
+      "Liguero",
+      "Medias lencería / panty lencería",
+      "Faja cintura",
+      "Faja short",
+      "Faja cuerpo completo",
+      "Camiseta / torso moldeador",
+      "Leggings moldeadores",
+    ],
+  },
+  {
+    label: "Pijamas y ropa de descanso (loungewear)",
+    subcategories: [
+      "Pijama 2 piezas",
+      "Pijama enteriza / onesie",
+      "Camisón",
+      "Pijama térmica",
+      "Pantalón pijama",
+      "Short pijama",
+      "Bata / robe",
+      "Set loungewear (jogger + buzo)",
+      "Pijama infantil",
+      "Pijama bebé",
+    ],
+  },
+  {
+    label: "Trajes de baño y playa",
+    subcategories: [
+      "Bikini",
+      "Trikini",
+      "Vestido de baño entero",
+      "Tankini",
+      "Bermuda / bóxer de baño",
+      "Short de baño",
+      "Rashguard / licra UV",
+      "Salida de baño / kaftán",
+      "Pareo",
+      "Traje de baño infantil",
+      "Pañal de agua bebé",
+    ],
+  },
+  {
+    label: "Ropa de bebé (0-24 meses)",
+    subcategories: [
+      "Body manga corta",
+      "Body manga larga",
+      "Pelele / mameluco",
+      "Conjunto bebé (2-3 piezas)",
+      "Pijama bebé",
+      "Vestido bebé",
+      "Pantalón bebé",
+      "Chaqueta/suéter bebé",
+      "Ropa térmica bebé",
+      "Gorritos/manoplas (textil bebé)",
+    ],
+  },
+  {
+    label: "Uniformes y ropa de trabajo/escolar",
+    subcategories: [
+      "Uniforme escolar (diario)",
+      "Uniforme educación física",
+      "Polo de uniforme",
+      "Pantalón de uniforme",
+      "Falda de uniforme",
+      "Bata / delantal",
+      "Uniforme médico (scrubs)",
+      "Overol de trabajo",
+      "Ropa industrial / dotación",
+      "Ropa reflectiva / alta visibilidad",
+    ],
+  },
+  {
+    label: "Accesorios textiles y medias",
+    subcategories: [
+      "Medias / calcetines",
+      "Pantimedias / medias veladas",
+      "Cinturones",
+      "Gorras",
+      "Sombreros",
+      "Bufandas",
+      "Guantes",
+      "Pañuelos / bandanas",
+      "Corbatas",
+      "Pajaritas / moños",
+      "Tirantes",
+      "Chales / pashminas",
+    ],
+  },
+  {
+    label: "Calzado",
+    subcategories: [
+      "Botas",
+      "Botines",
+      "Tenis / sneakers",
+      "Zapatos deportivos",
+      "Zapatos formales",
+      "Sandalias",
+      "Tacones",
+      "Mocasines / loafers",
+      "Balerinas / flats",
+      "Alpargatas / espadrilles",
+      "Zuecos",
+      "Chanclas / flip-flops",
+    ],
+  },
+  {
+    label: "Bolsos y marroquinería",
+    subcategories: [
+      "Cartera / bolso de mano",
+      "Bolso tote",
+      "Bolso bandolera / crossbody",
+      "Mochila",
+      "Morral",
+      "Riñonera / canguro",
+      "Clutch / sobre",
+      "Billetera",
+      "Portadocumentos / porta pasaporte",
+      "Bolso de viaje / duffel",
+    ],
+  },
+  {
+    label: "Gafas y óptica",
+    subcategories: [
+      "Gafas de sol",
+      "Gafas ópticas / formuladas",
+      "Monturas",
+      "Goggles / deportivas",
+      "Lentes de protección",
+    ],
+  },
+  {
+    label: "Joyería y bisutería",
+    subcategories: [
+      "Aretes / pendientes",
+      "Collares",
+      "Pulseras / brazaletes",
+      "Anillos",
+      "Tobilleras",
+      "Dijes / charms",
+      "Broches / prendedores",
+      "Sets de joyería",
+      "Piercings",
+      "Relojes",
+    ],
+  },
+];
+
+const rawCategoryDescriptions: Record<string, string> = {
+  "Camisetas y tops":
+    "Prendas superiores de punto o jersey, casuales y suaves. Incluye camisetas, tank tops, crop tops, bodys y polos. Excluye camisas/blusas de tejido plano y prendas exteriores estructuradas.",
+  "Camisas y blusas":
+    "Prendas superiores de tejido plano, con cuello, botones o puños. Blusas suelen ser más fluidas y con caídas. Excluye camisetas/tops de punto y buzos.",
+  "Buzos, hoodies y suéteres":
+    "Prendas superiores de abrigo en felpa o tejido (punto), con o sin capucha. Incluye hoodie, suéter, cardigan, chaleco tejido. Excluye chaquetas con forro/estructura rígida.",
+  "Chaquetas y abrigos":
+    "Prendas exteriores para abrigo, con cierres, forro o capas. Incluye bomber, parka, impermeable, puffer, trench. Excluye suéteres y blazers.",
+  "Blazers y sastrería":
+    "Prendas estructuradas de sastrería (blazer, saco, chaleco sastre, traje). Telas más rígidas y corte formal. Excluye chaquetas casuales.",
+  "Pantalones (no denim)":
+    "Pantalones de tela que no sean jean/denim (lino, dril, sarga, algodón, vestir). Excluye cualquier prenda en denim.",
+  "Jeans y denim":
+    "Prendas en denim/jean (principalmente pantalones). Incluye variantes de fit. Excluye pantalones de tela no denim.",
+  "Shorts y bermudas":
+    "Prendas inferiores cortas por encima o cerca de la rodilla (short/bermuda). Excluye faldas.",
+  "Faldas":
+    "Prendas inferiores sin entrepierna (mini/midi/maxi). Excluye shorts y skorts cuando tengan entrepierna visible.",
+  "Vestidos":
+    "Prenda completa de una sola pieza que cubre torso y parte inferior (falda integrada). Excluye conjuntos de dos piezas.",
+  "Enterizos y overoles":
+    "Prendas de una pieza con parte superior e inferior unidas y entrepierna (jumpsuit/overol). Excluye vestidos.",
+  "Conjuntos y sets (2+ piezas)":
+    "Conjuntos coordinados de dos o más piezas (mismo set). Excluye prendas sueltas.",
+  "Ropa deportiva y performance":
+    "Prendas técnicas/deportivas para entrenamiento o performance (telas elásticas, compresión, transpirables).",
+  "Ropa interior (básica)":
+    "Prendas interiores de uso diario (brasier, panty, bóxer). Excluye lencería sexy y fajas.",
+  "Lencería y fajas (shapewear)":
+    "Lencería y prendas moldeadoras/compresivas (corsés, bodies lenceros, fajas). Materiales delicados/encaje.",
+  "Pijamas y ropa de descanso (loungewear)":
+    "Prendas para dormir o estar en casa (pijamas, camisones, batas). Telas suaves.",
+  "Trajes de baño y playa":
+    "Swimwear y salidas de playa/piscina (bikini, entero, rashguard, pareo).",
+  "Ropa de bebé (0-24 meses)":
+    "Prendas para bebés de 0 a 24 meses. Tallas y cortes específicos de bebé.",
+  "Uniformes y ropa de trabajo/escolar":
+    "Uniformes y dotación para trabajo o estudio (scrubs, delantales, uniformes escolares).",
+  "Accesorios textiles y medias":
+    "Accesorios de tela/cuero flexible y medias. Incluye bandanas, pañuelos, bufandas, gorras, medias. Excluye joyería, gafas, bolsos y calzado.",
+  Calzado:
+    "Prendas para los pies con suela. Incluye botas/botines, tenis, sandalias, tacones, mocasines y zapatos formales. Excluye accesorios y ropa.",
+  "Bolsos y marroquinería":
+    "Accesorios para transportar objetos (bolsos, carteras, mochilas, riñoneras). Generalmente en cuero, sintético o textil. Excluye joyería, gafas y calzado.",
+  "Gafas y óptica":
+    "Accesorios para ojos/rostro con lentes o monturas. Incluye gafas de sol y ópticas. Excluye gorras/sombreros y joyería.",
+  "Joyería y bisutería":
+    "Accesorios no textiles (metal, piedras, resina) para el cuerpo: aretes, collares, pulseras, anillos, piercings. Excluye bandanas o textiles.",
+};
+
+const rawSubcategoryDescriptions: Record<string, string> = {
+  "Medias / calcetines": "Prenda textil para pies, corta o media.",
+  "Pantimedias / medias veladas": "Media larga elástica/transparente para piernas.",
+  Cinturones: "Accesorio para cintura con hebilla o broche; cuero/textil.",
+  Gorras: "Accesorio textil para cabeza con visera; no sombrero rígido.",
+  Sombreros: "Accesorio para cabeza con ala rígida; no gorra con visera.",
+  Bufandas: "Accesorio textil largo para cuello; tejidos suaves.",
+  Guantes: "Accesorio textil para manos; no joyería.",
+  "Pañuelos / bandanas": "Textil cuadrado/triangular para cuello o cabeza; nunca joyería.",
+  Corbatas: "Accesorio textil formal para cuello (corbata larga).",
+  "Pajaritas / moños": "Corbatín/moño para cuello, generalmente formal.",
+  Tirantes: "Tirantes elásticos para sostener pantalón.",
+  "Chales / pashminas": "Textil grande para cubrir hombros o espalda.",
+  Botas: "Calzado alto que cubre tobillo o pantorrilla.",
+  Botines: "Calzado hasta el tobillo.",
+  "Tenis / sneakers": "Calzado deportivo o casual con suela de goma.",
+  "Zapatos deportivos": "Calzado para deporte/entrenamiento.",
+  "Zapatos formales": "Calzado de vestir (oxford, derby, etc.).",
+  Sandalias: "Calzado abierto con tiras.",
+  Tacones: "Calzado de tacón alto o medio.",
+  "Mocasines / loafers": "Calzado sin cordones, clásico.",
+  "Balerinas / flats": "Calzado plano y ligero.",
+  "Alpargatas / espadrilles": "Calzado de lona con suela de yute.",
+  Zuecos: "Calzado tipo clog, cerrado en punta.",
+  "Chanclas / flip-flops": "Calzado abierto de playa con tira entre dedos.",
+  "Cartera / bolso de mano": "Bolso para mano o antebrazo, tamaño medio.",
+  "Bolso tote": "Bolso grande tipo tote, abierto o con cierre.",
+  "Bolso bandolera / crossbody": "Bolso con correa larga cruzada.",
+  Mochila: "Bolso con dos tiras para espalda.",
+  Morral: "Bolso tipo mochila, a veces más casual/artesanal.",
+  "Riñonera / canguro": "Bolso pequeño para cintura o crossbody.",
+  "Clutch / sobre": "Bolso pequeño tipo sobre, sin correa.",
+  Billetera: "Accesorio para dinero y tarjetas.",
+  "Portadocumentos / porta pasaporte": "Accesorio pequeño para documentos.",
+  "Bolso de viaje / duffel": "Bolso grande para viaje o gimnasio.",
+  "Gafas de sol": "Gafas con lentes oscuros para sol.",
+  "Gafas ópticas / formuladas": "Gafas con receta o lentes transparentes.",
+  Monturas: "Estructura de gafas sin lentes o genérica.",
+  "Goggles / deportivas": "Gafas deportivas o de protección cerrada.",
+  "Lentes de protección": "Gafas de seguridad o protección.",
+  "Aretes / pendientes": "Joyería para orejas (studs, argollas, ear cuffs). No textil.",
+  Collares: "Joyería para cuello (cadenas, gargantillas, collares).",
+  "Pulseras / brazaletes": "Joyería para muñeca o brazo (pulsera, bangle).",
+  Anillos: "Joyería para dedos (anillos).",
+  Tobilleras: "Joyería para tobillo.",
+  "Dijes / charms": "Piezas pequeñas colgantes para cadenas o pulseras.",
+  "Broches / prendedores": "Pieza metálica con pin para fijar prendas.",
+  "Sets de joyería": "Conjunto de piezas (aretes + collar, etc.).",
+  Piercings: "Joyería para perforaciones (barbell, stud).",
+  Relojes: "Accesorio de reloj de pulsera; puede ser metal o cuero.",
+};
+
+const rawMaterialTags = [
+  "Algodón",
+  "Algodón pima",
+  "Lino",
+  "Denim (algodón índigo)",
+  "Dril / sarga (twill)",
+  "Poliéster",
+  "Nylon / poliamida",
+  "Elastano / spandex / lycra",
+  "Viscosa / rayón",
+  "Modal",
+  "Bambú (viscosa de bambú)",
+  "Lana",
+  "Acrílico (tejido sintético tipo lana)",
+  "Cachemira",
+  "Seda",
+  "Satén (como tejido/acabado)",
+  "Gasa / chiffon",
+  "Tul",
+  "Cuero (natural)",
+  "Cuero sintético / PU",
+  "Oro",
+  "Plata",
+  "Bronce",
+  "Cobre",
+  "Otro",
+];
+
+const rawPatternTags = [
+  "Liso / sólido (sin estampado)",
+  "Rayas horizontales",
+  "Rayas verticales",
+  "Cuadros (plaid/tartán)",
+  "Príncipe de Gales",
+  "Pata de gallo (houndstooth)",
+  "Polka dots / lunares",
+  "Animal print (leopardo, cebra, etc.)",
+  "Floral",
+  "Tropical / hawaiano",
+  "Camuflado (camo)",
+  "Tie-dye",
+  "Degradado / ombré",
+  "Geométrico",
+  "Abstracto",
+  "Paisley / cachemira",
+  "Etnico / tribal",
+  "Letras / tipográfico",
+  "Ilustraciones / gráficos (graphic print)",
+  "Bordado (como \"patrón\" visible)",
+  "Otro",
+];
+
+const rawOccasionTags = [
+  "Casual diario",
+  "Casual smart",
+  "Oficina / business casual",
+  "Formal / etiqueta",
+  "Fiesta / noche",
+  "Coctel",
+  "Boda invitado",
+  "Boda playa / resort",
+  "Graduación",
+  "Entrevista de trabajo",
+  "Reunión / evento corporativo",
+  "Cita / date night",
+  "Vacaciones / viaje",
+  "Playa / piscina",
+  "Deportivo / gym",
+  "Running / entrenamiento",
+  "Outdoor / senderismo",
+  "Descanso / estar en casa",
+  "Dormir",
+  "Escolar",
+  "Otro",
+];
+
+export const STYLE_TAGS = [
+  "estetica_minimalista",
+  "estetica_quiet_luxury",
+  "estetica_sastreria_limpia",
+  "estetica_sastreria_clasica",
+  "estetica_creativo_corporativo",
+  "estetica_preppy",
+  "estetica_old_money",
+  "estetica_nautica",
+  "estetica_resortwear",
+  "estetica_streetwear",
+  "estetica_streetwear_clean",
+  "estetica_skate",
+  "estetica_hiphop",
+  "estetica_athleisure",
+  "estetica_sportcore",
+  "estetica_techwear_sutil",
+  "estetica_utilitaria",
+  "estetica_workwear",
+  "estetica_heritage_americana",
+  "estetica_denim_cultura",
+  "estetica_biker",
+  "estetica_grunge",
+  "estetica_punk",
+  "estetica_goth",
+  "estetica_rocker",
+  "estetica_edgy_chic",
+  "estetica_romantica_minimal",
+  "estetica_boho",
+  "estetica_boho_romantico",
+  "estetica_artesanal_contemporanea",
+  "estetica_tropical_boho",
+  "estetica_tenniscore",
+  "estetica_yoga_soft",
+  "estetica_gorpcore",
+  "estetica_normcore",
+  "estetica_vintage_pinup",
+  "estetica_y2k_pop",
+  "estetica_retro_setentas",
+  "estetica_retro_ochentas",
+  "estetica_retro_noventas",
+  "estetica_loungewear_cozy",
+  "vibra_pulida",
+  "vibra_sobria",
+  "vibra_relajada",
+  "vibra_descomplicada",
+  "vibra_lujosa_discreta",
+  "vibra_profesional",
+  "vibra_romantica",
+  "vibra_sensual",
+  "vibra_juguetona",
+  "vibra_energetica",
+  "vibra_rebelde",
+  "vibra_oscura",
+  "vibra_misteriosa",
+  "vibra_artistica",
+  "vibra_aventurera",
+  "vibra_deportiva",
+  "vibra_festivalera",
+  "vibra_nocturna",
+  "vibra_ruda",
+  "vibra_nostalgica",
+  "vibra_fresca",
+  "vibra_ligera",
+  "vibra_calida",
+  "vibra_fria",
+  "vibra_coqueta",
+  "formalidad_gala",
+  "formalidad_formal",
+  "formalidad_coctel",
+  "formalidad_smart_casual",
+  "formalidad_business_casual",
+  "formalidad_casual",
+  "formalidad_deportiva",
+  "contexto_oficina",
+  "contexto_reunion_negocios",
+  "contexto_evento_coctel",
+  "contexto_evento_formal",
+  "contexto_evento_retro",
+  "contexto_fin_de_semana",
+  "contexto_universidad",
+  "contexto_ciudad",
+  "contexto_noche",
+  "contexto_cena",
+  "contexto_fiesta",
+  "contexto_concierto",
+  "contexto_festival",
+  "contexto_playa",
+  "contexto_resort",
+  "contexto_viaje",
+  "contexto_outdoor_urbano",
+  "contexto_senderismo",
+  "contexto_gimnasio",
+  "contexto_running",
+  "contexto_tennis_padel",
+  "contexto_yoga_pilates",
+  "contexto_casa",
+  "paleta_monocromo",
+  "paleta_neutros_frios",
+  "paleta_neutros_calidos",
+  "paleta_neutros_oscuros",
+  "paleta_blancos_crudos",
+  "paleta_tonos_tierra",
+  "paleta_tonos_calidos",
+  "paleta_pasteles",
+  "paleta_colores_vivos",
+  "paleta_acento_neon",
+  "paleta_rojo_negro",
+  "paleta_azul_marino",
+  "paleta_azul_blanco_nautico",
+  "paleta_denim_azul",
+  "paleta_verde_oliva",
+  "paleta_negro_total",
+  "paleta_brillos_metalicos",
+  "paleta_colorblock_ochentero",
+  "paleta_contraste_alto",
+  "paleta_contraste_suave",
+  "silueta_estructurada",
+  "silueta_sastrera",
+  "silueta_relajada",
+  "silueta_oversize",
+  "silueta_boxy",
+  "silueta_slim",
+  "silueta_fluida",
+  "silueta_alargada",
+  "silueta_cropped",
+  "silueta_cintura_marcada",
+  "silueta_tiro_alto",
+  "silueta_tiro_bajo",
+  "silueta_acampanada",
+  "silueta_volumen_superior",
+  "silueta_volumen_inferior",
+  "textura_lino_natural",
+  "textura_algodon_liso",
+  "textura_punto_suave",
+  "textura_felpa_cozy",
+  "textura_denim_rigido",
+  "textura_denim_lavado",
+  "textura_cuero_liso",
+  "textura_cuero_envejecido",
+  "textura_saten_brillante",
+  "textura_gamuza_suave",
+  "textura_lana_fina",
+  "textura_canvas_utilitaria",
+  "textura_nylon_tecnico",
+  "textura_malla_transpirable",
+  "textura_tejido_artesanal",
+  "codigo_logo_invisible",
+  "codigo_logo_protagonista",
+  "codigo_acabado_pulido",
+  "codigo_acabado_mate",
+  "codigo_acabado_brillante",
+  "codigo_desgastado_intencional",
+  "codigo_costuras_contraste",
+  "codigo_herrajes_metalicos",
+  "codigo_cierres_visibles",
+  "codigo_bolsillos_funcionales",
+  "codigo_capas",
+  "codigo_detalle_encaje",
+  "codigo_detalle_flecos",
+  "codigo_detalle_taches",
+  "codigo_detalle_cadenas",
+  "codigo_detalle_recortes",
+  "codigo_detalle_drapeado",
+  "codigo_detalle_lazos",
+  "codigo_vivos_deportivos",
+  "codigo_reflectivos",
+  "grafica_tipografia_urbana",
+  "grafica_ilustracion_pop",
+  "grafica_banda_rock",
+  "grafica_minimalista",
+  "estampado_rayas_nauticas",
+  "estampado_floral_boho",
+  "estampado_tropical",
+  "estampado_cuadros_franela",
+  "estampado_tartan_punk",
+  "estampado_lunares_pinup",
+  "estampado_geometrico_creativo",
+  "estampado_colorblock_ochentas",
+  "estampado_retro_setentas",
+  "estampado_texturas_artesanales",
+  "estampado_liso",
+  "influencia_setentas",
+  "influencia_ochentas",
+  "influencia_noventas",
+  "influencia_y2k",
+  "influencia_rockabilly",
+  "influencia_skate_90s",
+  "influencia_hiphop_2000s",
+  "influencia_minimalismo_2010s",
+  "clima_caluroso_seco",
+  "clima_caluroso_humedo",
+  "clima_templado",
+  "clima_frio_andino",
+  "clima_lluvioso",
+  "clima_capas_ligeras",
+  "clima_capas_gruesas",
+  "clima_ventoso",
+];
+
+export const CATEGORY_OPTIONS = rawCategories.map((entry) => ({
+  label: entry.label,
+  value: slugify(entry.label),
+  subcategories: entry.subcategories.map((sub) => ({
+    label: sub,
+    value: slugify(sub),
+  })),
+}));
+
+export const CATEGORY_VALUES = CATEGORY_OPTIONS.map((entry) => entry.value);
+
+export const CATEGORY_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
+  Object.entries(rawCategoryDescriptions).map(([label, description]) => [
+    slugify(label),
+    description,
+  ]),
+);
+
+export const SUBCATEGORY_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
+  Object.entries(rawSubcategoryDescriptions).map(([label, description]) => [
+    slugify(label),
+    description,
+  ]),
+);
+
+export const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
+  CATEGORY_OPTIONS.map((entry) => [entry.value, entry.label]),
+);
+
+export const SUBCATEGORY_BY_CATEGORY: Record<string, string[]> = CATEGORY_OPTIONS.reduce(
+  (acc, entry) => {
+    acc[entry.value] = entry.subcategories.map((sub) => sub.value);
+    return acc;
+  },
+  {} as Record<string, string[]>,
+);
+
+export const SUBCATEGORY_VALUES = CATEGORY_OPTIONS.flatMap((entry) =>
+  entry.subcategories.map((sub) => sub.value),
+);
+
+export const SUBCATEGORY_LABELS: Record<string, string> = Object.fromEntries(
+  CATEGORY_OPTIONS.flatMap((entry) =>
+    entry.subcategories.map((sub) => [sub.value, sub.label]),
+  ),
+);
+
+export const MATERIAL_TAGS = rawMaterialTags.map((value) => slugify(value));
+export const PATTERN_TAGS = rawPatternTags.map((value) => slugify(value));
+export const OCCASION_TAGS = rawOccasionTags.map((value) => slugify(value));
+
+export const SEASON_OPTIONS = ["Otoño / Invierno", "Primavera / Verano"].map((value) => ({
+  label: value,
+  value: slugify(value),
+}));
+
+export const SEASON_LABELS: Record<string, string> = Object.fromEntries(
+  SEASON_OPTIONS.map((entry) => [entry.value, entry.label]),
+);
+
+export const GENDER_OPTIONS = [
+  "Masculino",
+  "Femenino",
+  "No binario / Unisex",
+  "Infantil",
+].map((value) => ({
+  label: value,
+  value: slugify(value),
+}));
+
+export const GENDER_LABELS: Record<string, string> = Object.fromEntries(
+  GENDER_OPTIONS.map((entry) => [entry.value, entry.label]),
+);
+
+export const FIT_OPTIONS = ["Suelto", "Ajustado", "Muy ajustado", "Oversize", "Normal"].map((value) => ({
+  label: value,
+  value: slugify(value),
+}));
+
+export const FIT_LABELS: Record<string, string> = Object.fromEntries(
+  FIT_OPTIONS.map((entry) => [entry.value, entry.label]),
+);
+
+const styleTagOverrides: Record<string, string> = {
+  estetica_old_money: "Estética old money",
+  estetica_quiet_luxury: "Estética quiet luxury",
+  estetica_streetwear_clean: "Estética streetwear clean",
+  estetica_techwear_sutil: "Estética techwear sutil",
+  estetica_athleisure: "Estética athleisure",
+  estetica_sportcore: "Estética sportcore",
+  estetica_hiphop: "Estética hip hop",
+  estetica_y2k_pop: "Estética Y2K pop",
+  grafica_tipografia_urbana: "Gráfica tipografía urbana",
+  grafica_ilustracion_pop: "Gráfica ilustración pop",
+  grafica_banda_rock: "Gráfica banda rock",
+  grafica_minimalista: "Gráfica minimalista",
+  influencia_y2k: "Influencia Y2K",
+  influencia_skate_90s: "Influencia skate 90s",
+  influencia_hiphop_2000s: "Influencia hip hop 2000s",
+  influencia_minimalismo_2010s: "Influencia minimalismo 2010s",
+};
+
+const wordOverrides: Record<string, string> = {
+  estetica: "Estética",
+  vibra: "Vibra",
+  formalidad: "Formalidad",
+  contexto: "Contexto",
+  paleta: "Paleta",
+  silueta: "Silueta",
+  textura: "Textura",
+  codigo: "Código",
+  grafica: "Gráfica",
+  estampado: "Estampado",
+  influencia: "Influencia",
+  clima: "Clima",
+  sastreria: "sastrería",
+  clasica: "clásica",
+  romantica: "romántica",
+  artistica: "artística",
+  nautica: "náutica",
+  calida: "cálida",
+  fria: "fría",
+  coctel: "cóctel",
+  boho: "boho",
+  y2k: "Y2K",
+  old: "old",
+  money: "money",
+  streetwear: "streetwear",
+  techwear: "techwear",
+  athleisure: "athleisure",
+  sportcore: "sportcore",
+  tenniscore: "tenniscore",
+  gorpcore: "gorpcore",
+  normcore: "normcore",
+  edgy: "edgy",
+  chic: "chic",
+  resortwear: "resortwear",
+};
+
+const titleCase = (value: string) =>
+  value.length ? `${value[0].toUpperCase()}${value.slice(1)}` : value;
+
+export const getStyleTagFriendlyName = (tag: string) => {
+  if (styleTagOverrides[tag]) return styleTagOverrides[tag];
+  const parts = tag.split("_");
+  if (!parts.length) return tag;
+  const prefix = parts[0];
+  const rest = parts.slice(1);
+  const prefixLabel = wordOverrides[prefix] ?? titleCase(prefix);
+  const restLabel = rest
+    .map((word) => wordOverrides[word] ?? word)
+    .map((word, index) => (index === 0 ? word : word))
+    .join(" ");
+  return restLabel ? `${prefixLabel} ${restLabel}` : prefixLabel;
+};
+
+export const STYLE_TAG_FRIENDLY: Record<string, string> = Object.fromEntries(
+  STYLE_TAGS.map((tag) => [tag, getStyleTagFriendlyName(tag)]),
+);
+
+export const MATERIAL_TAG_FRIENDLY: Record<string, string> = Object.fromEntries(
+  rawMaterialTags.map((label) => [slugify(label), label]),
+);
+
+export const PATTERN_TAG_FRIENDLY: Record<string, string> = Object.fromEntries(
+  rawPatternTags.map((label) => [slugify(label), label]),
+);
+
+export const OCCASION_TAG_FRIENDLY: Record<string, string> = Object.fromEntries(
+  rawOccasionTags.map((label) => [slugify(label), label]),
+);

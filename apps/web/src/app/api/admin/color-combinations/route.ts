@@ -1,0 +1,93 @@
+import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { validateAdminRequest } from "@/lib/auth";
+
+export const runtime = "nodejs";
+
+const toInt = (value: string | null, fallback: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+};
+
+const normalizeListParam = (values: string[]) => {
+  const items = values
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return Array.from(new Set(items));
+};
+
+const sortStrings = (values: Array<string | null | undefined>) =>
+  values
+    .filter((value): value is string => Boolean(value && value.trim().length))
+    .map((value) => value.trim())
+    .sort((a, b) => a.localeCompare(b, "es"));
+
+export async function GET(req: Request) {
+  const admin = await validateAdminRequest(req);
+  if (!admin) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const url = new URL(req.url);
+  const page = toInt(url.searchParams.get("page"), 1);
+  const pageSize = Math.min(toInt(url.searchParams.get("pageSize"), 24), 60);
+  const seasons = normalizeListParam(url.searchParams.getAll("season"));
+  const temperatures = normalizeListParam(url.searchParams.getAll("temperature"));
+  const contrasts = normalizeListParam(url.searchParams.getAll("contrast"));
+  const moods = normalizeListParam(url.searchParams.getAll("mood"));
+
+  const where: Prisma.ColorCombinationWhereInput = {};
+
+  if (seasons.length) {
+    where.season = { in: seasons };
+  }
+  if (temperatures.length) {
+    where.temperature = { in: temperatures };
+  }
+  if (contrasts.length) {
+    where.contrast = { in: contrasts };
+  }
+  if (moods.length) {
+    where.mood = { in: moods };
+  }
+
+  const combos = await prisma.colorCombination.findMany({
+    where,
+    include: {
+      colors: {
+        orderBy: { position: "asc" },
+      },
+    },
+    orderBy: [{ imageFilename: "asc" }, { comboKey: "asc" }],
+  });
+
+  const total = combos.length;
+  const offset = (page - 1) * pageSize;
+  const paged = combos.slice(offset, offset + pageSize);
+
+  const [seasonOptions, temperatureOptions, contrastOptions, moodOptions] = await Promise.all([
+    prisma.colorCombination.findMany({ distinct: ["season"], select: { season: true } }),
+    prisma.colorCombination.findMany({ distinct: ["temperature"], select: { temperature: true } }),
+    prisma.colorCombination.findMany({ distinct: ["contrast"], select: { contrast: true } }),
+    prisma.colorCombination.findMany({ distinct: ["mood"], select: { mood: true } }),
+  ]);
+
+  const filters = {
+    seasons: sortStrings(seasonOptions.map((row) => row.season)),
+    temperatures: sortStrings(temperatureOptions.map((row) => row.temperature)),
+    contrasts: sortStrings(contrastOptions.map((row) => row.contrast)),
+    moods: sortStrings(moodOptions.map((row) => row.mood)),
+  };
+
+  return NextResponse.json({
+    items: paged,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    filters,
+  });
+}
