@@ -313,7 +313,7 @@ const bedrockToolSchema = {
             items: {
               type: "object",
               additionalProperties: false,
-              required: ["variant_id", "color_hex", "color_pantone", "fit"],
+              required: ["variant_id", "sku", "color_hex", "color_pantone", "fit"],
               properties: {
                 variant_id: { type: "string" },
                 sku: { type: ["string", "null"] },
@@ -1315,6 +1315,6 @@ export async function enrichProductWithOpenAI(params: {
 }
 
 export const productEnrichmentPromptVersion = "v11";
-export const productEnrichmentSchemaVersion = "v4";
+export const productEnrichmentSchemaVersion = "v5";
 
 export const toSlugLabel = (value: string) => slugify(value);
