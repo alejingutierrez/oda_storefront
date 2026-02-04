@@ -444,7 +444,7 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
             from products p
             join brands b on b.id = p."brandId"
             where p."stylePrimary" = ${styleKey} and p."imageCoverUrl" is not null
-            order by md5(concat(p.id::text, ${seed}::text, ${styleKey}))
+            order by md5(concat(p.id::text, ${seed}::text, ${styleKey}::text))
             limit 6
           `
         );
