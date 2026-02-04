@@ -15,7 +15,7 @@ export type EnrichmentRunSummary = {
   consecutiveErrors?: number;
 };
 
-const MAX_ATTEMPTS = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 3));
+const MAX_ATTEMPTS = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 5));
 
 export const findLatestRun = async (params: { scope: string; brandId?: string | null }) => {
   return prisma.productEnrichmentRun.findFirst({

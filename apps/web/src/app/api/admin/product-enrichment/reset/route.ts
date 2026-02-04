@@ -60,7 +60,7 @@ export async function POST(req: Request) {
       const now = new Date();
       const attemptLimit = Math.max(
         1,
-        Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 3),
+        Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 5),
       );
       const items = await prisma.productEnrichmentItem.updateMany({
         where: {

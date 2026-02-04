@@ -16,7 +16,7 @@ import {
   updateRunAfterItem,
 } from "@/lib/product-enrichment/run-store";
 
-const MAX_ATTEMPTS = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 3));
+const MAX_ATTEMPTS = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 5));
 const CONSECUTIVE_ERROR_LIMIT = Math.max(
   2,
   Number(process.env.PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT ?? 5),
