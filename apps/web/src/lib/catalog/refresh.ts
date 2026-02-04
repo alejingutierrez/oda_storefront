@@ -83,9 +83,9 @@ const parseDate = (value?: string | null) => {
 export const getRefreshConfig = () => {
   const intervalDays = Math.max(1, Number(process.env.CATALOG_REFRESH_INTERVAL_DAYS ?? 7));
   const jitterHours = Math.max(0, Number(process.env.CATALOG_REFRESH_JITTER_HOURS ?? 12));
-  const maxBrands = Math.max(1, Number(process.env.CATALOG_REFRESH_MAX_BRANDS ?? 3));
+  const maxBrands = Math.max(1, Number(process.env.CATALOG_REFRESH_MAX_BRANDS ?? 4));
   const maxRuntimeMs = Math.max(5000, Number(process.env.CATALOG_REFRESH_MAX_RUNTIME_MS ?? 25000));
-  const minGapHours = Math.max(1, Number(process.env.CATALOG_REFRESH_MIN_GAP_HOURS ?? 6));
+  const minGapHours = Math.max(1, Number(process.env.CATALOG_REFRESH_MIN_GAP_HOURS ?? 3));
   const drainOnRun = process.env.CATALOG_REFRESH_DRAIN_ON_RUN === "true";
   const autoRecover = process.env.CATALOG_REFRESH_AUTO_RECOVER !== "false";
   const recoverMaxRuns = Math.max(

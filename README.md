@@ -176,7 +176,11 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - `POST /api/admin/product-enrichment/process-item`: procesa item (body: `{ itemId }`).
 
 ## Cron en Vercel
-- Configurado en `vercel.json` para ejecutar `/api/admin/brands/scrape/cron` cada 5 minutos.
+- Configurado en `vercel.json`.
+- `/api/admin/brands/scrape/cron` cada 5 minutos.
+- `/api/admin/catalog-extractor/drain` cada 1 minuto.
+- `/api/admin/product-enrichment/drain` cada 1 minuto.
+- `/api/admin/catalog-refresh/cron` cada 30 minutos.
 - El endpoint acepta invocaciones de cron (User-Agent `vercel-cron`) o `ADMIN_TOKEN` en `Authorization`.
 
 ## CI/CD y Git
