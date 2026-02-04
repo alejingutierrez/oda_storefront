@@ -414,6 +414,51 @@ const recoverEnrichmentRuns = async (config: ReturnType<typeof getRefreshConfig>
   }
 };
 
+const reconcileStaleRefreshStates = async () => {
+  const rows = await prisma.$queryRaw<
+    { brandId: string; runId: string | null; startedAt: Date | null }[]
+  >(Prisma.sql`
+    SELECT b.id as "brandId", r.id as "runId", r."startedAt" as "startedAt"
+    FROM "brands" b
+    LEFT JOIN LATERAL (
+      SELECT r2.id, r2."startedAt"
+      FROM "catalog_runs" r2
+      WHERE r2."brandId" = b.id
+      ORDER BY r2."updatedAt" DESC
+      LIMIT 1
+    ) r ON true
+    WHERE (
+      (b."metadata"->'catalog_refresh'->>'lastStatus') = 'processing'
+      OR (b."metadata"->'catalog_refresh'->>'lastError') ILIKE '%missing FROM-clause entry for table \"p\"%'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM "catalog_runs" r3
+      WHERE r3."brandId" = b.id
+        AND r3.status IN ('processing', 'paused', 'blocked')
+    )
+    AND r.id IS NOT NULL
+    LIMIT 50
+  `);
+
+  for (const row of rows) {
+    if (!row.runId || !row.startedAt) continue;
+    const failedCount = await prisma.catalogItem.count({
+      where: { runId: row.runId, status: "failed" },
+    });
+    try {
+      await finalizeRefreshForRun({
+        brandId: row.brandId,
+        runId: row.runId,
+        startedAt: row.startedAt,
+        status: failedCount > 0 ? "failed" : "completed",
+        lastError: failedCount > 0 ? "catalog_failed_items" : null,
+      });
+    } catch (error) {
+      console.warn("catalog.refresh.reconcile_failed", row.brandId, row.runId, error);
+    }
+  }
+};
+
 const getProductsMissingEnrichment = async (
   brandId: string,
   startedAt: Date,
@@ -509,6 +554,7 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
 
   await recoverCatalogRuns(config);
   await recoverEnrichmentRuns(config);
+  await reconcileStaleRefreshStates();
 
   const brands = await prisma.brand.findMany({
     where: {
