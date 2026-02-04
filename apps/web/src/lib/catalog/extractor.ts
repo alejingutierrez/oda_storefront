@@ -511,7 +511,7 @@ const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, 
     currency: currencyValue ?? null,
     sourceUrl: raw.sourceUrl ?? null,
     imageCoverUrl,
-    metadata: mergedMetadata,
+    metadata: mergedMetadata as Prisma.InputJsonValue,
   };
 
   if (existing) {
