@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
 
@@ -264,19 +265,9 @@ export async function GET(req: NextRequest, context: RouteContext) {
     paletteRows.map((row) => [row.hex.toUpperCase(), row]),
   );
 
-  const standardIds = Array.from(
-    new Set(
-      paletteRows
-        .map((row) => row.standardColorId)
-        .filter((value): value is string => Boolean(value)),
-    ),
-  );
-  const standardRows = standardIds.length
-    ? await prisma.standardColor.findMany({
-        where: { id: { in: standardIds } },
-        select: { id: true, labL: true, labA: true, labB: true },
-      })
-    : [];
+  const standardRows = await prisma.standardColor.findMany({
+    select: { id: true, hex: true, labL: true, labA: true, labB: true },
+  });
   const standardMap = new Map(
     standardRows.map((row) => [row.id, { L: row.labL, a: row.labA, b: row.labB }]),
   );
@@ -330,32 +321,39 @@ export async function GET(req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "color_not_found" }, { status: 404 });
   }
 
-  const matches = await prisma.variantColorCombinationMatch.findMany({
-    where: { combinationId: id },
-    orderBy: { score: "asc" },
-    include: {
-      variant: {
-        select: {
-          id: true,
-          images: true,
-          product: {
-            select: {
-              id: true,
-              name: true,
-              category: true,
-              subcategory: true,
-              gender: true,
-              imageCoverUrl: true,
-              brand: { select: { name: true } },
-            },
-          },
-        },
-      },
-    },
-  });
+  const colorThreshold = Number(process.env.COLOR_MATCH_COLOR_THRESHOLD ?? 26);
+  const targetLab = targetColor.lab ?? (targetColor.hex ? hexToLab(targetColor.hex) : null);
+  const standardColors = standardRows
+    .map((row) => ({
+      id: row.id,
+      hex: normalizeHex(row.hex) ?? null,
+      lab: { L: row.labL, a: row.labA, b: row.labB },
+    }))
+    .filter((row) => row.hex);
 
-  const variantIds = matches.map((match) => match.variantId);
-  if (!variantIds.length) {
+  const distanceByHex = new Map<string, number>();
+  const allowedHexes: string[] = [];
+  if (targetLab) {
+    for (const color of standardColors) {
+      if (!color.hex) continue;
+      const distance = deltaE2000(targetLab, color.lab);
+      if (distance <= colorThreshold) {
+        allowedHexes.push(color.hex);
+        distanceByHex.set(color.hex, distance);
+      }
+    }
+  }
+  if (!allowedHexes.length && targetColor.hex) {
+    const fallbackHex = normalizeHex(targetColor.hex) ?? targetColor.hex;
+    allowedHexes.push(fallbackHex);
+    distanceByHex.set(fallbackHex, 0);
+  }
+
+  const roleKey = normalizeRole(targetColor.role);
+  const allowList = roleKey ? categoryAllowListByRole[roleKey] : null;
+  const allowedCategories = allowList ? Array.from(allowList) : Array.from(categoryAllowListAll);
+
+  if (!allowedHexes.length || !allowedCategories.length) {
     return NextResponse.json({
       combinationId: id,
       color: mapColorSummary({
@@ -374,20 +372,43 @@ export async function GET(req: NextRequest, context: RouteContext) {
     });
   }
 
-  const vectors = await prisma.variantColorVector.findMany({
-    where: { variantId: { in: variantIds } },
-    select: { variantId: true, hex: true, labL: true, labA: true, labB: true },
-  });
+  const rows = await prisma.$queryRaw<
+    Array<{
+      variantId: string;
+      productId: string;
+      images: string[] | null;
+      productName: string | null;
+      category: string | null;
+      subcategory: string | null;
+      gender: string | null;
+      imageCoverUrl: string | null;
+      brandName: string | null;
+      hex: string;
+    }>
+  >(
+    Prisma.sql`
+      SELECT
+        m."variantId" as "variantId",
+        v."productId" as "productId",
+        v.images as images,
+        p.name as "productName",
+        p.category as category,
+        p.subcategory as subcategory,
+        p.gender as gender,
+        p."imageCoverUrl" as "imageCoverUrl",
+        b.name as "brandName",
+        vec.hex as hex
+      FROM "variant_color_combination_matches" m
+      JOIN "variant_color_vectors" vec ON vec."variantId" = m."variantId"
+      JOIN "variants" v ON v.id = m."variantId"
+      JOIN "products" p ON p.id = v."productId"
+      LEFT JOIN "brands" b ON b.id = p."brandId"
+      WHERE m."combinationId" = ${id}
+        AND vec.hex IN (${Prisma.join(allowedHexes)})
+        AND p.category IN (${Prisma.join(allowedCategories)})
+    `,
+  );
 
-  const vectorMap = new Map<string, { hex: string; lab: { L: number; a: number; b: number } }[]>();
-  for (const vector of vectors) {
-    const lab = { L: vector.labL, a: vector.labA, b: vector.labB };
-    const list = vectorMap.get(vector.variantId) ?? [];
-    list.push({ hex: vector.hex, lab });
-    vectorMap.set(vector.variantId, list);
-  }
-
-  const colorThreshold = Number(process.env.COLOR_MATCH_COLOR_THRESHOLD ?? 26);
   const productMap = new Map<
     string,
     {
@@ -402,51 +423,35 @@ export async function GET(req: NextRequest, context: RouteContext) {
       subcategory: string | null;
     }
   >();
-  let variantCount = 0;
+  const variantSet = new Set<string>();
 
-  for (const match of matches) {
-    const variant = match.variant;
-    if (!variant) continue;
-    const vectorsForVariant = vectorMap.get(match.variantId) ?? [];
-    if (!vectorsForVariant.length) continue;
-
-    const product = variant.product;
-    const productId = product?.id ?? match.variantId;
-    const brandName = product?.brand?.name ?? "";
-    const name = product?.name ?? "Producto";
-    const imageUrl = variant.images?.[0] ?? product?.imageCoverUrl ?? null;
-    const productCategory = product?.category?.trim().toLowerCase() ?? null;
-
-    const roleKey = normalizeRole(targetColor.role);
-    const allowList = roleKey ? categoryAllowListByRole[roleKey] : null;
-    if (!productCategory || !categoryAllowListAll.has(productCategory)) continue;
-    if (allowList && !allowList.has(productCategory)) continue;
-    if (!targetColor.lab) continue;
-
-    let minDistance = Number.POSITIVE_INFINITY;
-    for (const vector of vectorsForVariant) {
-      const distance = deltaE2000(targetColor.lab, vector.lab);
-      if (distance < minDistance) minDistance = distance;
-    }
-
-    if (minDistance > colorThreshold) continue;
-    variantCount += 1;
-
+  for (const row of rows) {
+    const hex = normalizeHex(row.hex) ?? row.hex;
+    const distance = distanceByHex.get(hex);
+    if (distance === undefined) continue;
+    variantSet.add(row.variantId);
+    const productId = row.productId ?? row.variantId;
+    const imageUrl =
+      (Array.isArray(row.images) && row.images.length ? row.images[0] : null) ??
+      row.imageCoverUrl ??
+      null;
     const existing = productMap.get(productId);
-    if (!existing || minDistance < existing.distance) {
+    if (!existing || distance < existing.distance) {
       productMap.set(productId, {
         productId,
-        variantId: variant.id,
-        name,
-        brand: brandName,
+        variantId: row.variantId,
+        name: row.productName ?? "Producto",
+        brand: row.brandName ?? "",
         imageUrl,
-        distance: minDistance,
-        gender: product?.gender ?? null,
-        category: product?.category ?? null,
-        subcategory: product?.subcategory ?? null,
+        distance,
+        gender: row.gender ?? null,
+        category: row.category ?? null,
+        subcategory: row.subcategory ?? null,
       });
     }
   }
+
+  const variantCount = variantSet.size;
 
   const allItems = Array.from(productMap.values()).sort((a, b) => a.distance - b.distance);
   const genderOptions = new Set<string>();
