@@ -175,8 +175,11 @@ export default async function Home() {
                 </span>
               </div>
               <div className="mt-6 grid grid-cols-4 gap-3">
-                {combo.colors.map((color) => (
-                  <div key={color.id} className="flex flex-col gap-2">
+                {combo.colors.map((color, index) => (
+                  <div
+                    key={`${combo.id}-${color.hex}-${index}`}
+                    className="flex flex-col gap-2"
+                  >
                     <div
                       className="h-14 w-full rounded-xl border border-[color:var(--oda-border)]"
                       style={{ backgroundColor: color.hex }}
