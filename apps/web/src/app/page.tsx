@@ -11,8 +11,8 @@ export default function Home() {
             recomendaciones.
           </h1>
           <p className="max-w-3xl text-lg text-slate-700">
-            Plataforma headless en Next.js + Vue Storefront, scrapers
-            dockerizados, ingestión con GPT-5.1 en JSON mode y catálogo
+            Plataforma headless en Next.js + Vue Storefront, scrapers y workers
+            como servicios Node, ingestión con GPT-5.1 en JSON mode y catálogo
             normalizado en Neon + pgvector. Todo preparado para despliegue en
             Vercel y pipelines de recomendación.
           </p>
@@ -23,7 +23,7 @@ export default function Home() {
             <h2 className="text-xl font-semibold">Estado actual</h2>
             <ul className="mt-3 space-y-2 text-sm text-slate-700">
               <li>✓ Estructura base Next.js (App Router, TS, Tailwind)</li>
-              <li>✓ Docker compose con web, scraper, worker, Postgres/pgvector, Redis</li>
+              <li>✓ Servicios web/scraper/worker listos para correr sin Docker</li>
               <li>✓ Placeholders de scraper y worker listos para extender</li>
             </ul>
           </div>

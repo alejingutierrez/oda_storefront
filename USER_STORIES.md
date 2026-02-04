@@ -1,6 +1,6 @@
 # Historias de Usuario · ODA Storefront
 
-Basadas en `AGENTS.md` y `BACKLOG.md`. Estructuradas por fase (F0–F3), stack: Next.js + Vue Storefront en Vercel, BFF/API en Next, scrapers/workers dockerizados, Neon+pgvector, Vercel Blob, OpenAI GPT-5.1 JSON mode, Wompi, Redis/colas.
+Basadas en `AGENTS.md` y `BACKLOG.md`. Estructuradas por fase (F0–F3), stack: Next.js + Vue Storefront en Vercel, BFF/API en Next, scrapers/workers como servicios Node, Neon+pgvector, Vercel Blob, OpenAI GPT-5.1 JSON mode, Wompi, Redis/colas.
 
 Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA), datos, no funcionales (NF), riesgos/mitigación, métricas/telemetría.
 
@@ -24,7 +24,17 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: Arranque <2 min en laptop típica; comandos reproducibles sin pasos manuales.
 - Riesgos: Puertos ocupados; mitigado cambiando host a 3080 y healthchecks para detectar caídas.
 - Métricas: Éxito de `docker-compose up`, tiempo de arranque, health status de servicios.
-- Estado: **done (2026-01-15)**.
+- Estado: **done (2026-01-15), retirado (2026-02-04)**.
+
+### MC-112 Des-dockerizar entorno local
+- Historia: Como dev/operador, quiero eliminar Docker del flujo local para simplificar ejecución y operar todo con procesos Node.
+- Alcance: Remover `docker-compose.yml`, Dockerfiles y `.dockerignore`; actualizar documentación y mensajes UI que asumen Docker; dejar comandos de ejecución local con npm para web/scraper/worker.
+- CA: No existen artefactos Docker en el repo; README/AGENTS/Backlog/User Stories reflejan ejecución sin Docker; servicios se pueden iniciar con `npm run dev` en cada carpeta.
+- Datos: `.env` con URLs remotas (Neon/Redis).
+- NF: Documentación clara y coherente; sin referencias obsoletas a Docker.
+- Riesgos: Falta de DB/Redis locales; mitigado usando Neon/Upstash.
+- Métricas: Menos fricción para levantar local (tiempo de arranque, pasos manuales).
+- Estado: **done (2026-02-04)**.
 
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
@@ -178,7 +188,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 ### MC-104 Enriquecimiento productos con Claude (Bedrock)
 - Historia: Como operador, quiero que el enriquecimiento de productos use Claude Sonnet 4.5 vía Bedrock, sin afectar el resto del pipeline OpenAI, para mejorar calidad/costo en esta etapa específica.
 - Alcance: `product-enrichment` consume Bedrock con inference profile (`BEDROCK_INFERENCE_PROFILE_ID`), arma payload con texto e imágenes (base64) y valida JSON; se mantiene OpenAI para otros flujos; metadata guarda `provider` y `model`.
-- CA: Con `PRODUCT_ENRICHMENT_PROVIDER=bedrock` (o `BEDROCK_INFERENCE_PROFILE_ID` definido) el enriquecimiento usa Bedrock y pasa validación; con `PRODUCT_ENRICHMENT_PROVIDER=openai` sigue usando OpenAI; build y Docker pasan.
+- CA: Con `PRODUCT_ENRICHMENT_PROVIDER=bedrock` (o `BEDROCK_INFERENCE_PROFILE_ID` definido) el enriquecimiento usa Bedrock y pasa validación; con `PRODUCT_ENRICHMENT_PROVIDER=openai` sigue usando OpenAI; build pasa.
 - Datos: `products`, `variants`, `product_enrichment_runs/items`, env `AWS_*` y `BEDROCK_*`.
 - NF: Retries y backoff existentes; timeout de imágenes; tamaño máximo 4MB por imagen y tipos `jpeg/png/webp`.
 - Riesgos: Latencia/costos por imágenes; mitigación con límite `PRODUCT_ENRICHMENT_MAX_IMAGES` y sin envío cuando no hay imágenes válidas.
@@ -1014,9 +1024,8 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 ---
 **Protocolo al desarrollar cualquier historia**  
 0) Pedir al solicitante requisitos previos: credenciales/API keys, definiciones o datos faltantes, accesos (Vercel, Neon, Wompi, Blob), variables de entorno.  
-1) Rebuild de contenedores/docker tras los cambios.  
-2) Escuchar la salida del rebuild y corregir errores.  
-3) Hacer push a la rama de trabajo.  
-4) Esperar y revisar el build en Vercel hasta que termine correctamente (si falla, diagnosticar y corregir).  
-5) Actualizar el README con cambios relevantes.  
-6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y `STATUS.md` (resumen).
+1) Levantar servicios locales necesarios (web/scraper/worker) y revisar logs.  
+2) Hacer push a la rama de trabajo.  
+3) Esperar y revisar el build en Vercel hasta que termine correctamente (si falla, diagnosticar y corregir).  
+4) Actualizar el README con cambios relevantes.  
+5) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y `STATUS.md` (resumen).

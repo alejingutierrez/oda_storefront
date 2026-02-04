@@ -25,14 +25,14 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 ## 4) Arquitectura de alto nivel
 - **Front web**: Vue Storefront sobre Next.js (usando adaptadores de VSF; SSR/ISR en Vercel). UI pública + portal admin (rutas protegidas) + landing.
 - **BFF/API**: Next.js (app router, API routes o server actions) actuando como backend principal: autenticación, orquestación de catálogos, endpoints de búsqueda y recomendaciones, billing, webhooks.
-- **Middleware de orquestación**: capa de colas y workers (p.ej., Redis/Upstash + workers en contenedores) para scraping, ingestión IA, enriquecimiento y tareas programadas.
-- **Scraper service**: microservicio dockerizado con rotación de proxies, manejo de robots, parsers específicos por marca y fallback genérico; emite eventos de cambio (stock/precio/nuevos productos). Incluye módulo de descubrimiento de sitemap y crawler de respaldo.
+- **Middleware de orquestación**: capa de colas y workers (p.ej., Redis/Upstash + procesos Node en runners dedicados) para scraping, ingestión IA, enriquecimiento y tareas programadas.
+- **Scraper service**: servicio Node con rotación de proxies, manejo de robots, parsers específicos por marca y fallback genérico; emite eventos de cambio (stock/precio/nuevos productos). Incluye módulo de descubrimiento de sitemap y crawler de respaldo.
 - **Ingestión IA**: jobs que envían HTML/JSON crudo + imágenes a OpenAI GPT-5.1 (JSON mode) para obtener objetos normalizados, captions y clasificación semántica; refuerzo con pocas tomas a modelos de visión para atributos visuales finos.
 - **Recomendador**: servicio que mantiene embeddings (texto/imágenes) y modelos colaborativos; expone API para similares, outfits sugeridos y re-rank personalizado.
 - **Storage**: Neon Postgres (rama prod/stg) para datos transaccionales; extensiones recomendadas: `pgvector` para embeddings, `postgis` opcional para geodatos. Vercel Blob para imágenes generadas/derivadas y assets de correo.
 - **CDN/Edge**: Vercel para caché de páginas y APIs con revalidación; headers de `stale-while-revalidate` para catálogo público.
 - **Observabilidad**: logging estructurado, métricas, trazas; panel de salud de scrapers y colas.
-- **Docker**: todos los servicios con `Dockerfile` y `docker-compose` para local. Deploy en Vercel para front/BFF; workers y scrapers pueden ir a contenedores en un runner dedicado (ej. Fly.io, ECS, Railway) con cron propio.
+- **Ejecución local**: servicios web/scraper/worker se corren como procesos Node (sin Docker por ahora). Deploy en Vercel para front/BFF; workers y scrapers pueden ir a runners dedicados con cron propio.
 
 ### Diagrama textual de flujos
 1) Scheduler → Encola jobs de scraping por marca/endpoint (prioridad basada en frescura/rotación).
@@ -102,7 +102,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 
 ## 11) Infra y despliegue
 - **Front/BFF**: Vercel (Next.js + Vue Storefront). ISR para catálogo; API Routes para endpoints rápidos.
-- **Workers/Scrapers**: contenedores dockerizados con scheduler propio (cron/Temporal/BullMQ). Separar de Vercel porque scrapers y procesamientos largos no caben en lambdas.
+- **Workers/Scrapers**: procesos Node con scheduler propio (cron/Temporal/BullMQ). Separar de Vercel porque scrapers y procesamientos largos no caben en lambdas.
 - **Workers (cola catálogo/enriquecimiento)**: asegurar que `CATALOG_WORKER_API_URL` y `PRODUCT_ENRICHMENT_WORKER_API_URL` apunten al deployment vigente; reiniciar workers tras cambios en `apps/web` para evitar versiones antiguas que sobrescriban enriquecimiento.
 - **Base de datos**: Neon Postgres; ramas `main` (prod) y `stg`; usar pooling (Neon Serverless Driver) y pgvector.
 - **Guardia de enriquecimiento (DB)**: trigger `preserve_product_enrichment` evita que actualizaciones de catálogo borren `metadata.enrichment` y campos enriquecidos. Para desactivar, `DROP TRIGGER preserve_product_enrichment ON "products";` y `DROP FUNCTION preserve_product_enrichment();`.
@@ -110,7 +110,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - **Mensajería**: Redis/Upstash para colas; opcional Kafka si crece el throughput.
 - **CI/CD**: GitHub Actions para lint/tests/build, push a Vercel y al registro de contenedores.
 - **Git**: trabajar siempre sobre `main`; no crear ramas nuevas salvo solicitud explícita.
-- **Docker**: `docker-compose` para local (db, redis, scraper, api, admin-ui). Variables en `.env.local` no versionadas.
+- **Local**: correr `apps/web`, `services/scraper` y `services/worker` con npm. DB/Redis remotos; variables en `.env.local` no versionadas.
 - **FinOps**: límites diarios de tokens OpenAI por ambiente; tableros de costo por marca y por etapa (scrape → IA → upsert); caché de inferencias si no hay cambios.
 
 ## 12) Seguridad y cumplimiento
@@ -126,7 +126,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - Panel de calidad de datos: campos faltantes, duplicados, desviaciones de precio/stock, tasa de parseo fallido. Dashboard de salud de prompts (error rate, tiempo, costo).
 
 ## 14) Roadmap sugerido
-- Fase 0: bootstrap repos, Docker compose, esquema inicial Postgres, conexión a OpenAI, primer scraper (1 marca), flujo E2E hasta mostrar producto en front.
+- Fase 0: bootstrap repos, esquema inicial Postgres, conexión a OpenAI, primer scraper (1 marca), flujo E2E hasta mostrar producto en front.
 - Fase 1: taxonomía fija, pgvector, búsqueda básica, 10–20 marcas, admin mínimo, anuncios básicos, dashboards de scraping.
 - Fase 2: recomendaciones proactivas, alertas, Wompi planes, try-on MVP, 100+ marcas, observabilidad completa, versionado de prompts en producción.
 - Fase 3: 500 marcas, escalado de scraping, optimización de costos, experimentos A/B de ranking, segmentación por estilo/ocasión, acuerdos con marcas clave.
@@ -239,14 +239,12 @@ Mantener este archivo actualizado a medida que se decidan tecnologías, proveedo
 ## 21) Protocolo obligatorio al trabajar historias de usuario
 Para cada historia (nueva o en curso) se debe:
 0) Pedir al solicitante requisitos previos: credenciales/API keys necesarias, definiciones o datos faltantes para contexto, accesos a Vercel/Neon/Wompi/Blob, y cualquier variable de entorno requerida.
-1) Rebuild de contenedores/docker tras los cambios.
-2) Escuchar la salida del rebuild y corregir errores si aparecen.
-3) Revisar logs de Docker (web/scraper/worker) y confirmar que queden en estado saludable.
-4) Hacer push a la rama de trabajo.
-5) Esperar y revisar el build en Vercel hasta su finalización; si falla, diagnosticar y corregir.
-6) Revisar logs de Vercel del deploy resultante para confirmar que no hay errores en runtime.
-7) Actualizar el README del proyecto con cualquier cambio relevante (instalación, variables, comandos, decisiones).
-8) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y registrarla también en `STATUS.md` (resumen global).
+1) Levantar servicios locales necesarios (web/scraper/worker) y revisar logs; corregir errores si aparecen.
+2) Hacer push a la rama de trabajo.
+3) Esperar y revisar el build en Vercel hasta su finalización; si falla, diagnosticar y corregir.
+4) Revisar logs de Vercel del deploy resultante para confirmar que no hay errores en runtime.
+5) Actualizar el README del proyecto con cualquier cambio relevante (instalación, variables, comandos, decisiones).
+6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y registrarla también en `STATUS.md` (resumen global).
 
 ## 22) Integridad del repositorio (lecciones aprendidas)
 - Antes de hacer push, verificar que el árbol de git no esté vacío: `git ls-files` debe devolver archivos, y `apps/web/package.json` debe existir en git.

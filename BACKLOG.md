@@ -2,7 +2,7 @@
 
 ## Now (F0 – bootstrap E2E mínimo)
 - MC-005 | todo | P0 | Primer scraper E2E | Descubrir sitemap marca piloto, parsear, enviar a GPT-5.1, upsert DB, ficha en VSF + ISR.
-- MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build contenedores básicos.
+- MC-007 | todo | P1 | CI lint/test smoke | GitHub Actions: lint, type-check, unit smoke; build base.
 - MC-008 | todo | P1 | Observabilidad mínima | Logging estructurado, health checks, traces básicos; dashboard inicial de servicios.
 
 ## Next (F1 – primeras capacidades)
@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-02)
+- MC-112 | done | P1 | Des-dockerizar repo | Eliminar Dockerfiles/compose y actualizar docs para ejecución local con npm.
 - MC-111 | done | P1 | Paleta 200 + matching estandarizado de combinaciones | `color_combinations.colorsJson` + paleta 200 en `color_combination_colors`; matching 200→60 con standard colors y rebuild de relaciones.
 - MC-108 | done | P1 | Fix cola de scraping de marcas | Encolar solo marcas sin job completed y drenar cola existente desde UI.
 - MC-109 | done | P1 | Onboarding de marca en modal | Crear marca inicia pipeline (enrich → tech → catálogo → productos) con barra de progreso y endpoints onboarding.
@@ -106,7 +107,7 @@
 - MC-006 | done | P1 | Autenticación y roles base | Login admin (email/password + cookie), ruta /admin sin /admin/login, seed admin en Neon, middleware sólo en /api/normalize.
 - MC-004 | done | P0 | Conexión OpenAI GPT-5.2 JSON mode | Helper con retries/validación Zod, endpoint `/api/normalize`, middleware Bearer (ADMIN_TOKEN/NEXTAUTH_SECRET), carpeta `/admin` base; README documentado.
 - MC-003 | done | P1 | Esquema Neon + migraciones | Prisma schema con brands/stores/products/variants/price&stock history/assets/events/taxonomy/announcements/users; pgvector habilitado; migración `20260115125012_init_schema`.
-- MC-002 | done | P1 | Docker compose local | Servicios web/scraper/worker, Postgres pgvector, Redis; healthchecks; puerto host 3080; `.env.example` alineado con Vercel; stack sube con `docker-compose up -d`.
+- MC-002 | done | P1 | Docker compose local (retirado 2026-02) | Servicios web/scraper/worker, Postgres pgvector, Redis; healthchecks; puerto host 3080; `.env.example` alineado con Vercel; stack sube con `docker-compose up -d`.
 - MC-001 | done | P1 | Estructura base repo y convenciones | Next app TS/Tailwind en apps/web, estructura servicios scraper/worker, .gitignore, .env.example, docker-compose base, README creado.
 - MC-036 | done | P1 | Directorio de marcas admin | Grid 3x5, modal detalle, CRUD marcas, filtros/paginación en /admin/brands; endpoints CRUD en /api/admin/brands.
 - MC-037 | done | P1 | Resiliencia scraping admin | Re‑encolar jobs atascados, auto‑resume tras recarga, separación de /admin/brands y /admin/brands/scrape con menú lateral.
@@ -115,4 +116,4 @@
 - MC-040 | done | P1 | Re‑enriquecimiento por marca | Método 2 (14 fuentes, 20k chars) desde card con progreso mini.
 
 ---
-**Instrucción operativa**: al abordar cualquier historia de este backlog: (0) pedir requisitos previos (credenciales/API keys, definiciones faltantes), (1) rebuild docker, (2) revisar salida y corregir errores, (3) push a la rama, (4) esperar y revisar build en Vercel hasta que finalice bien, (5) actualizar README con cambios relevantes, (6) marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en `STATUS.md`.
+**Instrucción operativa**: al abordar cualquier historia de este backlog: (0) pedir requisitos previos (credenciales/API keys, definiciones faltantes), (1) levantar servicios locales necesarios (web/scraper/worker) y revisar logs, (2) push a la rama, (3) esperar y revisar build en Vercel hasta que finalice bien, (4) actualizar README con cambios relevantes, (5) marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en `STATUS.md`.

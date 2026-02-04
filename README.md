@@ -1,18 +1,17 @@
 # ODA Storefront
 
-Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar catálogos vía OpenAI GPT-5.1 (JSON mode), enriquecer productos vía OpenAI y servir búsqueda/recomendaciones en Next.js + Vue Storefront, con backend BFF, scrapers y workers dockerizados. Despliegue objetivo: Vercel (web/BFF) + contenedores para scrapers/workers.
+Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar catálogos vía OpenAI GPT-5.1 (JSON mode), enriquecer productos vía OpenAI y servir búsqueda/recomendaciones en Next.js + Vue Storefront, con backend BFF, scrapers y workers como servicios Node. Despliegue objetivo: Vercel (web/BFF) + runners dedicados para scrapers/workers (sin Docker por ahora).
 
 ## Estructura
 - `apps/web` – Front + BFF en Next.js (App Router, TS, Tailwind).
 - `services/scraper` – Scraper stub (Node) listo para integrar descubrimiento de sitemap y parsers por marca.
 - `services/worker` – Worker stub (BullMQ) para orquestar ingestión y pipeline IA.
-- `docker-compose.yml` – Web, scraper, worker, Postgres (pgvector), Redis.
 - `apps/web/vercel.json` – Crons de Vercel (rootDirectory = apps/web).
 - `AGENTS.md`, `BACKLOG.md`, `USER_STORIES.md`, `STATUS.md` – Documentación y control operativo.
 
 ## Requisitos
 - Node 22.x, npm.
-- Docker + Docker Compose (para entorno local).
+- Acceso a Neon/Redis remotos vía `.env`.
 
 ## Variables de entorno
 Copiar `.env.example` a `.env`/`.env.local` y completar:
@@ -37,6 +36,7 @@ No commitees credenciales reales.
 
 ## Comandos locales
 ```bash
+# web
 cd apps/web
 npm install        # ya ejecutado en bootstrap
 npm run dev        # http://localhost:3000
@@ -51,15 +51,18 @@ npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/tech-profiler-sweep.t
 node scripts/build-style-assignments.mjs  # seed style_profiles + backfill estilos principal/secundario
 node scripts/seed-color-palette-200.mjs  # carga paleta 200 en color_combinations_colors (desde Excel)
 node scripts/build-color-relations.mjs  # recalcula matches variante↔combinacion con colores estandarizados
-```
 
-### Docker Compose (stack completo)
-```bash
-docker-compose build
-docker-compose up
+# worker (cola/enriquecimiento)
+cd ../../services/worker
+npm install
+npm run dev
+
+# scraper
+cd ../scraper
+npm install
+npm run dev
 ```
-Servicios: `web` (host 3080 → contenedor 3000), `redis` (6379), `scraper`, `worker`.  
-La base de datos es **Neon** (no se levanta Postgres local en Compose).
+Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node locales. La base de datos es **Neon** y Redis es remoto.
 
 ## Base de datos y Prisma
 - Esquema definido en `apps/web/prisma/schema.prisma`, cliente generado en `@prisma/client` (adapter `@prisma/adapter-pg`).
@@ -193,7 +196,7 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
 - Pendiente: configurar GitHub Actions y Vercel pipeline.
 
 ## Operativa de historias (resumen)
-Al abordar una historia: (0) pedir credenciales/definiciones faltantes, (1) rebuild docker, (2) revisar errores, (3) push a la rama, (4) esperar build Vercel y verificar, (5) actualizar README, (6) marcar done en `USER_STORIES.md`, `BACKLOG.md`, `STATUS.md`.
+Al abordar una historia: (0) pedir credenciales/definiciones faltantes, (1) levantar servicios locales necesarios (web/scraper/worker) y revisar logs, (2) push a la rama, (3) esperar build Vercel y verificar, (4) actualizar README, (5) marcar done en `USER_STORIES.md`, `BACKLOG.md`, `STATUS.md`.
 
 ## Próximos pasos sugeridos
 - MC-009–017 (F1): taxonomía, búsqueda+pgvector, observabilidad scraping v1, admin mínimo, anuncios básicos, 10–20 marcas, emails/plantillas, ISR/cache y gestión de secrets.
