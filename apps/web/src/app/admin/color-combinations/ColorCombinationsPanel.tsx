@@ -107,31 +107,11 @@ const FilterSelect = ({ label, value, options, onChange }: FilterSelectProps) =>
   </label>
 );
 
-type FilterPillProps = {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-};
-
-const FilterPill = ({ label, active, onClick }: FilterPillProps) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-      active
-        ? "border-slate-900 bg-slate-900 text-white"
-        : "border-slate-200 bg-white text-slate-600 hover:border-slate-400"
-    }`}
-  >
-    {label}
-  </button>
-);
-
 type MultiSelectFilterProps = {
   label: string;
   options: string[];
   selected: string[];
-  onToggle: (value: string) => void;
+  onChange: (values: string[]) => void;
   onClear: () => void;
 };
 
@@ -139,10 +119,10 @@ const MultiSelectFilter = ({
   label,
   options,
   selected,
-  onToggle,
+  onChange,
   onClear,
 }: MultiSelectFilterProps) => (
-  <div className="space-y-2">
+  <label className="block space-y-2">
     <div className="flex items-center justify-between">
       <span className="text-xs uppercase tracking-[0.2em] text-slate-500">{label}</span>
       {selected.length ? (
@@ -156,20 +136,31 @@ const MultiSelectFilter = ({
       ) : null}
     </div>
     {options.length ? (
-      <div className="flex flex-wrap gap-2">
+      <select
+        multiple
+        value={selected}
+        onChange={(event) => {
+          const values = Array.from(event.currentTarget.selectedOptions).map(
+            (option) => option.value,
+          );
+          onChange(values);
+        }}
+        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+        size={Math.min(6, options.length)}
+      >
         {options.map((option) => (
-          <FilterPill
-            key={option}
-            label={option}
-            active={selected.includes(option)}
-            onClick={() => onToggle(option)}
-          />
+          <option key={option} value={option}>
+            {option}
+          </option>
         ))}
-      </div>
+      </select>
     ) : (
       <p className="text-xs text-slate-400">Sin opciones disponibles.</p>
     )}
-  </div>
+    <p className="text-[11px] text-slate-400">
+      Seleccionados: {selected.length}
+    </p>
+  </label>
 );
 
 type LazyImageProps = {
@@ -242,18 +233,6 @@ const ColorGroupSection = ({ group }: ColorGroupSectionProps) => {
     [group.items],
   );
 
-  const toggleFilter = (
-    value: string,
-    selected: string[],
-    setSelected: (next: string[]) => void,
-  ) => {
-    if (selected.includes(value)) {
-      setSelected(selected.filter((item) => item !== value));
-      return;
-    }
-    setSelected([...selected, value]);
-  };
-
   const filteredItems = useMemo(() => {
     return group.items.filter((item) => {
       if (genderFilter.length && (!item.gender || !genderFilter.includes(item.gender))) {
@@ -308,21 +287,21 @@ const ColorGroupSection = ({ group }: ColorGroupSectionProps) => {
           label="Género"
           options={genderOptions}
           selected={genderFilter}
-          onToggle={(value) => toggleFilter(value, genderFilter, setGenderFilter)}
+          onChange={(values) => setGenderFilter(values)}
           onClear={() => setGenderFilter([])}
         />
         <MultiSelectFilter
           label="Categoría"
           options={categoryOptions}
           selected={categoryFilter}
-          onToggle={(value) => toggleFilter(value, categoryFilter, setCategoryFilter)}
+          onChange={(values) => setCategoryFilter(values)}
           onClear={() => setCategoryFilter([])}
         />
         <MultiSelectFilter
           label="Subcategoría"
           options={subcategoryOptions}
           selected={subcategoryFilter}
-          onToggle={(value) => toggleFilter(value, subcategoryFilter, setSubcategoryFilter)}
+          onChange={(values) => setSubcategoryFilter(values)}
           onClear={() => setSubcategoryFilter([])}
         />
       </div>
