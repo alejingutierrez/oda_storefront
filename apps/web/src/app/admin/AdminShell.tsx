@@ -5,6 +5,7 @@ const navItems = [
   { key: "brands", label: "Marcas", href: "/admin/brands" },
   { key: "products", label: "Productos", href: "/admin/products" },
   { key: "product-enrichment", label: "Enriquecimiento", href: "/admin/product-enrichment" },
+  { key: "catalog-refresh", label: "Refresh semanal", href: "/admin/catalog-refresh" },
   { key: "color-combinations", label: "Combinaciones", href: "/admin/color-combinations" },
 ];
 

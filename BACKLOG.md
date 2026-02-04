@@ -38,6 +38,7 @@
 ## Done (2026-02)
 - MC-108 | done | P1 | Fix cola de scraping de marcas | Encolar solo marcas sin job completed y drenar cola existente desde UI.
 - MC-109 | done | P1 | Onboarding de marca en modal | Crear marca inicia pipeline (enrich → tech → catálogo → productos) con barra de progreso y endpoints onboarding.
+- MC-110 | done | P1 | Refresh semanal de catálogo + monitor admin | Cron semanal con jitter, refresco completo, métricas de cambios y panel `/admin/catalog-refresh`; VTEX discovery sin cap fijo.
 
 ## Done (2026-01)
 - MC-107 | done | P1 | Enrichment: esquema estricto + repair/chunking Bedrock | 1 imagen por variante, repair pass y chunking por variantes; smoke test Bedrock; concurrencia 40 en envs prod.

@@ -73,11 +73,13 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 
 ## 7) Scraping & frescura
 - Frecuencia adaptativa: marcas con alta rotación → más polling; marcas estáticas → menos.
+- Refresh semanal automatizado: cron `/api/admin/catalog-refresh/cron` selecciona marcas vencidas, dispara extracción de catálogo completa y encola enriquecimiento sólo para productos nuevos o pendientes. Estado y métricas se guardan en `brands.metadata.catalog_refresh`.
 - Respetar robots y términos; backoff exponencial en 4xx/5xx; manejo de captchas. Registrar excepciones legales/comerciales por marca.
 - Detección de deltas: hash de páginas/fragmentos para evitar reprocesar; sólo enviar cambios al pipeline IA. Priorizar sitemap `lastmod` si existe.
 - Observabilidad: métricas por marca (éxito, latencia, bloqueos, cambios detectados) y alarmas de staleness.
 - Lista de exclusión y límites diarios por dominio; rotación de proxies y user-agents.
 - Preferir fuentes estructuradas (sitemaps, feeds, APIs públicas) antes que crawling profundo; fallback headless sólo cuando sea necesario.
+- **VTEX**: priorizar `/api/catalog_system/pub/products/search` para discovery completo; sitemaps pueden venir truncados. Usar `CATALOG_TRY_SITEMAP_VTEX=true` sólo si se valida cobertura.
 
 ## 8) Ingestión IA (OpenAI)
 - Modelo por defecto: **GPT-5.1** (JSON mode). Backups: 4.1/4.0 si hay degradación.

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
 import { drainCatalogRun } from "@/lib/catalog/processor";
 import { CATALOG_MAX_ATTEMPTS } from "@/lib/catalog/constants";
+import { finalizeRefreshForRun } from "@/lib/catalog/refresh";
 
 const readBrandMetadata = (brand: { metadata?: unknown }) =>
   brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
@@ -34,6 +35,13 @@ const finalizeRunIfIdle = async (runId: string) => {
 
   const failedCount = await prisma.catalogItem.count({
     where: { runId, status: "failed" },
+  });
+  await finalizeRefreshForRun({
+    brandId: run.brand.id,
+    runId: run.id,
+    startedAt: run.startedAt,
+    status: failedCount > 0 ? "failed" : "completed",
+    lastError: failedCount > 0 ? "catalog_failed_items" : null,
   });
   if (failedCount > 0 || !run.brand) return;
 

@@ -125,6 +125,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Tiempo total de onboarding por marca; % de bloqueos en tech profiler o catálogo.
 - Estado: **done (2026-02-03)**.
 
+### MC-110 Refresh semanal de catálogo + monitor admin
+- Historia: Como operador, quiero que el catálogo completo se refresque semanalmente (sitemaps + productos), detectando cambios y nuevos productos, para mantener la plataforma al día y con calidad.
+- Alcance: Cron `/api/admin/catalog-refresh/cron` selecciona marcas vencidas con jitter y límites por batch; inicia `catalog_runs/items` para refresco completo; guarda métricas y estado en `brands.metadata.catalog_refresh`; re‑encola URLs fallidas recientes; al completar, encola enriquecimiento solo para productos nuevos o sin `metadata.enrichment`. Panel `/admin/catalog-refresh` muestra % de frescura, nuevos productos y cambios de precio/stock. VTEX usa API `/api/catalog_system/pub/products/search` y evita depender de sitemaps truncados.
+- CA: Cada marca activa con `siteUrl` se refresca al menos cada 7 días; el cron no sobrecarga el sistema (límite de marcas + tiempo máx por ejecución); los nuevos productos quedan encolados para enriquecimiento; cambios de precio/stock alimentan `price_history`/`stock_history`; el panel muestra frescura global y métricas de la ventana; no se crean tablas nuevas (solo metadata y tablas existentes).
+- Datos: `brands.metadata.catalog_refresh`, `catalog_runs/items`, `products/variants`, `price_history`, `stock_history`, `product_enrichment_runs/items`.
+- NF: Proceso gradual con aleatoriedad, timeouts y backoff; reintentos controlados por env; cron puede ejecutarse en paralelo sin duplicar runs activos.
+- Riesgos: Catálogos grandes pueden saturar recursos si no se limitan; mitigación con `CATALOG_REFRESH_MAX_BRANDS`, `CATALOG_REFRESH_MAX_RUNTIME_MS` y `CATALOG_VTEX_MAX_PRODUCTS`.
+- Métricas: % marcas frescas vs total, nuevos productos por semana, cambios de precio/stock, tiempo promedio de refresh por marca.
+- Estado: **done (2026-02-04)**.
+
 ### MC-101 Default OpenAI gpt-5.1 en scrapers y normalización
 - Historia: Como operador, quiero que el modelo por defecto sea gpt-5.1 en scrapers de marcas/tech y normalización, para alinear calidad/costos con la decisión actual.
 - Alcance: Default `OPENAI_MODEL` pasa a `gpt-5.1` en brand scraper, tech profiler y helper OpenAI; actualizar `.env.example`, README y AGENTS.

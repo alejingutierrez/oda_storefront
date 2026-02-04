@@ -15,6 +15,7 @@ Checklist obligatorio al cerrar una historia:
 6) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-02-04 | MC-110 | done | Refresh semanal de catálogo + panel admin + VTEX discovery completo | Docker rebuild omitido por solicitud; lint se colgó y se abortó; pruebas VTEX via API (tennis/co.totto/mariohernandez/velez/studiof) muestran totales >1k; Vercel build/deploy no ejecutado aún.
 - 2026-02-03 | deploy | Vercel prod Ready tras fix onboarding | https://oda-storefront-6ee5-d9zbsitfj-alejingutierrezs-projects.vercel.app
 - 2026-02-03 | fix | Prisma JSON typing en onboarding | `OnboardingStepInfo.detail` ahora usa `Prisma.JsonValue` y persistencia serializa `onboarding` antes de guardar metadata.
 - 2026-02-03 | fix | Vercel build: refreshOnboardingState before declaration | Ajustado orden de hooks en BrandDirectoryPanel para resolver TypeScript error de build.

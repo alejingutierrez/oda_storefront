@@ -7,6 +7,7 @@ import {
   getCatalogConsecutiveErrorLimit,
   isCatalogSoftError,
 } from "@/lib/catalog/constants";
+import { finalizeRefreshForRun } from "@/lib/catalog/refresh";
 import { enqueueCatalogItems } from "@/lib/catalog/queue";
 import { listPendingItems, listRunnableItems, markItemsQueued, resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
 
@@ -210,6 +211,13 @@ export const processCatalogItemById = async (
       const failedCount = await prisma.catalogItem.count({
         where: { runId: run.id, status: "failed" },
       });
+      await finalizeRefreshForRun({
+        brandId: brand.id,
+        runId: run.id,
+        startedAt: run.startedAt,
+        status: failedCount > 0 ? "failed" : "completed",
+        lastError: failedCount > 0 ? "catalog_failed_items" : null,
+      });
       await markBrandCatalogFinished({
         brand,
         run,
@@ -272,6 +280,13 @@ export const processCatalogItemById = async (
         });
         const failedCount = await prisma.catalogItem.count({
           where: { runId: run.id, status: "failed" },
+        });
+        await finalizeRefreshForRun({
+          brandId: brand.id,
+          runId: run.id,
+          startedAt: run.startedAt,
+          status: failedCount > 0 ? "failed" : "completed",
+          lastError: failedCount > 0 ? message : null,
         });
         await markBrandCatalogFinished({
           brand,

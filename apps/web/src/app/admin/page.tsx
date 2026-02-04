@@ -130,6 +130,12 @@ function AdminPanel() {
           >
             Catalog extractor
           </a>
+          <a
+            href="/admin/catalog-refresh"
+            className="inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+          >
+            Refresh semanal
+          </a>
         </div>
       </aside>
     </div>

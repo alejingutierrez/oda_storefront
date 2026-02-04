@@ -513,6 +513,34 @@ const upsertVariant = async (productId: string, variant: any) => {
       })
     : null;
 
+  const now = new Date();
+  const existingPrice =
+    existing?.price && typeof (existing.price as any)?.toNumber === "function"
+      ? (existing.price as any).toNumber()
+      : existing?.price ?? null;
+  const nextPrice = variant.price ?? 0;
+  const existingStock = existing?.stock ?? null;
+  const nextStock = variant.stock ?? null;
+  const existingStatus = existing?.stockStatus ?? null;
+  const nextStatus = variant.stock_status ?? null;
+  const priceChanged = existing ? existingPrice !== nextPrice : true;
+  const stockChanged = existing ? existingStock !== nextStock : true;
+  const stockStatusChanged = existing ? existingStatus !== nextStatus : true;
+
+  const existingMetadata =
+    existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
+      ? (existing.metadata as Record<string, unknown>)
+      : {};
+  const changeMetadata: Record<string, unknown> = {};
+  if (priceChanged) changeMetadata.last_price_changed_at = now.toISOString();
+  if (stockChanged) changeMetadata.last_stock_changed_at = now.toISOString();
+  if (stockStatusChanged) {
+    changeMetadata.last_stock_status_changed_at = now.toISOString();
+    changeMetadata.last_stock_status_change = existingStatus
+      ? `${existingStatus}=>${nextStatus ?? "unknown"}`
+      : `unknown=>${nextStatus ?? "unknown"}`;
+  }
+
   const data = {
     productId,
     sku,
@@ -525,15 +553,55 @@ const upsertVariant = async (productId: string, variant: any) => {
     stock: variant.stock ?? null,
     stockStatus: variant.stock_status ?? null,
     images: variant.images ?? [],
-    metadata: variant.metadata ?? null,
+    metadata: {
+      ...existingMetadata,
+      ...(variant.metadata ?? {}),
+      ...changeMetadata,
+    },
   };
 
   if (existing) {
-    const updated = await prisma.variant.update({ where: { id: existing.id }, data });
+    const updated = await prisma.$transaction(async (tx) => {
+      const next = await tx.variant.update({ where: { id: existing.id }, data });
+      if (priceChanged) {
+        await tx.priceHistory.create({
+          data: {
+            variantId: existing.id,
+            price: data.price,
+            currency: data.currency ?? "COP",
+          },
+        });
+      }
+      if (stockChanged) {
+        await tx.stockHistory.create({
+          data: {
+            variantId: existing.id,
+            stock: data.stock ?? null,
+          },
+        });
+      }
+      return next;
+    });
     return { variant: updated, created: false };
   }
 
-  const created = await prisma.variant.create({ data });
+  const created = await prisma.$transaction(async (tx) => {
+    const next = await tx.variant.create({ data });
+    await tx.priceHistory.create({
+      data: {
+        variantId: next.id,
+        price: data.price,
+        currency: data.currency ?? "COP",
+      },
+    });
+    await tx.stockHistory.create({
+      data: {
+        variantId: next.id,
+        stock: data.stock ?? null,
+      },
+    });
+    return next;
+  });
   return { variant: created, created: true };
 };
 
@@ -604,10 +672,12 @@ export const extractCatalogForBrand = async (
       : metadata;
 
   const batchSize = Math.max(1, Math.min(limit, 200));
-  const discoveryLimit = Math.max(
-    batchSize,
-    Math.min(Number(process.env.CATALOG_EXTRACT_DISCOVERY_LIMIT ?? batchSize * 5), 500),
-  );
+  const rawDiscoveryLimit = Number(process.env.CATALOG_EXTRACT_DISCOVERY_LIMIT ?? NaN);
+  const discoveryBase =
+    Number.isFinite(rawDiscoveryLimit) && rawDiscoveryLimit > 0
+      ? rawDiscoveryLimit
+      : batchSize * 5;
+  const discoveryLimit = Math.max(batchSize, discoveryBase);
   const rawSitemapLimit = Number(process.env.CATALOG_EXTRACT_SITEMAP_LIMIT ?? 5000);
   const normalizedSitemapLimit = Number.isFinite(rawSitemapLimit) ? rawSitemapLimit : 5000;
   const isVtex = adapter.platform === "vtex";

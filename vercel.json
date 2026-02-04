@@ -11,6 +11,10 @@
     {
       "path": "/api/admin/product-enrichment/drain",
       "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/admin/catalog-refresh/cron",
+      "schedule": "0 * * * *"
     }
   ]
 }

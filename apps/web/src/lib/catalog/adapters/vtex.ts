@@ -29,14 +29,44 @@ export const vtexAdapter: CatalogAdapter = {
     const baseUrl = normalizeUrl(ctx.brand.siteUrl);
     if (!baseUrl) return [];
     const origin = safeOrigin(baseUrl);
+    const maxFromEnv = Number(process.env.CATALOG_VTEX_MAX_PRODUCTS ?? 10000);
+    const maxProducts =
+      Number.isFinite(maxFromEnv) && maxFromEnv > 0 ? Math.floor(maxFromEnv) : 10000;
+    const pageSizeRaw = Number(process.env.CATALOG_VTEX_PAGE_SIZE ?? 50);
+    const pageSize =
+      Number.isFinite(pageSizeRaw) && pageSizeRaw > 0
+        ? Math.min(50, Math.floor(pageSizeRaw))
+        : 50;
+    let effectiveLimit = limit > 0 ? Math.min(limit, maxProducts) : maxProducts;
     const refs: ProductRef[] = [];
     let from = 0;
+    let totalFromHeader: number | null = null;
 
-    while (refs.length < limit) {
-      const to = Math.min(from + 49, from + (limit - refs.length) - 1);
+    while (refs.length < effectiveLimit) {
+      const to = Math.min(from + (pageSize - 1), from + (effectiveLimit - refs.length) - 1);
       const url = new URL(`/api/catalog_system/pub/products/search?_from=${from}&_to=${to}`, origin).toString();
       const response = await fetchText(url);
       if (response.status >= 400) break;
+      if (!totalFromHeader) {
+        const totalHeader = response.headers?.get?.("x-total-count");
+        if (totalHeader) {
+          const parsed = Number(totalHeader);
+          if (Number.isFinite(parsed)) totalFromHeader = parsed;
+        }
+        if (!totalFromHeader) {
+          const resources = response.headers?.get?.("resources");
+          if (resources) {
+            const match = resources.match(/\\/(\\d+)/);
+            if (match) {
+              const parsed = Number(match[1]);
+              if (Number.isFinite(parsed)) totalFromHeader = parsed;
+            }
+          }
+        }
+        if (totalFromHeader && totalFromHeader > 0) {
+          effectiveLimit = Math.min(effectiveLimit, totalFromHeader, maxProducts);
+        }
+      }
       let data: any[] = [];
       try {
         data = JSON.parse(response.text);
@@ -45,17 +75,18 @@ export const vtexAdapter: CatalogAdapter = {
       }
       if (!Array.isArray(data) || data.length === 0) break;
       data.forEach((product) => {
-        if (refs.length >= limit) return;
+        if (refs.length >= effectiveLimit) return;
         const link = product.link ?? product.linkText;
         if (link) {
           refs.push({ url: link, externalId: product.productId ? String(product.productId) : null, handle: product.linkText });
         }
       });
-      if (data.length < 50) break;
-      from += 50;
+      if (data.length < pageSize) break;
+      from += pageSize;
+      if (totalFromHeader && from >= totalFromHeader) break;
     }
 
-    return refs.slice(0, limit);
+    return refs.slice(0, effectiveLimit);
   },
   fetchProduct: async (ctx: AdapterContext, ref: ProductRef) => {
     const baseUrl = normalizeUrl(ctx.brand.siteUrl);

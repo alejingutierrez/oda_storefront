@@ -50,10 +50,12 @@ export const discoverCatalogRefs = async ({
     },
   };
 
-  const discoveryLimit = Math.max(
-    limit,
-    Math.min(Number(process.env.CATALOG_EXTRACT_DISCOVERY_LIMIT ?? limit * 5), 500),
-  );
+  const rawDiscoveryLimit = Number(process.env.CATALOG_EXTRACT_DISCOVERY_LIMIT ?? NaN);
+  const discoveryBase =
+    Number.isFinite(rawDiscoveryLimit) && rawDiscoveryLimit > 0
+      ? rawDiscoveryLimit
+      : limit * 5;
+  const discoveryLimit = Math.max(limit, discoveryBase);
   const rawSitemapLimit = Number(process.env.CATALOG_EXTRACT_SITEMAP_LIMIT ?? 5000);
   const normalizedSitemapLimit = Number.isFinite(rawSitemapLimit) ? rawSitemapLimit : 5000;
   const isVtex = adapter.platform === "vtex";
@@ -64,7 +66,10 @@ export const discoverCatalogRefs = async ({
       : Math.max(discoveryLimit, normalizedSitemapLimit);
 
   let refs: ProductRef[] = [];
-  const trySitemap = forceSitemap || process.env.CATALOG_TRY_SITEMAP_FIRST !== "false";
+  const allowVtexSitemap = process.env.CATALOG_TRY_SITEMAP_VTEX === "true";
+  const trySitemap =
+    forceSitemap ||
+    (process.env.CATALOG_TRY_SITEMAP_FIRST !== "false" && (!isVtex || allowVtexSitemap));
   let sitemapRefs: ProductRef[] = [];
   if (trySitemap) {
     try {
