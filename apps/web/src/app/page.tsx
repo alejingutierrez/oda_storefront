@@ -80,6 +80,7 @@ export default async function Home() {
                 sizes="(max-width: 1024px) 80vw, 40vw"
                 className="object-cover"
                 priority
+                unoptimized
               />
             ) : null}
           </div>
@@ -121,6 +122,7 @@ export default async function Home() {
                   fill
                   sizes="(max-width: 768px) 50vw, 25vw"
                   className="object-cover transition duration-500 group-hover:scale-[1.03]"
+                  unoptimized
                 />
               </div>
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/5 to-transparent"></div>
@@ -209,6 +211,7 @@ export default async function Home() {
                 fill
                 sizes="120px"
                 className="object-contain"
+                unoptimized
               />
             </div>
           ))}
@@ -252,6 +255,7 @@ export default async function Home() {
                 fill
                 sizes="(max-width: 1024px) 80vw, 40vw"
                 className="object-cover"
+                unoptimized
               />
             ) : null}
           </div>

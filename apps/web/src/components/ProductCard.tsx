@@ -30,6 +30,7 @@ export default function ProductCard({ product }: { product: ProductCardType }) {
             fill
             sizes="(max-width: 768px) 50vw, 25vw"
             className="object-cover transition duration-500 group-hover:scale-[1.02]"
+            unoptimized
           />
         ) : null}
       </div>
