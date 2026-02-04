@@ -14,7 +14,7 @@ Checklist obligatorio al cerrar una historia:
 5) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
-- 2026-02-04 | MC-112 | done | Des-dockerizar repo y docs | Dockerfiles/compose removidos; README/AGENTS/Backlog/User Stories actualizados; ejecución local vía npm.
+- 2026-02-04 | MC-112 | done | Des-dockerizar repo y docs | Dockerfiles/compose removidos; README/AGENTS/Backlog/User Stories actualizados; ejecución local vía npm; Vercel prod Ready: https://oda-storefront-6ee5-e6z0ecrw9-alejingutierrezs-projects.vercel.app.
 - 2026-02-04 | MC-111 | done | Paleta 200 + matching estandarizado de combinaciones + admin actualizado | Docker build OK; web/worker healthy; scraper stub exit 0; `.dockerignore` agregado en `apps/web`; Vercel prod Ready: https://oda-storefront-6ee5-5e9idl2fk-alejingutierrezs-projects.vercel.app (runtime logs sin eventos en ventana corta).
 - 2026-02-04 | MC-110 | done | Refresh semanal de catálogo + panel admin + cobertura/alertas + auto‑recover + VTEX discovery completo | Docker rebuild omitido por solicitud; lint se colgó y se abortó; pruebas VTEX via API (tennis/co.totto/mariohernandez/velez/studiof) muestran totales >1k; Vercel prod Ready: https://oda-storefront-6ee5-dt85iqjvh-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante la observación).
 - 2026-02-03 | deploy | Vercel prod Ready tras fix onboarding | https://oda-storefront-6ee5-d9zbsitfj-alejingutierrezs-projects.vercel.app
