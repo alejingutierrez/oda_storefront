@@ -101,12 +101,17 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Acciones de forzar refresh y reintentos por marca.
 - Panel `/admin/products` (productos):
   - Directorio de productos scrapeados con cards (carrusel de imágenes si hay múltiples fotos), modal de detalle enriquecido (precio/stock, tallas y colores visibles con swatches, fit/material por variante) y filtros por marca.
-  - El modal muestra estilo principal/secundario (derivado de `styleTags`) con labels humanos.
-  - Las imágenes de cards pasan por `/api/image-proxy` (cache a Blob) y se renderizan con `next/image`.
-  - `next.config.ts` incluye allowlist para dominios `*.public.blob.vercel-storage.com` usados por Vercel Blob.
-  - Las imágenes servidas por `/api/image-proxy` se muestran como `unoptimized` para evitar 400 en `_next/image` con URLs proxy.
-  - El cierre del modal limpia `productId` de la URL sin reabrirlo en bucle.
-  - Persistencia de navegación: la página y el filtro por marca viven en la URL (`page`, `brandId`) y el detalle se puede abrir por `productId`.
+- El modal muestra estilo principal/secundario (derivado de `styleTags`) con labels humanos.
+- Las imágenes de cards pasan por `/api/image-proxy` (cache a Blob) y se renderizan con `next/image`.
+- `next.config.ts` incluye allowlist para dominios `*.public.blob.vercel-storage.com` usados por Vercel Blob.
+- Las imágenes servidas por `/api/image-proxy` se muestran como `unoptimized` para evitar 400 en `_next/image` con URLs proxy.
+- El cierre del modal limpia `productId` de la URL sin reabrirlo en bucle.
+- Persistencia de navegación: la página y el filtro por marca viven en la URL (`page`, `brandId`) y el detalle se puede abrir por `productId`.
+
+## Home (public)
+- Ruta `/` con home editorial (estilo Farfetch) y grillas cuadradas.
+- Mega menu por género con estructura completa basada en categorías reales y reglas `category + subcategory` (ver `HOME_PLAN.md`).
+- Rotación automática cada 3 días para productos y marcas, sin intervención humana.
 - Panel `/admin/color-combinations` (combinaciones de color):
   - Al hacer click en un color, lista productos asociados y filtra por rol del color con categorías permitidas:
     - Siempre descarta categorías fuera del set permitido global (si el rol viene inesperado).

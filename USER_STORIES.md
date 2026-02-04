@@ -36,6 +36,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Menos fricción para levantar local (tiempo de arranque, pasos manuales).
 - Estado: **done (2026-02-04)**.
 
+### MC-113 Home editorial + mega menu + rotación 3 días
+- Historia: Como usuario, quiero un home editorial tipo Farfetch con navegación por género y categorías completas, para descubrir moda colombiana de forma guiada.
+- Alcance: Home en `/` con hero editorial, novedades, categorías clave, curated edit, shop by color, marcas destacadas, trending/picks y story final. Header con mega menu por género (Femenino/Masculino/Unisex/Infantil), columnas Superiores/Inferiores/Accesorios y reglas `category + subcategory`. Rotación automática cada 3 días para productos y marcas sin intervención humana.
+- CA: El mega menu incluye el 100% de categorías reales; `outerwear` y `ropa_deportiva_y_performance` muestran subcategorías; `ropa interior`, `lencería`, `pijamas` y `trajes de baño` aparecen en Accesorios; módulos del home cargan con data real y rotan cada 3 días; diseño editorial con imágenes cuadradas.
+- Datos: `products`, `variants`, `brands`, `style_profiles`, `color_combinations`, `color_combination_colors`.
+- NF: ISR con revalidate <= 1h; carga rápida de imágenes; accesibilidad base en navegación.
+- Riesgos: Falta de datos de eventos para trending; mitigación con heurística temporal y rotación seed.
+- Métricas: Tiempo de carga del home, CTR en bloques principales, rotación efectiva cada 3 días.
+- Estado: **done (2026-02-04)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.
