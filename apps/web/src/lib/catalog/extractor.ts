@@ -464,6 +464,34 @@ const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, 
     raw.currency ?? normalized?.variants?.[0]?.currency ?? raw.variants?.[0]?.currency ?? null,
   );
 
+  const existingMetadata =
+    existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
+      ? (existing.metadata as Record<string, unknown>)
+      : {};
+  const normalizedMetadata =
+    normalized?.metadata && typeof normalized.metadata === "object" && !Array.isArray(normalized.metadata)
+      ? (normalized.metadata as Record<string, unknown>)
+      : {};
+  const mergedMetadata: Record<string, unknown> = {
+    ...existingMetadata,
+    ...normalizedMetadata,
+    platform: raw.metadata?.platform ?? existingMetadata.platform ?? null,
+    llm: raw.metadata?.llm ?? existingMetadata.llm ?? null,
+    extraction: {
+      source_url: raw.sourceUrl,
+      external_id: raw.externalId,
+      scraped_at: new Date().toISOString(),
+      source_images: raw.images ?? [],
+    },
+  };
+  if (
+    existingMetadata.enrichment !== undefined &&
+    normalizedMetadata.enrichment === undefined &&
+    mergedMetadata.enrichment === undefined
+  ) {
+    mergedMetadata.enrichment = existingMetadata.enrichment;
+  }
+
   const data = {
     brandId,
     externalId: raw.externalId ?? null,
@@ -483,17 +511,7 @@ const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, 
     currency: currencyValue ?? null,
     sourceUrl: raw.sourceUrl ?? null,
     imageCoverUrl,
-    metadata: {
-      ...(normalized.metadata ?? {}),
-      platform: raw.metadata?.platform ?? null,
-      llm: raw.metadata?.llm ?? null,
-      extraction: {
-        source_url: raw.sourceUrl,
-        external_id: raw.externalId,
-        scraped_at: new Date().toISOString(),
-        source_images: raw.images ?? [],
-      },
-    },
+    metadata: mergedMetadata,
   };
 
   if (existing) {

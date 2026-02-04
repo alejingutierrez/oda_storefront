@@ -417,21 +417,16 @@ const recoverEnrichmentRuns = async (config: ReturnType<typeof getRefreshConfig>
 const getProductsMissingEnrichment = async (
   brandId: string,
   startedAt: Date,
-  lookbackStart: Date,
   limit: number,
 ) => {
   return prisma.$queryRaw<{ id: string }[]>(
     Prisma.sql`
       SELECT DISTINCT p.id
       FROM "products" p
-      LEFT JOIN "product_enrichment_items" pei ON pei."productId" = p.id
-      LEFT JOIN "product_enrichment_runs" per ON per.id = pei."runId"
       WHERE p."brandId" = ${brandId}
         AND (p."metadata" -> 'enrichment') IS NULL
         AND (
           p."createdAt" >= ${startedAt}
-          OR p."updatedAt" >= ${lookbackStart}
-          OR pei."updatedAt" >= ${lookbackStart}
         )
       LIMIT ${limit}
     `,
@@ -444,11 +439,9 @@ const enqueueNewProductEnrichment = async (brandId: string, startedAt: Date) => 
   const existing = await findActiveEnrichmentRun({ scope: "brand", brandId });
   if (existing) return { queued: 0, skipped: "existing_run" };
 
-  const lookbackStart = new Date(Date.now() - config.enrichLookbackDays * 24 * 60 * 60 * 1000);
   const rows = await getProductsMissingEnrichment(
     brandId,
     startedAt,
-    lookbackStart,
     config.enrichMaxProducts,
   );
   const ids = rows.map((row) => row.id);
