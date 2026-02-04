@@ -36,7 +36,7 @@ export async function GET(req: Request) {
     force,
   });
 
-  return NextResponse.json({ status: "ok", ...result });
+  return NextResponse.json({ ok: true, ...result });
 }
 
 export async function POST(req: Request) {
