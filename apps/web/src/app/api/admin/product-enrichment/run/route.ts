@@ -23,6 +23,8 @@ import { drainEnrichmentRun } from "@/lib/product-enrichment/processor";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const MAX_ATTEMPTS = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 5));
+
 const buildProductFilters = (params: { brandId?: string | null; includeEnriched?: boolean }) => {
   const filters: Prisma.Sql[] = [];
   if (params.brandId) {
@@ -160,6 +162,24 @@ export async function POST(req: Request) {
         updatedAt: new Date(),
       },
     });
+
+    if (resumeRequested) {
+      await prisma.productEnrichmentItem.updateMany({
+        where: {
+          runId: existing.id,
+          status: "failed",
+          attempts: { gte: MAX_ATTEMPTS },
+        },
+        data: {
+          status: "pending",
+          attempts: 0,
+          lastError: null,
+          lastStage: null,
+          startedAt: null,
+          updatedAt: new Date(),
+        },
+      });
+    }
 
     const effectiveQueuedStaleMs = resumeRequested ? 0 : queuedStaleMs;
     const effectiveStuckMs = resumeRequested ? Math.min(stuckMs, resumeStuckMs || 0) : stuckMs;
