@@ -88,7 +88,7 @@ export async function GET(req: Request) {
 
   const brandRows = brands.map((brand) => {
     const metadata = readMetadata(brand.metadata);
-    const refresh = metadata.catalog_refresh ?? {};
+    const refresh = (metadata.catalog_refresh ?? {}) as Record<string, unknown>;
     return {
       id: brand.id,
       name: brand.name,
