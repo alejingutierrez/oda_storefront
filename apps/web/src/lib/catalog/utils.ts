@@ -82,7 +82,7 @@ export const discoverFromSitemap = async (
     Number(options?.budgetMs ?? process.env.CATALOG_EXTRACT_SITEMAP_BUDGET_MS ?? 12000),
   );
   const rawScanLimit = Number(process.env.CATALOG_EXTRACT_SITEMAP_SCAN_MAX_URLS ?? 5000);
-  const scanLimit = Number.isFinite(rawScanLimit) ? rawScanLimit : 5000;
+  const scanLimit = hasLimit ? (Number.isFinite(rawScanLimit) ? rawScanLimit : 5000) : 0;
   const sitemapScanLimit = Math.max(hasLimit ? normalizedLimit * 5 : 0, scanLimit > 0 ? scanLimit : 0);
   const robotsUrl = new URL("/robots.txt", origin).toString();
   let robotsText = "";
