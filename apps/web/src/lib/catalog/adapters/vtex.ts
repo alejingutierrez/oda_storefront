@@ -56,7 +56,7 @@ export const vtexAdapter: CatalogAdapter = {
         if (!totalFromHeader) {
           const resources = response.headers?.get?.("resources");
           if (resources) {
-            const match = resources.match(/\\/(\\d+)/);
+            const match = resources.match(/\/(\d+)/);
             if (match) {
               const parsed = Number(match[1]);
               if (Number.isFinite(parsed)) totalFromHeader = parsed;
