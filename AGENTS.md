@@ -185,6 +185,8 @@ Script: `apps/web/scripts/build-color-relations.mjs`
 3) **Colores de variantes**
    - Fuente principal: `variants.metadata.enrichment.colors.hex` (array o string).
    - Fallback: `variants.color`.
+   - Si `variants.color` no es hex, se intenta mapear con `standard_color_aliases`.
+   - Si aun no hay color, se intenta inferir desde `products.name` con `standard_color_aliases`.
    - Se normalizan hex y se mapean a `standardColorId`.
    - Si no hay hex válido, se usa `variants.standardColorId` como último fallback.
 
@@ -198,6 +200,7 @@ Script: `apps/web/scripts/build-color-relations.mjs`
      - `coverage` = % de colores de la combinación dentro del umbral
      - `score` = `avgDistance + (1 - coverage) * penalty`
    - Se guardan los **Top‑K** matches en `variant_color_combination_matches`.
+   - Si no hay matches que cumplan umbrales, se habilita fallback a los mejores scores (controlable por `COLOR_MATCH_ALLOW_FALLBACK`; default activo).
 
 ### Variables de control (re‑ejecución)
 Se pueden ajustar por env al correr el script:

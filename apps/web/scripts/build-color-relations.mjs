@@ -33,6 +33,16 @@ const normalizeHex = (value) => {
   return trimmed.startsWith("#") ? trimmed.toUpperCase() : `#${trimmed.toUpperCase()}`;
 };
 
+const normalizeLabel = (value) => {
+  if (!value) return "";
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+};
+
 const hexToRgb = (hex) => {
   const value = hex.replace("#", "");
   const r = parseInt(value.slice(0, 2), 16) / 255;
@@ -198,7 +208,7 @@ const topK = Number(process.env.COLOR_MATCH_TOP_K ?? 20);
 const minCoverage = Number(process.env.COLOR_MATCH_MIN_COVERAGE ?? 0.4);
 const maxAvgDistance = Number(process.env.COLOR_MATCH_MAX_AVG ?? 20);
 const maxMaxDistance = Number(process.env.COLOR_MATCH_MAX_DIST ?? 36);
-const allowFallback = process.env.COLOR_MATCH_ALLOW_FALLBACK === "1";
+const allowFallback = process.env.COLOR_MATCH_ALLOW_FALLBACK !== "0";
 const logEvery = Number(process.env.COLOR_MATCH_LOG_EVERY ?? 2000);
 const maxVariantHexes = Number(process.env.COLOR_MATCH_MAX_HEXES ?? 0);
 const startId = process.env.COLOR_MATCH_START_ID ?? "";
@@ -337,6 +347,26 @@ const run = async () => {
     if (!color.id || !color.hex) continue;
     standardById.set(color.id, color);
   }
+
+  const aliasRows = await client.query(
+    'SELECT alias, "standardColorId" FROM "standard_color_aliases" ORDER BY length(alias) DESC',
+  );
+  const aliasList = aliasRows.rows
+    .map((row) => ({
+      standardColorId: row.standardColorId,
+      normalized: normalizeLabel(row.alias),
+    }))
+    .filter((entry) => entry.standardColorId && entry.normalized.length > 0)
+    .sort((a, b) => b.normalized.length - a.normalized.length);
+
+  const mapLabelToStandardId = (label) => {
+    const normalized = normalizeLabel(label);
+    if (!normalized) return null;
+    for (const entry of aliasList) {
+      if (normalized.includes(entry.normalized)) return entry.standardColorId;
+    }
+    return null;
+  };
 
   const cfgRow = await client.query(
     'SELECT "valueJson" FROM "standard_color_config" WHERE "key" = $1 LIMIT 1',
@@ -487,7 +517,7 @@ const run = async () => {
 
   while (true) {
     const batch = await client.query(
-      'SELECT id, color, metadata, "standardColorId" FROM "variants" WHERE id > $1 ORDER BY id ASC LIMIT $2',
+      'SELECT v.id, v.color, v.metadata, v."standardColorId", p.name AS "productName" FROM "variants" v JOIN "products" p ON p.id = v."productId" WHERE v.id > $1 ORDER BY v.id ASC LIMIT $2',
       [lastId, batchSize],
     );
     if (!batch.rows.length) break;
@@ -521,6 +551,30 @@ const run = async () => {
             lab: standard.lab,
             standardColorId: row.standardColorId,
           });
+        }
+      }
+
+      if (!variantColors.length) {
+        const labelCandidates = [];
+        if (row.color && !hexRegex.test(String(row.color).trim())) {
+          labelCandidates.push(row.color);
+        }
+        if (row.productName) {
+          labelCandidates.push(row.productName);
+        }
+        for (const label of labelCandidates) {
+          const mappedId = mapLabelToStandardId(label);
+          if (!mappedId) continue;
+          if (seenStandard.has(mappedId)) break;
+          const standard = standardById.get(mappedId);
+          if (!standard) continue;
+          seenStandard.add(mappedId);
+          variantColors.push({
+            hex: standard.hex,
+            lab: standard.lab,
+            standardColorId: mappedId,
+          });
+          break;
         }
       }
 
