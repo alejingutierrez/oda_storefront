@@ -26,6 +26,24 @@ import {
 } from "@/lib/catalog/utils";
 
 const toNumber = (value: unknown) => parsePriceValue(value);
+const chooseString = (
+  existing: string | null | undefined,
+  next: string | null | undefined,
+  preserve: boolean,
+) => {
+  if (preserve && existing) return existing;
+  return next ?? existing ?? null;
+};
+
+const chooseArray = (
+  existing: string[] | null | undefined,
+  next: string[] | null | undefined,
+  preserve: boolean,
+) => {
+  if (preserve && Array.isArray(existing) && existing.length) return existing;
+  if (Array.isArray(next) && next.length) return next;
+  return Array.isArray(existing) ? existing : [];
+};
 
 const resolveStockStatus = (variant: RawVariant) => {
   if (variant.available === false) return "out_of_stock";
@@ -455,6 +473,9 @@ const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, 
           brandId,
           OR: conditions,
         },
+        include: {
+          enrichmentItems: { where: { status: "completed" }, select: { id: true } },
+        },
       })
     : null;
 
@@ -472,6 +493,8 @@ const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, 
     normalized?.metadata && typeof normalized.metadata === "object" && !Array.isArray(normalized.metadata)
       ? (normalized.metadata as Record<string, unknown>)
       : {};
+  const hasCompletedEnrichment =
+    Boolean(existingMetadata.enrichment) || Boolean(existing?.enrichmentItems && existing.enrichmentItems.length);
   const mergedMetadata: Record<string, unknown> = {
     ...existingMetadata,
     ...normalizedMetadata,
@@ -486,31 +509,32 @@ const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, 
   };
   if (
     existingMetadata.enrichment !== undefined &&
-    normalizedMetadata.enrichment === undefined &&
-    mergedMetadata.enrichment === undefined
+    (normalizedMetadata.enrichment === undefined || normalizedMetadata.enrichment === null) &&
+    (mergedMetadata.enrichment === undefined || mergedMetadata.enrichment === null)
   ) {
     mergedMetadata.enrichment = existingMetadata.enrichment;
   }
 
+  const preserveEnrichment = hasCompletedEnrichment;
   const data = {
     brandId,
     externalId: raw.externalId ?? null,
-    name: normalized.name ?? raw.title ?? "Sin nombre",
-    description: normalized.description ?? raw.description ?? null,
-    category: normalized.category ?? null,
-    subcategory: normalized.subcategory ?? null,
-    styleTags: normalized.style_tags ?? [],
-    materialTags: normalized.material_tags ?? [],
-    patternTags: normalized.pattern_tags ?? [],
-    occasionTags: normalized.occasion_tags ?? [],
-    gender: normalized.gender ?? null,
-    season: normalized.season ?? null,
-    care: normalized.care ?? null,
-    origin: normalized.origin ?? null,
-    status: normalized.status ?? null,
+    name: normalized.name ?? raw.title ?? existing?.name ?? "Sin nombre",
+    description: chooseString(existing?.description, normalized.description ?? raw.description ?? null, preserveEnrichment),
+    category: chooseString(existing?.category, normalized.category ?? null, preserveEnrichment),
+    subcategory: chooseString(existing?.subcategory, normalized.subcategory ?? null, preserveEnrichment),
+    styleTags: chooseArray(existing?.styleTags, normalized.style_tags ?? [], preserveEnrichment),
+    materialTags: chooseArray(existing?.materialTags, normalized.material_tags ?? [], preserveEnrichment),
+    patternTags: chooseArray(existing?.patternTags, normalized.pattern_tags ?? [], preserveEnrichment),
+    occasionTags: chooseArray(existing?.occasionTags, normalized.occasion_tags ?? [], preserveEnrichment),
+    gender: chooseString(existing?.gender, normalized.gender ?? null, preserveEnrichment),
+    season: chooseString(existing?.season, normalized.season ?? null, preserveEnrichment),
+    care: chooseString(existing?.care, normalized.care ?? null, preserveEnrichment),
+    origin: chooseString(existing?.origin, normalized.origin ?? null, preserveEnrichment),
+    status: chooseString(existing?.status, normalized.status ?? null, false),
     currency: currencyValue ?? null,
     sourceUrl: raw.sourceUrl ?? null,
-    imageCoverUrl,
+    imageCoverUrl: imageCoverUrl ?? existing?.imageCoverUrl ?? null,
     metadata: mergedMetadata as Prisma.InputJsonValue,
   };
 
@@ -549,6 +573,8 @@ const upsertVariant = async (productId: string, variant: any) => {
     existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
       ? (existing.metadata as Record<string, unknown>)
       : {};
+  const hasVariantEnrichment =
+    existingMetadata.enrichment && typeof existingMetadata.enrichment === "object" && !Array.isArray(existingMetadata.enrichment);
   const changeMetadata: Record<string, unknown> = {};
   if (priceChanged) changeMetadata.last_price_changed_at = now.toISOString();
   if (stockChanged) changeMetadata.last_stock_changed_at = now.toISOString();
@@ -562,10 +588,10 @@ const upsertVariant = async (productId: string, variant: any) => {
   const data = {
     productId,
     sku,
-    color: variant.color ?? null,
-    size: variant.size ?? null,
-    fit: variant.fit ?? null,
-    material: variant.material ?? null,
+    color: chooseString(existing?.color, variant.color ?? null, Boolean(hasVariantEnrichment)),
+    size: chooseString(existing?.size, variant.size ?? null, false),
+    fit: chooseString(existing?.fit, variant.fit ?? null, Boolean(hasVariantEnrichment)),
+    material: chooseString(existing?.material, variant.material ?? null, Boolean(hasVariantEnrichment)),
     price: variant.price ?? 0,
     currency: variant.currency ?? "COP",
     stock: variant.stock ?? null,
