@@ -3,6 +3,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normalizeSiteUrl } from "@/lib/brand-site";
 import { validateAdminRequest } from "@/lib/auth";
+import { getCatalogQueue, isCatalogQueueEnabled } from "@/lib/catalog/queue";
+import { getEnrichmentQueue, isEnrichmentQueueEnabled } from "@/lib/product-enrichment/queue";
 
 const normalizeString = (value: unknown) => {
   if (value === null || value === undefined) return null;
@@ -326,6 +328,35 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
+  const queuedCatalogItems = await prisma.catalogItem.findMany({
+    where: {
+      status: "queued",
+      run: { brandId },
+    },
+    select: { id: true },
+  });
+  const queuedEnrichmentItems = await prisma.productEnrichmentItem.findMany({
+    where: {
+      status: "queued",
+      product: { brandId },
+    },
+    select: { id: true },
+  });
+
+  const removeQueueJobs = async (queue: any, ids: string[]) => {
+    if (!ids.length) return;
+    const removeJobs = queue?.removeJobs as ((jobIds: string[]) => Promise<void>) | undefined;
+    try {
+      if (removeJobs) {
+        await removeJobs.call(queue, ids);
+      } else if (queue?.remove) {
+        await Promise.allSettled(ids.map((id) => queue.remove(id)));
+      }
+    } catch (error) {
+      console.warn("brands.delete.queue_remove_failed", error);
+    }
+  };
+
   try {
     await prisma.$transaction(async (tx) => {
       // Elimina eventos asociados por brandId y tambien por productos/variantes de la marca.
@@ -351,6 +382,13 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "delete_failed";
     return NextResponse.json({ error: "delete_failed", message }, { status: 500 });
+  }
+
+  if (queuedCatalogItems.length && isCatalogQueueEnabled()) {
+    await removeQueueJobs(getCatalogQueue(), queuedCatalogItems.map((item) => item.id));
+  }
+  if (queuedEnrichmentItems.length && isEnrichmentQueueEnabled()) {
+    await removeQueueJobs(getEnrichmentQueue(), queuedEnrichmentItems.map((item) => item.id));
   }
 
   return NextResponse.json({ ok: true });
