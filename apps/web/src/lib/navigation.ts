@@ -128,7 +128,7 @@ const LABEL_OVERRIDES: Record<string, string> = {
   calzado: "Calzado",
   vestidos: "Vestidos",
   faldas: "Faldas",
-  tarjeta regalo: "Tarjeta regalo",
+  "tarjeta regalo": "Tarjeta regalo",
 };
 
 const SUBCATEGORY_OVERRIDES: Record<string, string> = {
