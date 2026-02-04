@@ -103,6 +103,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 ## 11) Infra y despliegue
 - **Front/BFF**: Vercel (Next.js + Vue Storefront). ISR para catálogo; API Routes para endpoints rápidos.
 - **Workers/Scrapers**: contenedores dockerizados con scheduler propio (cron/Temporal/BullMQ). Separar de Vercel porque scrapers y procesamientos largos no caben en lambdas.
+- **Workers (cola catálogo/enriquecimiento)**: asegurar que `CATALOG_WORKER_API_URL` y `PRODUCT_ENRICHMENT_WORKER_API_URL` apunten al deployment vigente; reiniciar workers tras cambios en `apps/web` para evitar versiones antiguas que sobrescriban enriquecimiento.
 - **Base de datos**: Neon Postgres; ramas `main` (prod) y `stg`; usar pooling (Neon Serverless Driver) y pgvector.
 - **Storage**: Vercel Blob para imágenes procesadas y uploads de usuarios (try-on). Cache CDN con expiración corta + revalidación en background.
 - **Mensajería**: Redis/Upstash para colas; opcional Kafka si crece el throughput.
