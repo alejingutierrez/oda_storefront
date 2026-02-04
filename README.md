@@ -7,6 +7,7 @@ Plataforma headless para indexar ~500 marcas de moda colombiana, normalizar cat�
 - `services/scraper` – Scraper stub (Node) listo para integrar descubrimiento de sitemap y parsers por marca.
 - `services/worker` – Worker stub (BullMQ) para orquestar ingestión y pipeline IA.
 - `docker-compose.yml` – Web, scraper, worker, Postgres (pgvector), Redis.
+- `apps/web/vercel.json` – Crons de Vercel (rootDirectory = apps/web).
 - `AGENTS.md`, `BACKLOG.md`, `USER_STORIES.md`, `STATUS.md` – Documentación y control operativo.
 
 ## Requisitos
