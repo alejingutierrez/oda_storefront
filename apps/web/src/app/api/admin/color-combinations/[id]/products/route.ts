@@ -214,13 +214,15 @@ export async function GET(req: NextRequest, context: RouteContext) {
           images: true,
           product: {
             select: {
-              id: true,
-              name: true,
-              category: true,
-              imageCoverUrl: true,
-              brand: { select: { name: true } },
-            },
-          },
+          id: true,
+          name: true,
+          category: true,
+          subcategory: true,
+          gender: true,
+          imageCoverUrl: true,
+          brand: { select: { name: true } },
+        },
+      },
         },
       },
     },
@@ -413,6 +415,9 @@ export async function GET(req: NextRequest, context: RouteContext) {
           brand: brandName,
           imageUrl,
           distance: minDistance,
+          gender: product?.gender ?? null,
+          category: product?.category ?? null,
+          subcategory: product?.subcategory ?? null,
         });
       }
     }

@@ -49,6 +49,9 @@ type ProductMatch = {
   brand: string;
   imageUrl: string | null;
   distance: number;
+  gender: string | null;
+  category: string | null;
+  subcategory: string | null;
 };
 
 type ColorGroup = {
@@ -103,6 +106,302 @@ const FilterSelect = ({ label, value, options, onChange }: FilterSelectProps) =>
     </select>
   </label>
 );
+
+type FilterPillProps = {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+};
+
+const FilterPill = ({ label, active, onClick }: FilterPillProps) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+      active
+        ? "border-slate-900 bg-slate-900 text-white"
+        : "border-slate-200 bg-white text-slate-600 hover:border-slate-400"
+    }`}
+  >
+    {label}
+  </button>
+);
+
+type MultiSelectFilterProps = {
+  label: string;
+  options: string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  onClear: () => void;
+};
+
+const MultiSelectFilter = ({
+  label,
+  options,
+  selected,
+  onToggle,
+  onClear,
+}: MultiSelectFilterProps) => (
+  <div className="space-y-2">
+    <div className="flex items-center justify-between">
+      <span className="text-xs uppercase tracking-[0.2em] text-slate-500">{label}</span>
+      {selected.length ? (
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+        >
+          Limpiar
+        </button>
+      ) : null}
+    </div>
+    {options.length ? (
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => (
+          <FilterPill
+            key={option}
+            label={option}
+            active={selected.includes(option)}
+            onClick={() => onToggle(option)}
+          />
+        ))}
+      </div>
+    ) : (
+      <p className="text-xs text-slate-400">Sin opciones disponibles.</p>
+    )}
+  </div>
+);
+
+type LazyImageProps = {
+  src: string;
+  alt: string;
+  className?: string;
+};
+
+const LazyImage = ({ src, alt, className }: LazyImageProps) => {
+  const holderRef = useRef<HTMLDivElement | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (isVisible) return;
+    const node = holderRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsVisible(true);
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [isVisible]);
+
+  return (
+    <div ref={holderRef} className="h-full w-full">
+      {isVisible ? (
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          className={className}
+        />
+      ) : (
+        <div className="h-full w-full animate-pulse bg-slate-200" />
+      )}
+    </div>
+  );
+};
+
+const buildOptions = (items: ProductMatch[], key: "gender" | "category" | "subcategory") => {
+  const values = new Set<string>();
+  for (const item of items) {
+    const value = item[key];
+    if (!value || !value.trim().length) continue;
+    values.add(value);
+  }
+  return Array.from(values).sort((a, b) => a.localeCompare(b));
+};
+
+type ColorGroupSectionProps = {
+  group: ColorGroup;
+};
+
+const ColorGroupSection = ({ group }: ColorGroupSectionProps) => {
+  const [genderFilter, setGenderFilter] = useState<string[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
+  const [subcategoryFilter, setSubcategoryFilter] = useState<string[]>([]);
+  const sliderRef = useRef<HTMLDivElement | null>(null);
+
+  const genderOptions = useMemo(() => buildOptions(group.items, "gender"), [group.items]);
+  const categoryOptions = useMemo(() => buildOptions(group.items, "category"), [group.items]);
+  const subcategoryOptions = useMemo(
+    () => buildOptions(group.items, "subcategory"),
+    [group.items],
+  );
+
+  const toggleFilter = (
+    value: string,
+    selected: string[],
+    setSelected: (next: string[]) => void,
+  ) => {
+    if (selected.includes(value)) {
+      setSelected(selected.filter((item) => item !== value));
+      return;
+    }
+    setSelected([...selected, value]);
+  };
+
+  const filteredItems = useMemo(() => {
+    return group.items.filter((item) => {
+      if (genderFilter.length && (!item.gender || !genderFilter.includes(item.gender))) {
+        return false;
+      }
+      if (
+        categoryFilter.length &&
+        (!item.category || !categoryFilter.includes(item.category))
+      ) {
+        return false;
+      }
+      if (
+        subcategoryFilter.length &&
+        (!item.subcategory || !subcategoryFilter.includes(item.subcategory))
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [group.items, genderFilter, categoryFilter, subcategoryFilter]);
+
+  const totalCount = group.items.length;
+  const filteredCount = filteredItems.length;
+  const hasFilters = genderFilter.length + categoryFilter.length + subcategoryFilter.length > 0;
+
+  const scrollBy = (delta: number) => {
+    sliderRef.current?.scrollBy({ left: delta, behavior: "smooth" });
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div
+          className="h-12 w-12 rounded-xl border border-slate-200"
+          style={{ backgroundColor: group.color.hex }}
+        />
+        <div>
+          <p className="text-sm font-semibold text-slate-900">
+            {formatLabel(group.color.pantoneName)}
+          </p>
+          <p className="text-xs text-slate-500">
+            {formatLabel(group.color.pantoneCode)} · {group.color.hex}
+          </p>
+        </div>
+        <span className="ml-auto text-xs text-slate-500">
+          {filteredCount} de {totalCount} productos · {group.variantCount} variantes
+        </span>
+      </div>
+
+      <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-3">
+        <MultiSelectFilter
+          label="Género"
+          options={genderOptions}
+          selected={genderFilter}
+          onToggle={(value) => toggleFilter(value, genderFilter, setGenderFilter)}
+          onClear={() => setGenderFilter([])}
+        />
+        <MultiSelectFilter
+          label="Categoría"
+          options={categoryOptions}
+          selected={categoryFilter}
+          onToggle={(value) => toggleFilter(value, categoryFilter, setCategoryFilter)}
+          onClear={() => setCategoryFilter([])}
+        />
+        <MultiSelectFilter
+          label="Subcategoría"
+          options={subcategoryOptions}
+          selected={subcategoryFilter}
+          onToggle={(value) => toggleFilter(value, subcategoryFilter, setSubcategoryFilter)}
+          onClear={() => setSubcategoryFilter([])}
+        />
+      </div>
+
+      {hasFilters ? (
+        <button
+          type="button"
+          onClick={() => {
+            setGenderFilter([]);
+            setCategoryFilter([]);
+            setSubcategoryFilter([]);
+          }}
+          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+        >
+          Limpiar filtros del color
+        </button>
+      ) : null}
+
+      {filteredItems.length ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">
+              Desliza para ver más productos o usa los botones.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => scrollBy(-480)}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollBy(480)}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+          <div
+            ref={sliderRef}
+            className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2"
+          >
+            {filteredItems.map((item) => (
+              <div
+                key={`${group.color.id}-${item.productId}`}
+                className="min-w-[220px] max-w-[220px] snap-start overflow-hidden rounded-2xl border border-slate-200 bg-white"
+              >
+                <div className="aspect-[4/5] w-full bg-slate-100">
+                  {item.imageUrl ? (
+                    <LazyImage
+                      src={item.imageUrl}
+                      alt={item.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+                      Sin imagen
+                    </div>
+                  )}
+                </div>
+                <div className="px-3 py-3">
+                  <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+                  <p className="text-xs text-slate-500">{formatLabel(item.brand)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+          Sin productos asociados con estos filtros.
+        </div>
+      )}
+    </section>
+  );
+};
 
 export default function ColorCombinationsPanel() {
   const router = useRouter();
@@ -454,58 +753,7 @@ export default function ColorCombinationsPanel() {
               ) : detail ? (
                 <div className="space-y-8">
                   {detail.groups.map((group) => (
-                    <section key={group.color.id} className="space-y-4">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <div
-                          className="h-12 w-12 rounded-xl border border-slate-200"
-                          style={{ backgroundColor: group.color.hex }}
-                        />
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">
-                            {formatLabel(group.color.pantoneName)}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {formatLabel(group.color.pantoneCode)} · {group.color.hex}
-                          </p>
-                        </div>
-                        <span className="ml-auto text-xs text-slate-500">
-                          {group.productCount} productos · {group.variantCount} variantes
-                        </span>
-                      </div>
-
-                      {group.items.length ? (
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                          {group.items.map((item) => (
-                            <div
-                              key={`${group.color.id}-${item.productId}`}
-                              className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
-                            >
-                              <div className="aspect-[4/5] w-full bg-slate-100">
-                                {item.imageUrl ? (
-                                  <img
-                                    src={item.imageUrl}
-                                    alt={item.name}
-                                    className="h-full w-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                                    Sin imagen
-                                  </div>
-                                )}
-                              </div>
-                              <div className="px-3 py-3">
-                                <p className="text-sm font-semibold text-slate-900">{item.name}</p>
-                                <p className="text-xs text-slate-500">{formatLabel(item.brand)}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                          Sin productos asociados.
-                        </div>
-                      )}
-                    </section>
+                    <ColorGroupSection key={group.color.id} group={group} />
                   ))}
                 </div>
               ) : (
