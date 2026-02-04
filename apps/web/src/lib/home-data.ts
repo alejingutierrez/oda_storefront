@@ -69,7 +69,6 @@ export type ColorCombo = {
   comboKey: string;
   detectedLayout: string | null;
   colors: Array<{
-    id: string;
     hex: string;
     role: string | null;
     pantoneName: string | null;
@@ -469,57 +468,54 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
 export async function getColorCombos(seed: number, limit = 6): Promise<ColorCombo[]> {
   const cached = unstable_cache(
     async () => {
-      const combos = await prisma.$queryRaw<ColorCombo[]>(
+      const combos = await prisma.$queryRaw<
+        Array<{
+          id: string;
+          comboKey: string;
+          detectedLayout: string | null;
+          colorsJson: Prisma.JsonValue | string | null;
+        }>
+      >(
         Prisma.sql`
           select
             c.id,
             c."comboKey",
-            c."detectedLayout"
+            c."detectedLayout",
+            c."colorsJson"
           from color_combinations c
+          where c."colorsJson" is not null
           order by md5(concat(c.id::text, ${seed}::text, 'colors'))
           limit ${limit}
         `
       );
 
-      const ids = combos.map((combo) => combo.id);
-      if (ids.length === 0) {
-        return [];
-      }
-
-      const colors = await prisma.$queryRaw<
-        Array<{
-          id: string;
-          combinationId: string;
-          hex: string;
-          role: string | null;
-          pantoneName: string | null;
-        }>
-      >(
-        Prisma.sql`
-          select id, "combinationId", hex, role, "pantoneName"
-          from color_combination_colors
-          where "combinationId" in (${Prisma.join(ids)})
-          order by "position" asc
-        `
-      );
-
-      const byCombo = new Map<string, ColorCombo>();
-      for (const combo of combos) {
-        byCombo.set(combo.id, { ...combo, colors: [] });
-      }
-      for (const color of colors) {
-        const combo = byCombo.get(color.combinationId);
-        if (combo) {
-          combo.colors.push({
-            id: color.id,
-            hex: color.hex,
-            role: color.role,
-            pantoneName: color.pantoneName,
-          });
+      return combos.map((combo) => {
+        let colors: Array<{ hex: string; role?: string | null }> = [];
+        if (combo.colorsJson) {
+          if (typeof combo.colorsJson === "string") {
+            try {
+              colors = JSON.parse(combo.colorsJson) as Array<{
+                hex: string;
+                role?: string | null;
+              }>;
+            } catch {
+              colors = [];
+            }
+          } else if (Array.isArray(combo.colorsJson)) {
+            colors = combo.colorsJson as Array<{ hex: string; role?: string | null }>;
+          }
         }
-      }
-
-      return Array.from(byCombo.values());
+        return {
+          id: combo.id,
+          comboKey: combo.comboKey,
+          detectedLayout: combo.detectedLayout,
+          colors: colors.map((color) => ({
+            hex: color.hex,
+            role: color.role ?? null,
+            pantoneName: null,
+          })),
+        };
+      });
     },
     [`home-colors-${seed}-${limit}`],
     { revalidate: HOME_REVALIDATE_SECONDS }
