@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 const PAGE_SIZE = 24;
@@ -54,17 +54,23 @@ type ProductMatch = {
   subcategory: string | null;
 };
 
-type ColorGroup = {
-  color: ColorItem;
-  productCount: number;
-  variantCount: number;
-  items: ProductMatch[];
-};
-
 type DetailResponse = {
   combinationId: string;
   colors: ColorItem[];
-  groups: ColorGroup[];
+};
+
+type ColorItemsResponse = {
+  combinationId: string;
+  color: ColorItem;
+  totalProductCount: number;
+  filteredProductCount: number;
+  variantCount: number;
+  filterOptions: {
+    genders: string[];
+    categories: string[];
+    subcategories: string[];
+  };
+  items: ProductMatch[];
 };
 
 const parsePositiveInt = (value: string | null, fallback: number) => {
@@ -107,7 +113,7 @@ const FilterSelect = ({ label, value, options, onChange }: FilterSelectProps) =>
   </label>
 );
 
-type MultiSelectFilterProps = {
+type MultiSelectDropdownProps = {
   label: string;
   options: string[];
   selected: string[];
@@ -115,53 +121,92 @@ type MultiSelectFilterProps = {
   onClear: () => void;
 };
 
-const MultiSelectFilter = ({
+const MultiSelectDropdown = ({
   label,
   options,
   selected,
   onChange,
   onClear,
-}: MultiSelectFilterProps) => (
-  <label className="block space-y-2">
-    <div className="flex items-center justify-between">
-      <span className="text-xs uppercase tracking-[0.2em] text-slate-500">{label}</span>
-      {selected.length ? (
-        <button
-          type="button"
-          onClick={onClear}
-          className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
-        >
-          Limpiar
-        </button>
+}: MultiSelectDropdownProps) => {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (event: MouseEvent) => {
+      if (!wrapperRef.current) return;
+      if (!wrapperRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  const toggleValue = (value: string) => {
+    if (selected.includes(value)) {
+      onChange(selected.filter((item) => item !== value));
+      return;
+    }
+    onChange([...selected, value]);
+  };
+
+  return (
+    <div className="relative space-y-2" ref={wrapperRef}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs uppercase tracking-[0.2em] text-slate-500">{label}</span>
+        {selected.length ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+          >
+            Limpiar
+          </button>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+      >
+        <span>
+          {selected.length ? `${selected.length} seleccionados` : `Selecciona ${label.toLowerCase()}`}
+        </span>
+        <span className="text-slate-400">{open ? "▲" : "▼"}</span>
+      </button>
+      {open ? (
+        <div className="absolute left-0 right-0 z-20 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+          {options.length ? (
+            options.map((option) => (
+              <label
+                key={option}
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                  checked={selected.includes(option)}
+                  onChange={() => toggleValue(option)}
+                />
+                <span>{option}</span>
+              </label>
+            ))
+          ) : (
+            <p className="px-2 py-2 text-xs text-slate-400">Sin opciones disponibles.</p>
+          )}
+        </div>
       ) : null}
     </div>
-    {options.length ? (
-      <select
-        multiple
-        value={selected}
-        onChange={(event) => {
-          const values = Array.from(event.currentTarget.selectedOptions).map(
-            (option) => option.value,
-          );
-          onChange(values);
-        }}
-        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-        size={Math.min(6, options.length)}
-      >
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
-    ) : (
-      <p className="text-xs text-slate-400">Sin opciones disponibles.</p>
-    )}
-    <p className="text-[11px] text-slate-400">
-      Seleccionados: {selected.length}
-    </p>
-  </label>
-);
+  );
+};
 
 type LazyImageProps = {
   src: string;
@@ -206,100 +251,157 @@ const LazyImage = ({ src, alt, className }: LazyImageProps) => {
   );
 };
 
-const buildOptions = (items: ProductMatch[], key: "gender" | "category" | "subcategory") => {
-  const values = new Set<string>();
-  for (const item of items) {
-    const value = item[key];
-    if (!value || !value.trim().length) continue;
-    values.add(value);
-  }
-  return Array.from(values).sort((a, b) => a.localeCompare(b));
-};
-
 type ColorGroupSectionProps = {
-  group: ColorGroup;
+  combinationId: string;
+  color: ColorItem;
 };
 
-const ColorGroupSection = ({ group }: ColorGroupSectionProps) => {
+const PAGE_LIMIT = 24;
+
+const ColorGroupSection = ({ combinationId, color }: ColorGroupSectionProps) => {
   const [genderFilter, setGenderFilter] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [subcategoryFilter, setSubcategoryFilter] = useState<string[]>([]);
+  const [items, setItems] = useState<ProductMatch[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [filteredCount, setFilteredCount] = useState(0);
+  const [variantCount, setVariantCount] = useState(0);
+  const [filterOptions, setFilterOptions] = useState({
+    genders: [] as string[],
+    categories: [] as string[],
+    subcategories: [] as string[],
+  });
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const sliderRef = useRef<HTMLDivElement | null>(null);
+  const sectionRef = useRef<HTMLDivElement | null>(null);
 
-  const genderOptions = useMemo(() => buildOptions(group.items, "gender"), [group.items]);
-  const categoryOptions = useMemo(() => buildOptions(group.items, "category"), [group.items]);
-  const subcategoryOptions = useMemo(
-    () => buildOptions(group.items, "subcategory"),
-    [group.items],
+  const fetchItems = useCallback(
+    async (reset: boolean) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams();
+        params.set("colorId", color.id);
+        params.set("limit", String(PAGE_LIMIT));
+        params.set("offset", String(reset ? 0 : page * PAGE_LIMIT));
+        if (genderFilter.length) params.set("gender", genderFilter.join(","));
+        if (categoryFilter.length) params.set("category", categoryFilter.join(","));
+        if (subcategoryFilter.length) params.set("subcategory", subcategoryFilter.join(","));
+        const res = await fetch(
+          `/api/admin/color-combinations/${combinationId}/products?${params.toString()}`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) {
+          throw new Error("No se pudieron cargar los productos asociados");
+        }
+        const payload = (await res.json()) as ColorItemsResponse;
+        setFilterOptions(payload.filterOptions);
+        setTotalCount(payload.totalProductCount);
+        setFilteredCount(payload.filteredProductCount);
+        setVariantCount(payload.variantCount);
+        if (reset) {
+          setItems(payload.items ?? []);
+          setPage(1);
+        } else {
+          setItems((prev) => [...prev, ...(payload.items ?? [])]);
+          setPage((prev) => prev + 1);
+        }
+        setLoaded(true);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error inesperado");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      color.id,
+      combinationId,
+      genderFilter,
+      categoryFilter,
+      subcategoryFilter,
+      page,
+    ],
   );
 
-  const filteredItems = useMemo(() => {
-    return group.items.filter((item) => {
-      if (genderFilter.length && (!item.gender || !genderFilter.includes(item.gender))) {
-        return false;
-      }
-      if (
-        categoryFilter.length &&
-        (!item.category || !categoryFilter.includes(item.category))
-      ) {
-        return false;
-      }
-      if (
-        subcategoryFilter.length &&
-        (!item.subcategory || !subcategoryFilter.includes(item.subcategory))
-      ) {
-        return false;
-      }
-      return true;
-    });
-  }, [group.items, genderFilter, categoryFilter, subcategoryFilter]);
+  useEffect(() => {
+    if (loaded) return;
+    const node = sectionRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          fetchItems(true);
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [fetchItems, loaded]);
 
-  const totalCount = group.items.length;
-  const filteredCount = filteredItems.length;
+  useEffect(() => {
+    if (!loaded) return;
+    setItems([]);
+    setPage(0);
+    fetchItems(true);
+  }, [genderFilter, categoryFilter, subcategoryFilter]);
+
   const hasFilters = genderFilter.length + categoryFilter.length + subcategoryFilter.length > 0;
+  const hasMore = items.length < filteredCount;
 
   const scrollBy = (delta: number) => {
     sliderRef.current?.scrollBy({ left: delta, behavior: "smooth" });
   };
 
+  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (loading || !hasMore) return;
+    const node = event.currentTarget;
+    if (node.scrollLeft + node.clientWidth >= node.scrollWidth - 240) {
+      fetchItems(false);
+    }
+  };
+
   return (
-    <section className="space-y-4">
+    <section className="space-y-4" ref={sectionRef}>
       <div className="flex flex-wrap items-center gap-3">
         <div
           className="h-12 w-12 rounded-xl border border-slate-200"
-          style={{ backgroundColor: group.color.hex }}
+          style={{ backgroundColor: color.hex }}
         />
         <div>
           <p className="text-sm font-semibold text-slate-900">
-            {formatLabel(group.color.pantoneName)}
+            {formatLabel(color.pantoneName)}
           </p>
           <p className="text-xs text-slate-500">
-            {formatLabel(group.color.pantoneCode)} · {group.color.hex}
+            {formatLabel(color.pantoneCode)} · {color.hex}
           </p>
         </div>
         <span className="ml-auto text-xs text-slate-500">
-          {filteredCount} de {totalCount} productos · {group.variantCount} variantes
+          {loaded ? `${filteredCount} de ${totalCount} productos · ${variantCount} variantes` : "Cargando…"}
         </span>
       </div>
 
       <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-3">
-        <MultiSelectFilter
+        <MultiSelectDropdown
           label="Género"
-          options={genderOptions}
+          options={filterOptions.genders}
           selected={genderFilter}
           onChange={(values) => setGenderFilter(values)}
           onClear={() => setGenderFilter([])}
         />
-        <MultiSelectFilter
+        <MultiSelectDropdown
           label="Categoría"
-          options={categoryOptions}
+          options={filterOptions.categories}
           selected={categoryFilter}
           onChange={(values) => setCategoryFilter(values)}
           onClear={() => setCategoryFilter([])}
         />
-        <MultiSelectFilter
+        <MultiSelectDropdown
           label="Subcategoría"
-          options={subcategoryOptions}
+          options={filterOptions.subcategories}
           selected={subcategoryFilter}
           onChange={(values) => setSubcategoryFilter(values)}
           onClear={() => setSubcategoryFilter([])}
@@ -320,7 +422,11 @@ const ColorGroupSection = ({ group }: ColorGroupSectionProps) => {
         </button>
       ) : null}
 
-      {filteredItems.length ? (
+      {error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      ) : items.length ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs text-slate-500">
@@ -345,11 +451,12 @@ const ColorGroupSection = ({ group }: ColorGroupSectionProps) => {
           </div>
           <div
             ref={sliderRef}
+            onScroll={handleScroll}
             className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2"
           >
-            {filteredItems.map((item) => (
+            {items.map((item) => (
               <div
-                key={`${group.color.id}-${item.productId}`}
+                key={`${color.id}-${item.productId}`}
                 className="min-w-[220px] max-w-[220px] snap-start overflow-hidden rounded-2xl border border-slate-200 bg-white"
               >
                 <div className="aspect-[4/5] w-full bg-slate-100">
@@ -371,11 +478,27 @@ const ColorGroupSection = ({ group }: ColorGroupSectionProps) => {
                 </div>
               </div>
             ))}
+            {loading && (
+              <div className="min-w-[220px] max-w-[220px] animate-pulse rounded-2xl border border-slate-200 bg-slate-100" />
+            )}
           </div>
+          {hasMore && !loading ? (
+            <button
+              type="button"
+              onClick={() => fetchItems(false)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+            >
+              Cargar más
+            </button>
+          ) : null}
+        </div>
+      ) : loaded ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+          Sin productos asociados con estos filtros.
         </div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-          Sin productos asociados con estos filtros.
+          Cargando productos asociados…
         </div>
       )}
     </section>
@@ -731,8 +854,12 @@ export default function ColorCombinationsPanel() {
                 </div>
               ) : detail ? (
                 <div className="space-y-8">
-                  {detail.groups.map((group) => (
-                    <ColorGroupSection key={group.color.id} group={group} />
+                  {detail.colors.map((color) => (
+                    <ColorGroupSection
+                      key={color.id}
+                      combinationId={detail.combinationId}
+                      color={color}
+                    />
                   ))}
                 </div>
               ) : (

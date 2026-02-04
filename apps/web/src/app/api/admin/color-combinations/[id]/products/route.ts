@@ -184,6 +184,38 @@ const categoryAllowListAll = new Set(
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+const parseIntParam = (value: string | null | undefined, fallback: number) => {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.floor(parsed);
+};
+
+const parseListParam = (params: URLSearchParams, key: string) => {
+  const values = params
+    .getAll(key)
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return Array.from(new Set(values));
+};
+
+const mapColorSummary = (color: {
+  id: string;
+  position: number;
+  role: string | null;
+  hex: string | null;
+  pantoneCode: string | null;
+  pantoneName: string | null;
+}) => ({
+  id: color.id,
+  position: color.position,
+  role: color.role,
+  hex: color.hex,
+  pantoneCode: color.pantoneCode ?? null,
+  pantoneName: color.pantoneName ?? null,
+});
+
 export async function GET(req: NextRequest, context: RouteContext) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
@@ -191,6 +223,13 @@ export async function GET(req: NextRequest, context: RouteContext) {
   }
 
   const { id } = await context.params;
+  const url = new URL(req.url);
+  const colorIdParam = url.searchParams.get("colorId");
+  const limit = parseIntParam(url.searchParams.get("limit"), 24);
+  const offset = parseIntParam(url.searchParams.get("offset"), 0);
+  const genderFilter = parseListParam(url.searchParams, "gender");
+  const categoryFilter = parseListParam(url.searchParams, "category");
+  const subcategoryFilter = parseListParam(url.searchParams, "subcategory");
 
   const combination = await prisma.colorCombination.findUnique({
     where: { id },
@@ -204,31 +243,6 @@ export async function GET(req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  const matches = await prisma.variantColorCombinationMatch.findMany({
-    where: { combinationId: id },
-    orderBy: { score: "asc" },
-    include: {
-      variant: {
-        select: {
-          id: true,
-          images: true,
-          product: {
-            select: {
-          id: true,
-          name: true,
-          category: true,
-          subcategory: true,
-          gender: true,
-          imageCoverUrl: true,
-          brand: { select: { name: true } },
-        },
-      },
-        },
-      },
-    },
-  });
-
-  const variantIds = matches.map((match) => match.variantId);
   const rawColors = Array.isArray(combination.colorsJson) ? combination.colorsJson : [];
   const paletteHexes = rawColors
     .map((entry) => normalizeHex(readEntryHex(entry)))
@@ -267,71 +281,6 @@ export async function GET(req: NextRequest, context: RouteContext) {
     standardRows.map((row) => [row.id, { L: row.labL, a: row.labA, b: row.labB }]),
   );
 
-  if (!variantIds.length) {
-    return NextResponse.json({
-      combinationId: id,
-      colors: rawColors.map((entry, index) => {
-        const rawHex = readEntryHex(entry);
-        const hex = normalizeHex(rawHex) ?? rawHex ?? null;
-        const paletteEntry = hex ? paletteMap.get(hex.toUpperCase()) : null;
-        const standardLab = paletteEntry?.standardColorId
-          ? standardMap.get(paletteEntry.standardColorId)
-          : null;
-        return {
-          id: `${combination.id}:${index + 1}`,
-          position: index + 1,
-          role: readEntryRole(entry),
-          hex,
-          pantoneCode: paletteEntry?.pantoneCode ?? null,
-          pantoneName: paletteEntry?.pantoneName ?? null,
-          labL: standardLab?.L ?? null,
-          labA: standardLab?.a ?? null,
-          labB: standardLab?.b ?? null,
-          standardColorId: paletteEntry?.standardColorId ?? null,
-        };
-      }),
-      groups: rawColors.map((entry, index) => {
-        const rawHex = readEntryHex(entry);
-        const hex = normalizeHex(rawHex) ?? rawHex ?? null;
-        const paletteEntry = hex ? paletteMap.get(hex.toUpperCase()) : null;
-        const standardLab = paletteEntry?.standardColorId
-          ? standardMap.get(paletteEntry.standardColorId)
-          : null;
-        const color = {
-          id: `${combination.id}:${index + 1}`,
-          position: index + 1,
-          role: readEntryRole(entry),
-          hex,
-          pantoneCode: paletteEntry?.pantoneCode ?? null,
-          pantoneName: paletteEntry?.pantoneName ?? null,
-          labL: standardLab?.L ?? null,
-          labA: standardLab?.a ?? null,
-          labB: standardLab?.b ?? null,
-          standardColorId: paletteEntry?.standardColorId ?? null,
-        };
-        return {
-          color,
-          productCount: 0,
-          variantCount: 0,
-          items: [],
-        };
-      }),
-    });
-  }
-
-  const vectors = await prisma.variantColorVector.findMany({
-    where: { variantId: { in: variantIds } },
-    select: { variantId: true, hex: true, labL: true, labA: true, labB: true },
-  });
-
-  const vectorMap = new Map<string, { hex: string; lab: { L: number; a: number; b: number } }[]>();
-  for (const vector of vectors) {
-    const lab = { L: vector.labL, a: vector.labA, b: vector.labB };
-    const list = vectorMap.get(vector.variantId) ?? [];
-    list.push({ hex: vector.hex, lab });
-    vectorMap.set(vector.variantId, list);
-  }
-
   const comboColors = rawColors
     .map((entry, index) => {
       const rawHex = readEntryHex(entry);
@@ -360,33 +309,100 @@ export async function GET(req: NextRequest, context: RouteContext) {
     })
     .filter((color) => Boolean(color.hex));
 
-  const colorThreshold = Number(process.env.COLOR_MATCH_COLOR_THRESHOLD ?? 26);
+  if (!colorIdParam) {
+    return NextResponse.json({
+      combinationId: id,
+      colors: comboColors.map((color) =>
+        mapColorSummary({
+          id: color.id,
+          position: color.position,
+          role: color.role,
+          hex: color.hex,
+          pantoneCode: color.pantoneCode ?? null,
+          pantoneName: color.pantoneName ?? null,
+        }),
+      ),
+    });
+  }
 
-  const groupMap = new Map<
+  const targetColor = comboColors.find((color) => color.id === colorIdParam);
+  if (!targetColor) {
+    return NextResponse.json({ error: "color_not_found" }, { status: 404 });
+  }
+
+  const matches = await prisma.variantColorCombinationMatch.findMany({
+    where: { combinationId: id },
+    orderBy: { score: "asc" },
+    include: {
+      variant: {
+        select: {
+          id: true,
+          images: true,
+          product: {
+            select: {
+              id: true,
+              name: true,
+              category: true,
+              subcategory: true,
+              gender: true,
+              imageCoverUrl: true,
+              brand: { select: { name: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const variantIds = matches.map((match) => match.variantId);
+  if (!variantIds.length) {
+    return NextResponse.json({
+      combinationId: id,
+      color: mapColorSummary({
+        id: targetColor.id,
+        position: targetColor.position,
+        role: targetColor.role,
+        hex: targetColor.hex,
+        pantoneCode: targetColor.pantoneCode ?? null,
+        pantoneName: targetColor.pantoneName ?? null,
+      }),
+      totalProductCount: 0,
+      filteredProductCount: 0,
+      variantCount: 0,
+      filterOptions: { genders: [], categories: [], subcategories: [] },
+      items: [],
+    });
+  }
+
+  const vectors = await prisma.variantColorVector.findMany({
+    where: { variantId: { in: variantIds } },
+    select: { variantId: true, hex: true, labL: true, labA: true, labB: true },
+  });
+
+  const vectorMap = new Map<string, { hex: string; lab: { L: number; a: number; b: number } }[]>();
+  for (const vector of vectors) {
+    const lab = { L: vector.labL, a: vector.labA, b: vector.labB };
+    const list = vectorMap.get(vector.variantId) ?? [];
+    list.push({ hex: vector.hex, lab });
+    vectorMap.set(vector.variantId, list);
+  }
+
+  const colorThreshold = Number(process.env.COLOR_MATCH_COLOR_THRESHOLD ?? 26);
+  const productMap = new Map<
     string,
     {
-      color: (typeof comboColors)[number];
-      items: Map<
-        string,
-        {
-          productId: string;
-          variantId: string;
-          name: string;
-          brand: string;
-          imageUrl: string | null;
-          distance: number;
-          gender: string | null;
-          category: string | null;
-          subcategory: string | null;
-        }
-      >;
-      variantCount: number;
+      productId: string;
+      variantId: string;
+      name: string;
+      brand: string;
+      imageUrl: string | null;
+      distance: number;
+      gender: string | null;
+      category: string | null;
+      subcategory: string | null;
     }
   >();
-
-  for (const color of comboColors) {
-    groupMap.set(color.id, { color, items: new Map(), variantCount: 0 });
-  }
+  let variantCount = 0;
 
   for (const match of matches) {
     const variant = match.variant;
@@ -401,55 +417,76 @@ export async function GET(req: NextRequest, context: RouteContext) {
     const imageUrl = variant.images?.[0] ?? product?.imageCoverUrl ?? null;
     const productCategory = product?.category?.trim().toLowerCase() ?? null;
 
-    for (const color of comboColors) {
-      const roleKey = normalizeRole(color.role);
-      const allowList = roleKey ? categoryAllowListByRole[roleKey] : null;
-      if (!productCategory || !categoryAllowListAll.has(productCategory)) continue;
-      if (allowList && !allowList.has(productCategory)) continue;
-      if (!color.lab) continue;
-      let minDistance = Number.POSITIVE_INFINITY;
-      for (const vector of vectorsForVariant) {
-        const distance = deltaE2000(color.lab, vector.lab);
-        if (distance < minDistance) minDistance = distance;
-      }
+    const roleKey = normalizeRole(targetColor.role);
+    const allowList = roleKey ? categoryAllowListByRole[roleKey] : null;
+    if (!productCategory || !categoryAllowListAll.has(productCategory)) continue;
+    if (allowList && !allowList.has(productCategory)) continue;
+    if (!targetColor.lab) continue;
 
-      if (minDistance > colorThreshold) continue;
-      const group = groupMap.get(color.id);
-      if (!group) continue;
+    let minDistance = Number.POSITIVE_INFINITY;
+    for (const vector of vectorsForVariant) {
+      const distance = deltaE2000(targetColor.lab, vector.lab);
+      if (distance < minDistance) minDistance = distance;
+    }
 
-      group.variantCount += 1;
+    if (minDistance > colorThreshold) continue;
+    variantCount += 1;
 
-      const existing = group.items.get(productId);
-      if (!existing || minDistance < existing.distance) {
-        group.items.set(productId, {
-          productId,
-          variantId: variant.id,
-          name,
-          brand: brandName,
-          imageUrl,
-          distance: minDistance,
-          gender: product?.gender ?? null,
-          category: product?.category ?? null,
-          subcategory: product?.subcategory ?? null,
-        });
-      }
+    const existing = productMap.get(productId);
+    if (!existing || minDistance < existing.distance) {
+      productMap.set(productId, {
+        productId,
+        variantId: variant.id,
+        name,
+        brand: brandName,
+        imageUrl,
+        distance: minDistance,
+        gender: product?.gender ?? null,
+        category: product?.category ?? null,
+        subcategory: product?.subcategory ?? null,
+      });
     }
   }
 
-  const groups = comboColors.map((color) => {
-    const group = groupMap.get(color.id);
-    const items = group ? Array.from(group.items.values()).sort((a, b) => a.distance - b.distance) : [];
-    return {
-      color,
-      productCount: items.length,
-      variantCount: group?.variantCount ?? 0,
-      items,
-    };
+  const allItems = Array.from(productMap.values()).sort((a, b) => a.distance - b.distance);
+  const genderOptions = new Set<string>();
+  const categoryOptions = new Set<string>();
+  const subcategoryOptions = new Set<string>();
+
+  for (const item of allItems) {
+    if (item.gender) genderOptions.add(item.gender);
+    if (item.category) categoryOptions.add(item.category);
+    if (item.subcategory) subcategoryOptions.add(item.subcategory);
+  }
+
+  const totalProductCount = allItems.length;
+  const filteredItems = allItems.filter((item) => {
+    if (genderFilter.length && (!item.gender || !genderFilter.includes(item.gender))) return false;
+    if (categoryFilter.length && (!item.category || !categoryFilter.includes(item.category))) return false;
+    if (subcategoryFilter.length && (!item.subcategory || !subcategoryFilter.includes(item.subcategory))) return false;
+    return true;
   });
+  const filteredProductCount = filteredItems.length;
+  const pageItems = filteredItems.slice(offset, offset + limit);
 
   return NextResponse.json({
     combinationId: id,
-    colors: comboColors,
-    groups,
+    color: mapColorSummary({
+      id: targetColor.id,
+      position: targetColor.position,
+      role: targetColor.role,
+      hex: targetColor.hex,
+      pantoneCode: targetColor.pantoneCode ?? null,
+      pantoneName: targetColor.pantoneName ?? null,
+    }),
+    totalProductCount,
+    filteredProductCount,
+    variantCount,
+    filterOptions: {
+      genders: Array.from(genderOptions).sort(),
+      categories: Array.from(categoryOptions).sort(),
+      subcategories: Array.from(subcategoryOptions).sort(),
+    },
+    items: pageItems,
   });
 }
