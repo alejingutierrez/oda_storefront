@@ -366,7 +366,20 @@ export async function GET(req: NextRequest, context: RouteContext) {
     string,
     {
       color: (typeof comboColors)[number];
-      items: Map<string, { productId: string; variantId: string; name: string; brand: string; imageUrl: string | null; distance: number }>;
+      items: Map<
+        string,
+        {
+          productId: string;
+          variantId: string;
+          name: string;
+          brand: string;
+          imageUrl: string | null;
+          distance: number;
+          gender: string | null;
+          category: string | null;
+          subcategory: string | null;
+        }
+      >;
       variantCount: number;
     }
   >();
