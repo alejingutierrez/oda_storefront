@@ -9,7 +9,12 @@ export const maxDuration = 60;
 
 const allowCronRequest = (req: Request) => {
   const cronHeader = req.headers.get("x-vercel-cron");
-  return cronHeader === "1" || cronHeader === "true";
+  const userAgent = req.headers.get("user-agent") ?? "";
+  return (
+    cronHeader === "1" ||
+    cronHeader === "true" ||
+    userAgent.toLowerCase().includes("vercel-cron")
+  );
 };
 
 const resolveDrainConfig = (body: unknown) => {
