@@ -423,7 +423,7 @@ const getProductsMissingEnrichment = async (
   return prisma.$queryRaw<{ id: string }[]>(
     Prisma.sql`
       SELECT DISTINCT p.id
-      FROM "products"
+      FROM "products" p
       LEFT JOIN "product_enrichment_items" pei ON pei."productId" = p.id
       LEFT JOIN "product_enrichment_runs" per ON per.id = pei."runId"
       WHERE p."brandId" = ${brandId}
@@ -484,8 +484,13 @@ export const finalizeRefreshForRun = async (params: {
   lastError?: string | null;
 }) => {
   const metrics = await computeRefreshMetrics(params.brandId, params.startedAt);
+  let enrichmentError: string | null = null;
   if (params.status === "completed") {
-    await enqueueNewProductEnrichment(params.brandId, params.startedAt);
+    try {
+      await enqueueNewProductEnrichment(params.brandId, params.startedAt);
+    } catch (error) {
+      enrichmentError = error instanceof Error ? error.message : String(error);
+    }
   }
   await markRefreshCompleted({
     brandId: params.brandId,
@@ -495,7 +500,7 @@ export const finalizeRefreshForRun = async (params: {
     priceChanges: metrics.priceChanges,
     stockChanges: metrics.stockChanges,
     stockStatusChanges: metrics.stockStatusChanges,
-    lastError: params.lastError ?? null,
+    lastError: params.lastError ?? enrichmentError ?? null,
   });
 };
 
