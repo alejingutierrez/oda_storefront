@@ -105,6 +105,7 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 - **Workers/Scrapers**: contenedores dockerizados con scheduler propio (cron/Temporal/BullMQ). Separar de Vercel porque scrapers y procesamientos largos no caben en lambdas.
 - **Workers (cola catálogo/enriquecimiento)**: asegurar que `CATALOG_WORKER_API_URL` y `PRODUCT_ENRICHMENT_WORKER_API_URL` apunten al deployment vigente; reiniciar workers tras cambios en `apps/web` para evitar versiones antiguas que sobrescriban enriquecimiento.
 - **Base de datos**: Neon Postgres; ramas `main` (prod) y `stg`; usar pooling (Neon Serverless Driver) y pgvector.
+- **Guardia de enriquecimiento (DB)**: trigger `preserve_product_enrichment` evita que actualizaciones de catálogo borren `metadata.enrichment` y campos enriquecidos. Para desactivar, `DROP TRIGGER preserve_product_enrichment ON "products";` y `DROP FUNCTION preserve_product_enrichment();`.
 - **Storage**: Vercel Blob para imágenes procesadas y uploads de usuarios (try-on). Cache CDN con expiración corta + revalidación en background.
 - **Mensajería**: Redis/Upstash para colas; opcional Kafka si crece el throughput.
 - **CI/CD**: GitHub Actions para lint/tests/build, push a Vercel y al registro de contenedores.
