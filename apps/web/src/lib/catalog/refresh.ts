@@ -2,7 +2,13 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { discoverCatalogRefs } from "@/lib/catalog/discovery";
 import { enqueueCatalogItems, isCatalogQueueEnabled } from "@/lib/catalog/queue";
-import { createRunWithItems, listPendingItems, markItemsQueued } from "@/lib/catalog/run-store";
+import {
+  createRunWithItems,
+  listPendingItems,
+  markItemsQueued,
+  resetQueuedItems,
+  resetStuckItems,
+} from "@/lib/catalog/run-store";
 import { drainCatalogRun } from "@/lib/catalog/processor";
 import { enqueueEnrichmentItems, isEnrichmentQueueEnabled } from "@/lib/product-enrichment/queue";
 import {
@@ -10,6 +16,8 @@ import {
   findActiveRun as findActiveEnrichmentRun,
   listPendingItems as listPendingEnrichmentItems,
   markItemsQueued as markEnrichmentItemsQueued,
+  resetQueuedItems as resetEnrichmentQueuedItems,
+  resetStuckItems as resetEnrichmentStuckItems,
 } from "@/lib/product-enrichment/run-store";
 import {
   productEnrichmentModel,
@@ -28,6 +36,17 @@ type CatalogRefreshMeta = {
   lastPriceChanges?: number;
   lastStockChanges?: number;
   lastStockStatusChanges?: number;
+  lastSitemapCount?: number;
+  lastSitemapMatched?: number;
+  lastSitemapCoverage?: number;
+  lastAdapterCount?: number;
+  lastAdapterMatched?: number;
+  lastAdapterCoverage?: number;
+  lastCombinedCount?: number;
+  lastCombinedMatched?: number;
+  lastCombinedCoverage?: number;
+  lastNewFromSitemap?: number;
+  lastNewFromAdapter?: number;
   lastError?: string | null;
 };
 
@@ -68,6 +87,19 @@ export const getRefreshConfig = () => {
   const maxRuntimeMs = Math.max(5000, Number(process.env.CATALOG_REFRESH_MAX_RUNTIME_MS ?? 25000));
   const minGapHours = Math.max(1, Number(process.env.CATALOG_REFRESH_MIN_GAP_HOURS ?? 6));
   const drainOnRun = process.env.CATALOG_REFRESH_DRAIN_ON_RUN === "true";
+  const autoRecover = process.env.CATALOG_REFRESH_AUTO_RECOVER !== "false";
+  const recoverMaxRuns = Math.max(
+    0,
+    Number(process.env.CATALOG_REFRESH_RECOVER_MAX_RUNS ?? 3),
+  );
+  const recoverStuckMinutes = Math.max(
+    5,
+    Number(process.env.CATALOG_REFRESH_RECOVER_STUCK_MINUTES ?? 60),
+  );
+  const recoverEnrichmentStuckMinutes = Math.max(
+    5,
+    Number(process.env.CATALOG_REFRESH_ENRICH_RECOVER_STUCK_MINUTES ?? 60),
+  );
   const failedLookbackDays = Math.max(
     1,
     Number(process.env.CATALOG_REFRESH_FAILED_LOOKBACK_DAYS ?? 30),
@@ -91,6 +123,10 @@ export const getRefreshConfig = () => {
     maxRuntimeMs,
     minGapHours,
     drainOnRun,
+    autoRecover,
+    recoverMaxRuns,
+    recoverStuckMinutes,
+    recoverEnrichmentStuckMinutes,
     failedLookbackDays,
     failedUrlLimit,
     enrichLookbackDays,
@@ -126,7 +162,11 @@ export const isBrandDueForRefresh = (
   return true;
 };
 
-export const markRefreshStarted = async (brandId: string, runId: string) => {
+export const markRefreshStarted = async (
+  brandId: string,
+  runId: string,
+  coverage?: Partial<CatalogRefreshMeta>,
+) => {
   const brand = await prisma.brand.findUnique({ where: { id: brandId }, select: { metadata: true } });
   if (!brand) return;
   const metadata = readMetadata(brand.metadata);
@@ -135,6 +175,7 @@ export const markRefreshStarted = async (brandId: string, runId: string) => {
     lastRunId: runId,
     lastStatus: "processing",
     lastError: null,
+    ...(coverage ?? {}),
   });
   await prisma.brand.update({
     where: { id: brandId },
@@ -219,6 +260,158 @@ const computeRefreshMetrics = async (brandId: string, startedAt: Date) => {
     stockChanges: stockChanges?.count ?? 0,
     stockStatusChanges: stockStatusChanges?.count ?? 0,
   };
+};
+
+const chunk = <T,>(items: T[], size: number) => {
+  if (!items.length) return [];
+  const result: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    result.push(items.slice(i, i + size));
+  }
+  return result;
+};
+
+const collectMatchedProductIds = async (
+  brandId: string,
+  refs: Array<{ url?: string | null; externalId?: string | null }>,
+) => {
+  if (!refs.length) return new Set<string>();
+  const urls = Array.from(new Set(refs.map((ref) => ref.url).filter(Boolean))) as string[];
+  const externalIds = Array.from(
+    new Set(refs.map((ref) => ref.externalId).filter(Boolean)),
+  ) as string[];
+
+  const matched = new Set<string>();
+  const chunkSize = 500;
+
+  for (const batch of chunk(urls, chunkSize)) {
+    const rows = await prisma.product.findMany({
+      where: { brandId, sourceUrl: { in: batch } },
+      select: { id: true },
+    });
+    rows.forEach((row) => matched.add(row.id));
+  }
+
+  for (const batch of chunk(externalIds, chunkSize)) {
+    const rows = await prisma.product.findMany({
+      where: { brandId, externalId: { in: batch } },
+      select: { id: true },
+    });
+    rows.forEach((row) => matched.add(row.id));
+  }
+
+  return matched;
+};
+
+const computeCoverageMetrics = async (params: {
+  brandId: string;
+  sitemapRefs: Array<{ url?: string | null; externalId?: string | null }>;
+  adapterRefs: Array<{ url?: string | null; externalId?: string | null }>;
+  combinedRefs: Array<{ url?: string | null; externalId?: string | null }>;
+}) => {
+  const sitemapTotal = params.sitemapRefs.length;
+  const adapterTotal = params.adapterRefs.length;
+  const combinedTotal = params.combinedRefs.length;
+
+  const sitemapMatched = await collectMatchedProductIds(params.brandId, params.sitemapRefs);
+  const adapterMatched = await collectMatchedProductIds(params.brandId, params.adapterRefs);
+  const combinedMatched = await collectMatchedProductIds(params.brandId, params.combinedRefs);
+
+  const toCoverage = (matched: number, total: number) => (total > 0 ? matched / total : 0);
+
+  return {
+    lastSitemapCount: sitemapTotal,
+    lastSitemapMatched: sitemapMatched.size,
+    lastSitemapCoverage: toCoverage(sitemapMatched.size, sitemapTotal),
+    lastAdapterCount: adapterTotal,
+    lastAdapterMatched: adapterMatched.size,
+    lastAdapterCoverage: toCoverage(adapterMatched.size, adapterTotal),
+    lastCombinedCount: combinedTotal,
+    lastCombinedMatched: combinedMatched.size,
+    lastCombinedCoverage: toCoverage(combinedMatched.size, combinedTotal),
+    lastNewFromSitemap: Math.max(0, sitemapTotal - sitemapMatched.size),
+    lastNewFromAdapter: Math.max(0, adapterTotal - adapterMatched.size),
+  };
+};
+
+const recoverCatalogRuns = async (config: ReturnType<typeof getRefreshConfig>) => {
+  if (!config.autoRecover) return;
+  if (!isCatalogQueueEnabled()) return;
+  if (config.recoverMaxRuns <= 0) return;
+
+  const cutoff = new Date(Date.now() - config.recoverStuckMinutes * 60 * 1000);
+  const runs = await prisma.catalogRun.findMany({
+    where: {
+      status: { in: ["processing", "paused", "blocked"] },
+      updatedAt: { lt: cutoff },
+    },
+    orderBy: { updatedAt: "asc" },
+    take: config.recoverMaxRuns,
+  });
+
+  if (!runs.length) return;
+  const enqueueLimit = Math.max(
+    1,
+    Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
+  );
+
+  for (const run of runs) {
+    await prisma.catalogRun.update({
+      where: { id: run.id },
+      data: {
+        status: "processing",
+        consecutiveErrors: 0,
+        lastError: null,
+        blockReason: null,
+        updatedAt: new Date(),
+      },
+    });
+    await resetQueuedItems(run.id, 0);
+    await resetStuckItems(run.id, 0);
+    const pending = await listPendingItems(run.id, enqueueLimit);
+    await markItemsQueued(pending.map((item) => item.id));
+    await enqueueCatalogItems(pending);
+  }
+};
+
+const recoverEnrichmentRuns = async (config: ReturnType<typeof getRefreshConfig>) => {
+  if (!config.autoRecover) return;
+  if (!isEnrichmentQueueEnabled()) return;
+  if (config.recoverMaxRuns <= 0) return;
+
+  const cutoff = new Date(Date.now() - config.recoverEnrichmentStuckMinutes * 60 * 1000);
+  const runs = await prisma.productEnrichmentRun.findMany({
+    where: {
+      status: { in: ["processing", "paused", "blocked"] },
+      updatedAt: { lt: cutoff },
+    },
+    orderBy: { updatedAt: "asc" },
+    take: config.recoverMaxRuns,
+  });
+
+  if (!runs.length) return;
+  const enqueueLimit = Math.max(
+    1,
+    Number(process.env.PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT ?? 50),
+  );
+
+  for (const run of runs) {
+    await prisma.productEnrichmentRun.update({
+      where: { id: run.id },
+      data: {
+        status: "processing",
+        consecutiveErrors: 0,
+        lastError: null,
+        blockReason: null,
+        updatedAt: new Date(),
+      },
+    });
+    await resetEnrichmentQueuedItems(run.id, 0);
+    await resetEnrichmentStuckItems(run.id, 0);
+    const pending = await listPendingEnrichmentItems(run.id, enqueueLimit);
+    await markEnrichmentItemsQueued(pending.map((item) => item.id));
+    await enqueueEnrichmentItems(pending);
+  }
 };
 
 const getProductsMissingEnrichment = async (
@@ -316,6 +509,9 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
     return { status: "queue_disabled", processed: 0, results };
   }
 
+  await recoverCatalogRuns(config);
+  await recoverEnrichmentRuns(config);
+
   const brands = await prisma.brand.findMany({
     where: {
       isActive: true,
@@ -363,7 +559,9 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
     const refreshLimit = Number.isFinite(refreshLimitRaw) ? refreshLimitRaw : 5000;
     const discoveryLimit = refreshLimit <= 0 ? 0 : Math.max(10, refreshLimit);
 
-    const { refs, platformForRun } = await discoverCatalogRefs({
+    const forceSitemap =
+      options?.force || (brand.ecommercePlatform ?? "").toLowerCase() !== "vtex";
+    const { refs, platformForRun, sitemapRefs, adapterRefs } = await discoverCatalogRefs({
       brand: {
         id: brand.id,
         name: brand.name,
@@ -372,8 +570,12 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
         ecommercePlatform: brand.ecommercePlatform,
       },
       limit: discoveryLimit,
-      forceSitemap: false,
+      forceSitemap,
+      combineSitemapAndAdapter: true,
     });
+    const combinedDiscoveryRefs = Array.from(
+      new Map([...(sitemapRefs ?? []), ...(adapterRefs ?? [])].map((ref) => [ref.url, ref])).values(),
+    );
 
     const lookbackStart = new Date(Date.now() - config.failedLookbackDays * 24 * 60 * 60 * 1000);
     const failedRows = await prisma.$queryRaw<{ url: string }[]>(
@@ -405,9 +607,15 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
       status: "processing",
     });
 
-    await markRefreshStarted(brand.id, run.id);
+    const coverage = await computeCoverageMetrics({
+      brandId: brand.id,
+      sitemapRefs: sitemapRefs ?? [],
+      adapterRefs: adapterRefs ?? [],
+      combinedRefs: combinedDiscoveryRefs,
+    });
+    await markRefreshStarted(brand.id, run.id, coverage);
 
-    const pending = await listPendingItems(run.id, Math.max(10, refs.length));
+    const pending = await listPendingItems(run.id, Math.max(10, deduped.length));
     await markItemsQueued(pending.map((item) => item.id));
     await enqueueCatalogItems(pending);
 

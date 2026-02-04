@@ -25,10 +25,12 @@ export const discoverCatalogRefs = async ({
   brand,
   limit,
   forceSitemap,
+  combineSitemapAndAdapter,
 }: {
   brand: { id: string; name: string; slug: string; siteUrl: string; ecommercePlatform: string | null };
   limit: number;
   forceSitemap?: boolean;
+  combineSitemapAndAdapter?: boolean;
 }) => {
   let platformForRun = brand.ecommercePlatform ?? null;
   let inferredPlatform: { platform: string; confidence: number } | null = null;
@@ -66,6 +68,7 @@ export const discoverCatalogRefs = async ({
       : Math.max(discoveryLimit, normalizedSitemapLimit);
 
   let refs: ProductRef[] = [];
+  const combineSources = Boolean(combineSitemapAndAdapter);
   const allowVtexSitemap = process.env.CATALOG_TRY_SITEMAP_VTEX === "true";
   const trySitemap =
     forceSitemap ||
@@ -82,7 +85,15 @@ export const discoverCatalogRefs = async ({
       sitemapRefs = [];
     }
   }
-  refs = sitemapRefs.length ? sitemapRefs : await adapter.discoverProducts(ctx, discoveryLimit);
+  let adapterRefs: ProductRef[] = [];
+  if (!sitemapRefs.length || combineSources) {
+    adapterRefs = await adapter.discoverProducts(ctx, discoveryLimit);
+  }
+  if (combineSources) {
+    refs = Array.from(new Map([...sitemapRefs, ...adapterRefs].map((ref) => [ref.url, ref])).values());
+  } else {
+    refs = sitemapRefs.length ? sitemapRefs : adapterRefs;
+  }
 
   if (!refs.length && (adapter.platform === "custom" || (platformForRun ?? "").toLowerCase() === "unknown")) {
     const broadUrls = await discoverFromSitemap(brand.siteUrl, discoveryLimit, { productAware: false });
@@ -104,5 +115,7 @@ export const discoverCatalogRefs = async ({
     platformForRun,
     adapterPlatform: adapter.platform,
     inferredPlatform,
+    sitemapRefs,
+    adapterRefs,
   };
 };

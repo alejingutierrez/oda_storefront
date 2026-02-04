@@ -6,6 +6,7 @@ type RefreshSummary = {
   totalBrands: number;
   freshBrands: number;
   staleBrands: number;
+  avgCoverage: number;
   newProducts: number;
   priceChanges: number;
   stockChanges: number;
@@ -27,6 +28,17 @@ type RefreshState = {
   summary: RefreshSummary;
   brands: RefreshBrand[];
   windowStart: string;
+  alerts: RefreshAlert[];
+};
+
+type RefreshAlert = {
+  id: string;
+  type: string;
+  level: "info" | "warning" | "danger";
+  title: string;
+  detail?: string;
+  brandId?: string;
+  action?: { type: string; label: string; brandId?: string };
 };
 
 const POLL_MS = 15000;
@@ -45,6 +57,7 @@ export default function CatalogRefreshPanel() {
   const [state, setState] = useState<RefreshState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchState = useCallback(async () => {
@@ -82,6 +95,49 @@ export default function CatalogRefreshPanel() {
     }
   }, [fetchState]);
 
+  const handleAlertAction = useCallback(
+    async (alert: RefreshAlert) => {
+      if (!alert.action?.type) return;
+      setActionId(alert.id);
+      try {
+        if (alert.action.type === "force_refresh" && alert.action.brandId) {
+          await triggerBrand(alert.action.brandId);
+          return;
+        }
+        if (alert.action.type === "resume_catalog" && alert.action.brandId) {
+          const res = await fetch("/api/admin/catalog-extractor/run", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ brandId: alert.action.brandId, resume: true, drainOnRun: true }),
+          });
+          if (!res.ok) throw new Error("No se pudo reanudar el catálogo.");
+          await fetchState();
+          return;
+        }
+        if (alert.action.type === "resume_enrichment" && alert.action.brandId) {
+          const res = await fetch("/api/admin/product-enrichment/run", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              brandId: alert.action.brandId,
+              scope: "brand",
+              resume: true,
+              drainOnRun: true,
+            }),
+          });
+          if (!res.ok) throw new Error("No se pudo reanudar el enriquecimiento.");
+          await fetchState();
+          return;
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error desconocido");
+      } finally {
+        setActionId(null);
+      }
+    },
+    [fetchState, triggerBrand],
+  );
+
   useEffect(() => {
     fetchState();
   }, [fetchState]);
@@ -97,6 +153,7 @@ export default function CatalogRefreshPanel() {
   const summary = state?.summary;
   const brands = state?.brands ?? [];
   const windowStart = state?.windowStart;
+  const alerts = state?.alerts ?? [];
 
   const freshness = useMemo(() => {
     if (!summary) return { fresh: 0, total: 0, percent: 0 };
@@ -139,6 +196,54 @@ export default function CatalogRefreshPanel() {
         </div>
       ) : null}
 
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-slate-900">Alertas operativas</h3>
+          <span className="text-xs text-slate-500">{alerts.length} activas</span>
+        </div>
+        {alerts.length ? (
+          <div className="mt-3 grid gap-2">
+            {alerts.map((alert) => {
+              const badge =
+                alert.level === "danger"
+                  ? "bg-rose-100 text-rose-700"
+                  : alert.level === "warning"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-slate-100 text-slate-700";
+              return (
+                <div
+                  key={alert.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${badge}`}>
+                        {alert.type.replace(/_/g, " ")}
+                      </span>
+                      <p className="text-sm font-semibold text-slate-900">{alert.title}</p>
+                    </div>
+                    {alert.detail ? (
+                      <p className="mt-1 text-xs text-slate-600">{alert.detail}</p>
+                    ) : null}
+                  </div>
+                  {alert.action ? (
+                    <button
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+                      onClick={() => handleAlertAction(alert)}
+                      disabled={actionId === alert.id}
+                    >
+                      {actionId === alert.id ? "Ejecutando..." : alert.action.label}
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-slate-500">Sin alertas activas.</p>
+        )}
+      </div>
+
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <p className="text-xs uppercase text-slate-500">Frescura global</p>
@@ -168,6 +273,12 @@ export default function CatalogRefreshPanel() {
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-xs uppercase text-slate-500">Cobertura promedio</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {summary ? `${Math.round(summary.avgCoverage * 100)}%` : "0%"}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <p className="text-xs uppercase text-slate-500">Cambios de stock</p>
           <p className="mt-2 text-2xl font-semibold text-slate-900">
             {summary?.stockChanges ?? 0}
@@ -191,6 +302,7 @@ export default function CatalogRefreshPanel() {
               <th className="px-3">Último refresh</th>
               <th className="px-3">Estado</th>
               <th className="px-3">Nuevos</th>
+              <th className="px-3">Cobertura</th>
               <th className="px-3">Precio</th>
               <th className="px-3">Stock</th>
               <th className="px-3">Estado</th>
@@ -225,6 +337,11 @@ export default function CatalogRefreshPanel() {
                   </td>
                   <td className="px-3 py-3 text-slate-600">
                     {refresh.lastNewProducts ?? 0}
+                  </td>
+                  <td className="px-3 py-3 text-slate-600">
+                    {typeof refresh.lastCombinedCoverage === "number"
+                      ? `${Math.round(refresh.lastCombinedCoverage * 100)}%`
+                      : "—"}
                   </td>
                   <td className="px-3 py-3 text-slate-600">
                     {refresh.lastPriceChanges ?? 0}
