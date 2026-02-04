@@ -44,13 +44,19 @@ const items = blocks.map((match) => JSON.parse(match[1]));
 
 const now = new Date();
 const toTimestamp = (date) => date.toISOString();
+const hexRegex = /^#?[0-9a-fA-F]{6}$/;
+const normalizeHex = (value) => {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!hexRegex.test(trimmed)) return null;
+  return trimmed.startsWith("#") ? trimmed.toUpperCase() : `#${trimmed.toUpperCase()}`;
+};
 
 const run = async () => {
   const client = new Client({ connectionString });
   await client.connect();
 
   let combosInserted = 0;
-  let colorsInserted = 0;
 
   try {
     await client.query("BEGIN");
@@ -67,6 +73,14 @@ const run = async () => {
         const contrast = combo?.extra?.contrast ?? null;
         const mood = combo?.extra?.mood ?? null;
 
+        const colors = Array.isArray(combo.colors) ? combo.colors : [];
+        const colorsJson = colors
+          .map((color) => ({
+            hex: normalizeHex(color.hex) ?? color.hex,
+            role: color.role ?? null,
+          }))
+          .filter((entry) => Boolean(entry.hex));
+
         const comboId = crypto.randomUUID();
         const insertCombo = await client.query(
           `INSERT INTO "color_combinations" (
@@ -78,15 +92,17 @@ const run = async () => {
              "temperature",
              "contrast",
              "mood",
+             "colorsJson",
              "createdAt",
              "updatedAt"
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
            ON CONFLICT ("imageFilename", "comboKey") DO UPDATE SET
              "detectedLayout" = EXCLUDED."detectedLayout",
              "season" = EXCLUDED."season",
              "temperature" = EXCLUDED."temperature",
              "contrast" = EXCLUDED."contrast",
              "mood" = EXCLUDED."mood",
+             "colorsJson" = EXCLUDED."colorsJson",
              "updatedAt" = EXCLUDED."updatedAt"
            RETURNING "id";`,
           [
@@ -98,6 +114,7 @@ const run = async () => {
             temperature,
             contrast,
             mood,
+            JSON.stringify(colorsJson),
             now,
             now,
           ]
@@ -105,49 +122,6 @@ const run = async () => {
 
         const persistedComboId = insertCombo.rows[0]?.id ?? comboId;
         combosInserted += 1;
-
-        const colors = Array.isArray(combo.colors) ? combo.colors : [];
-        for (let idx = 0; idx < colors.length; idx += 1) {
-          const color = colors[idx];
-          const position = idx + 1;
-          const colorId = crypto.randomUUID();
-          const hex = color.hex;
-          const pantoneCode = color.pantone_code ?? null;
-          const pantoneName = color.pantone_name ?? null;
-          const role = color.role ?? null;
-
-          await client.query(
-            `INSERT INTO "color_combination_colors" (
-               "id",
-               "combinationId",
-               "position",
-               "role",
-               "hex",
-               "pantoneCode",
-               "pantoneName",
-               "createdAt",
-               "updatedAt"
-             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-             ON CONFLICT ("combinationId", "position") DO UPDATE SET
-               "role" = EXCLUDED."role",
-               "hex" = EXCLUDED."hex",
-               "pantoneCode" = EXCLUDED."pantoneCode",
-               "pantoneName" = EXCLUDED."pantoneName",
-               "updatedAt" = EXCLUDED."updatedAt";`,
-            [
-              colorId,
-              persistedComboId,
-              position,
-              role,
-              hex,
-              pantoneCode,
-              pantoneName,
-              now,
-              now,
-            ]
-          );
-          colorsInserted += 1;
-        }
       }
     }
 
@@ -159,7 +133,7 @@ const run = async () => {
     await client.end();
   }
 
-  console.log(`Upserted ${combosInserted} combinations and ${colorsInserted} colors.`);
+  console.log(`Upserted ${combosInserted} combinations.`);
 };
 
 run().catch((error) => {

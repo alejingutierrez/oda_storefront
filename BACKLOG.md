@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-02)
+- MC-111 | done | P1 | Paleta 200 + matching estandarizado de combinaciones | `color_combinations.colorsJson` + paleta 200 en `color_combination_colors`; matching 200→60 con standard colors y rebuild de relaciones.
 - MC-108 | done | P1 | Fix cola de scraping de marcas | Encolar solo marcas sin job completed y drenar cola existente desde UI.
 - MC-109 | done | P1 | Onboarding de marca en modal | Crear marca inicia pipeline (enrich → tech → catálogo → productos) con barra de progreso y endpoints onboarding.
 - MC-110 | done | P1 | Refresh semanal de catálogo + monitor admin | Cron semanal con jitter, refresco completo, métricas de cambios y panel `/admin/catalog-refresh`; VTEX discovery sin cap fijo.

@@ -74,6 +74,14 @@ const hexToLab = (hex) => {
   return xyzToLab(xyz);
 };
 
+const hexSaturation = (hex) => {
+  const { r, g, b } = hexToRgb(hex);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max === 0) return 0;
+  return (max - min) / max;
+};
+
 const degToRad = (deg) => (deg * Math.PI) / 180;
 const radToDeg = (rad) => (rad * 180) / Math.PI;
 
@@ -315,27 +323,104 @@ const run = async () => {
   const client = new Client({ connectionString });
   await client.connect();
 
-  const comboRows = await client.query(
-    'SELECT c.id AS combination_id, cc.id AS color_id, cc.hex AS hex, cc.position AS position FROM "color_combinations" c JOIN "color_combination_colors" cc ON cc."combinationId" = c.id ORDER BY c.id, cc.position',
+  const standardRows = await client.query(
+    'SELECT id, hex, "labL", "labA", "labB", family FROM "standard_colors" ORDER BY id',
   );
+  const standardColors = standardRows.rows.map((row) => ({
+    id: row.id,
+    hex: normalizeHex(row.hex),
+    family: row.family,
+    lab: { L: row.labL, a: row.labA, b: row.labB },
+  }));
+  const standardById = new Map();
+  for (const color of standardColors) {
+    if (!color.id || !color.hex) continue;
+    standardById.set(color.id, color);
+  }
 
-  const combos = new Map();
+  const cfgRow = await client.query(
+    'SELECT "valueJson" FROM "standard_color_config" WHERE "key" = $1 LIMIT 1',
+    ["low_saturation_gate"],
+  );
+  let cfg = cfgRow.rows[0]?.valueJson ?? null;
+  if (typeof cfg === "string") {
+    try {
+      cfg = JSON.parse(cfg);
+    } catch {
+      cfg = null;
+    }
+  }
+  let lowSatThreshold = 0.12;
+  let lowSatFamilies = ["NEUTRAL", "WARM_NEUTRAL", "METALLIC"];
+  let lowSatAllowHexes = ["#C0C0C0"];
+  if (cfg && typeof cfg === "object") {
+    if (typeof cfg.threshold === "number") lowSatThreshold = cfg.threshold;
+    if (Array.isArray(cfg.families) && cfg.families.length) {
+      lowSatFamilies = cfg.families.map((value) => String(value).toUpperCase());
+    }
+    if (Array.isArray(cfg.allow_hexes) && cfg.allow_hexes.length) {
+      lowSatAllowHexes = cfg.allow_hexes.map((value) => normalizeHex(value)).filter(Boolean);
+    }
+  }
+  const lowSatFamiliesSet = new Set(lowSatFamilies);
+  const lowSatAllowHexSet = new Set(lowSatAllowHexes);
+
+  const mapHexToStandard = (hex) => {
+    const normalized = normalizeHex(hex);
+    if (!normalized) return null;
+    const lab = hexToLab(normalized);
+    const saturation = hexSaturation(normalized);
+    let candidates = standardColors;
+    if (saturation !== null && saturation < lowSatThreshold) {
+      candidates = standardColors.filter((color) => {
+        if (!lowSatFamiliesSet.has(String(color.family).toUpperCase())) return false;
+        if (String(color.family).toUpperCase() === "METALLIC") {
+          return lowSatAllowHexSet.has(color.hex);
+        }
+        return true;
+      });
+    }
+    let best = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const color of candidates) {
+      const dl = color.lab.L - lab.L;
+      const da = color.lab.a - lab.a;
+      const dbb = color.lab.b - lab.b;
+      const dist = Math.sqrt(dl * dl + da * da + dbb * dbb);
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        best = color;
+      }
+    }
+    if (!best) return null;
+    return { id: best.id, hex: best.hex, lab: best.lab, distance: bestDistance };
+  };
+
+  const paletteRows = await client.query(
+    'SELECT id, hex, "standardColorId", "labL", "labA", "labB" FROM "color_combination_colors" ORDER BY hex',
+  );
+  const paletteByHex = new Map();
   const updateIds = [];
   const updateL = [];
   const updateA = [];
   const updateB = [];
 
-  for (const row of comboRows.rows) {
+  for (const row of paletteRows.rows) {
     const hex = normalizeHex(row.hex);
     if (!hex) continue;
-    const lab = hexToLab(hex);
-    updateIds.push(row.color_id);
-    updateL.push(lab.L);
-    updateA.push(lab.a);
-    updateB.push(lab.b);
-    const combo = combos.get(row.combination_id) ?? { id: row.combination_id, colors: [] };
-    combo.colors.push({ id: row.color_id, hex, lab });
-    combos.set(row.combination_id, combo);
+    const hasLab = row.labL !== null && row.labA !== null && row.labB !== null;
+    let lab = hasLab ? { L: row.labL, a: row.labA, b: row.labB } : null;
+    if (!lab) {
+      lab = hexToLab(hex);
+      updateIds.push(row.id);
+      updateL.push(lab.L);
+      updateA.push(lab.a);
+      updateB.push(lab.b);
+    }
+    paletteByHex.set(hex, {
+      standardColorId: row.standardColorId ?? null,
+      lab,
+    });
   }
 
   if (updateIds.length) {
@@ -343,6 +428,46 @@ const run = async () => {
       'UPDATE "color_combination_colors" AS cc SET "labL" = data.lab_l, "labA" = data.lab_a, "labB" = data.lab_b FROM (SELECT UNNEST($1::text[]) AS id, UNNEST($2::float8[]) AS lab_l, UNNEST($3::float8[]) AS lab_a, UNNEST($4::float8[]) AS lab_b) AS data WHERE cc.id = data.id',
       [updateIds, updateL, updateA, updateB],
     );
+  }
+
+  const comboRows = await client.query('SELECT id, "colorsJson" FROM "color_combinations" ORDER BY id');
+  const combos = new Map();
+
+  for (const row of comboRows.rows) {
+    const raw = row.colorsJson;
+    let colors = [];
+    if (Array.isArray(raw)) {
+      colors = raw;
+    } else if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) colors = parsed;
+      } catch {
+        colors = [];
+      }
+    }
+    if (!colors.length) continue;
+
+    const combo = { id: row.id, colors: [] };
+    for (const entry of colors) {
+      const hex = normalizeHex(entry?.hex);
+      if (!hex) continue;
+      const palette = paletteByHex.get(hex);
+      let standardId = palette?.standardColorId ?? null;
+      let standard = standardId ? standardById.get(standardId) : null;
+      if (!standard) {
+        const mapped = mapHexToStandard(hex);
+        if (mapped) {
+          standardId = mapped.id;
+          standard = standardById.get(standardId);
+        }
+      }
+      if (!standard) continue;
+      combo.colors.push({ id: standardId, hex: standard.hex, lab: standard.lab });
+    }
+    if (combo.colors.length) {
+      combos.set(row.id, combo);
+    }
   }
 
   const comboIds = Array.from(combos.keys());
@@ -362,7 +487,7 @@ const run = async () => {
 
   while (true) {
     const batch = await client.query(
-      'SELECT id, color, metadata FROM "variants" WHERE id > $1 ORDER BY id ASC LIMIT $2',
+      'SELECT id, color, metadata, "standardColorId" FROM "variants" WHERE id > $1 ORDER BY id ASC LIMIT $2',
       [lastId, batchSize],
     );
     if (!batch.rows.length) break;
@@ -375,8 +500,31 @@ const run = async () => {
 
     for (const row of batch.rows) {
       const hexes = extractHexes(row);
-      if (!hexes.length) continue;
-      const variantColors = hexes.map((hex) => ({ hex, lab: hexToLab(hex) }));
+      const variantColors = [];
+      const seenStandard = new Set();
+
+      for (const hex of hexes) {
+        const mapped = mapHexToStandard(hex);
+        if (!mapped || !mapped.id) continue;
+        if (seenStandard.has(mapped.id)) continue;
+        const standard = standardById.get(mapped.id);
+        if (!standard) continue;
+        seenStandard.add(mapped.id);
+        variantColors.push({ hex: standard.hex, lab: standard.lab, standardColorId: mapped.id });
+      }
+
+      if (!variantColors.length && row.standardColorId) {
+        const standard = standardById.get(row.standardColorId);
+        if (standard) {
+          variantColors.push({
+            hex: standard.hex,
+            lab: standard.lab,
+            standardColorId: row.standardColorId,
+          });
+        }
+      }
+
+      if (!variantColors.length) continue;
       let position = 1;
       for (const color of variantColors) {
         vectorRows.push({
@@ -387,7 +535,7 @@ const run = async () => {
           labL: color.lab.L,
           labA: color.lab.a,
           labB: color.lab.b,
-          source: "enrichment",
+          source: "standard_color",
           createdAt: now,
           updatedAt: now,
         });

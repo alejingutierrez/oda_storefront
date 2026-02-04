@@ -49,6 +49,8 @@ npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/smoke-product-enrichm
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/unknown-llm-dry-run.ts     # dry-run LLM PDP (unknown)
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/tech-profiler-sweep.ts     # perfila y elimina marcas no procesables
 node scripts/build-style-assignments.mjs  # seed style_profiles + backfill estilos principal/secundario
+node scripts/seed-color-palette-200.mjs  # carga paleta 200 en color_combinations_colors (desde Excel)
+node scripts/build-color-relations.mjs  # recalcula matches variante↔combinacion con colores estandarizados
 ```
 
 ### Docker Compose (stack completo)
@@ -108,6 +110,9 @@ La base de datos es **Neon** (no se levanta Postgres local en Compose).
     - Dominante: `blazers_y_sastreria`, `buzos_hoodies_y_sueteres`, `camisas_y_blusas`, `chaquetas_y_abrigos`, `enterizos_y_overoles`, `faldas`, `jeans_y_denim`, `pantalones_no_denim`, `vestidos`.
     - Secundario: `shorts_y_bermudas`, `pantalones_no_denim`, `jeans_y_denim`, `camisetas_y_tops`, `blazers_y_sastreria`.
     - Acento: `accesorios_textiles_y_medias`, `bolsos_y_marroquineria`, `calzado`, `gafas_y_optica`, `joyeria_y_bisuteria`.
+  - Las combinaciones guardan colores en `color_combinations.colorsJson` (hex + role).
+  - La paleta 200 vive en `color_combination_colors` (hex/pantone + Lab) y se carga con `node scripts/seed-color-palette-200.mjs`.
+  - El matching usa colores estandarizados (`standard_colors` ≈60): `build-color-relations` mapea hex → standard y escribe `variant_color_vectors` con el hex/Lab estándar.
 - Panel `/admin/product-enrichment` (enriquecimiento):
   - Enriquecimiento de atributos por OpenAI para categoría, subcategoría, tags, género, temporada, color hex, Pantone, fit, descripción (texto plano) y campos SEO (meta title/description + seoTags). Taxonomía incluye ropa + accesorios (joyería, calzado, bolsos, gafas).
   - El proveedor de enriquecimiento se fuerza a OpenAI; `PRODUCT_ENRICHMENT_PROVIDER` se ignora en runtime.

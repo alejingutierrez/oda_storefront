@@ -164,25 +164,35 @@ Documento vivo para alinear a cualquier agente (humano o IA) sobre objetivos, al
 Este proceso crea relaciones muchos‑a‑muchos entre variantes y combinaciones de color, y permite ver en el admin qué productos se asocian a cada color dentro de una combinación.
 
 ### Tablas involucradas
-- `color_combinations` y `color_combination_colors`: combinaciones base y sus colores.
-- `variant_color_vectors`: hex + Lab por variante (normalizados).
+- `color_combinations`: combinaciones base; `colorsJson` guarda el array de colores `{ hex, role }` por combinación.
+- `color_combination_colors`: **paleta 200** (hex/pantone + Lab). Ya no es tabla puente; cada fila es un color de la paleta.
+- `standard_colors` + `standard_color_config` + `standard_color_aliases/*`: catálogo de colores estandarizados (≈60) y reglas de mapeo.
+- `variant_color_vectors`: colores de variantes en espacio **estandarizado** (hex/Lab del `standard_color`).
 - `variant_color_combination_matches`: top matches de variante → combinación con métricas de calidad.
 
 ### Cómo se construyen las relaciones (batch)
 Script: `apps/web/scripts/build-color-relations.mjs`
 
-1) **Normalizar colores de combinaciones**
-   - Cada `color_combination_colors.hex` se convierte a Lab (D65).
-   - Se persiste en `labL/labA/labB`.
+1) **Sembrar paleta 200**
+   - Fuente: `paleta_200_colores_pantone_y_mapeo_formateado.xlsx` (sheet `palette_200`).
+   - Script: `node scripts/seed-color-palette-200.mjs`.
+   - Cada color se normaliza, calcula Lab y se asocia a `standardColorId` usando `standard_color_best_match`.
 
-2) **Extraer hexes de variantes**
+2) **Colores de combinaciones**
+   - Se leen desde `color_combinations.colorsJson`.
+   - Cada `hex` se mapea a `standardColorId` (usando la paleta y/o heurística de `standard_color_config`).
+
+3) **Colores de variantes**
    - Fuente principal: `variants.metadata.enrichment.colors.hex` (array o string).
    - Fallback: `variants.color`.
-   - Normaliza hex (`#RRGGBB`) y elimina duplicados.
-   - Se inserta en `variant_color_vectors` con posición y Lab.
+   - Se normalizan hex y se mapean a `standardColorId`.
+   - Si no hay hex válido, se usa `variants.standardColorId` como último fallback.
 
-3) **Matching variante → combinación**
-   - Distancia **DeltaE2000** entre cada color de la combinación y los hexes de la variante.
+4) **Vectores estándar**
+   - Se insertan en `variant_color_vectors` usando el **hex/Lab del `standard_color`** (source = `standard_color`).
+
+5) **Matching variante → combinación**
+   - Distancia **DeltaE2000** entre colores estándar de la combinación y de la variante.
    - Se calcula:
      - `avgDistance`, `maxDistance`
      - `coverage` = % de colores de la combinación dentro del umbral
@@ -214,17 +224,15 @@ Endpoint: `GET /api/admin/color-combinations/[id]/products`
 
 - Usa los matches de `variant_color_combination_matches` para acotar variantes.
 - Para cada color de la combinación:
-  - Calcula DeltaE con todos los hexes de la variante.
+  - Calcula DeltaE con los **colores estándar** de la variante.
   - Si la distancia mínima ≤ `COLOR_MATCH_COLOR_THRESHOLD` (default 26), el producto entra en el grupo del color.
   - Se deduplica por producto; se conserva la variante con menor distancia.
 
 Este endpoint alimenta el modal en el admin, mostrando una galería por color (con nombre Pantone, hex, conteos y cards de producto).
 
-### Re‑correr tras enriquecimiento
-Cuando el enriquecimiento genere nuevos hexes en `metadata.enrichment.colors.hex`, re‑correr:
-1) `node scripts/build-color-relations.mjs`  
-2) Validar métricas de cobertura/calidad.  
-3) Ajustar umbrales si se requiere más/menos recall.
+### Re‑correr tras cambios
+- Si cambia la paleta 200: `node scripts/seed-color-palette-200.mjs` → `node scripts/build-color-relations.mjs`.
+- Si cambia el enrichment de colores o el catálogo: `node scripts/build-color-relations.mjs`.
 
 Mantener este archivo actualizado a medida que se decidan tecnologías, proveedores y políticas definitivas.
 

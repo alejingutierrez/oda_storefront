@@ -135,6 +135,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % marcas frescas vs total, nuevos productos por semana, cambios de precio/stock, tiempo promedio de refresh por marca.
 - Estado: **done (2026-02-04)**.
 
+### MC-111 Paleta 200 + matching estandarizado de combinaciones de color
+- Historia: Como admin de catálogo, quiero reducir las combinaciones a una paleta de 200 colores y hacer el matching contra 60 colores estándar, para aumentar cobertura por combinación y mantener consistencia en el admin.
+- Alcance: `color_combinations` guarda colores en `colorsJson` (hex+role); `color_combination_colors` pasa a ser la paleta 200 (hex/pantone + Lab + `standardColorId`); script `seed-color-palette-200.mjs` carga la paleta desde el Excel; `build-color-relations` mapea hex → standard y escribe `variant_color_vectors` en espacio estándar; endpoints `/api/admin/color-combinations` y `/api/admin/color-combinations/[id]/products` leen la paleta/JSON para mostrar productos por combinación.
+- CA: `color_combination_colors` contiene exactamente 200 hex únicos; `color_combinations.colorsJson` conserva los roles; `variant_color_vectors` se construye con hex/Lab de `standard_colors`; `variant_color_combination_matches` se recalcula sin errores; el modal de `/admin/color-combinations` muestra productos por color con Pantone correcto.
+- Datos: `color_combinations`, `color_combination_colors`, `standard_colors`, `standard_color_config`, `variant_color_vectors`, `variant_color_combination_matches`.
+- NF: No se crean tablas nuevas; endpoints admin mantienen la misma forma de respuesta para la UI.
+- Riesgos: Pérdida de precisión cromática; mitigación: umbrales de DeltaE y cobertura configurables por env.
+- Métricas: Matches promedio por combinación, cobertura por color y tiempo de rebuild del batch.
+- Estado: **done (2026-02-04)**.
+
 ### MC-101 Default OpenAI gpt-5.1 en scrapers y normalización
 - Historia: Como operador, quiero que el modelo por defecto sea gpt-5.1 en scrapers de marcas/tech y normalización, para alinear calidad/costos con la decisión actual.
 - Alcance: Default `OPENAI_MODEL` pasa a `gpt-5.1` en brand scraper, tech profiler y helper OpenAI; actualizar `.env.example`, README y AGENTS.

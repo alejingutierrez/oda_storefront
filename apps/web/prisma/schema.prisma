@@ -200,6 +200,11 @@ model Variant {
   product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
   sku          String?
   color        String?
+  standardColorId String?
+  standardColor   StandardColor? @relation(fields: [standardColorId], references: [id], onDelete: SetNull)
+  standardColorDistance Float?
+  standardColorAssignedAt DateTime?
+  standardColorSource String?
   colorPantone String?
   size         String?
   fit          String?
@@ -220,6 +225,7 @@ model Variant {
   colorMatches VariantColorCombinationMatch[]
 
   @@index([productId])
+  @@index([standardColorId])
   @@unique([productId, sku])
   @@map("variants")
 }
@@ -328,6 +334,45 @@ model TaxonomyTag {
   @@map("taxonomy_tags")
 }
 
+model StandardColor {
+  id        String   @id @default(uuid())
+  family    String
+  name      String
+  hex       String   @unique
+  labL      Float
+  labA      Float
+  labB      Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  variants  Variant[]
+  aliases   StandardColorAlias[]
+  paletteColors ColorCombinationPalette[]
+
+  @@unique([family, name])
+  @@index([family])
+  @@map("standard_colors")
+}
+
+model StandardColorAlias {
+  alias           String        @id
+  standardColorId String
+  standardColor   StandardColor @relation(fields: [standardColorId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([standardColorId])
+  @@map("standard_color_aliases")
+}
+
+model StandardColorConfig {
+  key       String   @id
+  valueJson Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("standard_color_config")
+}
+
 model ColorCombination {
   id             String   @id @default(uuid())
   imageFilename  String
@@ -337,9 +382,9 @@ model ColorCombination {
   temperature    String?
   contrast       String?
   mood           String?
+  colorsJson     Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  colors         ColorCombinationColor[]
   variantMatches VariantColorCombinationMatch[]
 
   @@unique([imageFilename, comboKey])
@@ -349,25 +394,23 @@ model ColorCombination {
   @@map("color_combinations")
 }
 
-model ColorCombinationColor {
-  id            String           @id @default(uuid())
-  combinationId String
-  combination   ColorCombination @relation(fields: [combinationId], references: [id], onDelete: Cascade)
-  position      Int
-  role          String?
-  hex           String
-  pantoneCode   String?
-  pantoneName   String?
-  labL          Float?
-  labA          Float?
-  labB          Float?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+model ColorCombinationPalette {
+  id                       String        @id @default(uuid())
+  hex                      String        @unique
+  pantoneCode              String?
+  pantoneName              String?
+  labL                     Float?
+  labA                     Float?
+  labB                     Float?
+  standardColorId          String?
+  standardColor            StandardColor? @relation(fields: [standardColorId], references: [id], onDelete: SetNull)
+  standardColorDistance    Float?
+  standardColorAssignedAt  DateTime?
+  standardColorSource      String?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
 
-  @@unique([combinationId, position])
-  @@index([combinationId])
-  @@index([hex])
-  @@index([pantoneCode])
+  @@index([standardColorId])
   @@map("color_combination_colors")
 }
 

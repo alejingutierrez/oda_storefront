@@ -138,6 +138,18 @@ const normalizeRole = (role: string | null | undefined) => {
   return value;
 };
 
+const readEntryHex = (entry: unknown) => {
+  if (!entry || typeof entry !== "object") return null;
+  const hex = (entry as { hex?: unknown }).hex;
+  return typeof hex === "string" ? hex : null;
+};
+
+const readEntryRole = (entry: unknown) => {
+  if (!entry || typeof entry !== "object") return null;
+  const role = (entry as { role?: unknown }).role;
+  return typeof role === "string" ? role : null;
+};
+
 const categoryAllowListByRole: Record<string, Set<string>> = {
   dominant: new Set([
     "blazers_y_sastreria",
@@ -182,10 +194,9 @@ export async function GET(req: NextRequest, context: RouteContext) {
 
   const combination = await prisma.colorCombination.findUnique({
     where: { id },
-    include: {
-      colors: {
-        orderBy: { position: "asc" },
-      },
+    select: {
+      id: true,
+      colorsJson: true,
     },
   });
 
@@ -216,16 +227,93 @@ export async function GET(req: NextRequest, context: RouteContext) {
   });
 
   const variantIds = matches.map((match) => match.variantId);
+  const rawColors = Array.isArray(combination.colorsJson) ? combination.colorsJson : [];
+  const paletteHexes = rawColors
+    .map((entry) => normalizeHex(readEntryHex(entry)))
+    .filter((value): value is string => Boolean(value));
+
+  const paletteRows = paletteHexes.length
+    ? await prisma.colorCombinationPalette.findMany({
+        where: { hex: { in: paletteHexes } },
+        select: {
+          id: true,
+          hex: true,
+          pantoneCode: true,
+          pantoneName: true,
+          standardColorId: true,
+        },
+      })
+    : [];
+  const paletteMap = new Map(
+    paletteRows.map((row) => [row.hex.toUpperCase(), row]),
+  );
+
+  const standardIds = Array.from(
+    new Set(
+      paletteRows
+        .map((row) => row.standardColorId)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  const standardRows = standardIds.length
+    ? await prisma.standardColor.findMany({
+        where: { id: { in: standardIds } },
+        select: { id: true, labL: true, labA: true, labB: true },
+      })
+    : [];
+  const standardMap = new Map(
+    standardRows.map((row) => [row.id, { L: row.labL, a: row.labA, b: row.labB }]),
+  );
+
   if (!variantIds.length) {
     return NextResponse.json({
       combinationId: id,
-      colors: combination.colors,
-      groups: combination.colors.map((color) => ({
-        color,
-        productCount: 0,
-        variantCount: 0,
-        items: [],
-      })),
+      colors: rawColors.map((entry, index) => {
+        const rawHex = readEntryHex(entry);
+        const hex = normalizeHex(rawHex) ?? rawHex ?? null;
+        const paletteEntry = hex ? paletteMap.get(hex.toUpperCase()) : null;
+        const standardLab = paletteEntry?.standardColorId
+          ? standardMap.get(paletteEntry.standardColorId)
+          : null;
+        return {
+          id: `${combination.id}:${index + 1}`,
+          position: index + 1,
+          role: readEntryRole(entry),
+          hex,
+          pantoneCode: paletteEntry?.pantoneCode ?? null,
+          pantoneName: paletteEntry?.pantoneName ?? null,
+          labL: standardLab?.L ?? null,
+          labA: standardLab?.a ?? null,
+          labB: standardLab?.b ?? null,
+          standardColorId: paletteEntry?.standardColorId ?? null,
+        };
+      }),
+      groups: rawColors.map((entry, index) => {
+        const rawHex = readEntryHex(entry);
+        const hex = normalizeHex(rawHex) ?? rawHex ?? null;
+        const paletteEntry = hex ? paletteMap.get(hex.toUpperCase()) : null;
+        const standardLab = paletteEntry?.standardColorId
+          ? standardMap.get(paletteEntry.standardColorId)
+          : null;
+        const color = {
+          id: `${combination.id}:${index + 1}`,
+          position: index + 1,
+          role: readEntryRole(entry),
+          hex,
+          pantoneCode: paletteEntry?.pantoneCode ?? null,
+          pantoneName: paletteEntry?.pantoneName ?? null,
+          labL: standardLab?.L ?? null,
+          labA: standardLab?.a ?? null,
+          labB: standardLab?.b ?? null,
+          standardColorId: paletteEntry?.standardColorId ?? null,
+        };
+        return {
+          color,
+          productCount: 0,
+          variantCount: 0,
+          items: [],
+        };
+      }),
     });
   }
 
@@ -242,23 +330,33 @@ export async function GET(req: NextRequest, context: RouteContext) {
     vectorMap.set(vector.variantId, list);
   }
 
-  const comboColors = combination.colors.map((color) => {
-    let lab =
-      color.labL !== null && color.labA !== null && color.labB !== null
-        ? { L: color.labL, a: color.labA, b: color.labB }
+  const comboColors = rawColors
+    .map((entry, index) => {
+      const rawHex = readEntryHex(entry);
+      const hex = normalizeHex(rawHex) ?? rawHex ?? null;
+      const paletteEntry = hex ? paletteMap.get(hex.toUpperCase()) : null;
+      const standardLab = paletteEntry?.standardColorId
+        ? standardMap.get(paletteEntry.standardColorId)
         : null;
-    if (!lab) {
-      const normalized = normalizeHex(color.hex);
-      if (normalized) {
-        lab = hexToLab(normalized);
+      let lab = standardLab ?? null;
+      if (!lab && hex) {
+        lab = hexToLab(hex);
       }
-    }
-    return {
-      ...color,
-      hex: normalizeHex(color.hex) ?? color.hex,
-      lab,
-    };
-  });
+      return {
+        id: `${combination.id}:${index + 1}`,
+        position: index + 1,
+        role: readEntryRole(entry),
+        hex,
+        pantoneCode: paletteEntry?.pantoneCode ?? null,
+        pantoneName: paletteEntry?.pantoneName ?? null,
+        labL: lab?.L ?? null,
+        labA: lab?.a ?? null,
+        labB: lab?.b ?? null,
+        standardColorId: paletteEntry?.standardColorId ?? null,
+        lab,
+      };
+    })
+    .filter((color) => Boolean(color.hex));
 
   const colorThreshold = Number(process.env.COLOR_MATCH_COLOR_THRESHOLD ?? 26);
 

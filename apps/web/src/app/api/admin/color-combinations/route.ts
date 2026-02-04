@@ -25,6 +25,18 @@ const sortStrings = (values: Array<string | null | undefined>) =>
     .map((value) => value.trim())
     .sort((a, b) => a.localeCompare(b, "es"));
 
+const readEntryHex = (entry: unknown) => {
+  if (!entry || typeof entry !== "object") return null;
+  const hex = (entry as { hex?: unknown }).hex;
+  return typeof hex === "string" ? hex : null;
+};
+
+const readEntryRole = (entry: unknown) => {
+  if (!entry || typeof entry !== "object") return null;
+  const role = (entry as { role?: unknown }).role;
+  return typeof role === "string" ? role : null;
+};
+
 export async function GET(req: Request) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
@@ -56,17 +68,57 @@ export async function GET(req: Request) {
 
   const combos = await prisma.colorCombination.findMany({
     where,
-    include: {
-      colors: {
-        orderBy: { position: "asc" },
-      },
+    select: {
+      id: true,
+      imageFilename: true,
+      detectedLayout: true,
+      comboKey: true,
+      season: true,
+      temperature: true,
+      contrast: true,
+      mood: true,
+      colorsJson: true,
     },
     orderBy: [{ imageFilename: "asc" }, { comboKey: "asc" }],
   });
 
-  const total = combos.length;
+  const palette = await prisma.colorCombinationPalette.findMany({
+    select: {
+      id: true,
+      hex: true,
+      pantoneCode: true,
+      pantoneName: true,
+    },
+  });
+  const paletteMap = new Map(
+    palette.map((entry) => [entry.hex?.toUpperCase(), entry]),
+  );
+
+  const withColors = combos.map((combo) => {
+    const raw = combo.colorsJson;
+    const colorsArray = Array.isArray(raw) ? raw : [];
+    const colors = colorsArray
+      .map((entry, index) => {
+        const rawHex = readEntryHex(entry);
+        const hex = typeof rawHex === "string" ? rawHex.toUpperCase() : null;
+        if (!hex) return null;
+        const paletteEntry = paletteMap.get(hex);
+        return {
+          id: `${combo.id}:${index + 1}`,
+          position: index + 1,
+          role: readEntryRole(entry),
+          hex,
+          pantoneCode: paletteEntry?.pantoneCode ?? null,
+          pantoneName: paletteEntry?.pantoneName ?? null,
+        };
+      })
+      .filter(Boolean);
+    return { ...combo, colors };
+  });
+
+  const total = withColors.length;
   const offset = (page - 1) * pageSize;
-  const paged = combos.slice(offset, offset + pageSize);
+  const paged = withColors.slice(offset, offset + pageSize);
 
   const [seasonOptions, temperatureOptions, contrastOptions, moodOptions] = await Promise.all([
     prisma.colorCombination.findMany({ distinct: ["season"], select: { season: true } }),
