@@ -18,9 +18,11 @@ const resolveDrainConfig = (body: unknown) => {
   const requestedBatch = Number(payload.drainBatch ?? payload.batch ?? payload.limit);
   const requestedConcurrency = Number(payload.drainConcurrency ?? payload.concurrency ?? payload.workers);
   const requestedMaxMs = Number(payload.drainMaxMs ?? payload.maxMs ?? payload.timeoutMs);
+  const requestedMaxRuns = Number(payload.drainMaxRuns ?? payload.maxRuns);
   const batchDefault = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_BATCH ?? 0);
   const concurrencyDefault = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY ?? 20);
   const maxMsDefault = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS ?? 20000);
+  const maxRunsDefault = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_MAX_RUNS ?? 1);
   const batch = Number.isFinite(requestedBatch) ? requestedBatch : batchDefault;
   const concurrencyRaw = Number.isFinite(requestedConcurrency) ? requestedConcurrency : concurrencyDefault;
   const concurrency = Math.max(20, concurrencyRaw);
@@ -32,6 +34,7 @@ const resolveDrainConfig = (body: unknown) => {
   );
   const batchFloor = batch <= 0 ? batch : Math.max(batch, minConcurrency);
   const maxMs = Number.isFinite(requestedMaxMs) ? requestedMaxMs : maxMsDefault;
+  const maxRuns = Number.isFinite(requestedMaxRuns) ? requestedMaxRuns : maxRunsDefault;
   const queuedStaleMs = Math.max(
     0,
     Number(process.env.PRODUCT_ENRICHMENT_QUEUE_STALE_MINUTES ?? 15) * 60 * 1000,
@@ -40,7 +43,7 @@ const resolveDrainConfig = (body: unknown) => {
     0,
     Number(process.env.PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES ?? 30) * 60 * 1000,
   );
-  return { batch: batchFloor, concurrency, maxMs, queuedStaleMs, stuckMs };
+  return { batch: batchFloor, concurrency, maxMs, maxRuns, queuedStaleMs, stuckMs };
 };
 
 export async function POST(req: Request) {
@@ -52,36 +55,58 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : null;
 
-  const { batch, concurrency, maxMs, queuedStaleMs, stuckMs } = resolveDrainConfig(body);
+  const { batch, concurrency, maxMs, maxRuns, queuedStaleMs, stuckMs } = resolveDrainConfig(body);
   const safeBatch = batch <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, batch);
   const safeConcurrency = Math.max(1, concurrency);
   const safeMaxMs = Math.max(2000, maxMs);
+  const safeMaxRuns = Math.max(1, maxRuns);
+  const deadline = Date.now() + safeMaxMs;
 
   let processed = 0;
   let lastResult: unknown = null;
   let runId: string | null = null;
+  let runsProcessed = 0;
+  const seenRunIds = new Set<string>();
 
-  const run = await prisma.productEnrichmentRun.findFirst({
-    where: brandId ? { brandId, status: "processing" } : { status: "processing" },
-    orderBy: { updatedAt: "asc" },
-  });
-  runId = run?.id ?? null;
+  while (
+    processed < safeBatch &&
+    runsProcessed < safeMaxRuns &&
+    Date.now() < deadline
+  ) {
+    const run = await prisma.productEnrichmentRun.findFirst({
+      where: {
+        status: "processing",
+        ...(brandId ? { brandId } : {}),
+        ...(seenRunIds.size ? { id: { notIn: Array.from(seenRunIds) } } : {}),
+      },
+      orderBy: { updatedAt: "asc" },
+    });
+    runId = run?.id ?? null;
 
-  if (runId) {
+    if (!runId) break;
+    seenRunIds.add(runId);
+    runsProcessed += 1;
+
     await resetQueuedItems(runId, queuedStaleMs);
     await resetStuckItems(runId, stuckMs);
+    const remainingBatch =
+      safeBatch === Number.MAX_SAFE_INTEGER ? safeBatch : Math.max(1, safeBatch - processed);
+    const remainingMs = Math.max(2000, deadline - Date.now());
     lastResult = await drainEnrichmentRun({
       runId,
-      batch: safeBatch,
+      batch: remainingBatch,
       concurrency: safeConcurrency,
-      maxMs: safeMaxMs,
+      maxMs: remainingMs,
       queuedStaleMs,
       stuckMs,
     });
     processed += (lastResult as { processed?: number })?.processed ?? 0;
+
+    if (brandId) break;
+    if (processed >= safeBatch && safeBatch !== Number.MAX_SAFE_INTEGER) break;
   }
 
-  return NextResponse.json({ runId, processed, lastResult });
+  return NextResponse.json({ runId, runsProcessed, processed, lastResult });
 }
 
 export async function GET(req: Request) {
