@@ -262,7 +262,7 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
           from products p
           join brands b on b.id = p."brandId"
           where p."imageCoverUrl" is not null
-          order by md5(concat(p.id::text, ${seed}))
+          order by md5(concat(p.id::text, ${seed}::text))
           limit 1
         `
       );
@@ -302,7 +302,7 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
           from products p
           join brands b on b.id = p."brandId"
           where p."imageCoverUrl" is not null
-          order by md5(concat(p.id::text, ${seed}))
+          order by md5(concat(p.id::text, ${seed}::text))
           limit ${limit}
         `
       );
@@ -341,7 +341,7 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
           from products p
           join brands b on b.id = p."brandId"
           where p."imageCoverUrl" is not null
-          order by md5(concat(p.id::text, ${seed}, 'picks'))
+          order by md5(concat(p.id::text, ${seed}::text, 'picks'))
           limit ${limit}
         `
       );
@@ -377,7 +377,7 @@ export async function getCategoryHighlights(
                 select p.id
                 from products p
                 where p.category = c.category and p."imageCoverUrl" is not null
-                order by md5(concat(p.id::text, ${seed}, c.category))
+                order by md5(concat(p.id::text, ${seed}::text, c.category))
                 limit 1
               ) as product_id
             from categories c
@@ -445,7 +445,7 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
             from products p
             join brands b on b.id = p."brandId"
             where p."stylePrimary" = ${styleKey} and p."imageCoverUrl" is not null
-            order by md5(concat(p.id::text, ${seed}, ${styleKey}))
+            order by md5(concat(p.id::text, ${seed}::text, ${styleKey}))
             limit 6
           `
         );
@@ -476,7 +476,7 @@ export async function getColorCombos(seed: number, limit = 6): Promise<ColorComb
             c."comboKey",
             c."detectedLayout"
           from color_combinations c
-          order by md5(concat(c.id::text, ${seed}, 'colors'))
+          order by md5(concat(c.id::text, ${seed}::text, 'colors'))
           limit ${limit}
         `
       );
@@ -536,7 +536,7 @@ export async function getBrandLogos(seed: number, limit = 24): Promise<BrandLogo
           select id, name, "logoUrl"
           from brands
           where "logoUrl" is not null
-          order by md5(concat(id::text, ${seed}, 'brands'))
+          order by md5(concat(id::text, ${seed}::text, 'brands'))
           limit ${limit}
         `
       );
