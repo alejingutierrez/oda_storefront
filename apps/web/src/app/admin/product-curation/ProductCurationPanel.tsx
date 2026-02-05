@@ -12,7 +12,7 @@ import {
   SEASON_LABELS,
 } from "@/lib/product-enrichment/constants";
 import { STYLE_PROFILE_LABELS } from "@/lib/product-enrichment/style-profiles";
-import BulkEditModal, { type BulkField, type BulkOperation, type BulkResult } from "./BulkEditModal";
+import BulkEditModal, { type BulkChange, type BulkResult } from "./BulkEditModal";
 
 type FacetItem = {
   value: string;
@@ -319,15 +319,13 @@ export default function ProductCurationPanel() {
   }, [searchKey, selectingAll]);
 
   const handleBulkApply = useCallback(
-    async (payload: { field: BulkField; op: BulkOperation; value: string | string[] | null }) => {
+    async (payload: { changes: BulkChange[] }) => {
       const res = await fetch("/api/admin/product-curation/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productIds: Array.from(selectedIds),
-          field: payload.field,
-          op: payload.op,
-          value: payload.value,
+          changes: payload.changes,
         }),
       });
       const responsePayload = await res.json().catch(() => ({}));

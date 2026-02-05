@@ -34,6 +34,12 @@ export type BulkField =
   | "care"
   | "origin";
 
+export type BulkChange = {
+  field: BulkField;
+  op: BulkOperation;
+  value: string | string[] | null;
+};
+
 export type BulkResult = {
   ok: boolean;
   updatedCount: number;
@@ -46,14 +52,18 @@ type Props = {
   open: boolean;
   selectedCount: number;
   onClose: () => void;
-  onApply: (payload: {
-    field: BulkField;
-    op: BulkOperation;
-    value: string | string[] | null;
-  }) => Promise<BulkResult>;
+  onApply: (payload: { changes: BulkChange[] }) => Promise<BulkResult>;
 };
 
 type Option = { value: string; label: string };
+
+type ChangeDraft = {
+  key: string;
+  field: BulkField;
+  op: BulkOperation;
+  scalarValue: string;
+  tagValues: string[];
+};
 
 const FIELD_OPTIONS: Array<{ value: BulkField; label: string; kind: "scalar" | "array"; editable: boolean }> = [
   { value: "category", label: "Categoría", kind: "scalar", editable: true },
@@ -69,6 +79,16 @@ const FIELD_OPTIONS: Array<{ value: BulkField; label: string; kind: "scalar" | "
   { value: "care", label: "Cuidado", kind: "scalar", editable: true },
   { value: "origin", label: "Origen", kind: "scalar", editable: true },
 ];
+
+const FIELD_LABELS = Object.fromEntries(FIELD_OPTIONS.map((entry) => [entry.value, entry.label])) as Record<
+  BulkField,
+  string
+>;
+
+const FIELD_KIND = Object.fromEntries(FIELD_OPTIONS.map((entry) => [entry.value, entry.kind])) as Record<
+  BulkField,
+  "scalar" | "array"
+>;
 
 const OP_LABELS: Record<BulkOperation, string> = {
   replace: "Reemplazar",
@@ -99,6 +119,35 @@ function classNames(...parts: Array<string | false | null | undefined>) {
 
 function normalizeUnique(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort();
+}
+
+function makeKey() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  } catch {
+    // ignore
+  }
+  return `chg_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function getAllowedOps(field: BulkField): BulkOperation[] {
+  return FIELD_KIND[field] === "array" ? ["replace", "add", "remove", "clear"] : ["replace", "clear"];
+}
+
+function buildValuePreview(change: ChangeDraft): string {
+  if (change.op === "clear") return "Se limpiará el campo.";
+  if (FIELD_KIND[change.field] === "array") {
+    if (!change.tagValues.length) return "—";
+    return `${change.tagValues.length} valor(es)`;
+  }
+
+  const raw = change.scalarValue.trim();
+  if (!raw) return "—";
+  if (change.field === "category") return CATEGORY_LABELS[raw] ?? raw;
+  if (change.field === "subcategory") return SUBCATEGORY_LABELS[raw] ?? raw;
+  if (change.field === "stylePrimary" || change.field === "styleSecondary") return STYLE_PROFILE_LABELS[raw] ?? raw;
+  return raw;
 }
 
 function CheckboxList({
@@ -207,34 +256,74 @@ function CheckboxList({
 }
 
 export default function BulkEditModal({ open, selectedCount, onClose, onApply }: Props) {
-  const [field, setField] = useState<BulkField>("category");
-  const [op, setOp] = useState<BulkOperation>("replace");
-  const [scalarValue, setScalarValue] = useState<string>("");
-  const [tagValues, setTagValues] = useState<string[]>([]);
+  const initialKey = useMemo(() => makeKey(), []);
+  const [changes, setChanges] = useState<ChangeDraft[]>(() => [
+    { key: initialKey, field: "category", op: "replace", scalarValue: "", tagValues: [] },
+  ]);
+  const [activeKey, setActiveKey] = useState(initialKey);
   const [applying, setApplying] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BulkResult | null>(null);
 
-  const fieldMeta = useMemo(() => FIELD_OPTIONS.find((item) => item.value === field), [field]);
-  const isArray = fieldMeta?.kind === "array";
+  const usedFields = useMemo(() => new Set(changes.map((change) => change.field)), [changes]);
 
-  const allowedOps = useMemo(() => {
-    if (isArray) return (["replace", "add", "remove", "clear"] as BulkOperation[]);
-    return (["replace", "clear"] as BulkOperation[]);
-  }, [isArray]);
+  const duplicateFields = useMemo(() => {
+    const counts = new Map<BulkField, number>();
+    for (const change of changes) {
+      counts.set(change.field, (counts.get(change.field) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .filter(([, count]) => count > 1)
+      .map(([field]) => field);
+  }, [changes]);
+
+  const activeIndex = useMemo(() => {
+    const found = changes.findIndex((change) => change.key === activeKey);
+    return found >= 0 ? found : 0;
+  }, [activeKey, changes]);
+
+  const active = changes[activeIndex] ?? changes[0];
+
+  const usedByOthers = useMemo(() => {
+    const next = new Set<BulkField>();
+    for (const change of changes) {
+      if (change.key === active?.key) continue;
+      next.add(change.field);
+    }
+    return next;
+  }, [active?.key, changes]);
+
+  const fieldMeta = useMemo(() => {
+    const label = FIELD_LABELS[active.field] ?? active.field;
+    const kind = FIELD_KIND[active.field];
+    return { label, kind };
+  }, [active.field]);
+
+  const allowedOps = useMemo(() => getAllowedOps(active.field), [active.field]);
+  const isArray = fieldMeta.kind === "array";
 
   useEffect(() => {
-    if (!allowedOps.includes(op)) {
-      setOp(allowedOps[0] ?? "replace");
+    if (!allowedOps.includes(active.op)) {
+      setChanges((prev) =>
+        prev.map((change) => (change.key === active.key ? { ...change, op: allowedOps[0] ?? "replace" } : change)),
+      );
     }
-  }, [allowedOps, op]);
+  }, [active.key, active.op, allowedOps]);
+
+  const changeSignature = useMemo(
+    () =>
+      changes
+        .map((change) => `${change.field}:${change.op}:${change.scalarValue}:${change.tagValues.join(",")}`)
+        .join("|"),
+    [changes],
+  );
 
   useEffect(() => {
     setError(null);
     setConfirming(false);
     setResult(null);
-  }, [field, op, scalarValue, tagValues]);
+  }, [changeSignature, selectedCount]);
 
   useEffect(() => {
     if (!open) return;
@@ -246,45 +335,69 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
   }, [open, onClose]);
 
   const scalarOptions: Option[] | null = useMemo(() => {
-    if (field === "category") return buildCategoryOptions();
-    if (field === "subcategory") return buildSubcategoryOptions();
-    if (field === "gender") return buildGenderOptions();
-    if (field === "season") return buildSeasonOptions();
-    if (field === "stylePrimary" || field === "styleSecondary") return buildStyleProfileOptions();
+    if (active.field === "category") return buildCategoryOptions();
+    if (active.field === "subcategory") return buildSubcategoryOptions();
+    if (active.field === "gender") return buildGenderOptions();
+    if (active.field === "season") return buildSeasonOptions();
+    if (active.field === "stylePrimary" || active.field === "styleSecondary") return buildStyleProfileOptions();
     return null;
-  }, [field]);
+  }, [active.field]);
 
   const tagOptions: Option[] | null = useMemo(() => {
-    if (field === "styleTags") return buildTagOptions(STYLE_TAGS, STYLE_TAG_FRIENDLY);
-    if (field === "materialTags") return buildTagOptions(MATERIAL_TAGS, MATERIAL_TAG_FRIENDLY);
-    if (field === "patternTags") return buildTagOptions(PATTERN_TAGS, PATTERN_TAG_FRIENDLY);
-    if (field === "occasionTags") return buildTagOptions(OCCASION_TAGS, OCCASION_TAG_FRIENDLY);
+    if (active.field === "styleTags") return buildTagOptions(STYLE_TAGS, STYLE_TAG_FRIENDLY);
+    if (active.field === "materialTags") return buildTagOptions(MATERIAL_TAGS, MATERIAL_TAG_FRIENDLY);
+    if (active.field === "patternTags") return buildTagOptions(PATTERN_TAGS, PATTERN_TAG_FRIENDLY);
+    if (active.field === "occasionTags") return buildTagOptions(OCCASION_TAGS, OCCASION_TAG_FRIENDLY);
     return null;
-  }, [field]);
+  }, [active.field]);
 
-  const isValid = useMemo(() => {
-    if (selectedCount <= 0) return false;
-    if (op === "clear") return true;
-    if (isArray) return tagValues.length > 0;
-    if (scalarOptions) return scalarValue.trim().length > 0;
-    return scalarValue.trim().length > 0;
-  }, [isArray, op, scalarOptions, scalarValue, selectedCount, tagValues.length]);
+  const addDisabled = useMemo(() => {
+    const editableFields = FIELD_OPTIONS.filter((entry) => entry.editable).map((entry) => entry.value);
+    return editableFields.every((field) => usedFields.has(field));
+  }, [usedFields]);
 
-  const previewValue = useMemo(() => {
-    if (op === "clear") return "Se limpiará el campo.";
-    if (isArray) {
-      if (!tagValues.length) return "—";
-      return `${tagValues.length} valor(es)`;
+  const applyDisabled = useMemo(() => {
+    if (selectedCount <= 0) return true;
+    if (!changes.length) return true;
+    if (duplicateFields.length > 0) return true;
+    for (const change of changes) {
+      if (change.op === "clear") continue;
+      if (FIELD_KIND[change.field] === "array") {
+        if (!change.tagValues.length) return true;
+      } else {
+        if (!change.scalarValue.trim().length) return true;
+      }
     }
-    if (!scalarValue.trim()) return "—";
-    if (field === "category") return CATEGORY_LABELS[scalarValue] ?? scalarValue;
-    if (field === "subcategory") return SUBCATEGORY_LABELS[scalarValue] ?? scalarValue;
-    if (field === "stylePrimary" || field === "styleSecondary") return STYLE_PROFILE_LABELS[scalarValue] ?? scalarValue;
-    return scalarValue;
-  }, [field, isArray, op, scalarValue, tagValues.length]);
+    return false;
+  }, [changes, duplicateFields.length, selectedCount]);
+
+  const updateChange = (key: string, patch: Partial<ChangeDraft>) => {
+    setChanges((prev) => prev.map((change) => (change.key === key ? { ...change, ...patch } : change)));
+  };
+
+  const handleAddChange = () => {
+    const editableFields = FIELD_OPTIONS.filter((entry) => entry.editable).map((entry) => entry.value);
+    const nextField = editableFields.find((field) => !usedFields.has(field));
+    if (!nextField) return;
+    const nextKey = makeKey();
+    const next: ChangeDraft = { key: nextKey, field: nextField, op: "replace", scalarValue: "", tagValues: [] };
+    setChanges((prev) => [...prev, next]);
+    setActiveKey(nextKey);
+  };
+
+  const handleRemoveChange = (key: string) => {
+    setChanges((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = prev.filter((change) => change.key !== key);
+      if (activeKey === key) {
+        setActiveKey(next[0]?.key ?? prev[0].key);
+      }
+      return next;
+    });
+  };
 
   const handleApply = async () => {
-    if (!isValid) return;
+    if (applyDisabled) return;
     if (!confirming) {
       setConfirming(true);
       return;
@@ -293,10 +406,17 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
     setApplying(true);
     setError(null);
     try {
-      const value =
-        op === "clear" ? null : isArray ? tagValues : scalarValue.trim();
-      const payload = { field, op, value };
-      const response = await onApply(payload);
+      const payloadChanges: BulkChange[] = changes.map((change) => {
+        const value =
+          change.op === "clear"
+            ? null
+            : FIELD_KIND[change.field] === "array"
+              ? change.tagValues
+              : change.scalarValue.trim();
+        return { field: change.field, op: change.op, value };
+      });
+
+      const response = await onApply({ changes: payloadChanges });
       setResult(response);
       if (!response.ok) {
         setError("No se pudo aplicar el bulk edit.");
@@ -317,13 +437,13 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-6" onClick={onClose}>
       <div
-        className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+        className="w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Curación</p>
-            <h3 className="mt-1 text-lg font-semibold text-slate-900">Editar en bloque</h3>
+            <h3 className="mt-1 text-lg font-semibold text-slate-900">Editar en bloque (multi-cambios)</h3>
           </div>
           <button
             type="button"
@@ -334,10 +454,103 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
           </button>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-6">
-          <div className="grid gap-5 lg:grid-cols-[0.9fr,1.1fr]">
+        <div className="max-h-[72vh] overflow-y-auto px-6 py-6">
+          <div className="grid gap-5 lg:grid-cols-[0.95fr,1.05fr]">
             <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Configuración</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Cambios</p>
+                <button
+                  type="button"
+                  onClick={handleAddChange}
+                  disabled={addDisabled}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                >
+                  Agregar cambio
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                {changes.map((change, index) => {
+                  const activeItem = change.key === active.key;
+                  const preview = buildValuePreview(change);
+                  return (
+                    <div key={change.key} className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveKey(change.key)}
+                        className={classNames(
+                          "flex-1 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
+                          activeItem ? "border-slate-900 bg-white text-slate-900" : "border-slate-200 bg-white text-slate-700",
+                        )}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="min-w-0">
+                            {index + 1}. {FIELD_LABELS[change.field] ?? change.field}
+                          </span>
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                            {OP_LABELS[change.op]}
+                          </span>
+                        </div>
+                        <p className="mt-1 truncate text-xs font-normal text-slate-500">{preview}</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveChange(change.key)}
+                        disabled={changes.length <= 1}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 disabled:opacity-50"
+                        title="Quitar cambio"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Previsualización</p>
+                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                  <p>
+                    <span className="font-semibold text-slate-800">Productos:</span> {selectedCount}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-800">Cambios:</span> {changes.length}
+                  </p>
+                  <div className="space-y-1 text-xs text-slate-600">
+                    {changes.map((change) => (
+                      <p key={change.key} className="truncate">
+                        <span className="font-semibold text-slate-800">{FIELD_LABELS[change.field] ?? change.field}:</span>{" "}
+                        {OP_LABELS[change.op]} · {buildValuePreview(change)}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {duplicateFields.length ? (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                  Hay cambios duplicados para:{" "}
+                  <span className="font-semibold">
+                    {duplicateFields.map((field) => FIELD_LABELS[field] ?? field).join(", ")}
+                  </span>
+                  . Deja cada característica solo una vez.
+                </div>
+              ) : null}
+
+              {error ? (
+                <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>
+              ) : null}
+
+              {result?.ok ? (
+                <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+                  Aplicado. Actualizados: {result.updatedCount}. Sin cambios: {result.unchangedCount}.
+                  {result.missingCount ? ` Faltantes: ${result.missingCount}.` : ""}
+                </div>
+              ) : null}
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Editar cambio</p>
 
               <div className="mt-4 space-y-4">
                 <div>
@@ -346,16 +559,30 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
                   </label>
                   <select
                     id="bulk-field"
-                    value={field}
-                    onChange={(event) => setField(event.target.value as BulkField)}
+                    value={active.field}
+                    onChange={(event) => {
+                      const nextField = event.target.value as BulkField;
+                      const nextAllowedOps = getAllowedOps(nextField);
+                      updateChange(active.key, {
+                        field: nextField,
+                        op: nextAllowedOps.includes(active.op) ? active.op : nextAllowedOps[0] ?? "replace",
+                        scalarValue: "",
+                        tagValues: [],
+                      });
+                    }}
                     className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                   >
                     {FIELD_OPTIONS.filter((item) => item.editable).map((item) => (
-                      <option key={item.value} value={item.value}>
+                      <option key={item.value} value={item.value} disabled={usedByOthers.has(item.value)}>
                         {item.label}
                       </option>
                     ))}
                   </select>
+                  {usedByOthers.has(active.field) ? (
+                    <p className="mt-2 text-xs text-amber-700">
+                      Esta característica ya está usada en otro cambio. Selecciona una diferente.
+                    </p>
+                  ) : null}
                 </div>
 
                 <div>
@@ -364,8 +591,8 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
                   </label>
                   <select
                     id="bulk-op"
-                    value={op}
-                    onChange={(event) => setOp(event.target.value as BulkOperation)}
+                    value={active.op}
+                    onChange={(event) => updateChange(active.key, { op: event.target.value as BulkOperation })}
                     className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                   >
                     {allowedOps.map((value) => (
@@ -376,88 +603,70 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
                   </select>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Previsualización</p>
-                  <div className="mt-3 space-y-2 text-sm text-slate-700">
-                    <p>
-                      <span className="font-semibold text-slate-800">Productos:</span> {selectedCount}
-                    </p>
-                    <p>
-                      <span className="font-semibold text-slate-800">Acción:</span>{" "}
-                      {fieldMeta?.label ?? field} · {OP_LABELS[op]}
-                    </p>
-                    <p className="truncate">
-                      <span className="font-semibold text-slate-800">Valor:</span> {previewValue}
-                    </p>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Valor</p>
+                  <div className="mt-3">
+                    {active.op === "clear" ? (
+                      <p className="text-sm text-slate-600">
+                        Esta operación dejará el campo vacío en los productos seleccionados.
+                      </p>
+                    ) : isArray && tagOptions ? (
+                      <CheckboxList
+                        options={tagOptions}
+                        selected={active.tagValues}
+                        onChange={(next) => updateChange(active.key, { tagValues: next })}
+                        emptyLabel="Selecciona uno o más valores."
+                      />
+                    ) : scalarOptions ? (
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-scalar">
+                          Valor
+                        </label>
+                        <select
+                          id="bulk-scalar"
+                          value={active.scalarValue}
+                          onChange={(event) => updateChange(active.key, { scalarValue: event.target.value })}
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                        >
+                          <option value="">Selecciona…</option>
+                          {scalarOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-text">
+                          Valor
+                        </label>
+                        <input
+                          id="bulk-text"
+                          value={active.scalarValue}
+                          onChange={(event) => updateChange(active.key, { scalarValue: event.target.value })}
+                          placeholder="Escribe el valor…"
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                        />
+                        <p className="mt-2 text-xs text-slate-500">
+                          Campo libre. Se recomienda usarlo para notas estables (cuidado/origen).
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {error ? (
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-                    {error}
-                  </div>
-                ) : null}
-
-                {result?.ok ? (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-                    Aplicado. Actualizados: {result.updatedCount}. Sin cambios: {result.unchangedCount}.
-                    {result.missingCount ? ` Faltantes: ${result.missingCount}.` : ""}
-                  </div>
-                ) : null}
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Valores</p>
-
-              <div className="mt-4">
-                {op === "clear" ? (
-                  <p className="text-sm text-slate-600">
-                    Esta operación dejará el campo vacío en los productos seleccionados.
-                  </p>
-                ) : isArray && tagOptions ? (
-                  <CheckboxList
-                    options={tagOptions}
-                    selected={tagValues}
-                    onChange={setTagValues}
-                    emptyLabel="Selecciona uno o más valores."
-                  />
-                ) : scalarOptions ? (
-                  <div>
-                    <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-scalar">
-                      Valor
-                    </label>
-                    <select
-                      id="bulk-scalar"
-                      value={scalarValue}
-                      onChange={(event) => setScalarValue(event.target.value)}
-                      className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                    >
-                      <option value="">Selecciona…</option>
-                      {scalarOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-text">
-                      Valor
-                    </label>
-                    <input
-                      id="bulk-text"
-                      value={scalarValue}
-                      onChange={(event) => setScalarValue(event.target.value)}
-                      placeholder="Escribe el valor…"
-                      className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900"
-                    />
-                    <p className="mt-2 text-xs text-slate-500">
-                      Campo libre. Se recomienda usarlo para notas estables (cuidado/origen).
+                <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Resumen del cambio activo</p>
+                  <div className="mt-3 space-y-1">
+                    <p>
+                      <span className="font-semibold text-slate-800">Acción:</span> {fieldMeta.label} · {OP_LABELS[active.op]}
+                    </p>
+                    <p className="truncate">
+                      <span className="font-semibold text-slate-800">Valor:</span> {buildValuePreview(active)}
                     </p>
                   </div>
-                )}
+                </div>
               </div>
             </section>
           </div>
@@ -465,7 +674,8 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-4">
           <p className="text-xs text-slate-500">
-            No permite editar descripción ni campos SEO. Guarda trazabilidad en <code className="text-slate-700">metadata.enrichment_human</code>.
+            No permite editar descripción ni campos SEO. Guarda trazabilidad en{" "}
+            <code className="text-slate-700">metadata.enrichment_human</code>.
           </p>
           <div className="flex items-center gap-3">
             <button
@@ -478,11 +688,11 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
             <button
               type="button"
               onClick={handleApply}
-              disabled={!isValid || applying}
+              disabled={applyDisabled || applying}
               className={classNames(
                 "rounded-full px-4 py-2 text-sm font-semibold",
                 confirming ? "bg-rose-600 text-white" : "bg-slate-900 text-white",
-                (!isValid || applying) && "opacity-50",
+                (applyDisabled || applying) && "opacity-50",
               )}
             >
               {applying ? "Aplicando…" : confirming ? "Confirmar cambios" : "Aplicar cambios"}
@@ -493,3 +703,4 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
     </div>
   );
 }
+

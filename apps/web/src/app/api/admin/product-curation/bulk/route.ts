@@ -32,7 +32,12 @@ type BulkField =
   | "care"
   | "origin";
 
+type ParsedChange =
+  | { field: BulkField; op: BulkOperation; kind: "array"; tagValues: string[] }
+  | { field: BulkField; op: BulkOperation; kind: "scalar"; scalarValue: string | null };
+
 const MAX_PRODUCT_IDS = 1200;
+const MAX_CHANGES = 20;
 const TX_CHUNK_SIZE = 50;
 
 const toUniqueStringArray = (value: unknown) => {
@@ -87,6 +92,25 @@ const GENDER_SET = buildAllowedSet(GENDER_OPTIONS.map((entry) => entry.value));
 const SEASON_SET = buildAllowedSet(SEASON_OPTIONS.map((entry) => entry.value));
 const STYLE_PROFILE_SET = buildAllowedSet(STYLE_PROFILES.map((profile) => profile.key));
 
+const scalarFieldAllowed: Partial<Record<BulkField, Set<string>>> = {
+  category: CATEGORY_SET,
+  subcategory: SUBCATEGORY_SET,
+  gender: GENDER_SET,
+  season: SEASON_SET,
+  stylePrimary: STYLE_PROFILE_SET,
+  styleSecondary: STYLE_PROFILE_SET,
+};
+
+const arrayFieldAllowed: Partial<Record<BulkField, Set<string>>> = {
+  styleTags: STYLE_TAG_SET,
+  materialTags: MATERIAL_SET,
+  patternTags: PATTERN_SET,
+  occasionTags: OCCASION_SET,
+};
+
+const isScalarField = (field: BulkField) => field in scalarFieldAllowed || field === "care" || field === "origin";
+const isArrayField = (field: BulkField) => field in arrayFieldAllowed;
+
 const arrayEqual = (a: string[], b: string[]) => {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -118,78 +142,112 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "too_many_product_ids" }, { status: 400 });
   }
 
-  const field = body?.field;
-  if (!isField(field)) {
-    return NextResponse.json({ error: "invalid_field" }, { status: 400 });
+  const rawChanges: Array<any> = Array.isArray(body?.changes) ? body.changes : [];
+  const candidateChanges =
+    rawChanges.length > 0
+      ? rawChanges.map((entry) => ({
+          field: entry?.field,
+          op: entry?.op ?? entry?.mode ?? entry?.operation,
+          value: entry?.value,
+        }))
+      : [
+          {
+            field: body?.field,
+            op: body?.op ?? body?.mode ?? body?.operation,
+            value: body?.value,
+          },
+        ];
+
+  if (!candidateChanges.length) {
+    return NextResponse.json({ error: "missing_changes" }, { status: 400 });
+  }
+  if (candidateChanges.length > MAX_CHANGES) {
+    return NextResponse.json({ error: "too_many_changes" }, { status: 400 });
   }
 
-  const op = body?.op ?? body?.mode ?? body?.operation;
-  if (!isOperation(op)) {
-    return NextResponse.json({ error: "invalid_operation" }, { status: 400 });
+  const seenFields = new Set<BulkField>();
+  const changes: ParsedChange[] = [];
+
+  for (const entry of candidateChanges) {
+    const field = entry?.field;
+    if (!isField(field)) {
+      return NextResponse.json({ error: "invalid_field" }, { status: 400 });
+    }
+    if (seenFields.has(field)) {
+      return NextResponse.json({ error: "duplicate_field", field }, { status: 400 });
+    }
+    seenFields.add(field);
+
+    const op = entry?.op;
+    if (!isOperation(op)) {
+      return NextResponse.json({ error: "invalid_operation" }, { status: 400 });
+    }
+
+    const scalar = isScalarField(field);
+    const array = isArrayField(field);
+    if (!scalar && !array) {
+      return NextResponse.json({ error: "unsupported_field" }, { status: 400 });
+    }
+
+    if (scalar) {
+      if (op === "add" || op === "remove") {
+        return NextResponse.json({ error: "unsupported_operation", field, op }, { status: 400 });
+      }
+      const scalarValue = op === "clear" ? null : toOptionalString(entry?.value);
+      if (op !== "clear" && !scalarValue) {
+        return NextResponse.json({ error: "missing_value", field }, { status: 400 });
+      }
+      const allowed = scalarFieldAllowed[field];
+      if (allowed && scalarValue && !allowed.has(scalarValue)) {
+        return NextResponse.json({ error: "invalid_value", field, value: scalarValue }, { status: 400 });
+      }
+      changes.push({ field, op, kind: "scalar", scalarValue });
+      continue;
+    }
+
+    // array field
+    const tagValues =
+      op === "clear" ? [] : normalizeTags(toUniqueStringArray(entry?.value));
+    if (op !== "clear" && tagValues.length === 0) {
+      return NextResponse.json({ error: "missing_value", field }, { status: 400 });
+    }
+    const allowed = arrayFieldAllowed[field];
+    if (!allowed) {
+      return NextResponse.json({ error: "invalid_field_config", field }, { status: 400 });
+    }
+    const { ok, invalid } = ensureAllAllowed(tagValues, allowed);
+    if (!ok) {
+      return NextResponse.json({ error: "invalid_values", field, invalid }, { status: 400 });
+    }
+    changes.push({ field, op, kind: "array", tagValues });
+  }
+
+  if (!changes.length) {
+    return NextResponse.json({ error: "missing_changes" }, { status: 400 });
   }
 
   const now = new Date();
+  const auditChanges = changes.map((change) => ({
+    field: change.field,
+    op: change.op,
+    value:
+      change.op === "clear"
+        ? null
+        : change.kind === "array"
+          ? change.tagValues
+          : change.scalarValue,
+  }));
+
   const auditAction = {
     updatedAt: now.toISOString(),
     updatedBy: typeof (admin as any)?.email === "string" ? (admin as any).email : null,
-    field,
-    op,
-    value: op === "clear" ? null : body?.value ?? null,
+    changes: auditChanges,
   };
-
-  const scalarFieldAllowed: Partial<Record<BulkField, Set<string>>> = {
-    category: CATEGORY_SET,
-    subcategory: SUBCATEGORY_SET,
-    gender: GENDER_SET,
-    season: SEASON_SET,
-    stylePrimary: STYLE_PROFILE_SET,
-    styleSecondary: STYLE_PROFILE_SET,
-  };
-
-  const arrayFieldAllowed: Partial<Record<BulkField, Set<string>>> = {
-    styleTags: STYLE_TAG_SET,
-    materialTags: MATERIAL_SET,
-    patternTags: PATTERN_SET,
-    occasionTags: OCCASION_SET,
-  };
-
-  const isScalarField = field in scalarFieldAllowed || field === "care" || field === "origin";
-  const isArrayField = field in arrayFieldAllowed;
-  if (!isScalarField && !isArrayField) {
-    return NextResponse.json({ error: "unsupported_field" }, { status: 400 });
-  }
-
-  if (isScalarField && (op === "add" || op === "remove")) {
-    return NextResponse.json({ error: "unsupported_operation" }, { status: 400 });
-  }
-
-  let scalarValue: string | null = null;
-  let tagValues: string[] = [];
-
-  if (op !== "clear") {
-    if (isArrayField) {
-      tagValues = normalizeTags(toUniqueStringArray(body?.value));
-      const allowed = arrayFieldAllowed[field];
-      if (!allowed) {
-        return NextResponse.json({ error: "invalid_field_config" }, { status: 400 });
-      }
-      const { ok, invalid } = ensureAllAllowed(tagValues, allowed);
-      if (!ok) {
-        return NextResponse.json({ error: "invalid_values", invalid }, { status: 400 });
-      }
-    } else {
-      scalarValue = toOptionalString(body?.value);
-      const allowed = scalarFieldAllowed[field];
-      if (allowed && scalarValue) {
-        if (!allowed.has(scalarValue)) {
-          return NextResponse.json({ error: "invalid_value" }, { status: 400 });
-        }
-      }
-    }
-  }
 
   const select: Prisma.ProductSelect = { id: true, metadata: true } as any;
-  (select as any)[field] = true;
+  for (const change of changes) {
+    (select as any)[change.field] = true;
+  }
 
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
@@ -205,6 +263,48 @@ export async function POST(req: Request) {
   const updates: Prisma.PrismaPromise<any>[] = [];
 
   for (const product of products) {
+    const data: Record<string, any> = {};
+    let didChange = false;
+
+    for (const change of changes) {
+      if (change.kind === "array") {
+        const existing = Array.isArray((product as any)[change.field])
+          ? ((product as any)[change.field] as string[])
+          : [];
+        const existingNorm = normalizeTags(existing);
+        let next: string[] = existingNorm;
+
+        if (change.op === "clear") next = [];
+        if (change.op === "replace") next = change.tagValues;
+        if (change.op === "add") next = normalizeTags([...existingNorm, ...change.tagValues]);
+        if (change.op === "remove") {
+          const removeSet = new Set(change.tagValues);
+          next = existingNorm.filter((value) => !removeSet.has(value));
+        }
+
+        if (!arrayEqual(existingNorm, next)) {
+          didChange = true;
+          data[change.field] = next;
+        }
+        continue;
+      }
+
+      const existing = (product as any)[change.field] ?? null;
+      let next: string | null = existing;
+      if (change.op === "clear") next = null;
+      if (change.op === "replace") next = change.scalarValue;
+
+      if (existing !== next) {
+        didChange = true;
+        data[change.field] = next;
+      }
+    }
+
+    if (!didChange) {
+      unchangedCount += 1;
+      continue;
+    }
+
     const existingMetadata =
       product.metadata && typeof product.metadata === "object" && !Array.isArray(product.metadata)
         ? (product.metadata as Record<string, unknown>)
@@ -214,42 +314,7 @@ export async function POST(req: Request) {
       enrichment_human: auditAction,
     };
 
-    const data: Record<string, any> = {
-      metadata: JSON.parse(JSON.stringify(nextMetadata)) as Prisma.InputJsonValue,
-    };
-
-    if (isArrayField) {
-      const existing = Array.isArray((product as any)[field]) ? ((product as any)[field] as string[]) : [];
-      const existingNorm = normalizeTags(existing);
-      let next: string[] = existingNorm;
-
-      if (op === "clear") next = [];
-      if (op === "replace") next = tagValues;
-      if (op === "add") next = normalizeTags([...existingNorm, ...tagValues]);
-      if (op === "remove") {
-        const removeSet = new Set(tagValues);
-        next = existingNorm.filter((value) => !removeSet.has(value));
-      }
-
-      if (arrayEqual(existingNorm, next)) {
-        unchangedCount += 1;
-        continue;
-      }
-
-      data[field] = next;
-    } else {
-      const existing = (product as any)[field] ?? null;
-      let next: string | null = existing;
-      if (op === "clear") next = null;
-      if (op === "replace") next = scalarValue;
-
-      if (existing === next) {
-        unchangedCount += 1;
-        continue;
-      }
-
-      data[field] = next;
-    }
+    data.metadata = JSON.parse(JSON.stringify(nextMetadata)) as Prisma.InputJsonValue;
 
     updatedCount += 1;
     updates.push(
@@ -257,7 +322,7 @@ export async function POST(req: Request) {
         where: { id: product.id },
         data,
         select: { id: true },
-      })
+      }),
     );
   }
 
@@ -267,11 +332,11 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     ok: true,
-    field,
-    op,
     updatedCount,
     unchangedCount,
     missingCount: missingIds.length,
     missingIds,
+    changes: auditChanges,
   });
 }
+
