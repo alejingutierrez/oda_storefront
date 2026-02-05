@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/descope";
+import { logExperienceEvent } from "@/lib/experience";
 
 export async function GET() {
   const session = await requireUser();
@@ -42,6 +43,13 @@ export async function POST(req: Request) {
       description: body.description?.trim() || null,
       visibility,
     },
+  });
+
+  await logExperienceEvent({
+    type: "list_create",
+    userId: session.user.id,
+    listId: list.id,
+    properties: { visibility },
   });
 
   await prisma.userAuditEvent.create({

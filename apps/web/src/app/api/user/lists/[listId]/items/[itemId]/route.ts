@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/descope";
+import { logExperienceEvent } from "@/lib/experience";
 
 export async function DELETE(
   _req: Request,
@@ -29,6 +30,14 @@ export async function DELETE(
   }
 
   await prisma.userListItem.delete({ where: { id: item.id } });
+
+  await logExperienceEvent({
+    type: "list_item_remove",
+    userId: session.user.id,
+    listId: list.id,
+    productId: item.productId,
+    variantId: item.variantId ?? undefined,
+  });
 
   await prisma.userAuditEvent.create({
     data: {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, getDescopeManagementSdk } from "@/lib/descope";
+import { logExperienceEvent } from "@/lib/experience";
 
 export async function POST() {
   const session = await requireUser();
@@ -23,6 +24,11 @@ export async function POST() {
   await prisma.experienceEvent.updateMany({
     where: { userId },
     data: { userId: null },
+  });
+
+  await logExperienceEvent({
+    type: "account_delete",
+    userId,
   });
 
   await prisma.userAuditEvent.create({

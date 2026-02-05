@@ -1,11 +1,21 @@
 import { NextResponse } from "next/server";
 import { syncUserFromDescope } from "@/lib/descope";
+import { logExperienceEvent } from "@/lib/experience";
 
 export async function POST() {
   const synced = await syncUserFromDescope();
   if (!synced) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+
+  await logExperienceEvent({
+    type: "auth_login",
+    userId: synced.user.id,
+    subjectId: synced.subject.id,
+    properties: {
+      providerCount: Object.keys(synced.descopeUser.OAuth ?? {}).length,
+    },
+  });
 
   return NextResponse.json({
     user: {

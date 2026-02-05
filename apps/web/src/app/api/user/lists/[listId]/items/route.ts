@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/descope";
+import { logExperienceEvent } from "@/lib/experience";
 
 export async function GET(
   _req: Request,
@@ -82,6 +83,14 @@ export async function POST(
       data: { position: body.position },
     });
   }
+
+  await logExperienceEvent({
+    type: "list_item_add",
+    userId: session.user.id,
+    listId: list.id,
+    productId: body.productId,
+    variantId: body.variantId ?? undefined,
+  });
 
   await prisma.userAuditEvent.create({
     data: {

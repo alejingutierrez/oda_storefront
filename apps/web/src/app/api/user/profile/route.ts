@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, getDescopeManagementSdk } from "@/lib/descope";
+import { logExperienceEvent } from "@/lib/experience";
 
 export async function GET() {
   const session = await requireUser();
@@ -65,6 +66,14 @@ export async function PATCH(req: Request) {
   const updated = await prisma.user.update({
     where: { id: session.user.id },
     data: updatePayload,
+  });
+
+  await logExperienceEvent({
+    type: "profile_update",
+    userId: session.user.id,
+    properties: {
+      fields: Object.keys(updatePayload),
+    },
   });
 
   await prisma.userAuditEvent.create({

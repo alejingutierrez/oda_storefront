@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/descope";
+import { logExperienceEvent } from "@/lib/experience";
 
 export async function DELETE(
   _req: Request,
@@ -21,6 +22,13 @@ export async function DELETE(
   }
 
   await prisma.userFavorite.delete({ where: { id: favorite.id } });
+
+  await logExperienceEvent({
+    type: "favorite_remove",
+    userId: session.user.id,
+    productId: favorite.productId,
+    variantId: favorite.variantId ?? undefined,
+  });
 
   await prisma.userAuditEvent.create({
     data: {

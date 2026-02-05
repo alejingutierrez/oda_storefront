@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/descope";
+import { logExperienceEvent } from "@/lib/experience";
 
 export async function PATCH(
   req: Request,
@@ -36,6 +37,13 @@ export async function PATCH(
     },
   });
 
+  await logExperienceEvent({
+    type: "list_update",
+    userId: session.user.id,
+    listId: list.id,
+    properties: { visibility },
+  });
+
   await prisma.userAuditEvent.create({
     data: {
       userId: session.user.id,
@@ -67,6 +75,12 @@ export async function DELETE(
   }
 
   await prisma.userList.delete({ where: { id: list.id } });
+
+  await logExperienceEvent({
+    type: "list_delete",
+    userId: session.user.id,
+    listId: list.id,
+  });
 
   await prisma.userAuditEvent.create({
     data: {

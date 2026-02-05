@@ -60,6 +60,16 @@ const normalizeEmail = (user: DescopeUser, fallbackId: string, tokenEmail?: stri
   );
 };
 
+const getTokenField = (token: Record<string, unknown>, key: string) => {
+  const value = token[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+};
+
+const getTokenArray = (token: Record<string, unknown>, key: string) => {
+  const value = token[key];
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string") : undefined;
+};
+
 export async function loadDescopeUser(userId: string) {
   const sdk = getDescopeManagementSdk();
   const response = await sdk.management.user.loadByUserId(userId);
@@ -80,12 +90,33 @@ export async function syncUserFromDescope() {
   const descopeUserId = typeof token.sub === "string" ? token.sub : undefined;
   if (!descopeUserId) return null;
 
-  const descopeUser = await loadDescopeUser(descopeUserId);
+  const tokenUser: DescopeUser = {
+    userId: descopeUserId,
+    email: getTokenField(token, "email"),
+    name: getTokenField(token, "name"),
+    givenName: getTokenField(token, "given_name"),
+    familyName: getTokenField(token, "family_name"),
+    picture: getTokenField(token, "picture"),
+    loginIds: getTokenArray(token, "login_ids"),
+    verifiedEmail: token.email_verified === true,
+  };
+
+  let descopeUser: DescopeUser | null = null;
+  try {
+    descopeUser = await loadDescopeUser(descopeUserId);
+  } catch (error) {
+    console.error("Failed to load Descope user", error);
+  }
+
+  const mergedUser: DescopeUser = {
+    ...tokenUser,
+    ...(descopeUser ?? {}),
+  };
   const subject = await getOrCreateExperienceSubject();
 
-  const displayName = normalizeName(descopeUser);
+  const displayName = normalizeName(mergedUser);
   const email = normalizeEmail(
-    descopeUser,
+    mergedUser,
     descopeUserId,
     typeof token.email === "string" ? token.email : undefined,
   );
@@ -99,9 +130,9 @@ export async function syncUserFromDescope() {
       plan: "free",
       displayName,
       fullName: displayName,
-      avatarUrl: descopeUser.picture,
-      status: descopeUser.status ?? "active",
-      emailVerifiedAt: descopeUser.verifiedEmail ? new Date() : null,
+      avatarUrl: mergedUser.picture,
+      status: mergedUser.status ?? "active",
+      emailVerifiedAt: mergedUser.verifiedEmail ? new Date() : null,
       lastSeenAt: new Date(),
       experienceSubjectId: subject.id,
     },
@@ -109,16 +140,16 @@ export async function syncUserFromDescope() {
       email,
       displayName: displayName ?? undefined,
       fullName: displayName ?? undefined,
-      avatarUrl: descopeUser.picture ?? undefined,
-      status: descopeUser.status ?? "active",
-      emailVerifiedAt: descopeUser.verifiedEmail ? new Date() : null,
+      avatarUrl: mergedUser.picture ?? undefined,
+      status: mergedUser.status ?? "active",
+      emailVerifiedAt: mergedUser.verifiedEmail ? new Date() : null,
       lastSeenAt: new Date(),
       experienceSubjectId: subject.id,
       deletedAt: null,
     },
   });
 
-  const oauthProviders = Object.entries(descopeUser.OAuth ?? {})
+  const oauthProviders = Object.entries(mergedUser.OAuth ?? {})
     .filter(([, enabled]) => Boolean(enabled))
     .map(([provider]) => provider.toLowerCase());
 
@@ -148,7 +179,7 @@ export async function syncUserFromDescope() {
     );
   }
 
-  return { user, descopeUser, authInfo, subject };
+  return { user, descopeUser: mergedUser, authInfo, subject };
 }
 
 export async function requireUser() {

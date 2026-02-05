@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { cookies, headers } from "next/headers";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 const SUBJECT_COOKIE = "oda_anon_id";
@@ -52,4 +53,44 @@ export async function getRequestMeta() {
     userAgent: headerStore.get("user-agent") ?? undefined,
     referrer: headerStore.get("referer") ?? undefined,
   };
+}
+
+const normalizeJson = (value: unknown) =>
+  value === undefined ? undefined : (JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue);
+
+type ExperienceEventInput = {
+  type: string;
+  userId?: string | null;
+  subjectId?: string;
+  brandId?: string;
+  productId?: string;
+  variantId?: string;
+  listId?: string;
+  sessionId?: string;
+  path?: string;
+  referrer?: string;
+  utm?: Record<string, unknown>;
+  properties?: Record<string, unknown>;
+};
+
+export async function logExperienceEvent(input: ExperienceEventInput) {
+  const subjectId = input.subjectId ?? (await getOrCreateExperienceSubject()).id;
+  const meta = await getRequestMeta();
+
+  return prisma.experienceEvent.create({
+    data: {
+      subjectId,
+      userId: input.userId ?? null,
+      type: input.type,
+      path: input.path ?? undefined,
+      referrer: input.referrer ?? meta.referrer,
+      brandId: input.brandId ?? undefined,
+      productId: input.productId ?? undefined,
+      variantId: input.variantId ?? undefined,
+      listId: input.listId ?? undefined,
+      sessionId: input.sessionId ?? undefined,
+      utm: normalizeJson(input.utm),
+      properties: normalizeJson(input.properties),
+    },
+  });
 }

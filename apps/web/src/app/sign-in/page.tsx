@@ -2,9 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { Descope } from "@descope/nextjs-sdk";
+import { useDescope } from "@descope/nextjs-sdk/client";
 
 export default function SignInPage() {
   const router = useRouter();
+  const sdk = useDescope();
 
   return (
     <main className="min-h-screen bg-[color:var(--oda-cream)]">
@@ -25,6 +27,11 @@ export default function SignInPage() {
             flowId="sign-up-or-in"
             theme="light"
             onSuccess={async () => {
+              try {
+                await sdk.refresh();
+              } catch (error) {
+                console.error("Failed to refresh Descope session", error);
+              }
               await fetch("/api/user/sync", { method: "POST" });
               router.push("/perfil");
             }}
