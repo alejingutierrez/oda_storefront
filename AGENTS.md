@@ -262,6 +262,7 @@ Para cada historia (nueva o en curso) se debe:
 ## 22) Lecciones operativas (evitar errores repetidos)
 - **Hooks/TS en React**: no referenciar funciones `const` antes de su declaración. Si un `useEffect` depende de un handler, declarar el handler **antes** o usar `function` declarations.
 - **Prisma JSON**: al persistir en columnas JSON (`brands.metadata`), usar tipos `Prisma.JsonValue` y serializar (`JSON.parse(JSON.stringify(obj))`) para garantizar `InputJsonValue` válido. Evitar `Record<string, unknown>` directo si contiene estructuras anidadas complejas.
+- **Autonomía al arreglar**: si el usuario pide “arreglar/fijar” algo, ejecutar la corrección y reintentar el deploy **sin pedir confirmación**, salvo que falten credenciales o la acción sea destructiva.
 - **Vercel logs**: `vercel logs` solo funciona para **runtime logs** de deployments **Ready**. Para errores de build usar **Vercel UI** o **API**:
   - Obtener `deploymentId` (p. ej. con `vercel inspect <url> --token $VERCEL_TOKEN`).
   - Consultar eventos de build: `curl -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v2/deployments/<deploymentId>/events"`.
