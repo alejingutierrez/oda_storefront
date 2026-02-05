@@ -131,14 +131,14 @@ export async function syncUserFromDescope(
   };
   const subject = await getOrCreateExperienceSubject();
 
-  const displayName =
-    normalizeName(mergedUser) ??
-    (email ? email.split("@")[0] : undefined);
   const email = normalizeEmail(
     mergedUser,
     descopeUserId,
     typeof token.email === "string" ? token.email : undefined,
   );
+  const displayName =
+    normalizeName(mergedUser) ??
+    (email ? email.split("@")[0] : undefined);
 
   let user;
   try {
