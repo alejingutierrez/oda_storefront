@@ -68,7 +68,7 @@ export async function POST(
     create: {
       listId: list.id,
       productId: body.productId,
-      variantId: body.variantId ?? null,
+      variantId: body.variantId ?? undefined,
       position: body.position ?? 0,
     },
     update: {

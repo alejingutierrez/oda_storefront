@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     create: {
       userId: session.user.id,
       productId: body.productId,
-      variantId: body.variantId ?? null,
+      variantId: body.variantId ?? undefined,
     },
     update: {},
   });
