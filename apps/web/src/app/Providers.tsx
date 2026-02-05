@@ -13,7 +13,6 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       persistTokens
       autoRefresh
       sessionTokenViaCookie={{ sameSite: "Lax", secure: isProd }}
-      refreshTokenViaCookie={{ sameSite: "Lax", secure: isProd }}
     >
       <ExperienceTracker />
       {children}

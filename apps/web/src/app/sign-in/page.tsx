@@ -36,8 +36,15 @@ const computeReturnTo = () => {
 export default function SignInPage() {
   const sdk = useDescope();
   const [returnTo] = useState<string | null>(() => computeReturnTo());
+  const [flowOverride] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const flow = new URLSearchParams(window.location.search).get("flow");
+    return flow?.trim() || null;
+  });
   const flowId =
-    process.env.NEXT_PUBLIC_DESCOPE_SIGNIN_FLOW_ID || "sign-up-or-in";
+    flowOverride ||
+    process.env.NEXT_PUBLIC_DESCOPE_SIGNIN_FLOW_ID ||
+    "sign-up-or-in";
   const redirectAfterSuccess = useMemo(
     () => returnTo ?? "/perfil",
     [returnTo],
