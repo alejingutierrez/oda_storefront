@@ -189,6 +189,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 ## API interna (curación de productos)
 - `GET /api/admin/product-curation/products`: listado paginado (interno) para scroll infinito (query: filtros del catálogo + `page`, `pageSize`, `sort`).
 - `GET /api/admin/product-curation/facets`: facets + subcategorías sin cache (se recalculan tras bulk edits).
+- `GET /api/admin/product-curation/ids`: devuelve IDs de productos que cumplen los filtros (hasta `limit`, default 1200) para "Seleccionar todos".
 - `POST /api/admin/product-curation/bulk`: bulk edit de características de productos. Body: `{ productIds, field, op, value }` (límite default: 1200 IDs).
   - No modifica `description` ni campos SEO.
   - Preserva `products.metadata.enrichment` y registra auditoría en `products.metadata.enrichment_human`.

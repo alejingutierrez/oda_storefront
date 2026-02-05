@@ -66,7 +66,10 @@ type ProductsResponse = {
   items: CurationProduct[];
 };
 
+type SelectionBanner = { kind: "info" | "warning"; text: string };
+
 const PAGE_SIZE = 36;
+const SELECT_ALL_LIMIT = 1200;
 
 function buildSearchKey(params: URLSearchParams) {
   const next = new URLSearchParams(params.toString());
@@ -125,6 +128,8 @@ export default function ProductCurationPanel() {
   const [error, setError] = useState<string | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [lastBulkMessage, setLastBulkMessage] = useState<string | null>(null);
+  const [selectionBanner, setSelectionBanner] = useState<SelectionBanner | null>(null);
+  const [selectingAll, setSelectingAll] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
@@ -231,6 +236,7 @@ export default function ProductCurationPanel() {
 
   useEffect(() => {
     setLastBulkMessage(null);
+    setSelectionBanner(null);
     setPage(1);
     setHasMore(true);
     setTotalCount(null);
@@ -270,6 +276,47 @@ export default function ProductCurationPanel() {
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
   const selectedCount = selectedIds.size;
+
+  const handleSelectAll = useCallback(async () => {
+    if (selectingAll) return;
+    setSelectingAll(true);
+    setSelectionBanner(null);
+    try {
+      const params = new URLSearchParams(searchKey);
+      params.set("limit", String(SELECT_ALL_LIMIT));
+      const res = await fetch(`/api/admin/product-curation/ids?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error ?? "No se pudieron seleccionar los productos");
+      }
+      const payload = await res.json().catch(() => ({}));
+      const ids = Array.isArray(payload?.ids) ? payload.ids.filter((id: unknown) => typeof id === "string") : [];
+      const hasMore = Boolean(payload?.hasMore);
+      const limit = typeof payload?.limit === "number" ? payload.limit : SELECT_ALL_LIMIT;
+      setSelectedIds(new Set(ids));
+      if (hasMore) {
+        setSelectionBanner({
+          kind: "warning",
+          text: `Seleccionados ${ids.length.toLocaleString("es-CO")}. Hay más resultados; ajusta filtros para no exceder el límite (${limit.toLocaleString("es-CO")}).`,
+        });
+      } else {
+        setSelectionBanner({
+          kind: "info",
+          text: `Seleccionados ${ids.length.toLocaleString("es-CO")} producto(s).`,
+        });
+      }
+    } catch (err) {
+      console.warn(err);
+      setSelectionBanner({
+        kind: "warning",
+        text: err instanceof Error ? err.message : "No se pudieron seleccionar los productos",
+      });
+    } finally {
+      setSelectingAll(false);
+    }
+  }, [searchKey, selectingAll]);
 
   const handleBulkApply = useCallback(
     async (payload: { field: BulkField; op: BulkOperation; value: string | string[] | null }) => {
@@ -336,6 +383,14 @@ export default function ProductCurationPanel() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                onClick={handleSelectAll}
+                disabled={loading || selectingAll}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
+              >
+                {selectingAll ? "Seleccionando…" : "Seleccionar todos"}
+              </button>
+              <button
+                type="button"
                 onClick={() => fetchPage(1, "reset")}
                 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
               >
@@ -358,6 +413,18 @@ export default function ProductCurationPanel() {
           {lastBulkMessage ? (
             <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
               {lastBulkMessage}
+            </p>
+          ) : null}
+          {selectionBanner ? (
+            <p
+              className={classNames(
+                "mt-4 rounded-xl border px-4 py-3 text-sm",
+                selectionBanner.kind === "warning"
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-slate-200 bg-slate-50 text-slate-700",
+              )}
+            >
+              {selectionBanner.text}
             </p>
           ) : null}
         </header>
@@ -501,7 +568,16 @@ export default function ProductCurationPanel() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                onClick={handleSelectAll}
+                disabled={selectingAll}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
+              >
+                {selectingAll ? "Seleccionando…" : "Seleccionar todos"}
+              </button>
+              <button
+                type="button"
                 onClick={() => setBulkOpen(true)}
+                disabled={selectingAll}
                 className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
               >
                 Editar en bloque
@@ -509,6 +585,7 @@ export default function ProductCurationPanel() {
               <button
                 type="button"
                 onClick={clearSelection}
+                disabled={selectingAll}
                 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
               >
                 Limpiar selección
