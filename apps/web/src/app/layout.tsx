@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Bodoni_Moda, Outfit } from "next/font/google";
 import "./globals.css";
+import Providers from "./Providers";
 
 const bodyFont = Outfit({
   variable: "--font-body",
@@ -26,7 +27,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={`${bodyFont.variable} ${displayFont.variable} antialiased`}>
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

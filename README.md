@@ -22,6 +22,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Storage: `VERCEL_BLOB_READ_WRITE_TOKEN`, `BLOB_READ_WRITE_TOKEN`.
 - Billing: `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY`.
 - Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`.
+- Auth usuarios (Descope): `NEXT_PUBLIC_DESCOPE_PROJECT_ID`, `NEXT_PUBLIC_DESCOPE_BASE_URL`, `DESCOPE_MANAGEMENT_KEY`.
 - Scraper: `USER_AGENT`, `BRAND_SCRAPE_MAX_JOBS`, `BRAND_SCRAPE_MAX_RUNTIME_MS`.
 - Scraper: `BRAND_SCRAPE_STALE_MINUTES` (re-encola jobs en `processing` con más de N minutos).
 - Catalog extractor: `CATALOG_TRY_SITEMAP_FIRST` (true|false), `CATALOG_TRY_SITEMAP_VTEX` (true|false), `CATALOG_FORCE_SITEMAP` (true|false), `CATALOG_EXTRACT_SITEMAP_BUDGET_MS`, `CATALOG_EXTRACT_SITEMAP_LIMIT` (0 = sin límite), `CATALOG_EXTRACT_SITEMAP_MAX_FILES`, `CATALOG_EXTRACT_SITEMAP_SCAN_MAX_URLS` (0 = sin límite por sitemap), `CATALOG_EXTRACT_DISCOVERY_LIMIT`, `CATALOG_EXTRACT_MAX_RUNTIME_MS`, `CATALOG_EXTRACT_CONSECUTIVE_ERROR_LIMIT`, `CATALOG_AUTO_PAUSE_ON_ERRORS`, `CATALOG_MAX_ATTEMPTS`, `CATALOG_QUEUE_ENQUEUE_LIMIT`, `CATALOG_QUEUE_NAME`, `CATALOG_QUEUE_STALE_MINUTES`, `CATALOG_ITEM_STUCK_MINUTES`, `CATALOG_RESUME_STUCK_MINUTES`, `CATALOG_QUEUE_TIMEOUT_MS`, `CATALOG_QUEUE_DISABLED`, `CATALOG_QUEUE_ATTEMPTS`, `CATALOG_QUEUE_BACKOFF_MS`, `CATALOG_DRAIN_BATCH`, `CATALOG_DRAIN_MAX_RUNTIME_MS`, `CATALOG_DRAIN_CONCURRENCY`, `CATALOG_DRAIN_MAX_RUNS`, `CATALOG_DRAIN_ON_RUN`, `CATALOG_DRAIN_ON_RUN_BATCH`, `CATALOG_DRAIN_ON_RUN_MAX_RUNTIME_MS`, `CATALOG_DRAIN_ON_RUN_CONCURRENCY`, `CATALOG_DRAIN_DISABLED`, `CATALOG_WORKER_CONCURRENCY`, `CATALOG_WORKER_API_URL`, `CATALOG_LLM_NORMALIZE_MODE` (auto|always|never), `CATALOG_LLM_NORMALIZE_MAX_DESC_CHARS`, `CATALOG_LLM_NORMALIZE_MAX_IMAGES`, `CATALOG_LLM_NORMALIZE_MAX_VARIANTS`, `CATALOG_LLM_NORMALIZE_MAX_OPTION_VALUES`.
@@ -107,6 +108,11 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Las imágenes servidas por `/api/image-proxy` se muestran como `unoptimized` para evitar 400 en `_next/image` con URLs proxy.
 - El cierre del modal limpia `productId` de la URL sin reabrirlo en bucle.
 - Persistencia de navegación: la página y el filtro por marca viven en la URL (`page`, `brandId`) y el detalle se puede abrir por `productId`.
+
+## Auth usuarios (public)
+- Login en `/sign-in` con Descope (Google/Apple/Facebook).
+- Perfil privado en `/perfil` (nombre, bio, conexiones, borrado de cuenta).
+- Eventos de experiencia UI viven en `experience_events` y se vinculan a `experience_subjects` usando cookie persistente `oda_anon_id`.
 
 ## Home (public)
 - Ruta `/` con home editorial (estilo Farfetch) y grillas cuadradas.

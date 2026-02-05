@@ -7,7 +7,7 @@ import {
   getCatalogFacets,
   getCatalogProducts,
   getCatalogStats,
-  getSubcategoriesForCategory,
+  getCatalogSubcategories,
   type CatalogFilters,
 } from "@/lib/catalog-data";
 import { getMegaMenuData } from "@/lib/home-data";
@@ -155,15 +155,11 @@ export default async function CatalogoPage({ searchParams }: { searchParams: Sea
   const [menu, stats, facets, products] = await Promise.all([
     getMegaMenuData(),
     getCatalogStats(),
-    getCatalogFacets(),
+    getCatalogFacets(filters),
     getCatalogProducts({ filters, page, sort }),
   ]);
 
-  const selectedCategories = filters.categories ?? [];
-  const selectedSubcategories = filters.subcategories ?? [];
-  const subcategories = selectedCategories.length > 0
-    ? await getSubcategoriesForCategory(selectedCategories)
-    : [];
+  const subcategories = await getCatalogSubcategories(filters);
 
   const totalPages = Math.max(1, Math.ceil(products.totalCount / CATALOG_PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -403,7 +399,7 @@ export default async function CatalogoPage({ searchParams }: { searchParams: Sea
               </a>
             </div>
           ) : (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {products.items.map((product) => (
                 <CatalogProductCard key={product.id} product={product} />
               ))}

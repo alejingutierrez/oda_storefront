@@ -14,6 +14,7 @@ Checklist obligatorio al cerrar una historia:
 5) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-02-05 | MC-114 | done | Auth usuarios externos con Descope + perfil + favoritos/listas + experience_events | Servicios locales no levantados; npm install @descope/nextjs-sdk se colgó (package-lock sin actualizar); sin push ni verificación de build/Vercel.
 - 2026-02-05 | MC-113 | fix | Mega menu mantiene hover sobre panel | docker-compose no existe (repo des-dockerizado), por lo que no se pudo rebuild ni revisar logs locales; push OK; Vercel prod Ready: https://oda-storefront-6ee5-l7uvtcw76-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante observación).
 - 2026-02-05 | MC-113 | done | Ajustes home: ancho de layout, mega menu fijo/ancho, menu mobile, menos radio en fotos | docker-compose no existe (repo des-dockerizado), por lo que no se pudo rebuild ni revisar logs locales; push OK; Vercel prod Ready: https://oda-storefront-6ee5-gd0366d5c-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante observación).
 - 2026-02-04 | MC-113 | done | Home editorial + mega menu + rotación 3 días | docker-compose no existe (repo des-dockerizado), por lo que no se pudo rebuild ni revisar logs locales; README/User Stories/Backlog actualizados; push OK; Vercel prod Ready: https://oda-storefront-6ee5-h5rmrt76g-alejingutierrezs-projects.vercel.app (runtime logs sin eventos durante observación).

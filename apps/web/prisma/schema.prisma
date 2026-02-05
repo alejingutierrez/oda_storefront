@@ -51,6 +51,7 @@ model Brand {
   products       Product[]
   announcements  Announcement[]
   events         Event[]
+  experienceEvents ExperienceEvent[]
   assets         Asset[]
   scrapeJobs     BrandScrapeJob[]
   catalogRuns    CatalogRun[]
@@ -175,6 +176,7 @@ model Product {
   variants          Variant[]
   assets            Asset[]
   events            Event[]
+  experienceEvents  ExperienceEvent[]
   enrichmentItems   ProductEnrichmentItem[]
 
   @@index([brandId])
@@ -221,6 +223,7 @@ model Variant {
   stockHistory StockHistory[]
   assets       Asset[]
   events       Event[]
+  experienceEvents ExperienceEvent[]
   colorVectors VariantColorVector[]
   colorMatches VariantColorCombinationMatch[]
 
@@ -456,17 +459,35 @@ model VariantColorCombinationMatch {
 model User {
   id          String   @id @default(uuid())
   email       String   @unique
+  descopeUserId String? @unique
   role        String   @default("user")
   plan        String   @default("free")
+  displayName String?
+  fullName    String?
+  bio         String?
+  avatarUrl   String?
+  status      String   @default("active")
+  deletedAt   DateTime?
+  lastSeenAt  DateTime?
+  emailVerifiedAt DateTime?
+  locale      String?
+  timezone    String?
   passwordHash String?
   sessionTokenHash String?
   sessionTokenCreatedAt DateTime?
   lastLoginAt DateTime?
   preferences Json?
+  experienceSubjectId String?
+  experienceSubject   ExperienceSubject? @relation(fields: [experienceSubjectId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   events      Event[]
   assets      Asset[]
+  identities  UserIdentity[]
+  favorites   UserFavorite[]
+  lists       UserList[]
+  auditEvents UserAuditEvent[]
+  experienceEvents ExperienceEvent[]
 
   @@map("users")
 }
@@ -492,6 +513,140 @@ model Event {
   @@index([variantId])
   @@index([sessionId])
   @@map("events")
+}
+
+model ExperienceSubject {
+  id        String   @id @default(uuid())
+  anonId    String   @unique
+  traits    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastSeenAt DateTime?
+  users     User[]
+  events    ExperienceEvent[]
+
+  @@map("experience_subjects")
+}
+
+model ExperienceEvent {
+  id        String   @id @default(uuid())
+  subjectId String
+  subject   ExperienceSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  brandId   String?
+  brand     Brand?   @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variantId String?
+  variant   Variant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  listId    String?
+  list      UserList? @relation(fields: [listId], references: [id], onDelete: SetNull)
+  sessionId String?
+  type      String
+  path      String?
+  referrer  String?
+  utm       Json?
+  properties Json?
+  createdAt DateTime @default(now())
+
+  @@index([subjectId])
+  @@index([userId])
+  @@index([brandId])
+  @@index([productId])
+  @@index([variantId])
+  @@index([listId])
+  @@index([sessionId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("experience_events")
+}
+
+model UserIdentity {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider        String
+  providerUserId  String
+  email           String?
+  isPrimary       Boolean  @default(false)
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("user_identities")
+}
+
+model UserFavorite {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String?
+  variant   Variant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId, variantId])
+  @@index([userId])
+  @@index([productId])
+  @@index([variantId])
+  @@map("user_favorites")
+}
+
+model UserList {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  visibility  String   @default("private")
+  slug        String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  items       UserListItem[]
+  experienceEvents ExperienceEvent[]
+
+  @@unique([slug])
+  @@index([userId])
+  @@map("user_lists")
+}
+
+model UserListItem {
+  id        String   @id @default(uuid())
+  listId    String
+  list      UserList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String?
+  variant   Variant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([listId, productId, variantId])
+  @@index([listId])
+  @@index([productId])
+  @@index([variantId])
+  @@map("user_list_items")
+}
+
+model UserAuditEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  entityType String
+  entityId  String?
+  before    Json?
+  after     Json?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@map("user_audit_events")
 }
 
 model Announcement {

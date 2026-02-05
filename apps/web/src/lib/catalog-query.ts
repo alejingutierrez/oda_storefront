@@ -31,48 +31,53 @@ function buildTextArray(values: string[]): Prisma.Sql {
   return Prisma.sql`ARRAY[${Prisma.join(values)}]`;
 }
 
-export function buildWhere(filters: CatalogFilters): Prisma.Sql {
+export function buildProductConditions(filters: CatalogFilters): Prisma.Sql[] {
   const q = filters.q ? `%${filters.q}%` : null;
-  const categoryFilter =
-    filters.categories && filters.categories.length > 0
-      ? Prisma.sql`and p.category in (${Prisma.join(filters.categories)})`
-      : Prisma.empty;
-  const subcategoryFilter =
-    filters.subcategories && filters.subcategories.length > 0
-      ? Prisma.sql`and p.subcategory in (${Prisma.join(filters.subcategories)})`
-      : Prisma.empty;
-  const brandFilter =
-    filters.brandIds && filters.brandIds.length > 0
-      ? Prisma.sql`and p."brandId" in (${Prisma.join(filters.brandIds)})`
-      : Prisma.empty;
-  const genderFilter =
-    filters.genders && filters.genders.length > 0
-      ? Prisma.sql`and (${Prisma.join(
-          filters.genders.map((gender) => genderSqlMap[gender]),
-          " or "
-        )})`
-      : Prisma.empty;
-  const styleFilter =
-    filters.styles && filters.styles.length > 0
-      ? Prisma.sql`and p."stylePrimary" in (${Prisma.join(filters.styles)})`
-      : Prisma.empty;
-  const materialFilter =
-    filters.materials && filters.materials.length > 0
-      ? Prisma.sql`and p."materialTags" && ${buildTextArray(filters.materials)}`
-      : Prisma.empty;
-  const patternFilter =
-    filters.patterns && filters.patterns.length > 0
-      ? Prisma.sql`and p."patternTags" && ${buildTextArray(filters.patterns)}`
-      : Prisma.empty;
-  const occasionFilter =
-    filters.occasions && filters.occasions.length > 0
-      ? Prisma.sql`and p."occasionTags" && ${buildTextArray(filters.occasions)}`
-      : Prisma.empty;
-  const seasonFilter =
-    filters.seasons && filters.seasons.length > 0
-      ? Prisma.sql`and p.season in (${Prisma.join(filters.seasons)})`
-      : Prisma.empty;
+  const conditions: Prisma.Sql[] = [Prisma.sql`p."imageCoverUrl" is not null`];
 
+  if (filters.categories && filters.categories.length > 0) {
+    conditions.push(Prisma.sql`p.category in (${Prisma.join(filters.categories)})`);
+  }
+  if (filters.subcategories && filters.subcategories.length > 0) {
+    conditions.push(Prisma.sql`p.subcategory in (${Prisma.join(filters.subcategories)})`);
+  }
+  if (filters.brandIds && filters.brandIds.length > 0) {
+    conditions.push(Prisma.sql`p."brandId" in (${Prisma.join(filters.brandIds)})`);
+  }
+  if (filters.genders && filters.genders.length > 0) {
+    conditions.push(
+      Prisma.sql`(${Prisma.join(filters.genders.map((gender) => genderSqlMap[gender]), " or ")})`
+    );
+  }
+  if (filters.styles && filters.styles.length > 0) {
+    conditions.push(Prisma.sql`p."stylePrimary" in (${Prisma.join(filters.styles)})`);
+  }
+  if (filters.materials && filters.materials.length > 0) {
+    conditions.push(Prisma.sql`p."materialTags" && ${buildTextArray(filters.materials)}`);
+  }
+  if (filters.patterns && filters.patterns.length > 0) {
+    conditions.push(Prisma.sql`p."patternTags" && ${buildTextArray(filters.patterns)}`);
+  }
+  if (filters.occasions && filters.occasions.length > 0) {
+    conditions.push(Prisma.sql`p."occasionTags" && ${buildTextArray(filters.occasions)}`);
+  }
+  if (filters.seasons && filters.seasons.length > 0) {
+    conditions.push(Prisma.sql`p.season in (${Prisma.join(filters.seasons)})`);
+  }
+  if (q) {
+    conditions.push(Prisma.sql`
+      (
+        p.name ilike ${q}
+        or b.name ilike ${q}
+        or p."seoTags"::text ilike ${q}
+      )
+    `);
+  }
+
+  return conditions;
+}
+
+export function buildVariantConditions(filters: CatalogFilters): Prisma.Sql[] {
   const variantConditions: Prisma.Sql[] = [];
   if (filters.colors && filters.colors.length > 0) {
     variantConditions.push(Prisma.sql`v.color in (${Prisma.join(filters.colors)})`);
@@ -94,6 +99,12 @@ export function buildWhere(filters: CatalogFilters): Prisma.Sql {
       Prisma.sql`(v.stock > 0 or v."stockStatus" in ('in_stock','preorder'))`
     );
   }
+  return variantConditions;
+}
+
+export function buildWhere(filters: CatalogFilters): Prisma.Sql {
+  const productConditions = buildProductConditions(filters);
+  const variantConditions = buildVariantConditions(filters);
   const variantFilter =
     variantConditions.length > 0
       ? Prisma.sql`
@@ -106,24 +117,8 @@ export function buildWhere(filters: CatalogFilters): Prisma.Sql {
       : Prisma.empty;
 
   return Prisma.sql`
-    where p."imageCoverUrl" is not null
-      ${categoryFilter}
-      ${subcategoryFilter}
-      ${genderFilter}
-      ${brandFilter}
-      ${styleFilter}
-      ${materialFilter}
-      ${patternFilter}
-      ${occasionFilter}
-      ${seasonFilter}
-      ${variantFilter}
-      ${q ? Prisma.sql`
-        and (
-          p.name ilike ${q}
-          or b.name ilike ${q}
-          or p."seoTags"::text ilike ${q}
-        )
-      ` : Prisma.empty}
+    where ${Prisma.join(productConditions, " and ")}
+    ${variantFilter}
   `;
 }
 

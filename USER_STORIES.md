@@ -549,6 +549,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 
 ## F1 – Next (primeras capacidades)
 
+### MC-114 Auth usuarios externos + perfil + favoritos + listas + analytics base
+- Historia: Como usuario externo, quiero iniciar sesión con Google/Apple/Facebook, guardar favoritos/listas y gestionar mi perfil, para personalizar mi experiencia.
+- Alcance: Descope (flow `sign-up-or-in`), `/sign-in`, `/perfil`, sync DB, tablas `user_identities`, `user_favorites`, `user_lists/items`, `experience_subjects/events`, endpoints `/api/user/*` y `/api/experience/events`, cookie persistente `oda_anon_id`.
+- CA: Login social funcional; perfil editable (nombre/bio); favoritos y listas CRUD básico; eventos UI guardados; borrado de cuenta elimina usuario y relaciones sin borrar eventos (se desvinculan).
+- Datos: `users.descopeUserId`, `experience_subjects`, `experience_events`, `user_identities`, `user_favorites`, `user_lists`, `user_list_items`.
+- NF: Respuesta API <400ms en operaciones básicas; cookies seguras (HttpOnly, SameSite=Lax).
+- Riesgos: Configuración OAuth incompleta en Descope; mitigación con checklist de providers.
+- Métricas: % usuarios con perfil completo, favoritos por usuario, ratio de eventos UI por sesión.
+- Estado: **done (2026-02-05)**.
+
 ### MC-009 Taxonomía fija y catálogos
 - Historia: Como curador de datos, quiero catálogos cerrados (categorías, materiales, patrones, fits, estilo/ocasión), para clasificar de forma consistente.
 - Alcance: Definición y versionado; publicación a IA (prompt) y front (endpoint); validación server-side; mapeo de sinónimos.

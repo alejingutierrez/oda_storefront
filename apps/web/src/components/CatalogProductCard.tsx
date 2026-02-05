@@ -28,26 +28,19 @@ function formatPriceRange(minPrice: string | null, maxPrice: string | null, curr
   return `${formatPrice(minPrice, currency)} · ${formatPrice(maxPrice, currency)}`;
 }
 
-function isHex(value: string) {
-  return /^#[0-9a-fA-F]{6}$/.test(value);
-}
-
 export default function CatalogProductCard({ product }: { product: CatalogProduct }) {
   const href = product.sourceUrl ?? "#";
-  const validColors = product.colors.filter(isHex);
-  const colors = validColors.slice(0, 5);
-  const remaining = Math.max(0, validColors.length - colors.length);
 
   return (
-    <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-[color:var(--oda-border)] bg-white shadow-[0_18px_40px_rgba(23,21,19,0.08)] transition duration-500 hover:-translate-y-1">
-      <Link href={href} className="relative block aspect-square w-full overflow-hidden bg-[color:var(--oda-stone)]">
+    <article className="group relative overflow-hidden rounded-xl border border-[color:var(--oda-border)] bg-white shadow-[0_16px_36px_rgba(23,21,19,0.08)] transition duration-500 ease-out [transform-style:preserve-3d] hover:shadow-[0_30px_60px_rgba(23,21,19,0.14)] group-hover:[transform:perspective(900px)_rotateX(6deg)_translateY(-10px)]">
+      <Link href={href} className="relative block aspect-[3/4] w-full overflow-hidden bg-[color:var(--oda-stone)]">
         {product.imageCoverUrl ? (
           <Image
             src={product.imageCoverUrl}
             alt={product.name}
             fill
             sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
-            className="object-cover transition duration-500 group-hover:scale-[1.03]"
+            className="object-cover object-center transition duration-700 group-hover:scale-[1.07] group-hover:-translate-y-1"
             unoptimized
           />
         ) : (
@@ -55,47 +48,18 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
             Sin imagen
           </div>
         )}
-      </Link>
-      <div className="flex flex-1 flex-col gap-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.25em] text-[color:var(--oda-taupe)]">
+        <div className="absolute inset-x-0 bottom-0 h-[40%] translate-y-6 border-t border-white/40 bg-white/35 opacity-0 backdrop-blur-xl transition duration-500 group-hover:translate-y-0 group-hover:opacity-100">
+          <div className="flex h-full flex-col justify-end gap-2 px-4 py-4">
+            <p className="text-[10px] uppercase tracking-[0.25em] text-[color:var(--oda-ink-soft)]">
               {product.brandName}
             </p>
-            <h3 className="mt-1 text-sm font-semibold text-[color:var(--oda-ink)]">
-              <Link href={href} className="hover:underline">
-                {product.name}
-              </Link>
-            </h3>
+            <h3 className="text-sm font-semibold text-[color:var(--oda-ink)]">{product.name}</h3>
+            <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)]">
+              {formatPriceRange(product.minPrice, product.maxPrice, product.currency)}
+            </p>
           </div>
-          <span className="rounded-full border border-[color:var(--oda-border)] px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)]">
-            {product.variantCount} variantes
-          </span>
         </div>
-        <div className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)]">
-          {formatPriceRange(product.minPrice, product.maxPrice, product.currency)}
-        </div>
-        {colors.length > 0 ? (
-          <div className="mt-auto flex items-center gap-2">
-            {colors.map((hex) => (
-              <span
-                key={`${product.id}-${hex}`}
-                className="h-4 w-4 rounded-full border border-[color:var(--oda-border)]"
-                style={{ backgroundColor: hex }}
-              />
-            ))}
-            {remaining > 0 ? (
-              <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                +{remaining}
-              </span>
-            ) : null}
-          </div>
-        ) : (
-          <span className="mt-auto text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-            Colores en proceso
-          </span>
-        )}
-      </div>
+      </Link>
     </article>
   );
 }

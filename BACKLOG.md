@@ -36,6 +36,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-02)
+- MC-114 | done | P1 | Auth usuarios externos (Descope) + perfil + favoritos/listas + analytics base | Login social con Descope, perfil privado, tablas y endpoints de experiencia/favoritos/listas.
 - MC-113 | done | P1 | Home editorial + mega menu + rotación 3 días | Home público con mega menu por género, reglas category+subcategory y rotación automática cada 3 días.
 - MC-112 | done | P1 | Des-dockerizar repo | Eliminar Dockerfiles/compose y actualizar docs para ejecución local con npm.
 - MC-111 | done | P1 | Paleta 200 + matching estandarizado de combinaciones | `color_combinations.colorsJson` + paleta 200 en `color_combination_colors`; matching 200→60 con standard colors y rebuild de relaciones.

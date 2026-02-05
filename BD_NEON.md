@@ -25,6 +25,12 @@ Documento operativo de la base de datos principal (Neon Postgres) y el manejo de
 - `taxonomy_tags`: taxonomias normalizadas (tipo, valor, sinonimos).
 - `users`: usuarios y admins (rol, plan, password hash, sesiones).
 - `events`: eventos de comportamiento y tracking (click, view, save, etc).
+- `experience_subjects`: sujeto de experiencia anónimo (cookie persistente) para entrenamiento.
+- `experience_events`: eventos de UI/experiencia ligados a `experience_subjects` y opcionalmente a `users`.
+- `user_identities`: identidades externas (Descope: Google/Apple/Facebook).
+- `user_favorites`: favoritos por usuario.
+- `user_lists` y `user_list_items`: listas de productos (privadas/públicas).
+- `user_audit_events`: auditoría de cambios de perfil/listas.
 - `announcements`: anuncios y placements (slot, budget, fechas).
 
 ## Manejo de usuarios y admin (DB-first)
@@ -33,6 +39,9 @@ Documento operativo de la base de datos principal (Neon Postgres) y el manejo de
 - La sesion se guarda en DB en `users.sessionTokenHash` + `sessionTokenCreatedAt`.
 - El navegador guarda un cookie HttpOnly `admin_session` con el token en claro; el backend lo hashea y lo valida contra DB.
 - `ADMIN_TOKEN` es un bypass opcional (Bearer) para endpoints internos, pero no reemplaza la sesion web.
+- Usuarios externos se autentican via Descope (Google/Apple/Facebook) y se sincronizan por `users.descopeUserId`.
+- La experiencia de usuario se registra en `experience_events` con cookie persistente `oda_anon_id` (tabla `experience_subjects`).
+- Si el usuario se borra, se elimina su registro y relaciones (`user_*`), pero se conservan los eventos de experiencia (se desvinculan de `userId`).
 
 ## Scripts utiles
 - `apps/web/scripts/seed-users.mjs`: crea/actualiza admin en DB con `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
