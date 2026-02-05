@@ -16,9 +16,8 @@ import { labelize, labelizeSubcategory, normalizeGender, type GenderKey } from "
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type SearchParams =
-  | Record<string, string | string[] | undefined>
-  | URLSearchParams;
+type SearchParamsValue = Record<string, string | string[] | undefined> | URLSearchParams;
+type SearchParams = SearchParamsValue | Promise<SearchParamsValue>;
 
 type ActiveFilter = {
   label: string;
@@ -40,6 +39,11 @@ function buildParams(searchParams: SearchParams) {
     if (value) params.set(key, value);
   }
   return params;
+}
+
+async function resolveSearchParams(searchParams: SearchParams) {
+  const resolved = await searchParams;
+  return buildParams(resolved);
 }
 
 function getParamFromSearch(params: URLSearchParams, key: string) {
@@ -125,7 +129,7 @@ function parseGenderList(values?: string[]): GenderKey[] | undefined {
 }
 
 export default async function CatalogoPage({ searchParams }: { searchParams: SearchParams }) {
-  const params = buildParams(searchParams);
+  const params = await resolveSearchParams(searchParams);
   const page = Math.max(1, Number(getParamFromSearch(params, "page") ?? 1));
   const sort = getParamFromSearch(params, "sort") ?? "relevancia";
 
