@@ -28,21 +28,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "productId_required" }, { status: 400 });
   }
 
-  const favorite = await prisma.userFavorite.upsert({
+  const existing = await prisma.userFavorite.findFirst({
     where: {
-      userId_productId_variantId: {
-        userId: session.user.id,
-        productId: body.productId,
-        variantId: body.variantId ?? null,
-      },
-    },
-    create: {
       userId: session.user.id,
       productId: body.productId,
-      variantId: body.variantId ?? undefined,
+      variantId: body.variantId ?? null,
     },
-    update: {},
   });
+
+  const favorite =
+    existing ??
+    (await prisma.userFavorite.create({
+      data: {
+        userId: session.user.id,
+        productId: body.productId,
+        variantId: body.variantId ?? undefined,
+      },
+    }));
 
   await prisma.userAuditEvent.create({
     data: {

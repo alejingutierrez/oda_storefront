@@ -57,24 +57,31 @@ export async function POST(
     return NextResponse.json({ error: "productId_required" }, { status: 400 });
   }
 
-  const item = await prisma.userListItem.upsert({
+  const existing = await prisma.userListItem.findFirst({
     where: {
-      listId_productId_variantId: {
-        listId: list.id,
-        productId: body.productId,
-        variantId: body.variantId ?? null,
-      },
-    },
-    create: {
       listId: list.id,
       productId: body.productId,
-      variantId: body.variantId ?? undefined,
-      position: body.position ?? 0,
-    },
-    update: {
-      position: body.position ?? 0,
+      variantId: body.variantId ?? null,
     },
   });
+
+  let item =
+    existing ??
+    (await prisma.userListItem.create({
+      data: {
+        listId: list.id,
+        productId: body.productId,
+        variantId: body.variantId ?? undefined,
+        position: body.position ?? 0,
+      },
+    }));
+
+  if (existing && body.position !== undefined) {
+    item = await prisma.userListItem.update({
+      where: { id: existing.id },
+      data: { position: body.position },
+    });
+  }
 
   await prisma.userAuditEvent.create({
     data: {
