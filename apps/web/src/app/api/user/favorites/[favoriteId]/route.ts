@@ -4,8 +4,9 @@ import { requireUser } from "@/lib/descope";
 
 export async function DELETE(
   _req: Request,
-  { params }: { params: { favoriteId: string } },
+  context: { params: Promise<{ favoriteId: string }> },
 ) {
+  const params = await context.params;
   const session = await requireUser();
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

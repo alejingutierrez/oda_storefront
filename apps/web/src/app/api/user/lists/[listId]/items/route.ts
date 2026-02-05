@@ -4,8 +4,9 @@ import { requireUser } from "@/lib/descope";
 
 export async function GET(
   _req: Request,
-  { params }: { params: { listId: string } },
+  context: { params: Promise<{ listId: string }> },
 ) {
+  const params = await context.params;
   const session = await requireUser();
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -30,8 +31,9 @@ export async function GET(
 
 export async function POST(
   req: Request,
-  { params }: { params: { listId: string } },
+  context: { params: Promise<{ listId: string }> },
 ) {
+  const params = await context.params;
   const session = await requireUser();
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
