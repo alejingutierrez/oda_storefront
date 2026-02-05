@@ -30,6 +30,10 @@ export default function PerfilPage() {
   const { isAuthenticated, isSessionLoading } = useSession();
   const { user, isUserLoading } = useUser();
   const sdk = useDescope();
+  const linkFlowId =
+    process.env.NEXT_PUBLIC_DESCOPE_LINK_FLOW_ID ||
+    process.env.NEXT_PUBLIC_DESCOPE_SIGNIN_FLOW_ID ||
+    "sign-up-or-in";
 
   const [profile, setProfile] = useState<ProfilePayload | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -269,10 +273,13 @@ export default function PerfilPage() {
             {showConnect ? (
               <div className="mt-6 rounded-2xl border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] p-4">
                 <Descope
-                  flowId="sign-up-or-in"
+                  flowId={linkFlowId}
                   theme="light"
                   onSuccess={async () => {
-                    await fetch("/api/user/identities", { method: "POST" });
+                    await fetch("/api/user/identities", {
+                      method: "POST",
+                      credentials: "include",
+                    });
                     await loadProfile();
                   }}
                   onError={(error) => console.error("Descope flow error", error)}

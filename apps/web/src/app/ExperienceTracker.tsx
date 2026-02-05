@@ -48,6 +48,10 @@ export default function ExperienceTracker() {
     if (lastPathRef.current === path) return;
     lastPathRef.current = path;
 
+    if (typeof window !== "undefined" && path !== "/sign-in") {
+      window.sessionStorage.setItem("oda_last_path", path);
+    }
+
     const utm =
       typeof window !== "undefined"
         ? getUtmPayload(new URLSearchParams(window.location.search))

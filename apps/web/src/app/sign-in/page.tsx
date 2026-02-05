@@ -1,34 +1,47 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import { Descope } from "@descope/nextjs-sdk";
 import { useDescope } from "@descope/nextjs-sdk/client";
 
-export default function SignInPage() {
-  const router = useRouter();
-  const sdk = useDescope();
-  const [returnTo, setReturnTo] = useState<string | null>(null);
+const computeReturnTo = () => {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const candidate = params.get("next") || params.get("returnTo");
+  const normalize = (value: string | null) => {
+    if (!value) return null;
+    if (!value.startsWith("/")) return null;
+    if (value.startsWith("//")) return null;
+    return value;
+  };
+  const normalized = normalize(candidate);
+  if (normalized) return normalized;
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const next = params.get("next") || params.get("returnTo");
-    if (next) {
-      setReturnTo(next);
-      return;
+  const stored = normalize(window.sessionStorage.getItem("oda_last_path"));
+  if (stored && stored !== "/sign-in") return stored;
+
+  const referrer = document.referrer;
+  if (!referrer) return null;
+  try {
+    const refUrl = new URL(referrer);
+    if (refUrl.origin === window.location.origin && refUrl.pathname !== "/sign-in") {
+      return `${refUrl.pathname}${refUrl.search}${refUrl.hash}`;
     }
-    const referrer = document.referrer;
-    if (!referrer) return;
-    try {
-      const refUrl = new URL(referrer);
-      if (refUrl.origin === window.location.origin && refUrl.pathname !== "/sign-in") {
-        setReturnTo(`${refUrl.pathname}${refUrl.search}${refUrl.hash}`);
-      }
-    } catch (error) {
-      console.error("Unable to parse referrer for return", error);
-    }
-  }, []);
+  } catch (error) {
+    console.error("Unable to parse referrer for return", error);
+  }
+  return null;
+};
+
+export default function SignInPage() {
+  const sdk = useDescope();
+  const [returnTo] = useState<string | null>(() => computeReturnTo());
+  const flowId =
+    process.env.NEXT_PUBLIC_DESCOPE_SIGNIN_FLOW_ID || "sign-up-or-in";
+  const redirectAfterSuccess = useMemo(
+    () => returnTo ?? "/perfil",
+    [returnTo],
+  );
 
   return (
     <main className="min-h-screen bg-[color:var(--oda-cream)]">
@@ -46,8 +59,10 @@ export default function SignInPage() {
         </div>
         <div className="w-full max-w-md rounded-2xl border border-[color:var(--oda-border)] bg-white p-6 shadow-[0_30px_80px_rgba(23,21,19,0.12)]">
           <Descope
-            flowId="sign-up-or-in"
+            flowId={flowId}
             theme="light"
+            redirectAfterSuccess={redirectAfterSuccess}
+            redirectAfterError="/sign-in"
             onSuccess={async (event) => {
               try {
                 await sdk.refresh();
@@ -83,7 +98,6 @@ export default function SignInPage() {
                 credentials: "include",
                 body: JSON.stringify({ user: descopeUser }),
               });
-              router.push(returnTo ?? "/perfil");
             }}
             onError={(error) => {
               console.error("Descope login error", error);
