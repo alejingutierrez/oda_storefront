@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Descope } from "@descope/nextjs-sdk";
 import { useDescope } from "@descope/nextjs-sdk/client";
@@ -7,6 +8,27 @@ import { useDescope } from "@descope/nextjs-sdk/client";
 export default function SignInPage() {
   const router = useRouter();
   const sdk = useDescope();
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get("next") || params.get("returnTo");
+    if (next) {
+      setReturnTo(next);
+      return;
+    }
+    const referrer = document.referrer;
+    if (!referrer) return;
+    try {
+      const refUrl = new URL(referrer);
+      if (refUrl.origin === window.location.origin && refUrl.pathname !== "/sign-in") {
+        setReturnTo(`${refUrl.pathname}${refUrl.search}${refUrl.hash}`);
+      }
+    } catch (error) {
+      console.error("Unable to parse referrer for return", error);
+    }
+  }, []);
 
   return (
     <main className="min-h-screen bg-[color:var(--oda-cream)]">
@@ -29,11 +51,12 @@ export default function SignInPage() {
             onSuccess={async () => {
               try {
                 await sdk.refresh();
+                await sdk.me();
               } catch (error) {
                 console.error("Failed to refresh Descope session", error);
               }
               await fetch("/api/user/sync", { method: "POST" });
-              router.push("/perfil");
+              router.push(returnTo ?? "/perfil");
             }}
             onError={(error) => {
               console.error("Descope login error", error);

@@ -1,6 +1,7 @@
 import { createSdk, session } from "@descope/nextjs-sdk/server";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateExperienceSubject } from "@/lib/experience";
+import crypto from "node:crypto";
 
 const getDescopeConfig = () => {
   const projectId = process.env.NEXT_PUBLIC_DESCOPE_PROJECT_ID;
@@ -90,6 +91,12 @@ export async function syncUserFromDescope() {
   const descopeUserId = typeof token.sub === "string" ? token.sub : undefined;
   if (!descopeUserId) return null;
 
+  const issuedAt =
+    typeof token.iat === "number" ? new Date(token.iat * 1000) : new Date();
+  const sessionTokenHash = authInfo.jwt
+    ? crypto.createHash("sha256").update(authInfo.jwt).digest("hex")
+    : undefined;
+
   const tokenUser: DescopeUser = {
     userId: descopeUserId,
     email: getTokenField(token, "email"),
@@ -133,6 +140,9 @@ export async function syncUserFromDescope() {
       avatarUrl: mergedUser.picture,
       status: mergedUser.status ?? "active",
       emailVerifiedAt: mergedUser.verifiedEmail ? new Date() : null,
+      lastLoginAt: new Date(),
+      sessionTokenCreatedAt: issuedAt,
+      sessionTokenHash,
       lastSeenAt: new Date(),
       experienceSubjectId: subject.id,
     },
@@ -143,6 +153,9 @@ export async function syncUserFromDescope() {
       avatarUrl: mergedUser.picture ?? undefined,
       status: mergedUser.status ?? "active",
       emailVerifiedAt: mergedUser.verifiedEmail ? new Date() : null,
+      lastLoginAt: new Date(),
+      sessionTokenCreatedAt: issuedAt,
+      sessionTokenHash: sessionTokenHash ?? undefined,
       lastSeenAt: new Date(),
       experienceSubjectId: subject.id,
       deletedAt: null,

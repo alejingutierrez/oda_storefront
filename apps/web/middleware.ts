@@ -45,7 +45,18 @@ export async function middleware(req: NextRequest) {
   );
 
   if (requiresDescope) {
-    return descope(req);
+    const response = await descope(req);
+    const location = response?.headers?.get("location");
+    if (location && location.includes("/sign-in")) {
+      const redirectUrl = req.nextUrl.clone();
+      redirectUrl.pathname = "/sign-in";
+      redirectUrl.searchParams.set(
+        "next",
+        `${req.nextUrl.pathname}${req.nextUrl.search}`,
+      );
+      return NextResponse.redirect(redirectUrl);
+    }
+    return response;
   }
 
   return NextResponse.next();
