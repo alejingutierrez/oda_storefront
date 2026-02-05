@@ -14,7 +14,7 @@ const splitColumns = <T,>(items: T[], columns: number) => {
 
 export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
   return (
-    <nav className="w-full">
+    <nav className="relative w-full">
       <ul className="flex items-center gap-6 text-sm uppercase tracking-[0.18em] text-[color:var(--oda-ink)]">
         {GENDERS.map((gender) => {
           const route = GENDER_ROUTE[gender];
@@ -28,7 +28,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
               >
                 {gender}
               </Link>
-              <div className="pointer-events-none absolute left-0 right-0 top-full rounded-2xl border border-[color:var(--oda-border)] bg-white/95 p-8 opacity-0 shadow-[0_30px_80px_rgba(23,21,19,0.18)] backdrop-blur transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100">
+              <div className="invisible absolute left-0 right-0 top-full rounded-2xl border border-[color:var(--oda-border)] bg-white/95 p-8 opacity-0 shadow-[0_30px_80px_rgba(23,21,19,0.18)] backdrop-blur transition-all duration-200 group-hover:visible group-hover:opacity-100">
                 <div className="grid grid-cols-4 gap-8">
                   <div className="col-span-2 flex flex-col gap-4">
                     <span className="text-xs uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
