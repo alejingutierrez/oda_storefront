@@ -102,6 +102,10 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Acciones de forzar refresh y reintentos por marca.
 - Panel `/admin/products` (productos):
   - Directorio de productos scrapeados con cards (carrusel de imágenes si hay múltiples fotos), modal de detalle enriquecido (precio/stock, tallas y colores visibles con swatches, fit/material por variante) y filtros por marca.
+- Panel `/admin/product-curation` (curación humana):
+  - Experiencia similar a `/catalogo` pero en admin (mismos filtros/query params), sin paginación UI y con scroll infinito.
+  - Permite seleccionar productos y aplicar un bulk edit desde una modal (operaciones `replace/add/remove/clear` según el campo).
+  - No permite editar `description` ni campos SEO. Preserva `products.metadata.enrichment` y registra trazabilidad en `products.metadata.enrichment_human`.
 - El modal muestra estilo principal/secundario (derivado de `styleTags`) con labels humanos.
 - Las imágenes de cards pasan por `/api/image-proxy` (cache a Blob) y se renderizan con `next/image`.
 - `next.config.ts` incluye allowlist para dominios `*.public.blob.vercel-storage.com` usados por Vercel Blob.
@@ -181,6 +185,13 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - `GET /api/admin/products`: listado paginado de productos (query: `page`, `pageSize`, `brandId`).
 - `GET /api/admin/products/brands`: listado de marcas con conteo de productos.
 - `GET /api/admin/products/:id`: detalle de producto con variantes.
+
+## API interna (curación de productos)
+- `GET /api/admin/product-curation/products`: listado paginado (interno) para scroll infinito (query: filtros del catálogo + `page`, `pageSize`, `sort`).
+- `GET /api/admin/product-curation/facets`: facets + subcategorías sin cache (se recalculan tras bulk edits).
+- `POST /api/admin/product-curation/bulk`: bulk edit de características de productos. Body: `{ productIds, field, op, value }` (límite default: 1200 IDs).
+  - No modifica `description` ni campos SEO.
+  - Preserva `products.metadata.enrichment` y registra auditoría en `products.metadata.enrichment_human`.
 
 ## API interna (image proxy)
 - `GET /api/image-proxy?url=<encoded>`: descarga la imagen remota, la cachea en Vercel Blob y redirige al asset cacheado.

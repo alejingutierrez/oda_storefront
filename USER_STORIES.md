@@ -559,6 +559,27 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % usuarios con perfil completo, favoritos por usuario, ratio de eventos UI por sesión.
 - Estado: **done (2026-02-05)**.
 
+### MC-115 Curación humana: bulk edit de características de productos
+- Historia: Como admin/curador, quiero filtrar y seleccionar productos y luego editar características en masa (sin tocar descripción ni SEO), para corregir y completar la clasificación rápidamente sin romper el enrichment automático.
+- Alcance: Nuevo módulo `/admin/product-curation` con look&feel admin y experiencia similar a `/catalogo`:
+  - Reutiliza la misma lógica de filtros (mismos query params) y facets.
+  - Listado con scroll infinito (sin paginación UI) usando `IntersectionObserver`.
+  - Selección multi-producto persistente por sesión y barra fija de acciones.
+  - Modal de bulk edit con selector de campo, operación y UI dinámica (dropdowns para valores del catálogo y selección múltiple para tags).
+  - Auditoría de cambios en `products.metadata.enrichment_human` sin tocar `products.metadata.enrichment`.
+- CA:
+  - Se puede navegar con los mismos filtros de `/catalogo` y ver facets consistentes.
+  - Al hacer scroll se cargan más productos sin perder el estado de selección.
+  - El bulk edit permite operaciones `replace/add/remove/clear` según el tipo de campo, con validación server-side contra catálogos cerrados.
+  - No es posible editar `description`, `seoTitle`, `seoDescription` ni `seoTags`.
+  - Tras aplicar cambios, la UI refresca facets y resultados (es esperado que algunos productos salgan del filtro y desaparezcan).
+  - La respuesta del bulk edit informa `updatedCount`, `unchangedCount` y `missingIds`.
+- Datos: `products` (category/subcategory/gender/season/stylePrimary/styleSecondary/styleTags/materialTags/patternTags/occasionTags/care/origin), `products.metadata.enrichment_human`.
+- NF: Updates en chunks transaccionales, límite de IDs por request (default 1200), endpoints protegidos por sesión admin o `ADMIN_TOKEN`.
+- Riesgos: Cambios masivos pueden degradar consistencia de taxonomía; mitigación con whitelist de campos y valores permitidos + auditoría en metadata.
+- Métricas: `updatedCount/unchangedCount`, número de bulk edits por día, distribución de campos editados, tasa de errores por validación.
+- Estado: **done (2026-02-05)**.
+
 ### MC-009 Taxonomía fija y catálogos
 - Historia: Como curador de datos, quiero catálogos cerrados (categorías, materiales, patrones, fits, estilo/ocasión), para clasificar de forma consistente.
 - Alcance: Definición y versionado; publicación a IA (prompt) y front (endpoint); validación server-side; mapeo de sinónimos.

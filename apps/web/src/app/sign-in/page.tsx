@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentType } from "react";
 import { useMemo, useState } from "react";
 import { Descope } from "@descope/nextjs-sdk";
 
@@ -33,6 +34,17 @@ const computeReturnTo = () => {
 };
 
 export default function SignInPage() {
+  // @descope/nextjs-sdk types do not expose flowId (aunque el componente sí lo soporta).
+  // Lo tipamos localmente para mantener build TS verde.
+  const DescopeFlow = Descope as unknown as ComponentType<{
+    flowId: string;
+    theme?: string;
+    debug?: boolean;
+    redirectAfterSuccess?: string;
+    redirectAfterError?: string;
+    onSuccess?: (...args: unknown[]) => void | Promise<void>;
+    onError?: (...args: unknown[]) => void;
+  }>;
   const [returnTo] = useState<string | null>(() => computeReturnTo());
   const [flowOverride] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -69,7 +81,7 @@ export default function SignInPage() {
           </p>
         </div>
         <div className="w-full max-w-md rounded-2xl border border-[color:var(--oda-border)] bg-white p-6 shadow-[0_30px_80px_rgba(23,21,19,0.12)]">
-          <Descope
+          <DescopeFlow
             flowId={flowId}
             theme="light"
             debug={debugFlow}

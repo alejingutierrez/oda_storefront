@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Descope } from "@descope/nextjs-sdk";
@@ -30,6 +31,14 @@ export default function PerfilPage() {
   const { isAuthenticated, isSessionLoading } = useSession();
   const { user, isUserLoading } = useUser();
   const sdk = useDescope();
+  // @descope/nextjs-sdk types do not expose flowId (aunque el componente sí lo soporta).
+  // Lo tipamos localmente para mantener build TS verde.
+  const DescopeFlow = Descope as unknown as ComponentType<{
+    flowId: string;
+    theme?: string;
+    onSuccess?: (...args: unknown[]) => void | Promise<void>;
+    onError?: (...args: unknown[]) => void;
+  }>;
   const linkFlowId =
     process.env.NEXT_PUBLIC_DESCOPE_LINK_FLOW_ID ||
     process.env.NEXT_PUBLIC_DESCOPE_SIGNIN_FLOW_ID ||
@@ -272,7 +281,7 @@ export default function PerfilPage() {
             </button>
             {showConnect ? (
               <div className="mt-6 rounded-2xl border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] p-4">
-                <Descope
+                <DescopeFlow
                   flowId={linkFlowId}
                   theme="light"
                   onSuccess={async () => {

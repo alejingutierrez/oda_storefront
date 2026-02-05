@@ -11,68 +11,22 @@ import {
   type CatalogFilters,
 } from "@/lib/catalog-data";
 import { getMegaMenuData } from "@/lib/home-data";
-import { labelize, labelizeSubcategory, normalizeGender, type GenderKey } from "@/lib/navigation";
+import { labelize, labelizeSubcategory } from "@/lib/navigation";
+import {
+  resolveSearchParams,
+  parseCatalogFiltersFromSearchParams,
+  parseCatalogPageFromSearchParams,
+  parseCatalogSortFromSearchParams,
+  type SearchParams,
+} from "@/lib/catalog-filters";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-type SearchParamsValue = Record<string, string | string[] | undefined> | URLSearchParams;
-type SearchParams = SearchParamsValue | Promise<SearchParamsValue>;
 
 type ActiveFilter = {
   label: string;
   href: string;
 };
-
-function buildParams(searchParams: SearchParams) {
-  if (typeof (searchParams as URLSearchParams).get === "function") {
-    return new URLSearchParams((searchParams as URLSearchParams).toString());
-  }
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(searchParams)) {
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item) params.append(key, item);
-      }
-      continue;
-    }
-    if (value) params.set(key, value);
-  }
-  return params;
-}
-
-async function resolveSearchParams(searchParams: SearchParams) {
-  const resolved = await searchParams;
-  return buildParams(resolved);
-}
-
-function getParamFromSearch(params: URLSearchParams, key: string) {
-  const values = params.getAll(key);
-  if (!values || values.length === 0) return undefined;
-  const found = values.find((item) => item && item.trim().length > 0);
-  return found && found.trim().length > 0 ? found : undefined;
-}
-
-function getListFromSearch(params: URLSearchParams, key: string) {
-  const values = params.getAll(key);
-  if (!values || values.length === 0) return undefined;
-  const cleaned = values.map((item) => item.trim()).filter((item) => item.length > 0);
-  if (cleaned.length === 0) return undefined;
-  return Array.from(new Set(cleaned));
-}
-
-function getNumberParamFromSearch(params: URLSearchParams, key: string) {
-  const value = getParamFromSearch(params, key);
-  if (!value) return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function getBooleanParamFromSearch(params: URLSearchParams, key: string) {
-  const value = getParamFromSearch(params, key);
-  if (!value) return false;
-  return value === "1" || value.toLowerCase() === "true";
-}
 
 function updateParam(
   params: URLSearchParams,
@@ -114,43 +68,11 @@ function removeValue(params: URLSearchParams, key: string, value: string) {
   return query ? `/catalogo?${query}` : "/catalogo";
 }
 
-function parseGenderList(values?: string[]): GenderKey[] | undefined {
-  if (!values || values.length === 0) return undefined;
-  const normalized = values
-    .map((value) => {
-      const candidate = normalizeGender(value);
-      const lower = value.toLowerCase();
-      if (lower === "unisex" || lower === "no_binario_unisex" || lower === "unknown") return candidate;
-      if (candidate === "Unisex" && value !== "Unisex") return undefined;
-      return candidate;
-    })
-    .filter((value): value is GenderKey => Boolean(value));
-  return normalized.length > 0 ? Array.from(new Set(normalized)) : undefined;
-}
-
 export default async function CatalogoPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await resolveSearchParams(searchParams);
-  const page = Math.max(1, Number(getParamFromSearch(params, "page") ?? 1));
-  const sort = getParamFromSearch(params, "sort") ?? "relevancia";
-
-  const filters: CatalogFilters = {
-    q: getParamFromSearch(params, "q"),
-    categories: getListFromSearch(params, "category"),
-    subcategories: getListFromSearch(params, "subcategory"),
-    genders: parseGenderList(getListFromSearch(params, "gender")),
-    brandIds: getListFromSearch(params, "brandId"),
-    priceMin: getNumberParamFromSearch(params, "price_min"),
-    priceMax: getNumberParamFromSearch(params, "price_max"),
-    colors: getListFromSearch(params, "color"),
-    sizes: getListFromSearch(params, "size"),
-    fits: getListFromSearch(params, "fit"),
-    materials: getListFromSearch(params, "material"),
-    patterns: getListFromSearch(params, "pattern"),
-    occasions: getListFromSearch(params, "occasion"),
-    seasons: getListFromSearch(params, "season"),
-    styles: getListFromSearch(params, "style"),
-    inStock: getBooleanParamFromSearch(params, "in_stock"),
-  };
+  const page = parseCatalogPageFromSearchParams(params, 1);
+  const sort = parseCatalogSortFromSearchParams(params, "relevancia");
+  const filters: CatalogFilters = parseCatalogFiltersFromSearchParams(params);
 
   const [menu, stats, facets, products] = await Promise.all([
     getMegaMenuData(),
