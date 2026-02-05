@@ -14,7 +14,7 @@ const buildCookieOptions = () => ({
 });
 
 export async function getOrCreateExperienceSubject() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const existingAnonId = cookieStore.get(SUBJECT_COOKIE)?.value;
 
   if (existingAnonId) {
@@ -39,16 +39,17 @@ export async function getOrCreateExperienceSubject() {
 }
 
 export async function ensureExperienceSubjectCookie(subjectAnonId: string) {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const current = cookieStore.get(SUBJECT_COOKIE)?.value;
   if (!current || current !== subjectAnonId) {
     cookieStore.set(SUBJECT_COOKIE, subjectAnonId, buildCookieOptions());
   }
 }
 
-export function getRequestMeta() {
+export async function getRequestMeta() {
+  const headerStore = await headers();
   return {
-    userAgent: headers().get("user-agent") ?? undefined,
-    referrer: headers().get("referer") ?? undefined,
+    userAgent: headerStore.get("user-agent") ?? undefined,
+    referrer: headerStore.get("referer") ?? undefined,
   };
 }

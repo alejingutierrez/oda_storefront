@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     userId = user?.id ?? null;
   }
 
-  const meta = getRequestMeta();
+  const meta = await getRequestMeta();
   const propertiesPayload = {
     ...(body.properties ?? {}),
     userAgent: meta.userAgent,
