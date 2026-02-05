@@ -41,6 +41,10 @@ export default function SignInPage() {
     const flow = new URLSearchParams(window.location.search).get("flow");
     return flow?.trim() || null;
   });
+  const [debugFlow] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("debug") === "true";
+  });
   const flowId =
     flowOverride ||
     process.env.NEXT_PUBLIC_DESCOPE_SIGNIN_FLOW_ID ||
@@ -68,6 +72,7 @@ export default function SignInPage() {
           <Descope
             flowId={flowId}
             theme="light"
+            debug={debugFlow}
             redirectAfterSuccess={redirectAfterSuccess}
             redirectAfterError="/sign-in"
             onSuccess={async (event) => {
