@@ -106,7 +106,7 @@ export async function syncUserFromDescope(
 
   const issuedAt =
     typeof token.iat === "number" ? new Date(token.iat * 1000) : new Date();
-  const authRecord = authInfo as Record<string, unknown>;
+  const authRecord = authInfo as unknown as Record<string, unknown>;
   const sessionJwt =
     typeof authRecord.jwt === "string"
       ? authRecord.jwt
@@ -271,7 +271,7 @@ export async function requireUser() {
     const subject = await getOrCreateExperienceSubject();
     const issuedAt =
       typeof token.iat === "number" ? new Date(token.iat * 1000) : new Date();
-    const authRecord = authInfo as Record<string, unknown>;
+    const authRecord = authInfo as unknown as Record<string, unknown>;
     const sessionJwt =
       typeof authRecord.jwt === "string"
         ? authRecord.jwt
