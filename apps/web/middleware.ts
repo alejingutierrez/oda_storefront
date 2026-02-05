@@ -48,6 +48,12 @@ export async function middleware(req: NextRequest) {
     const response = await descope(req);
     const location = response?.headers?.get("location");
     if (location && location.includes("/sign-in")) {
+      if (pathname.startsWith("/api/")) {
+        return new NextResponse(JSON.stringify({ error: "unauthorized" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        });
+      }
       const redirectUrl = req.nextUrl.clone();
       redirectUrl.pathname = "/sign-in";
       redirectUrl.searchParams.set(

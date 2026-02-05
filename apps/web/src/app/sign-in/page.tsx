@@ -55,11 +55,32 @@ export default function SignInPage() {
               } catch (error) {
                 console.error("Failed to refresh Descope session", error);
               }
+              let sessionToken: string | null = null;
+              try {
+                const sdkAny = sdk as unknown as {
+                  getSessionToken?: () => Promise<string>;
+                  getSessionTokenSync?: () => string;
+                };
+                if (typeof sdkAny.getSessionToken === "function") {
+                  sessionToken = await sdkAny.getSessionToken();
+                } else if (typeof sdkAny.getSessionTokenSync === "function") {
+                  sessionToken = sdkAny.getSessionTokenSync();
+                }
+              } catch (error) {
+                console.error("Failed to read Descope session token", error);
+              }
               const descopeUser =
                 typeof event?.detail?.user === "object" ? event.detail.user : null;
+              const headers: Record<string, string> = {
+                "content-type": "application/json",
+              };
+              if (sessionToken) {
+                headers.authorization = `Bearer ${sessionToken}`;
+              }
               await fetch("/api/user/sync", {
                 method: "POST",
-                headers: { "content-type": "application/json" },
+                headers,
+                credentials: "include",
                 body: JSON.stringify({ user: descopeUser }),
               });
               router.push(returnTo ?? "/perfil");

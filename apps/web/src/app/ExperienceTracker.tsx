@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { usePathname } from "next/navigation";
+import { useSession } from "@descope/nextjs-sdk/client";
 
 const SESSION_KEY = "oda_session_id";
 
@@ -32,6 +33,7 @@ const getUtmPayload = (params: URLSearchParams) => {
 };
 
 export default function ExperienceTracker() {
+  useSession();
   const pathname = usePathname();
   const lastPathRef = useRef<string | null>(null);
   const sessionId = useMemo(() => getSessionId(), []);

@@ -106,8 +106,15 @@ export async function syncUserFromDescope(
 
   const issuedAt =
     typeof token.iat === "number" ? new Date(token.iat * 1000) : new Date();
-  const sessionTokenHash = authInfo.jwt
-    ? crypto.createHash("sha256").update(authInfo.jwt).digest("hex")
+  const authRecord = authInfo as Record<string, unknown>;
+  const sessionJwt =
+    typeof authRecord.jwt === "string"
+      ? authRecord.jwt
+      : typeof authRecord.sessionJwt === "string"
+        ? authRecord.sessionJwt
+        : undefined;
+  const sessionTokenHash = sessionJwt
+    ? crypto.createHash("sha256").update(sessionJwt).digest("hex")
     : undefined;
 
   const tokenUser: DescopeUser = {
@@ -262,15 +269,37 @@ export async function requireUser() {
   const user = await prisma.user.findUnique({ where: { descopeUserId } });
   if (user) {
     const subject = await getOrCreateExperienceSubject();
+    const issuedAt =
+      typeof token.iat === "number" ? new Date(token.iat * 1000) : new Date();
+    const authRecord = authInfo as Record<string, unknown>;
+    const sessionJwt =
+      typeof authRecord.jwt === "string"
+        ? authRecord.jwt
+        : typeof authRecord.sessionJwt === "string"
+          ? authRecord.sessionJwt
+          : undefined;
+    const sessionTokenHash = sessionJwt
+      ? crypto.createHash("sha256").update(sessionJwt).digest("hex")
+      : undefined;
+    const shouldUpdateLogin =
+      sessionTokenHash && sessionTokenHash !== user.sessionTokenHash;
+
+    const updateData: Prisma.UserUpdateInput = {
+      lastSeenAt: new Date(),
+      experienceSubjectId:
+        user.experienceSubjectId && user.experienceSubjectId === subject.id
+          ? user.experienceSubjectId
+          : subject.id,
+    };
+    if (shouldUpdateLogin) {
+      updateData.sessionTokenHash = sessionTokenHash;
+      updateData.sessionTokenCreatedAt = issuedAt;
+      updateData.lastLoginAt = new Date();
+    }
+
     await prisma.user.update({
       where: { id: user.id },
-      data: {
-        lastSeenAt: new Date(),
-        experienceSubjectId:
-          user.experienceSubjectId && user.experienceSubjectId === subject.id
-            ? user.experienceSubjectId
-            : subject.id,
-      },
+      data: updateData,
     });
     return { user, authInfo };
   }

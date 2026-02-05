@@ -52,7 +52,11 @@ export default function PerfilPage() {
   const loadProfile = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/user/profile");
+      const res = await fetch("/api/user/profile", { credentials: "include" });
+      if (res.status === 401) {
+        router.push("/sign-in?next=/perfil");
+        return;
+      }
       if (!res.ok) throw new Error("profile_fetch_failed");
       const data = (await res.json()) as ProfilePayload;
       setProfile(data);
@@ -68,7 +72,14 @@ export default function PerfilPage() {
 
   const refreshIdentities = async () => {
     try {
-      await fetch("/api/user/identities", { method: "POST" });
+      const res = await fetch("/api/user/identities", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.status === 401) {
+        router.push("/sign-in?next=/perfil");
+        return;
+      }
       await loadProfile();
     } catch (error) {
       console.error(error);
@@ -167,8 +178,13 @@ export default function PerfilPage() {
                     const res = await fetch("/api/user/profile", {
                       method: "PATCH",
                       headers: { "content-type": "application/json" },
+                      credentials: "include",
                       body: JSON.stringify({ displayName, fullName, bio }),
                     });
+                    if (res.status === 401) {
+                      router.push("/sign-in?next=/perfil");
+                      return;
+                    }
                     if (!res.ok) throw new Error("save_failed");
                     const data = (await res.json()) as { user: ProfilePayload["user"] };
                     setProfile((prev) => (prev ? { ...prev, user: data.user } : prev));
@@ -187,7 +203,7 @@ export default function PerfilPage() {
                   if (!confirm("¿Seguro que quieres borrar tu cuenta? Esta acción es irreversible.")) {
                     return;
                   }
-                  await fetch("/api/user/delete", { method: "POST" });
+                  await fetch("/api/user/delete", { method: "POST", credentials: "include" });
                   await sdk.logout();
                   router.push("/");
                 }}
