@@ -77,12 +77,16 @@ export async function loadDescopeUser(userId: string) {
   try {
     sdk = getDescopeManagementSdk();
   } catch (error) {
-    console.warn("Descope management key missing, skipping user load", error);
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Descope management key missing, skipping user load", error);
+    }
     return null;
   }
   const response = await sdk.management.user.loadByUserId(userId);
   if (!response.ok || !response.data) {
-    console.warn("Descope management user load failed", response.error);
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Descope management user load failed", response.error);
+    }
     return null;
   }
   return response.data as DescopeUser;
