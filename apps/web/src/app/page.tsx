@@ -44,7 +44,7 @@ export default async function Home() {
       <Header menu={menu} />
 
       <section className="relative overflow-hidden border-b border-[color:var(--oda-border)] bg-[color:var(--oda-stone)]">
-        <div className="mx-auto grid max-w-6xl gap-12 px-6 py-16 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="oda-container grid gap-12 py-16 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="flex flex-col justify-center gap-6">
             <p className="text-xs uppercase tracking-[0.25em] text-[color:var(--oda-taupe)]">
               ODA editorial
@@ -71,7 +71,7 @@ export default async function Home() {
               </Link>
             </div>
           </div>
-          <div className="relative aspect-[4/5] w-full overflow-hidden rounded-[32px] bg-[color:var(--oda-cream)] shadow-[0_40px_90px_rgba(23,21,19,0.18)]">
+          <div className="relative aspect-[4/5] w-full overflow-hidden rounded-xl bg-[color:var(--oda-cream)] shadow-[0_40px_90px_rgba(23,21,19,0.18)]">
             {hero?.imageCoverUrl ? (
               <Image
                 src={hero.imageCoverUrl}
@@ -87,7 +87,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-16">
+      <section className="oda-container flex flex-col gap-8 py-16">
         <SectionHeading
           title="Novedades que rotan cada 3 dias"
           subtitle="Nuevo"
@@ -101,7 +101,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-8 px-6 pb-16">
+      <section className="oda-container flex flex-col gap-8 pb-16">
         <SectionHeading
           title="Categorias clave"
           subtitle="Explorar"
@@ -113,7 +113,7 @@ export default async function Home() {
             <Link
               key={category.category}
               href={category.href}
-              className="group relative overflow-hidden rounded-2xl bg-[color:var(--oda-stone)]"
+              className="group relative overflow-hidden rounded-xl bg-[color:var(--oda-stone)]"
             >
               <div className="relative aspect-square w-full">
                 <Image
@@ -134,7 +134,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 pb-16">
+      <section className="oda-container flex flex-col gap-10 pb-16">
         <SectionHeading title="Curated edit" subtitle="Estilo" />
         <div className="grid gap-10">
           {styleGroups.map((group) => (
@@ -160,13 +160,13 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-8 px-6 pb-16">
+      <section className="oda-container flex flex-col gap-8 pb-16">
         <SectionHeading title="Shop by color" subtitle="Combos" />
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {colorCombos.map((combo) => (
             <div
               key={combo.id}
-              className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-6"
+              className="rounded-xl border border-[color:var(--oda-border)] bg-white p-6"
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
@@ -197,9 +197,9 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-8 px-6 pb-16">
+      <section className="oda-container flex flex-col gap-8 pb-16">
         <SectionHeading title="Marcas destacadas" subtitle="Marcas" />
-        <div className="grid grid-cols-2 gap-6 rounded-3xl border border-[color:var(--oda-border)] bg-white p-10 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-6 rounded-2xl border border-[color:var(--oda-border)] bg-white p-10 sm:grid-cols-3 lg:grid-cols-6">
           {brandLogos.map((brand) => (
             <div
               key={brand.id}
@@ -218,7 +218,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-8 px-6 pb-20">
+      <section className="oda-container flex flex-col gap-8 pb-20">
         <SectionHeading title="Trending picks" subtitle="Rotacion" />
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {trending.map((product) => (
@@ -228,7 +228,7 @@ export default async function Home() {
       </section>
 
       <section className="border-t border-[color:var(--oda-border)] bg-white">
-        <div className="mx-auto grid max-w-6xl gap-10 px-6 py-16 lg:grid-cols-[1fr_1fr]">
+        <div className="oda-container grid gap-10 py-16 lg:grid-cols-[1fr_1fr]">
           <div className="flex flex-col gap-4">
             <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
               ODA Story
@@ -247,7 +247,7 @@ export default async function Home() {
               Ver todo el catalogo
             </Link>
           </div>
-          <div className="relative aspect-[4/3] w-full overflow-hidden rounded-3xl bg-[color:var(--oda-stone)]">
+          <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[color:var(--oda-stone)]">
             {hero?.imageCoverUrl ? (
               <Image
                 src={hero.imageCoverUrl}
@@ -263,7 +263,7 @@ export default async function Home() {
       </section>
 
       <footer className="border-t border-[color:var(--oda-border)] bg-[color:var(--oda-cream)]">
-        <div className="mx-auto grid max-w-6xl gap-10 px-6 py-12 md:grid-cols-3">
+        <div className="oda-container grid gap-10 py-12 md:grid-cols-3">
           <div className="flex flex-col gap-3">
             <span className="text-sm uppercase tracking-[0.28em]">ODA Storefront</span>
             <p className="text-sm text-[color:var(--oda-ink-soft)]">

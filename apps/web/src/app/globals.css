@@ -32,7 +32,21 @@ h3,
   letter-spacing: -0.01em;
 }
 
+summary {
+  list-style: none;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
 ::selection {
   background: var(--oda-gold);
   color: var(--oda-ink);
+}
+
+@layer components {
+  .oda-container {
+    @apply mx-auto w-full max-w-[1320px] px-6;
+  }
 }

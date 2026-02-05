@@ -22,7 +22,7 @@ export default function ProductCard({ product }: { product: ProductCardType }) {
   const href = product.sourceUrl ?? "#";
   return (
     <Link href={href} className="group flex flex-col gap-3">
-      <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-[color:var(--oda-stone)]">
+      <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-[color:var(--oda-stone)]">
         {product.imageCoverUrl ? (
           <Image
             src={product.imageCoverUrl}
