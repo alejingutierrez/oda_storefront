@@ -284,7 +284,7 @@ export async function requireUser() {
     const shouldUpdateLogin =
       sessionTokenHash && sessionTokenHash !== user.sessionTokenHash;
 
-    const updateData: Prisma.UserUpdateInput = {
+    const updateData: Prisma.UserUncheckedUpdateInput = {
       lastSeenAt: new Date(),
       experienceSubjectId:
         user.experienceSubjectId && user.experienceSubjectId === subject.id
