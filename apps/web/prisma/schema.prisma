@@ -177,6 +177,8 @@ model Product {
   assets            Asset[]
   events            Event[]
   experienceEvents  ExperienceEvent[]
+  favorites         UserFavorite[]
+  listItems         UserListItem[]
   enrichmentItems   ProductEnrichmentItem[]
 
   @@index([brandId])
@@ -224,6 +226,8 @@ model Variant {
   assets       Asset[]
   events       Event[]
   experienceEvents ExperienceEvent[]
+  favorites    UserFavorite[]
+  listItems    UserListItem[]
   colorVectors VariantColorVector[]
   colorMatches VariantColorCombinationMatch[]
 
