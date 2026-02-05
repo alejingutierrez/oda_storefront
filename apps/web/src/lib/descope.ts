@@ -1,4 +1,5 @@
 import { createSdk, session } from "@descope/nextjs-sdk/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateExperienceSubject } from "@/lib/experience";
 import crypto from "node:crypto";
@@ -72,16 +73,24 @@ const getTokenArray = (token: Record<string, unknown>, key: string) => {
 };
 
 export async function loadDescopeUser(userId: string) {
-  const sdk = getDescopeManagementSdk();
+  let sdk;
+  try {
+    sdk = getDescopeManagementSdk();
+  } catch (error) {
+    console.warn("Descope management key missing, skipping user load", error);
+    return null;
+  }
   const response = await sdk.management.user.loadByUserId(userId);
   if (!response.ok || !response.data) {
-    const message = response.error?.errorMessage || "Unable to load Descope user";
-    throw new Error(message);
+    console.warn("Descope management user load failed", response.error);
+    return null;
   }
   return response.data as DescopeUser;
 }
 
-export async function syncUserFromDescope() {
+export async function syncUserFromDescope(
+  fallbackUser?: Partial<DescopeUser> | null,
+) {
   const authInfo = await getDescopeSession();
   if (!authInfo || !authInfo.token || typeof authInfo.token !== "object") {
     return null;
@@ -100,75 +109,116 @@ export async function syncUserFromDescope() {
   const tokenUser: DescopeUser = {
     userId: descopeUserId,
     email: getTokenField(token, "email"),
-    name: getTokenField(token, "name"),
-    givenName: getTokenField(token, "given_name"),
-    familyName: getTokenField(token, "family_name"),
+    name:
+      getTokenField(token, "name") ??
+      getTokenField(token, "display_name") ??
+      getTokenField(token, "full_name"),
+    givenName:
+      getTokenField(token, "given_name") ?? getTokenField(token, "first_name"),
+    familyName:
+      getTokenField(token, "family_name") ?? getTokenField(token, "last_name"),
     picture: getTokenField(token, "picture"),
     loginIds: getTokenArray(token, "login_ids"),
     verifiedEmail: token.email_verified === true,
   };
 
-  let descopeUser: DescopeUser | null = null;
-  try {
-    descopeUser = await loadDescopeUser(descopeUserId);
-  } catch (error) {
-    console.error("Failed to load Descope user", error);
-  }
+  const descopeUser = await loadDescopeUser(descopeUserId);
 
   const mergedUser: DescopeUser = {
     ...tokenUser,
+    ...(fallbackUser ?? {}),
     ...(descopeUser ?? {}),
   };
   const subject = await getOrCreateExperienceSubject();
 
-  const displayName = normalizeName(mergedUser);
+  const displayName =
+    normalizeName(mergedUser) ??
+    (email ? email.split("@")[0] : undefined);
   const email = normalizeEmail(
     mergedUser,
     descopeUserId,
     typeof token.email === "string" ? token.email : undefined,
   );
 
-  const user = await prisma.user.upsert({
-    where: { descopeUserId },
-    create: {
-      email,
-      descopeUserId,
-      role: "user",
-      plan: "free",
-      displayName,
-      fullName: displayName,
-      avatarUrl: mergedUser.picture,
-      status: mergedUser.status ?? "active",
-      emailVerifiedAt: mergedUser.verifiedEmail ? new Date() : null,
-      lastLoginAt: new Date(),
-      sessionTokenCreatedAt: issuedAt,
-      sessionTokenHash,
-      lastSeenAt: new Date(),
-      experienceSubjectId: subject.id,
-    },
-    update: {
-      email,
-      displayName: displayName ?? undefined,
-      fullName: displayName ?? undefined,
-      avatarUrl: mergedUser.picture ?? undefined,
-      status: mergedUser.status ?? "active",
-      emailVerifiedAt: mergedUser.verifiedEmail ? new Date() : null,
-      lastLoginAt: new Date(),
-      sessionTokenCreatedAt: issuedAt,
-      sessionTokenHash: sessionTokenHash ?? undefined,
-      lastSeenAt: new Date(),
-      experienceSubjectId: subject.id,
-      deletedAt: null,
-    },
-  });
+  let user;
+  try {
+    user = await prisma.user.upsert({
+      where: { descopeUserId },
+      create: {
+        email,
+        descopeUserId,
+        role: "user",
+        plan: "free",
+        displayName,
+        fullName: displayName,
+        avatarUrl: mergedUser.picture,
+        status: mergedUser.status ?? "active",
+        emailVerifiedAt: mergedUser.verifiedEmail ? new Date() : null,
+        lastLoginAt: new Date(),
+        sessionTokenCreatedAt: issuedAt,
+        sessionTokenHash,
+        lastSeenAt: new Date(),
+        experienceSubjectId: subject.id,
+      },
+      update: {
+        email,
+        displayName: displayName ?? undefined,
+        fullName: displayName ?? undefined,
+        avatarUrl: mergedUser.picture ?? undefined,
+        status: mergedUser.status ?? "active",
+        emailVerifiedAt: mergedUser.verifiedEmail ? new Date() : null,
+        lastLoginAt: new Date(),
+        sessionTokenCreatedAt: issuedAt,
+        sessionTokenHash: sessionTokenHash ?? undefined,
+        lastSeenAt: new Date(),
+        experienceSubjectId: subject.id,
+        deletedAt: null,
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      user = await prisma.user.update({
+        where: { email },
+        data: {
+          descopeUserId,
+          displayName: displayName ?? undefined,
+          fullName: displayName ?? undefined,
+          avatarUrl: mergedUser.picture ?? undefined,
+          status: mergedUser.status ?? "active",
+          emailVerifiedAt: mergedUser.verifiedEmail ? new Date() : null,
+          lastLoginAt: new Date(),
+          sessionTokenCreatedAt: issuedAt,
+          sessionTokenHash: sessionTokenHash ?? undefined,
+          lastSeenAt: new Date(),
+          experienceSubjectId: subject.id,
+          deletedAt: null,
+        },
+      });
+    } else {
+      throw error;
+    }
+  }
 
   const oauthProviders = Object.entries(mergedUser.OAuth ?? {})
     .filter(([, enabled]) => Boolean(enabled))
     .map(([provider]) => provider.toLowerCase());
 
-  if (oauthProviders.length > 0) {
+  const fallbackProviders =
+    typeof (fallbackUser as { providers?: unknown })?.providers !== "undefined" &&
+    Array.isArray((fallbackUser as { providers?: unknown }).providers)
+      ? (fallbackUser as { providers: string[] }).providers
+      : [];
+
+  const uniqueProviders = Array.from(
+    new Set([...oauthProviders, ...fallbackProviders.map((p) => p.toLowerCase())]),
+  ).filter(Boolean);
+
+  if (uniqueProviders.length > 0) {
     await Promise.all(
-      oauthProviders.map((provider) =>
+      uniqueProviders.map((provider) =>
         prisma.userIdentity.upsert({
           where: {
             provider_providerUserId: {

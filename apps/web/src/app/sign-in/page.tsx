@@ -48,14 +48,20 @@ export default function SignInPage() {
           <Descope
             flowId="sign-up-or-in"
             theme="light"
-            onSuccess={async () => {
+            onSuccess={async (event) => {
               try {
                 await sdk.refresh();
                 await sdk.me();
               } catch (error) {
                 console.error("Failed to refresh Descope session", error);
               }
-              await fetch("/api/user/sync", { method: "POST" });
+              const descopeUser =
+                typeof event?.detail?.user === "object" ? event.detail.user : null;
+              await fetch("/api/user/sync", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ user: descopeUser }),
+              });
               router.push(returnTo ?? "/perfil");
             }}
             onError={(error) => {
