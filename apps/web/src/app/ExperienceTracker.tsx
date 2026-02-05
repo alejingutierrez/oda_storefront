@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 const SESSION_KEY = "oda_session_id";
 
@@ -33,18 +33,23 @@ const getUtmPayload = (params: URLSearchParams) => {
 
 export default function ExperienceTracker() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const lastPathRef = useRef<string | null>(null);
   const sessionId = useMemo(() => getSessionId(), []);
 
   useEffect(() => {
     if (!pathname) return;
-    const search = searchParams?.toString();
+    const search =
+      typeof window !== "undefined" && window.location.search
+        ? window.location.search.replace(/^\?/, "")
+        : "";
     const path = search ? `${pathname}?${search}` : pathname;
     if (lastPathRef.current === path) return;
     lastPathRef.current = path;
 
-    const utm = searchParams ? getUtmPayload(new URLSearchParams(searchParams.toString())) : undefined;
+    const utm =
+      typeof window !== "undefined"
+        ? getUtmPayload(new URLSearchParams(window.location.search))
+        : undefined;
 
     fetch("/api/experience/events", {
       method: "POST",
@@ -60,7 +65,7 @@ export default function ExperienceTracker() {
     }).catch((error) => {
       console.error("Failed to log experience event", error);
     });
-  }, [pathname, searchParams, sessionId]);
+  }, [pathname, sessionId]);
 
   return null;
 }
