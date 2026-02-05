@@ -18,6 +18,21 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Auth (Descope)
+
+Variables requeridas en `.env` (local/Vercel):
+
+- `NEXT_PUBLIC_DESCOPE_PROJECT_ID`
+- `NEXT_PUBLIC_DESCOPE_BASE_URL`
+- `DESCOPE_MANAGEMENT_KEY`
+- `NEXT_PUBLIC_DESCOPE_SIGNIN_FLOW_ID`
+- `NEXT_PUBLIC_DESCOPE_LINK_FLOW_ID`
+
+Flujo:
+
+- `/sign-in` renderiza el flow de Descope.
+- Al completar login redirige a `/auth/callback?next=...`, que hace el sync del usuario en Neon y luego devuelve al `next`.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More

@@ -9,7 +9,7 @@ const descope = authMiddleware({
   projectId: process.env.NEXT_PUBLIC_DESCOPE_PROJECT_ID!,
   baseUrl: process.env.NEXT_PUBLIC_DESCOPE_BASE_URL,
   redirectUrl: "/sign-in",
-  publicRoutes: ["/sign-in", "/sign-up", "/api/experience/events"],
+  publicRoutes: ["/sign-in", "/sign-up", "/auth/callback", "/api/experience/events"],
 });
 
 function isAdminAuthorized(req: NextRequest) {

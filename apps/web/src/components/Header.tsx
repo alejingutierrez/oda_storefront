@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SignInLink from "@/components/SignInLink";
 import MegaMenu from "@/components/MegaMenu";
 import type { MegaMenuData } from "@/lib/home-data";
 import { GENDER_ROUTE, type GenderKey } from "@/lib/navigation";
@@ -89,9 +90,9 @@ function MobileMenu({ menu }: { menu: MegaMenuData }) {
           </div>
           <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
             <span>Cuenta</span>
-            <Link href="/sign-in" className="text-[color:var(--oda-ink)]">
+            <SignInLink className="text-[color:var(--oda-ink)]">
               Ingresar
-            </Link>
+            </SignInLink>
           </div>
         </div>
       </div>
@@ -132,12 +133,9 @@ export default function Header({ menu }: { menu: MegaMenuData }) {
           >
             Explorar
           </Link>
-          <Link
-            href="/sign-in"
-            className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
-          >
+          <SignInLink className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
             Ingresar
-          </Link>
+          </SignInLink>
         </div>
       </div>
     </header>

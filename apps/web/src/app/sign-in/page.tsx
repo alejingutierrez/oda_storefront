@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { Descope } from "@descope/nextjs-sdk";
-import { useDescope } from "@descope/nextjs-sdk/client";
 
 const computeReturnTo = () => {
   if (typeof window === "undefined") return null;
@@ -34,7 +33,6 @@ const computeReturnTo = () => {
 };
 
 export default function SignInPage() {
-  const sdk = useDescope();
   const [returnTo] = useState<string | null>(() => computeReturnTo());
   const [flowOverride] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -49,10 +47,12 @@ export default function SignInPage() {
     flowOverride ||
     process.env.NEXT_PUBLIC_DESCOPE_SIGNIN_FLOW_ID ||
     "sign-up-or-in";
-  const redirectAfterSuccess = useMemo(
-    () => returnTo ?? "/perfil",
-    [returnTo],
-  );
+  const redirectAfterSuccess = useMemo(() => {
+    const target = returnTo ?? "/perfil";
+    const params = new URLSearchParams();
+    params.set("next", target);
+    return `/auth/callback?${params.toString()}`;
+  }, [returnTo]);
 
   return (
     <main className="min-h-screen bg-[color:var(--oda-cream)]">
@@ -75,42 +75,6 @@ export default function SignInPage() {
             debug={debugFlow}
             redirectAfterSuccess={redirectAfterSuccess}
             redirectAfterError="/sign-in"
-            onSuccess={async (event) => {
-              try {
-                await sdk.refresh();
-                await sdk.me();
-              } catch (error) {
-                console.error("Failed to refresh Descope session", error);
-              }
-              let sessionToken: string | null = null;
-              try {
-                const sdkAny = sdk as unknown as {
-                  getSessionToken?: () => Promise<string>;
-                  getSessionTokenSync?: () => string;
-                };
-                if (typeof sdkAny.getSessionToken === "function") {
-                  sessionToken = await sdkAny.getSessionToken();
-                } else if (typeof sdkAny.getSessionTokenSync === "function") {
-                  sessionToken = sdkAny.getSessionTokenSync();
-                }
-              } catch (error) {
-                console.error("Failed to read Descope session token", error);
-              }
-              const descopeUser =
-                typeof event?.detail?.user === "object" ? event.detail.user : null;
-              const headers: Record<string, string> = {
-                "content-type": "application/json",
-              };
-              if (sessionToken) {
-                headers.authorization = `Bearer ${sessionToken}`;
-              }
-              await fetch("/api/user/sync", {
-                method: "POST",
-                headers,
-                credentials: "include",
-                body: JSON.stringify({ user: descopeUser }),
-              });
-            }}
             onError={(error) => {
               console.error("Descope login error", error);
             }}
