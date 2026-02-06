@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useDescope } from "@descope/nextjs-sdk/client";
 
 const normalizeNext = (value?: string | null) => {
@@ -13,9 +13,12 @@ const normalizeNext = (value?: string | null) => {
 
 export default function AuthCallbackPage() {
   const router = useRouter();
-  const params = useSearchParams();
   const sdk = useDescope();
-  const next = useMemo(() => normalizeNext(params.get("next")), [params]);
+  const [next] = useState(() => {
+    if (typeof window === "undefined") return "/perfil";
+    const params = new URLSearchParams(window.location.search);
+    return normalizeNext(params.get("next"));
+  });
   const [message, setMessage] = useState("Procesando inicio de sesion…");
   const [attempt, setAttempt] = useState(0);
 
