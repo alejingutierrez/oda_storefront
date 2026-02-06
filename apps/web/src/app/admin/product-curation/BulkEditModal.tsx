@@ -96,11 +96,18 @@ const buildGenderOptions = (): Option[] => GENDER_OPTIONS.map((entry) => ({ valu
 const buildSeasonOptions = (): Option[] => SEASON_OPTIONS.map((entry) => ({ value: entry.value, label: entry.label }));
 
 const buildSubcategoryOptions = (taxonomy: TaxonomyOptions | null): Option[] =>
-  (taxonomy?.data.categories ?? []).flatMap((category) =>
-    (category.subcategories ?? [])
-      .filter((entry) => entry.isActive !== false)
-      .map((entry) => ({ value: entry.key, label: entry.label ?? entry.key })),
-  );
+  (() => {
+    const options = new Map<string, string>();
+    for (const category of taxonomy?.data.categories ?? []) {
+      for (const entry of category.subcategories ?? []) {
+        if (entry.isActive === false) continue;
+        const key = entry.key;
+        if (!key) continue;
+        if (!options.has(key)) options.set(key, entry.label ?? key);
+      }
+    }
+    return Array.from(options.entries()).map(([value, label]) => ({ value, label }));
+  })();
 
 const buildStyleProfileOptions = (taxonomy: TaxonomyOptions | null): Option[] =>
   (taxonomy?.styleProfiles ?? []).map((profile) => ({ value: profile.key, label: profile.label ?? profile.key }));
@@ -643,8 +650,8 @@ export default function BulkEditModal({ open, selectedCount, taxonomyOptions, on
                         </select>
                         {active.field === "subcategory" && active.op === "replace" && !usedFields.has("category") ? (
                           <p className="mt-2 text-xs text-slate-500">
-                            Nota: si reemplazas subcategoría sin incluir categoría, el sistema ajustará <code>category</code>{" "}
-                            automáticamente.
+                            Nota: si reemplazas subcategoría sin incluir categoría, se validará contra la categoría actual del producto.
+                            Si estás mezclando categorías, agrega también un cambio de <code>category</code>.
                           </p>
                         ) : null}
                         {active.field === "category" && active.op === "replace" && !usedFields.has("subcategory") ? (

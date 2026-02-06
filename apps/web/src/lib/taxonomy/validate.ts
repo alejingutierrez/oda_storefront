@@ -74,15 +74,12 @@ export const taxonomyDataV1Schema: z.ZodType<TaxonomyDataV1> = z
       ["styleTags"],
     );
 
-    const allSubs: string[] = [];
     value.categories.forEach((category, index) => {
       ensureUnique(
         category.subcategories.map((entry) => entry.key),
         ["categories", index, "subcategories"],
       );
-      allSubs.push(...category.subcategories.map((entry) => entry.key));
     });
-    ensureUnique(allSubs, ["categories", "subcategories"]);
   });
 
 export function parseTaxonomyDataV1(value: unknown): TaxonomyDataV1 {

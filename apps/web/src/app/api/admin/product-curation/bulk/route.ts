@@ -112,13 +112,6 @@ export async function POST(req: Request) {
   const SUBCATEGORY_SET = buildAllowedSet(
     taxonomy.data.categories.flatMap((entry) => (entry.subcategories ?? []).map((sub) => sub.key)),
   );
-  const SUBCATEGORY_TO_CATEGORY: Record<string, string> = {};
-  for (const [categoryKey, subKeys] of Object.entries(taxonomy.subcategoryByCategory ?? {})) {
-    for (const subKey of subKeys ?? []) {
-      if (!subKey || typeof subKey !== "string") continue;
-      SUBCATEGORY_TO_CATEGORY[subKey] = categoryKey;
-    }
-  }
   const STYLE_TAG_SET = buildAllowedSet(taxonomy.data.styleTags.map((entry) => entry.key));
   const MATERIAL_SET = buildAllowedSet(taxonomy.data.materials.map((entry) => entry.key));
   const PATTERN_SET = buildAllowedSet(taxonomy.data.patterns.map((entry) => entry.key));
@@ -238,22 +231,15 @@ export async function POST(req: Request) {
     | (ParsedChange & { kind: "scalar"; field: "subcategory" })
     | undefined;
   if (subcategoryChange && subcategoryChange.op === "replace" && subcategoryChange.scalarValue) {
-    const impliedCategory = SUBCATEGORY_TO_CATEGORY[subcategoryChange.scalarValue] ?? null;
-    if (!impliedCategory) {
-      return NextResponse.json(
-        { error: "invalid_value", field: "subcategory", value: subcategoryChange.scalarValue },
-        { status: 400 },
-      );
+    if (categoryChange?.op === "clear") {
+      return NextResponse.json({ error: "subcategory_requires_category" }, { status: 400 });
     }
 
-    if (categoryChange) {
-      if (categoryChange.op === "clear") {
-        return NextResponse.json({ error: "subcategory_requires_category" }, { status: 400 });
-      }
-      const nextCategory = categoryChange.op === "replace" ? categoryChange.scalarValue : null;
-      if (nextCategory && nextCategory !== impliedCategory) {
+    if (categoryChange?.op === "replace" && categoryChange.scalarValue) {
+      const allowedSubs = taxonomy.subcategoryByCategory[categoryChange.scalarValue] ?? [];
+      if (!allowedSubs.includes(subcategoryChange.scalarValue)) {
         return NextResponse.json(
-          { error: "subcategory_not_in_category", category: nextCategory, subcategory: subcategoryChange.scalarValue },
+          { error: "subcategory_not_in_category", category: categoryChange.scalarValue, subcategory: subcategoryChange.scalarValue },
           { status: 400 },
         );
       }
@@ -296,6 +282,33 @@ export async function POST(req: Request) {
   const foundIds = new Set(products.map((product) => product.id));
   const missingIds = productIds.filter((id) => !foundIds.has(id));
 
+  if (subcategoryChange && subcategoryChange.op === "replace" && subcategoryChange.scalarValue && !categoryChange) {
+    const desiredSubcategory = subcategoryChange.scalarValue;
+    const invalid: Array<{ id: string; category: string | null }> = [];
+    for (const product of products) {
+      const category = ((product as any).category ?? null) as string | null;
+      if (!category) {
+        invalid.push({ id: product.id, category: null });
+        continue;
+      }
+      const allowedSubs = taxonomy.subcategoryByCategory[category] ?? [];
+      if (!allowedSubs.includes(desiredSubcategory)) {
+        invalid.push({ id: product.id, category });
+      }
+    }
+    if (invalid.length > 0) {
+      return NextResponse.json(
+        {
+          error: "subcategory_not_in_product_category",
+          subcategory: desiredSubcategory,
+          invalidCount: invalid.length,
+          sample: invalid.slice(0, 20),
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   let updatedCount = 0;
   let unchangedCount = 0;
 
@@ -321,9 +334,6 @@ export async function POST(req: Request) {
           nextSubcategory = null;
         } else if (subcategoryChange.op === "replace" && subcategoryChange.scalarValue) {
           nextSubcategory = subcategoryChange.scalarValue;
-          if (!categoryChange) {
-            nextCategory = SUBCATEGORY_TO_CATEGORY[nextSubcategory] ?? null;
-          }
         }
       }
 
