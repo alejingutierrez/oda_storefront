@@ -142,16 +142,49 @@ export async function getPublishedTaxonomyMeta(): Promise<SnapshotMeta> {
 export async function getOrCreateDraftTaxonomyMeta(params: { adminEmail?: string | null }): Promise<SnapshotMeta> {
   await ensureTaxonomySnapshotsTable();
 
-  const existing = await loadLatestSnapshot("draft");
-  if (existing) return existing;
-
   const published = await getPublishedTaxonomyMeta();
-  const version = published.version + 1;
+  const desiredVersion = published.version + 1;
+
+  const draftRow = await prisma.taxonomySnapshot.findFirst({
+    where: { status: "draft" },
+    orderBy: { version: "desc" },
+    select: { id: true, version: true, data: true, updatedAt: true },
+  });
+
+  if (draftRow) {
+    try {
+      const parsed = normalizeData(parseTaxonomyDataV1(draftRow.data));
+      return {
+        source: "db",
+        version: draftRow.version,
+        updatedAt: draftRow.updatedAt,
+        data: parsed,
+      };
+    } catch (err) {
+      console.warn("[taxonomy] invalid draft snapshot, resetting to published", err);
+      const updated = await prisma.taxonomySnapshot.update({
+        where: { id: draftRow.id },
+        data: {
+          // Keep the current draft version to avoid unique collisions; saveDraftTaxonomy will realign later.
+          data: JSON.parse(JSON.stringify(published.data)),
+          createdBy: params.adminEmail ?? null,
+          updatedAt: new Date(),
+        },
+        select: { version: true, data: true, updatedAt: true },
+      });
+      return {
+        source: "db",
+        version: updated.version,
+        updatedAt: updated.updatedAt,
+        data: normalizeData(parseTaxonomyDataV1(updated.data)),
+      };
+    }
+  }
 
   const created = await prisma.taxonomySnapshot.create({
     data: {
       status: "draft",
-      version,
+      version: desiredVersion,
       data: JSON.parse(JSON.stringify(published.data)),
       createdBy: params.adminEmail ?? null,
       updatedAt: new Date(),
