@@ -42,7 +42,7 @@ export default function FavoriteToggle({
   ariaLabel,
 }: FavoriteToggleProps) {
   const router = useRouter();
-  const { isAuthenticated, isSessionLoading } = useSession();
+  const { isAuthenticated, isSessionLoading, sessionToken } = useSession();
   const [favoriteId, setFavoriteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -68,9 +68,14 @@ export default function FavoriteToggle({
     if (saving) return;
     setSaving(true);
     try {
+      const authHeader =
+        sessionToken && typeof sessionToken === "string"
+          ? { Authorization: `Bearer ${sessionToken}` }
+          : undefined;
       if (favoriteId) {
         const res = await fetch(`/api/user/favorites/${favoriteId}`, {
           method: "DELETE",
+          headers: authHeader,
           credentials: "include",
         });
         if (res.status === 401) {
@@ -84,7 +89,10 @@ export default function FavoriteToggle({
 
       const res = await fetch("/api/user/favorites", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...(authHeader ?? {}),
+        },
         credentials: "include",
         body: JSON.stringify({ productId, variantId: variantId ?? null }),
       });
@@ -119,4 +127,3 @@ export default function FavoriteToggle({
     </button>
   );
 }
-

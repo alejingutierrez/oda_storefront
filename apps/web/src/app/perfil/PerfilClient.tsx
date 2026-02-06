@@ -266,7 +266,7 @@ function FavoriteCard({
 export default function PerfilClient() {
   const router = useRouter();
   const sdk = useDescope();
-  const { isAuthenticated, isSessionLoading } = useSession();
+  const { isAuthenticated, isSessionLoading, sessionToken } = useSession();
   const { user, isUserLoading } = useUser();
 
   const [profile, setProfile] = useState<ProfileUser | null>(null);
@@ -307,6 +307,17 @@ export default function PerfilClient() {
     window.setTimeout(() => setNotice((current) => (current === next ? null : current)), 4500);
   };
 
+  const authFetch = async (
+    input: Parameters<typeof fetch>[0],
+    init: RequestInit = {},
+  ) => {
+    const headers = new Headers(init.headers);
+    if (sessionToken && typeof sessionToken === "string") {
+      headers.set("Authorization", `Bearer ${sessionToken}`);
+    }
+    return fetch(input, { ...init, headers, credentials: "include" });
+  };
+
   const handleUnauthorized = async () => {
     try {
       await sdk.logout();
@@ -317,7 +328,7 @@ export default function PerfilClient() {
   };
 
   const loadProfile = async () => {
-    const res = await fetch("/api/user/profile", { credentials: "include" });
+    const res = await authFetch("/api/user/profile");
     if (res.status === 401) return null;
     if (!res.ok) throw new Error("profile_fetch_failed");
     const data = (await res.json()) as { user: ProfileUser };
@@ -325,7 +336,7 @@ export default function PerfilClient() {
   };
 
   const loadFavorites = async () => {
-    const res = await fetch("/api/user/favorites", { credentials: "include" });
+    const res = await authFetch("/api/user/favorites");
     if (res.status === 401) return null;
     if (!res.ok) throw new Error("favorites_fetch_failed");
     const data = (await res.json()) as { favorites: FavoritePayload[] };
@@ -333,7 +344,7 @@ export default function PerfilClient() {
   };
 
   const loadLists = async () => {
-    const res = await fetch("/api/user/lists", { credentials: "include" });
+    const res = await authFetch("/api/user/lists");
     if (res.status === 401) return null;
     if (!res.ok) throw new Error("lists_fetch_failed");
     const data = (await res.json()) as { lists: ListPayload[] };
@@ -341,7 +352,7 @@ export default function PerfilClient() {
   };
 
   const loadListItems = async (listId: string) => {
-    const res = await fetch(`/api/user/lists/${listId}/items`, { credentials: "include" });
+    const res = await authFetch(`/api/user/lists/${listId}/items`);
     if (res.status === 401) return null;
     if (!res.ok) throw new Error("list_items_fetch_failed");
     const data = (await res.json()) as { items: ListItemPayload[] };
@@ -436,10 +447,9 @@ export default function PerfilClient() {
   };
 
   const createList = async (name: string) => {
-    const res = await fetch("/api/user/lists", {
+    const res = await authFetch("/api/user/lists", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ name, visibility: "private" }),
     });
     if (res.status === 401) return null;
@@ -475,9 +485,8 @@ export default function PerfilClient() {
     if (!confirm("¿Seguro que quieres borrar esta lista?")) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/user/lists/${listId}`, {
+      const res = await authFetch(`/api/user/lists/${listId}`, {
         method: "DELETE",
-        credentials: "include",
       });
       if (res.status === 401) {
         await handleUnauthorized();
@@ -514,9 +523,8 @@ export default function PerfilClient() {
     if (!selectedListId) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/user/lists/${selectedListId}/items/${itemId}`, {
+      const res = await authFetch(`/api/user/lists/${selectedListId}/items/${itemId}`, {
         method: "DELETE",
-        credentials: "include",
       });
       if (res.status === 401) {
         await handleUnauthorized();
@@ -544,9 +552,8 @@ export default function PerfilClient() {
   const handleRemoveFavorite = async (favoriteId: string) => {
     setBusy(true);
     try {
-      const res = await fetch(`/api/user/favorites/${favoriteId}`, {
+      const res = await authFetch(`/api/user/favorites/${favoriteId}`, {
         method: "DELETE",
-        credentials: "include",
       });
       if (res.status === 401) {
         await handleUnauthorized();
@@ -566,10 +573,9 @@ export default function PerfilClient() {
   const handleAddFavoriteToList = async (favorite: FavoritePayload, listId: string) => {
     setBusy(true);
     try {
-      const res = await fetch(`/api/user/lists/${listId}/items`, {
+      const res = await authFetch(`/api/user/lists/${listId}/items`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({
           productId: favorite.product.id,
           variantId: favorite.variant?.id ?? null,
@@ -604,10 +610,9 @@ export default function PerfilClient() {
   const handleSaveProfile = async () => {
     setSavingProfile(true);
     try {
-      const res = await fetch("/api/user/profile", {
+      const res = await authFetch("/api/user/profile", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ displayName, fullName, bio }),
       });
       if (res.status === 401) {
@@ -641,7 +646,7 @@ export default function PerfilClient() {
     if (!confirm("¿Seguro que quieres borrar tu cuenta? Esta accion es irreversible.")) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/user/delete", { method: "POST", credentials: "include" });
+      const res = await authFetch("/api/user/delete", { method: "POST" });
       if (res.status === 401) {
         await handleUnauthorized();
         return;

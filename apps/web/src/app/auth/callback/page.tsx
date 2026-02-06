@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useDescope } from "@descope/nextjs-sdk/client";
+import { useDescope, useSession, useUser } from "@descope/nextjs-sdk/client";
 
 const normalizeNext = (value?: string | null) => {
   if (!value) return "/perfil";
@@ -14,6 +14,8 @@ const normalizeNext = (value?: string | null) => {
 export default function AuthCallbackPage() {
   const router = useRouter();
   const sdk = useDescope();
+  const { isAuthenticated, isSessionLoading, sessionToken } = useSession();
+  const { user, isUserLoading } = useUser();
   const [next] = useState(() => {
     if (typeof window === "undefined") return "/perfil";
     const params = new URLSearchParams(window.location.search);
@@ -21,8 +23,23 @@ export default function AuthCallbackPage() {
   });
   const [message, setMessage] = useState("Procesando inicio de sesion…");
   const [attempt, setAttempt] = useState(0);
+  const startedRef = useRef(false);
+
+  const authHeaders = useMemo(() => {
+    if (!sessionToken || typeof sessionToken !== "string") return null;
+    return { Authorization: `Bearer ${sessionToken}` } as const;
+  }, [sessionToken]);
 
   useEffect(() => {
+    if (startedRef.current) return;
+    if (isSessionLoading || isUserLoading) return;
+    if (!isAuthenticated) {
+      const qs = new URLSearchParams({ next, error: "not_authenticated" });
+      router.replace(`/sign-in?${qs.toString()}`);
+      return;
+    }
+    startedRef.current = true;
+
     let cancelled = false;
 
     const run = async () => {
@@ -31,11 +48,15 @@ export default function AuthCallbackPage() {
         if (cancelled) return;
         setAttempt(i);
         try {
+          const headers: Record<string, string> = { "content-type": "application/json" };
+          if (authHeaders) {
+            headers.Authorization = authHeaders.Authorization;
+          }
           const res = await fetch("/api/user/sync", {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers,
             credentials: "include",
-            body: JSON.stringify({}),
+            body: JSON.stringify({ user: user ?? null }),
           });
 
           if (cancelled) return;
@@ -46,27 +67,36 @@ export default function AuthCallbackPage() {
           }
 
           if (res.status === 401) {
-            // Si el cliente cree estar autenticado pero el servidor no valida la sesion,
-            // limpiamos la sesion del cliente para evitar loops.
-            console.error("Auth callback unauthorized; clearing Descope session", {
-              attempt: i,
-            });
-            try {
-              await sdk.logout();
-            } catch (error) {
-              console.error("Auth callback failed to logout Descope session", error);
+            // 401 puede ocurrir si el cookie de sesion aun no esta listo justo despues del redirect.
+            // Reintentamos un par de veces antes de limpiar sesion para evitar loops falsos.
+            const UNAUTHORIZED_GRACE = 3;
+            if (i < UNAUTHORIZED_GRACE) {
+              console.warn("Auth callback unauthorized; will retry", {
+                attempt: i,
+                hasSessionToken: Boolean(authHeaders),
+              });
+            } else {
+              console.error("Auth callback unauthorized; clearing Descope session", {
+                attempt: i,
+                hasSessionToken: Boolean(authHeaders),
+              });
+              try {
+                await sdk.logout();
+              } catch (error) {
+                console.error("Auth callback failed to logout Descope session", error);
+              }
+              const qs = new URLSearchParams({ next, error: "unauthorized" });
+              router.replace(`/sign-in?${qs.toString()}`);
+              return;
             }
-            const qs = new URLSearchParams({ next, error: "unauthorized" });
-            router.replace(`/sign-in?${qs.toString()}`);
-            return;
+          } else {
+            const body = await res.text();
+            console.error("Auth callback user sync failed", {
+              attempt: i,
+              status: res.status,
+              body: body.slice(0, 2000),
+            });
           }
-
-          const body = await res.text();
-          console.error("Auth callback user sync failed", {
-            attempt: i,
-            status: res.status,
-            body: body.slice(0, 2000),
-          });
         } catch (error) {
           console.error("Auth callback user sync error", { attempt: i, error });
         }
@@ -86,7 +116,16 @@ export default function AuthCallbackPage() {
     return () => {
       cancelled = true;
     };
-  }, [router, next, sdk]);
+  }, [
+    router,
+    next,
+    sdk,
+    user,
+    authHeaders,
+    isAuthenticated,
+    isSessionLoading,
+    isUserLoading,
+  ]);
 
   return (
     <main className="min-h-screen bg-[color:var(--oda-cream)]">
