@@ -341,6 +341,21 @@ model TaxonomyTag {
   @@map("taxonomy_tags")
 }
 
+model TaxonomySnapshot {
+  id          String   @id @default(uuid())
+  status      String   // draft | published | archived
+  version     Int
+  data        Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  publishedAt DateTime?
+  createdBy   String?
+
+  @@unique([status, version])
+  @@index([status, version])
+  @@map("taxonomy_snapshots")
+}
+
 model StandardColor {
   id        String   @id @default(uuid())
   family    String

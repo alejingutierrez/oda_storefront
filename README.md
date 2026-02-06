@@ -69,6 +69,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Esquema definido en `apps/web/prisma/schema.prisma`, cliente generado en `@prisma/client` (adapter `@prisma/adapter-pg`).
 - Migración inicial (`20260115125012_init_schema`) crea tablas core y habilita `pgvector`.
 - Tabla `style_profiles`: catálogo de estilos con tags; `products` guarda `stylePrimary/styleSecondary` + conteos.
+- Tabla `taxonomy_snapshots`: snapshots versionados (draft/published) de la taxonomía editable usada por enrichment, filtros y curación humana.
 - Comandos (contra Neon):
   ```bash
   cd apps/web
@@ -105,7 +106,12 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Panel `/admin/product-curation` (curación humana):
   - Experiencia similar a `/catalogo` pero en admin (mismos filtros/query params), sin paginación UI y con scroll infinito.
   - Permite seleccionar productos y aplicar un bulk edit desde una modal (operaciones `replace/add/remove/clear` según el campo).
+  - Integridad: al reemplazar `subcategory` se infiere `category` automáticamente; al reemplazar `category` se limpia `subcategory` si deja de pertenecer.
   - No permite editar `description` ni campos SEO. Preserva `products.metadata.enrichment` y registra trazabilidad en `products.metadata.enrichment_human`.
+- Panel `/admin/taxonomy` (taxonomía):
+  - Editor de categorías/subcategorías/materiales/patrones/ocasiones/style tags con workflow **draft → publish**.
+  - Editor de perfiles de estilo (tabla `style_profiles`) + acción de backfill para recalcular `stylePrimary/styleSecondary`.
+  - La taxonomía publicada alimenta: prompt/validación de enrichment, dropdowns de curación y labels de facets.
 - El modal muestra estilo principal/secundario (derivado de `styleTags`) con labels humanos.
 - Las imágenes de cards pasan por `/api/image-proxy` (cache a Blob) y se renderizan con `next/image`.
 - `next.config.ts` incluye allowlist para dominios `*.public.blob.vercel-storage.com` usados por Vercel Blob.
@@ -193,6 +199,16 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - `POST /api/admin/product-curation/bulk`: bulk edit de características de productos. Body: `{ productIds, field, op, value }` (límite default: 1200 IDs).
   - No modifica `description` ni campos SEO.
   - Preserva `products.metadata.enrichment` y registra auditoría en `products.metadata.enrichment_human`.
+
+## API interna (taxonomía + estilos)
+- `GET /api/admin/taxonomy?stage=published|draft`: obtiene taxonomía publicada o borrador (si no existe draft, se crea).
+- `PUT /api/admin/taxonomy`: guarda el borrador (body: `{ stage: \"draft\", data }`).
+- `POST /api/admin/taxonomy/publish`: publica el draft (crea nueva versión published).
+- `GET /api/admin/taxonomy/options`: snapshot publicado + mapas de labels (para UIs admin).
+- `GET /api/admin/style-profiles`: lista perfiles de estilo (DB).
+- `POST /api/admin/style-profiles`: crea perfil (body: `{ key, label, tags }`).
+- `PATCH /api/admin/style-profiles/:key`: actualiza label/tags de un perfil.
+- `POST /api/admin/style-profiles/recompute`: recalcula `stylePrimary/styleSecondary` en productos existentes.
 
 ## API interna (image proxy)
 - `GET /api/image-proxy?url=<encoded>`: descarga la imagen remota, la cachea en Vercel Blob y redirige al asset cacheado.

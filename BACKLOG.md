@@ -6,7 +6,6 @@
 - MC-008 | todo | P1 | Observabilidad mínima | Logging estructurado, health checks, traces básicos; dashboard inicial de servicios.
 
 ## Next (F1 – primeras capacidades)
-- MC-009 | todo | P1 | Taxonomía fija y catálogos | Categorías, materiales, patrones, fits, estilo/ocasión; publicación para IA y front.
 - MC-010 | todo | P1 | Búsqueda básica + pgvector | Index texto/embeddings, endpoint search, listados VSF, métricas de calidad.
 - MC-011 | todo | P1 | Observabilidad scraping v1 | Métricas por marca, staleness, alertas básicas, dashboard.
 - MC-012 | todo | P2 | Admin mínimo | Login, CRUD marcas/tiendas, salud scraper, aprobación manual de normalizaciones IA.
@@ -38,6 +37,7 @@
 ## Done (2026-02)
 - MC-115 | done | P1 | Curación humana (admin) + bulk edit de características | Nuevo módulo `/admin/product-curation` con filtros compartidos con `/catalogo`, scroll infinito, selección multi-producto y bulk edit modal (`replace/add/remove/clear`) con auditoría en `metadata.enrichment_human` sin tocar `metadata.enrichment`.
 - MC-114 | done | P1 | Auth usuarios externos (Descope) + perfil + favoritos/listas + analytics base | Login social con Descope, perfil privado, tablas y endpoints de experiencia/favoritos/listas.
+- MC-009 | done | P1 | Taxonomía editable + publicación (admin) | Nuevo panel `/admin/taxonomy` con draft→publish, tabla `taxonomy_snapshots`, endpoints admin, propagación a prompt enrichment, curación humana y labels de facets, editor de `style_profiles` + recompute.
 - MC-113 | done | P1 | Home editorial + mega menu + rotación 3 días | Home público con mega menu por género, reglas category+subcategory y rotación automática cada 3 días.
 - MC-112 | done | P1 | Des-dockerizar repo | Eliminar Dockerfiles/compose y actualizar docs para ejecución local con npm.
 - MC-111 | done | P1 | Paleta 200 + matching estandarizado de combinaciones | `color_combinations.colorsJson` + paleta 200 en `color_combination_colors`; matching 200→60 con standard colors y rebuild de relaciones.

@@ -5,17 +5,11 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 import {
-  CATEGORY_LABELS,
-  SUBCATEGORY_LABELS,
   SEASON_LABELS,
   GENDER_LABELS,
   FIT_LABELS,
-  STYLE_TAG_FRIENDLY,
-  MATERIAL_TAG_FRIENDLY,
-  PATTERN_TAG_FRIENDLY,
-  OCCASION_TAG_FRIENDLY,
 } from "@/lib/product-enrichment/constants";
-import { STYLE_PROFILE_LABELS } from "@/lib/product-enrichment/style-profiles";
+import type { TaxonomyOptions } from "@/lib/taxonomy/types";
 
 type BrandOption = {
   id: string;
@@ -115,9 +109,9 @@ const parsePositiveInt = (value: string | null, fallback: number) => {
   return Math.floor(parsed);
 };
 
-const formatStyleProfile = (key: string | null) => {
+const formatStyleProfile = (key: string | null, labels?: Record<string, string> | null) => {
   if (!key) return "—";
-  return STYLE_PROFILE_LABELS[key] ?? key;
+  return labels?.[key] ?? key;
 };
 
 const formatStyleCount = (count: number | null) => {
@@ -321,6 +315,7 @@ export default function ProductDirectoryPanel() {
   const initialBrandFilter = searchParams.get("brandId") ?? "";
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [brands, setBrands] = useState<BrandOption[]>([]);
+  const [taxonomyOptions, setTaxonomyOptions] = useState<TaxonomyOptions | null>(null);
   const [brandFilter, setBrandFilter] = useState<string>(initialBrandFilter);
   const [page, setPage] = useState(initialPage);
   const [totalPages, setTotalPages] = useState(1);
@@ -331,6 +326,17 @@ export default function ProductDirectoryPanel() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [imageIndexByProduct, setImageIndexByProduct] = useState<Record<string, number>>({});
   const suppressQueryRef = useRef(false);
+
+  const fetchTaxonomy = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/taxonomy/options", { cache: "no-store" });
+      if (!res.ok) return;
+      const payload = await res.json().catch(() => ({}));
+      setTaxonomyOptions(payload?.options ?? null);
+    } catch {
+      setTaxonomyOptions(null);
+    }
+  }, []);
 
   const fetchBrands = useCallback(async () => {
     try {
@@ -379,6 +385,10 @@ export default function ProductDirectoryPanel() {
   useEffect(() => {
     fetchBrands();
   }, [fetchBrands]);
+
+  useEffect(() => {
+    fetchTaxonomy();
+  }, [fetchTaxonomy]);
 
   useEffect(() => {
     fetchProducts();
@@ -611,8 +621,8 @@ export default function ProductDirectoryPanel() {
                 <div>
                   <h3 className="text-base font-semibold text-slate-900">{product.name}</h3>
                   <p className="mt-1 text-xs text-slate-500">
-                    {formatLabel(product.category, CATEGORY_LABELS)}{" "}
-                    {product.subcategory ? `· ${formatLabel(product.subcategory, SUBCATEGORY_LABELS)}` : ""}
+                    {formatLabel(product.category, taxonomyOptions?.categoryLabels ?? {})}{" "}
+                    {product.subcategory ? `· ${formatLabel(product.subcategory, taxonomyOptions?.subcategoryLabels ?? {})}` : ""}
                   </p>
                 </div>
                 <button
@@ -644,7 +654,7 @@ export default function ProductDirectoryPanel() {
                   </span>
                 )}
               </div>
-              {renderFriendlyTags("Tags estilo", product.styleTags, STYLE_TAG_FRIENDLY)}
+              {renderFriendlyTags("Tags estilo", product.styleTags, taxonomyOptions?.styleTagLabels ?? {})}
             </div>
           </article>
         );
@@ -744,11 +754,11 @@ export default function ProductDirectoryPanel() {
                       <div className="mt-3 space-y-2 text-sm text-slate-700">
                         <p>
                           <span className="font-semibold text-slate-800">Categoría:</span>{" "}
-                          {formatLabel(detail.category, CATEGORY_LABELS)}
+                          {formatLabel(detail.category, taxonomyOptions?.categoryLabels ?? {})}
                         </p>
                         <p>
                           <span className="font-semibold text-slate-800">Subcategoría:</span>{" "}
-                          {formatLabel(detail.subcategory, SUBCATEGORY_LABELS)}
+                          {formatLabel(detail.subcategory, taxonomyOptions?.subcategoryLabels ?? {})}
                         </p>
                         <p>
                           <span className="font-semibold text-slate-800">Género:</span>{" "}
@@ -768,12 +778,12 @@ export default function ProductDirectoryPanel() {
                         </p>
                         <p>
                           <span className="font-semibold text-slate-800">Estilo principal:</span>{" "}
-                          {formatStyleProfile(detail.stylePrimary)}
+                          {formatStyleProfile(detail.stylePrimary, taxonomyOptions?.styleProfileLabels)}
                           {formatStyleCount(detail.stylePrimaryCount)}
                         </p>
                         <p>
                           <span className="font-semibold text-slate-800">Estilo secundario:</span>{" "}
-                          {formatStyleProfile(detail.styleSecondary)}
+                          {formatStyleProfile(detail.styleSecondary, taxonomyOptions?.styleProfileLabels)}
                           {formatStyleCount(detail.styleSecondaryCount)}
                         </p>
                       </div>
@@ -883,10 +893,10 @@ export default function ProductDirectoryPanel() {
                     <div className="rounded-xl border border-slate-200 bg-white p-4">
                       <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Tags</p>
                       <div className="mt-3 space-y-3 text-sm text-slate-700">
-                        {renderFriendlyTags("Estilo", detail.styleTags, STYLE_TAG_FRIENDLY)}
-                        {renderFriendlyTags("Material", detail.materialTags, MATERIAL_TAG_FRIENDLY)}
-                        {renderFriendlyTags("Patrón", detail.patternTags, PATTERN_TAG_FRIENDLY)}
-                        {renderFriendlyTags("Ocasión", detail.occasionTags, OCCASION_TAG_FRIENDLY)}
+                        {renderFriendlyTags("Estilo", detail.styleTags, taxonomyOptions?.styleTagLabels ?? {})}
+                        {renderFriendlyTags("Material", detail.materialTags, taxonomyOptions?.materialLabels ?? {})}
+                        {renderFriendlyTags("Patrón", detail.patternTags, taxonomyOptions?.patternLabels ?? {})}
+                        {renderFriendlyTags("Ocasión", detail.occasionTags, taxonomyOptions?.occasionLabels ?? {})}
                       </div>
                     </div>
                   </div>

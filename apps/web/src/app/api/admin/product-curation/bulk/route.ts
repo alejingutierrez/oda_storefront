@@ -3,16 +3,10 @@ import { Prisma } from "@prisma/client";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
-  CATEGORY_VALUES,
-  SUBCATEGORY_VALUES,
-  STYLE_TAGS,
-  MATERIAL_TAGS,
-  PATTERN_TAGS,
-  OCCASION_TAGS,
   GENDER_OPTIONS,
   SEASON_OPTIONS,
 } from "@/lib/product-enrichment/constants";
-import { STYLE_PROFILES } from "@/lib/product-enrichment/style-profiles";
+import { getPublishedTaxonomyOptions } from "@/lib/taxonomy/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -80,37 +74,6 @@ const isField = (value: unknown): value is BulkField => {
   );
 };
 
-const buildAllowedSet = (values: string[]) => new Set(values);
-
-const CATEGORY_SET = buildAllowedSet(CATEGORY_VALUES);
-const SUBCATEGORY_SET = buildAllowedSet(SUBCATEGORY_VALUES);
-const STYLE_TAG_SET = buildAllowedSet(STYLE_TAGS);
-const MATERIAL_SET = buildAllowedSet(MATERIAL_TAGS);
-const PATTERN_SET = buildAllowedSet(PATTERN_TAGS);
-const OCCASION_SET = buildAllowedSet(OCCASION_TAGS);
-const GENDER_SET = buildAllowedSet(GENDER_OPTIONS.map((entry) => entry.value));
-const SEASON_SET = buildAllowedSet(SEASON_OPTIONS.map((entry) => entry.value));
-const STYLE_PROFILE_SET = buildAllowedSet(STYLE_PROFILES.map((profile) => profile.key));
-
-const scalarFieldAllowed: Partial<Record<BulkField, Set<string>>> = {
-  category: CATEGORY_SET,
-  subcategory: SUBCATEGORY_SET,
-  gender: GENDER_SET,
-  season: SEASON_SET,
-  stylePrimary: STYLE_PROFILE_SET,
-  styleSecondary: STYLE_PROFILE_SET,
-};
-
-const arrayFieldAllowed: Partial<Record<BulkField, Set<string>>> = {
-  styleTags: STYLE_TAG_SET,
-  materialTags: MATERIAL_SET,
-  patternTags: PATTERN_SET,
-  occasionTags: OCCASION_SET,
-};
-
-const isScalarField = (field: BulkField) => field in scalarFieldAllowed || field === "care" || field === "origin";
-const isArrayField = (field: BulkField) => field in arrayFieldAllowed;
-
 const arrayEqual = (a: string[], b: string[]) => {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -141,6 +104,48 @@ export async function POST(req: Request) {
   if (productIds.length > MAX_PRODUCT_IDS) {
     return NextResponse.json({ error: "too_many_product_ids" }, { status: 400 });
   }
+
+  const taxonomy = await getPublishedTaxonomyOptions();
+
+  const buildAllowedSet = (values: string[]) => new Set(values);
+  const CATEGORY_SET = buildAllowedSet(taxonomy.data.categories.map((entry) => entry.key));
+  const SUBCATEGORY_SET = buildAllowedSet(
+    taxonomy.data.categories.flatMap((entry) => (entry.subcategories ?? []).map((sub) => sub.key)),
+  );
+  const SUBCATEGORY_TO_CATEGORY: Record<string, string> = {};
+  for (const [categoryKey, subKeys] of Object.entries(taxonomy.subcategoryByCategory ?? {})) {
+    for (const subKey of subKeys ?? []) {
+      if (!subKey || typeof subKey !== "string") continue;
+      SUBCATEGORY_TO_CATEGORY[subKey] = categoryKey;
+    }
+  }
+  const STYLE_TAG_SET = buildAllowedSet(taxonomy.data.styleTags.map((entry) => entry.key));
+  const MATERIAL_SET = buildAllowedSet(taxonomy.data.materials.map((entry) => entry.key));
+  const PATTERN_SET = buildAllowedSet(taxonomy.data.patterns.map((entry) => entry.key));
+  const OCCASION_SET = buildAllowedSet(taxonomy.data.occasions.map((entry) => entry.key));
+  const GENDER_SET = buildAllowedSet(GENDER_OPTIONS.map((entry) => entry.value));
+  const SEASON_SET = buildAllowedSet(SEASON_OPTIONS.map((entry) => entry.value));
+  const STYLE_PROFILE_SET = buildAllowedSet(taxonomy.styleProfiles.map((profile) => profile.key));
+
+  const scalarFieldAllowed: Partial<Record<BulkField, Set<string>>> = {
+    category: CATEGORY_SET,
+    subcategory: SUBCATEGORY_SET,
+    gender: GENDER_SET,
+    season: SEASON_SET,
+    stylePrimary: STYLE_PROFILE_SET,
+    styleSecondary: STYLE_PROFILE_SET,
+  };
+
+  const arrayFieldAllowed: Partial<Record<BulkField, Set<string>>> = {
+    styleTags: STYLE_TAG_SET,
+    materialTags: MATERIAL_SET,
+    patternTags: PATTERN_SET,
+    occasionTags: OCCASION_SET,
+  };
+
+  const isScalarField = (field: BulkField) =>
+    field === "care" || field === "origin" || Boolean(scalarFieldAllowed[field]);
+  const isArrayField = (field: BulkField) => Boolean(arrayFieldAllowed[field]);
 
   const rawChanges: Array<any> = Array.isArray(body?.changes) ? body.changes : [];
   const candidateChanges =
@@ -226,6 +231,35 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "missing_changes" }, { status: 400 });
   }
 
+  const categoryChange = changes.find((change) => change.kind === "scalar" && change.field === "category") as
+    | (ParsedChange & { kind: "scalar"; field: "category" })
+    | undefined;
+  const subcategoryChange = changes.find((change) => change.kind === "scalar" && change.field === "subcategory") as
+    | (ParsedChange & { kind: "scalar"; field: "subcategory" })
+    | undefined;
+  if (subcategoryChange && subcategoryChange.op === "replace" && subcategoryChange.scalarValue) {
+    const impliedCategory = SUBCATEGORY_TO_CATEGORY[subcategoryChange.scalarValue] ?? null;
+    if (!impliedCategory) {
+      return NextResponse.json(
+        { error: "invalid_value", field: "subcategory", value: subcategoryChange.scalarValue },
+        { status: 400 },
+      );
+    }
+
+    if (categoryChange) {
+      if (categoryChange.op === "clear") {
+        return NextResponse.json({ error: "subcategory_requires_category" }, { status: 400 });
+      }
+      const nextCategory = categoryChange.op === "replace" ? categoryChange.scalarValue : null;
+      if (nextCategory && nextCategory !== impliedCategory) {
+        return NextResponse.json(
+          { error: "subcategory_not_in_category", category: nextCategory, subcategory: subcategoryChange.scalarValue },
+          { status: 400 },
+        );
+      }
+    }
+  }
+
   const now = new Date();
   const auditChanges = changes.map((change) => ({
     field: change.field,
@@ -248,6 +282,11 @@ export async function POST(req: Request) {
   for (const change of changes) {
     (select as any)[change.field] = true;
   }
+  if (categoryChange || subcategoryChange) {
+    // Keep category/subcategory consistent, even if only one field was requested.
+    (select as any).category = true;
+    (select as any).subcategory = true;
+  }
 
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
@@ -266,7 +305,52 @@ export async function POST(req: Request) {
     const data: Record<string, any> = {};
     let didChange = false;
 
+    if (categoryChange || subcategoryChange) {
+      const existingCategory = ((product as any).category ?? null) as string | null;
+      const existingSubcategory = ((product as any).subcategory ?? null) as string | null;
+
+      let nextCategory = existingCategory;
+      let nextSubcategory = existingSubcategory;
+
+      if (categoryChange) {
+        nextCategory = categoryChange.op === "clear" ? null : categoryChange.scalarValue;
+      }
+
+      if (subcategoryChange) {
+        if (subcategoryChange.op === "clear") {
+          nextSubcategory = null;
+        } else if (subcategoryChange.op === "replace" && subcategoryChange.scalarValue) {
+          nextSubcategory = subcategoryChange.scalarValue;
+          if (!categoryChange) {
+            nextCategory = SUBCATEGORY_TO_CATEGORY[nextSubcategory] ?? null;
+          }
+        }
+      }
+
+      if (!nextCategory) {
+        nextSubcategory = null;
+      } else if (nextSubcategory) {
+        const allowedSubs = taxonomy.subcategoryByCategory[nextCategory] ?? [];
+        if (!allowedSubs.includes(nextSubcategory)) {
+          // Most commonly happens when the category changed but subcategory wasn't touched.
+          nextSubcategory = null;
+        }
+      }
+
+      if (existingCategory !== nextCategory) {
+        didChange = true;
+        data.category = nextCategory;
+      }
+      if (existingSubcategory !== nextSubcategory) {
+        didChange = true;
+        data.subcategory = nextSubcategory;
+      }
+    }
+
     for (const change of changes) {
+      if (change.kind === "scalar" && (change.field === "category" || change.field === "subcategory")) {
+        continue;
+      }
       if (change.kind === "array") {
         const existing = Array.isArray((product as any)[change.field])
           ? ((product as any)[change.field] as string[])
@@ -339,4 +423,3 @@ export async function POST(req: Request) {
     changes: auditChanges,
   });
 }
-

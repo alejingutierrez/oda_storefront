@@ -6,12 +6,10 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import CatalogFiltersPanel from "@/components/CatalogFiltersPanel";
 import {
-  CATEGORY_LABELS,
-  SUBCATEGORY_LABELS,
   GENDER_LABELS,
   SEASON_LABELS,
 } from "@/lib/product-enrichment/constants";
-import { STYLE_PROFILE_LABELS } from "@/lib/product-enrichment/style-profiles";
+import type { TaxonomyOptions } from "@/lib/taxonomy/types";
 import BulkEditModal, { type BulkChange, type BulkResult } from "./BulkEditModal";
 
 type FacetItem = {
@@ -103,9 +101,9 @@ function formatPriceRange(minPrice: string | null, maxPrice: string | null, curr
   return `${formatPrice(minPrice, currency)} · ${formatPrice(maxPrice, currency)}`;
 }
 
-function formatStyleProfile(key: string | null) {
+function formatStyleProfile(key: string | null, labels?: Record<string, string> | null) {
   if (!key) return "—";
-  return STYLE_PROFILE_LABELS[key] ?? key;
+  return labels?.[key] ?? key;
 }
 
 function formatLabel(value: string | null, map: Record<string, string>) {
@@ -120,6 +118,7 @@ export default function ProductCurationPanel() {
   const [facets, setFacets] = useState<Facets | null>(null);
   const [subcategories, setSubcategories] = useState<FacetItem[]>([]);
   const [products, setProducts] = useState<CurationProduct[]>([]);
+  const [taxonomyOptions, setTaxonomyOptions] = useState<TaxonomyOptions | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [totalCount, setTotalCount] = useState<number | null>(null);
@@ -149,6 +148,21 @@ export default function ProductCurationPanel() {
 
   const searchKey = useMemo(() => buildSearchKey(searchParams), [searchParams]);
 
+  const fetchTaxonomyOptions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/taxonomy/options", { cache: "no-store" });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error ?? "No se pudo cargar taxonomía");
+      }
+      const payload = await res.json().catch(() => ({}));
+      setTaxonomyOptions(payload?.options ?? null);
+    } catch (err) {
+      console.warn(err);
+      setTaxonomyOptions(null);
+    }
+  }, []);
+
   useEffect(() => {
     try {
       window.sessionStorage.setItem(
@@ -159,6 +173,10 @@ export default function ProductCurationPanel() {
       // ignore
     }
   }, [selectedIds]);
+
+  useEffect(() => {
+    fetchTaxonomyOptions();
+  }, [fetchTaxonomyOptions]);
 
   const fetchFacets = useCallback(async () => {
     setError(null);
@@ -499,11 +517,11 @@ export default function ProductCurationPanel() {
                     <div className="grid gap-2 text-xs text-slate-700">
                       <p>
                         <span className="font-semibold text-slate-800">Categoría:</span>{" "}
-                        {formatLabel(product.category, CATEGORY_LABELS)}
+                        {formatLabel(product.category, taxonomyOptions?.categoryLabels ?? {})}
                       </p>
                       <p>
                         <span className="font-semibold text-slate-800">Subcategoría:</span>{" "}
-                        {formatLabel(product.subcategory, SUBCATEGORY_LABELS)}
+                        {formatLabel(product.subcategory, taxonomyOptions?.subcategoryLabels ?? {})}
                       </p>
                       <p>
                         <span className="font-semibold text-slate-800">Género:</span>{" "}
@@ -515,7 +533,7 @@ export default function ProductCurationPanel() {
                       </p>
                       <p>
                         <span className="font-semibold text-slate-800">Estilo:</span>{" "}
-                        {formatStyleProfile(product.stylePrimary)}
+                        {formatStyleProfile(product.stylePrimary, taxonomyOptions?.styleProfileLabels)}
                       </p>
                     </div>
 
@@ -596,6 +614,7 @@ export default function ProductCurationPanel() {
       <BulkEditModal
         open={bulkOpen}
         selectedCount={selectedCount}
+        taxonomyOptions={taxonomyOptions}
         onClose={() => setBulkOpen(false)}
         onApply={handleBulkApply}
       />

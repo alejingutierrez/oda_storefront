@@ -4,6 +4,8 @@ import { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { labelize, labelizeSubcategory, normalizeGender, type GenderKey } from "@/lib/navigation";
+import { getPublishedTaxonomyOptions } from "@/lib/taxonomy/server";
+import type { TaxonomyOptions } from "@/lib/taxonomy/types";
 import {
   buildOrderBy,
   buildProductConditions,
@@ -154,10 +156,13 @@ export async function getCatalogStats(): Promise<CatalogStats> {
 }
 
 export async function getCatalogFacets(filters: CatalogFilters): Promise<CatalogFacets> {
+  const taxonomy = await getPublishedTaxonomyOptions();
   const cacheKey = buildFacetsCacheKey(filters);
-  const cached = unstable_cache(async () => computeCatalogFacets(filters), ["catalog-facets", cacheKey], {
-    revalidate: CATALOG_REVALIDATE_SECONDS,
-  });
+  const cached = unstable_cache(
+    async () => computeCatalogFacets(filters, taxonomy),
+    ["catalog-facets", `taxonomy-v${taxonomy.version}`, cacheKey],
+    { revalidate: CATALOG_REVALIDATE_SECONDS },
+  );
 
   return cached();
 }
@@ -166,17 +171,18 @@ export async function getCatalogSubcategories(filters: CatalogFilters): Promise<
   if (!filters.categories || filters.categories.length === 0) {
     return [];
   }
+  const taxonomy = await getPublishedTaxonomyOptions();
   const cacheKey = buildFacetsCacheKey(filters);
   const cached = unstable_cache(
-    async () => computeCatalogSubcategories(filters),
-    [`catalog-subcategories-${cacheKey}`],
-    { revalidate: CATALOG_REVALIDATE_SECONDS }
+    async () => computeCatalogSubcategories(filters, taxonomy),
+    ["catalog-subcategories", `taxonomy-v${taxonomy.version}`, cacheKey],
+    { revalidate: CATALOG_REVALIDATE_SECONDS },
   );
 
   return cached();
 }
 
-async function computeCatalogFacets(filters: CatalogFilters): Promise<CatalogFacets> {
+async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyOptions): Promise<CatalogFacets> {
   const categoryFilters = omitFilters(filters, ["categories"]);
   const genderFilters = omitFilters(filters, ["genders"]);
   const brandFilters = omitFilters(filters, ["brandIds"]);
@@ -348,9 +354,15 @@ async function computeCatalogFacets(filters: CatalogFilters): Promise<CatalogFac
     genderCounts.set(gender, (genderCounts.get(gender) ?? 0) + Number(row.cnt));
   }
 
+  const labelCategory = (value: string) => taxonomy.categoryLabels[value] ?? labelize(value);
+  const labelMaterial = (value: string) => taxonomy.materialLabels[value] ?? labelize(value);
+  const labelPattern = (value: string) => taxonomy.patternLabels[value] ?? labelize(value);
+  const labelOccasion = (value: string) => taxonomy.occasionLabels[value] ?? labelize(value);
+  const labelStyleProfile = (value: string) => taxonomy.styleProfileLabels[value] ?? labelize(value);
+
   const categoryItems = categories.map((row) => ({
     value: row.category,
-    label: labelize(row.category),
+    label: labelCategory(row.category),
     count: Number(row.cnt),
   }));
   const brandItems = brands.map((row) => ({
@@ -376,17 +388,17 @@ async function computeCatalogFacets(filters: CatalogFilters): Promise<CatalogFac
   }));
   const materialItems = materials.map((row) => ({
     value: row.tag,
-    label: labelize(row.tag),
+    label: labelMaterial(row.tag),
     count: Number(row.cnt),
   }));
   const patternItems = patterns.map((row) => ({
     value: row.tag,
-    label: labelize(row.tag),
+    label: labelPattern(row.tag),
     count: Number(row.cnt),
   }));
   const occasionItems = occasions.map((row) => ({
     value: row.tag,
-    label: labelize(row.tag),
+    label: labelOccasion(row.tag),
     count: Number(row.cnt),
   }));
   const seasonItems = seasons.map((row) => ({
@@ -396,7 +408,7 @@ async function computeCatalogFacets(filters: CatalogFilters): Promise<CatalogFac
   }));
   const styleItems = styles.map((row) => ({
     value: row.style,
-    label: labelize(row.style),
+    label: labelStyleProfile(row.style),
     count: Number(row.cnt),
   }));
 
@@ -417,7 +429,7 @@ async function computeCatalogFacets(filters: CatalogFilters): Promise<CatalogFac
     for (const value of missingCategories) {
       categoryItems.push({
         value,
-        label: labelize(value),
+        label: labelCategory(value),
         count: countMap.get(value) ?? 0,
       });
     }
@@ -541,7 +553,7 @@ async function computeCatalogFacets(filters: CatalogFilters): Promise<CatalogFac
     for (const value of missingMaterials) {
       materialItems.push({
         value,
-        label: labelize(value),
+        label: labelMaterial(value),
         count: countMap.get(value) ?? 0,
       });
     }
@@ -565,7 +577,7 @@ async function computeCatalogFacets(filters: CatalogFilters): Promise<CatalogFac
     for (const value of missingPatterns) {
       patternItems.push({
         value,
-        label: labelize(value),
+        label: labelPattern(value),
         count: countMap.get(value) ?? 0,
       });
     }
@@ -589,7 +601,7 @@ async function computeCatalogFacets(filters: CatalogFilters): Promise<CatalogFac
     for (const value of missingOccasions) {
       occasionItems.push({
         value,
-        label: labelize(value),
+        label: labelOccasion(value),
         count: countMap.get(value) ?? 0,
       });
     }
@@ -631,7 +643,7 @@ async function computeCatalogFacets(filters: CatalogFilters): Promise<CatalogFac
     for (const value of missingStyles) {
       styleItems.push({
         value,
-        label: labelize(value),
+        label: labelStyleProfile(value),
         count: countMap.get(value) ?? 0,
       });
     }
@@ -656,7 +668,10 @@ async function computeCatalogFacets(filters: CatalogFilters): Promise<CatalogFac
   };
 }
 
-async function computeCatalogSubcategories(filters: CatalogFilters): Promise<CatalogFacetItem[]> {
+async function computeCatalogSubcategories(
+  filters: CatalogFilters,
+  taxonomy: TaxonomyOptions,
+): Promise<CatalogFacetItem[]> {
   if (!filters.categories || filters.categories.length === 0) {
     return [];
   }
@@ -679,7 +694,7 @@ async function computeCatalogSubcategories(filters: CatalogFilters): Promise<Cat
 
   const items = rows.map((row) => ({
     value: row.subcategory,
-    label: labelizeSubcategory(row.subcategory),
+    label: taxonomy.subcategoryLabels[row.subcategory] ?? labelizeSubcategory(row.subcategory),
     count: Number(row.cnt),
   }));
 
@@ -702,7 +717,7 @@ async function computeCatalogSubcategories(filters: CatalogFilters): Promise<Cat
     for (const value of missingSubcategories) {
       items.push({
         value,
-        label: labelizeSubcategory(value),
+        label: taxonomy.subcategoryLabels[value] ?? labelizeSubcategory(value),
         count: countMap.get(value) ?? 0,
       });
     }
@@ -712,11 +727,14 @@ async function computeCatalogSubcategories(filters: CatalogFilters): Promise<Cat
 }
 
 export async function getCatalogFacetsUncached(filters: CatalogFilters): Promise<CatalogFacets> {
-  return computeCatalogFacets(filters);
+  const taxonomy = await getPublishedTaxonomyOptions();
+  return computeCatalogFacets(filters, taxonomy);
 }
 
 export async function getCatalogSubcategoriesUncached(filters: CatalogFilters): Promise<CatalogFacetItem[]> {
-  return computeCatalogSubcategories(filters);
+  if (!filters.categories || filters.categories.length === 0) return [];
+  const taxonomy = await getPublishedTaxonomyOptions();
+  return computeCatalogSubcategories(filters, taxonomy);
 }
 
 export async function getCatalogProducts(params: {

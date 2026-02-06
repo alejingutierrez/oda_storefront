@@ -3,20 +3,11 @@ import { jsonrepair } from "jsonrepair";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { getOpenAIClient } from "@/lib/openai";
 import {
-  CATEGORY_OPTIONS,
-  CATEGORY_DESCRIPTIONS,
-  CATEGORY_VALUES,
   FIT_OPTIONS,
   GENDER_OPTIONS,
-  MATERIAL_TAGS,
-  OCCASION_TAGS,
-  PATTERN_TAGS,
   SEASON_OPTIONS,
-  STYLE_TAGS,
-  SUBCATEGORY_BY_CATEGORY,
-  SUBCATEGORY_DESCRIPTIONS,
-  SUBCATEGORY_VALUES,
 } from "@/lib/product-enrichment/constants";
+import { getPublishedTaxonomyMeta } from "@/lib/taxonomy/server";
 import {
   normalizeEnumArray,
   normalizeEnumValue,
@@ -594,25 +585,97 @@ const fetchImageAsBase64 = async (url: string) => {
   }
 };
 
-const buildCategoryPrompt = () =>
-  CATEGORY_OPTIONS.map((entry) => {
-    const categoryDescription = CATEGORY_DESCRIPTIONS[entry.value];
-    const header = categoryDescription
-      ? `- ${entry.value}: ${entry.label}. ${categoryDescription}`
-      : `- ${entry.value}: ${entry.label}.`;
-    const subs = entry.subcategories
-      .map((sub) => {
-        const subDescription = SUBCATEGORY_DESCRIPTIONS[sub.value];
-        return subDescription
-          ? `  - ${sub.value}: ${sub.label}. ${subDescription}`
-          : `  - ${sub.value}: ${sub.label}.`;
-      })
-      .join("\n");
-    return `${header}\n${subs}`;
-  }).join("\n");
+type EnrichmentTaxonomy = {
+  categories: Array<{
+    key: string;
+    label: string;
+    description: string | null;
+    subcategories: Array<{ key: string; label: string; description: string | null }>;
+  }>;
+  categoryValues: string[];
+  subcategoryValues: string[];
+  subcategoryByCategory: Record<string, string[]>;
+  styleTags: string[];
+  materialTags: string[];
+  patternTags: string[];
+  occasionTags: string[];
+};
 
-const buildPrompt = () => {
-  const categories = buildCategoryPrompt();
+const getEnrichmentTaxonomy = async (): Promise<EnrichmentTaxonomy> => {
+  const meta = await getPublishedTaxonomyMeta();
+  const data = meta.data;
+
+  const categories = (data.categories ?? [])
+    .filter((category) => category.isActive !== false)
+    .map((category) => ({
+      key: category.key,
+      label: category.label ?? category.key,
+      description: category.description ?? null,
+      subcategories: (category.subcategories ?? [])
+        .filter((sub) => sub.isActive !== false)
+        .map((sub) => ({
+          key: sub.key,
+          label: sub.label ?? sub.key,
+          description: sub.description ?? null,
+        })),
+    }))
+    .filter((category) => category.subcategories.length > 0);
+
+  const categoryValues = categories.map((category) => category.key);
+  const subcategoryValues = categories.flatMap((category) => category.subcategories.map((sub) => sub.key));
+  const subcategoryByCategory: Record<string, string[]> = Object.fromEntries(
+    categories.map((category) => [category.key, category.subcategories.map((sub) => sub.key)]),
+  );
+
+  const styleTags = (data.styleTags ?? [])
+    .filter((tag) => tag.isActive !== false)
+    .map((tag) => tag.key);
+  const materialTags = (data.materials ?? [])
+    .filter((tag) => tag.isActive !== false)
+    .map((tag) => tag.key);
+  const patternTags = (data.patterns ?? [])
+    .filter((tag) => tag.isActive !== false)
+    .map((tag) => tag.key);
+  const occasionTags = (data.occasions ?? [])
+    .filter((tag) => tag.isActive !== false)
+    .map((tag) => tag.key);
+
+  if (styleTags.length < 10) {
+    throw new Error("taxonomy.styleTags must contain at least 10 active entries.");
+  }
+  if (categoryValues.length === 0 || subcategoryValues.length === 0) {
+    throw new Error("taxonomy.categories/subcategories cannot be empty.");
+  }
+
+  return {
+    categories,
+    categoryValues,
+    subcategoryValues,
+    subcategoryByCategory,
+    styleTags,
+    materialTags,
+    patternTags,
+    occasionTags,
+  };
+};
+
+const buildCategoryPrompt = (taxonomy: EnrichmentTaxonomy) =>
+  taxonomy.categories
+    .map((category) => {
+      const header = category.description
+        ? `- ${category.key}: ${category.label}. ${category.description}`
+        : `- ${category.key}: ${category.label}.`;
+      const subs = category.subcategories
+        .map((sub) =>
+          sub.description ? `  - ${sub.key}: ${sub.label}. ${sub.description}` : `  - ${sub.key}: ${sub.label}.`,
+        )
+        .join("\n");
+      return `${header}\n${subs}`;
+    })
+    .join("\n");
+
+const buildPrompt = (taxonomy: EnrichmentTaxonomy) => {
+  const categories = buildCategoryPrompt(taxonomy);
   return `Eres un clasificador de enriquecimiento de producto de moda colombiana.
 Debes devolver SOLO JSON válido con el siguiente esquema:
 {
@@ -678,17 +741,17 @@ category -> subcategory
 ${categories}
 
 style_tags:
-${STYLE_TAGS.join(", ")}
+${taxonomy.styleTags.join(", ")}
 
 material_tags:
-${MATERIAL_TAGS.join(", ")}
+${taxonomy.materialTags.join(", ")}
 Nota: oro/plata/bronce/cobre solo deben usarse en joyería o accesorios.
 
 pattern_tags:
-${PATTERN_TAGS.join(", ")}
+${taxonomy.patternTags.join(", ")}
 
 occasion_tags:
-${OCCASION_TAGS.join(", ")}
+${taxonomy.occasionTags.join(", ")}
 
 gender:
 ${GENDER_OPTIONS.map((entry) => entry.value).join(", ")}
@@ -745,6 +808,7 @@ const stripHtml = (value: string) => {
 };
 
 const normalizeEnrichment = (
+  taxonomy: EnrichmentTaxonomy,
   input: RawEnrichedProduct,
   variantIds: Set<string>,
   context: {
@@ -762,23 +826,23 @@ const normalizeEnrichment = (
       `Variant count mismatch: expected ${variantIds.size}, got ${input.variants.length}`,
     );
   }
-  const category = normalizeEnumValue(input.category, CATEGORY_VALUES);
+  const category = normalizeEnumValue(input.category, taxonomy.categoryValues);
   if (!category) throw new Error(`Invalid category: ${input.category}`);
 
-  const subcategory = normalizeEnumValue(input.subcategory, SUBCATEGORY_VALUES);
+  const subcategory = normalizeEnumValue(input.subcategory, taxonomy.subcategoryValues);
   if (!subcategory) throw new Error(`Invalid subcategory: ${input.subcategory}`);
 
-  const allowedSubs = SUBCATEGORY_BY_CATEGORY[category] ?? [];
+  const allowedSubs = taxonomy.subcategoryByCategory[category] ?? [];
   if (!allowedSubs.includes(subcategory)) {
     throw new Error(`Subcategory ${subcategory} does not belong to ${category}`);
   }
 
-  const styleTags = normalizeEnumArray(input.styleTags, STYLE_TAGS);
+  const styleTags = normalizeEnumArray(input.styleTags, taxonomy.styleTags);
   let fixedStyleTags = styleTags;
   if (styleTags.length !== 10) {
     const seen = new Set(styleTags);
     const padded = [...styleTags];
-    for (const tag of STYLE_TAGS) {
+    for (const tag of taxonomy.styleTags) {
       if (padded.length >= 10) break;
       if (seen.has(tag)) continue;
       padded.push(tag);
@@ -794,9 +858,9 @@ const normalizeEnrichment = (
     }
   }
 
-  const materialTags = normalizeEnumArray(input.materialTags ?? [], MATERIAL_TAGS).slice(0, 3);
-  const patternTags = normalizeEnumArray(input.patternTags ?? [], PATTERN_TAGS).slice(0, 2);
-  const occasionTags = normalizeEnumArray(input.occasionTags ?? [], OCCASION_TAGS).slice(0, 2);
+  const materialTags = normalizeEnumArray(input.materialTags ?? [], taxonomy.materialTags).slice(0, 3);
+  const patternTags = normalizeEnumArray(input.patternTags ?? [], taxonomy.patternTags).slice(0, 2);
+  const occasionTags = normalizeEnumArray(input.occasionTags ?? [], taxonomy.occasionTags).slice(0, 2);
 
   const gender = normalizeEnumValue(input.gender, GENDER_OPTIONS.map((entry) => entry.value));
   if (!gender) throw new Error(`Invalid gender: ${input.gender}`);
@@ -918,7 +982,8 @@ export async function enrichProductWithOpenAI(params: {
     metadata?: Record<string, unknown> | null;
   }>;
 }): Promise<EnrichedProduct> {
-  const systemPrompt = buildPrompt();
+  const taxonomy = await getEnrichmentTaxonomy();
+  const systemPrompt = buildPrompt(taxonomy);
   const provider = PRODUCT_ENRICHMENT_PROVIDER;
   let lastError: unknown = null;
 
@@ -1043,7 +1108,7 @@ export async function enrichProductWithOpenAI(params: {
   };
 
   const normalizeParsed = (normalized: RawEnrichedProduct) =>
-    normalizeEnrichment(normalized, variantIds, {
+    normalizeEnrichment(taxonomy, normalized, variantIds, {
       productName: params.product.name,
       brandName: params.product.brandName ?? null,
       description: params.product.description ?? null,

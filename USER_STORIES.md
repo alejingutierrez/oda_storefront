@@ -581,13 +581,28 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Estado: **done (2026-02-05)**.
 
 ### MC-009 Taxonomía fija y catálogos
-- Historia: Como curador de datos, quiero catálogos cerrados (categorías, materiales, patrones, fits, estilo/ocasión), para clasificar de forma consistente.
-- Alcance: Definición y versionado; publicación a IA (prompt) y front (endpoint); validación server-side; mapeo de sinónimos.
-- CA: Listas accesibles vía API; prompts consumen la versión; intento de valor fuera de catálogo devuelve error claro.
-- Datos: Tabla taxonomy_tags con synonyms; version field.
-- NF: Respuesta API <200ms.
-- Riesgos: Falta de cobertura de términos; mitigar con backlog de sinónimos.
-- Métricas: % productos con categoría/material válidos; tasa de errores de validación.
+- Historia: Como curador de datos, quiero editar y publicar catálogos cerrados (categorías, subcategorías, materiales, patrones, ocasiones y style tags), para que enrichment y UIs compartan una fuente de verdad.
+- Alcance:
+  - Panel `/admin/taxonomy` con workflow **draft → publish** para categorías/subcategorías/materiales/patrones/ocasiones/style tags.
+  - Snapshots versionados en DB: tabla `taxonomy_snapshots` (status draft/published, version, jsonb `data`).
+  - Endpoints admin:
+    - `GET/PUT /api/admin/taxonomy?stage=published|draft`
+    - `POST /api/admin/taxonomy/publish`
+    - `GET /api/admin/taxonomy/options` (snapshot publicado + mapas de labels)
+  - Prompt + validación de product enrichment consumen la versión publicada (no el draft).
+  - Curación humana (bulk edit + validación server) consume la versión publicada.
+  - Labels de facets/subcategorías en catálogo consumen la versión publicada.
+  - Editor de `style_profiles` (DB) + endpoint `POST /api/admin/style-profiles/recompute` para backfill.
+- CA:
+  - Crear/editar términos y publicar crea una nueva versión published.
+  - Publish falla con error claro si hay menos de 10 style tags activos o faltan categorías críticas (joyería/calzado/bolsos/gafas/textiles).
+  - Enrichment y bulk edit rechazan valores fuera de la taxonomía publicada.
+  - Se pueden crear términos nuevos y luego usarlos inmediatamente en curación humana.
+- Datos: `taxonomy_snapshots.data` (schemaVersion=1) + `style_profiles`. Los productos persisten **keys (slug)**; los labels son solo UI/prompt.
+- NF: `GET /api/admin/taxonomy/options` cache corto (30s) y respuesta estable.
+- Riesgos: Renombrar/borrar keys rompe consistencia; mitigación: UI no permite renombrar ni borrar (solo editar label/descripción y desactivar).
+- Métricas: % de productos con valores válidos; tasa de errores por validación; número de publicaciones por semana.
+- Estado: **done (2026-02-06)**.
 
 ### MC-080 Enriquecimiento IA de productos (admin)
 - Historia: Como operador/admin, quiero enriquecer categorías, tags, color y fit de productos desde el admin, para estandarizar la clasificación y mejorar búsqueda/recomendaciones.

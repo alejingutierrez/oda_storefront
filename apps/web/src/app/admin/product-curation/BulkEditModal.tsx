@@ -2,22 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  CATEGORY_OPTIONS,
-  CATEGORY_LABELS,
-  SUBCATEGORY_LABELS,
-  SUBCATEGORY_VALUES,
   GENDER_OPTIONS,
   SEASON_OPTIONS,
-  STYLE_TAGS,
-  STYLE_TAG_FRIENDLY,
-  MATERIAL_TAGS,
-  MATERIAL_TAG_FRIENDLY,
-  PATTERN_TAGS,
-  PATTERN_TAG_FRIENDLY,
-  OCCASION_TAGS,
-  OCCASION_TAG_FRIENDLY,
 } from "@/lib/product-enrichment/constants";
-import { STYLE_PROFILES, STYLE_PROFILE_LABELS } from "@/lib/product-enrichment/style-profiles";
+import type { TaxonomyOptions, TaxonomyTerm } from "@/lib/taxonomy/types";
 
 export type BulkOperation = "replace" | "add" | "remove" | "clear";
 export type BulkField =
@@ -51,6 +39,7 @@ export type BulkResult = {
 type Props = {
   open: boolean;
   selectedCount: number;
+  taxonomyOptions: TaxonomyOptions | null;
   onClose: () => void;
   onApply: (payload: { changes: BulkChange[] }) => Promise<BulkResult>;
 };
@@ -97,21 +86,31 @@ const OP_LABELS: Record<BulkOperation, string> = {
   clear: "Limpiar",
 };
 
-const buildCategoryOptions = (): Option[] =>
-  CATEGORY_OPTIONS.map((entry) => ({ value: entry.value, label: entry.label }));
-
-const buildSubcategoryOptions = (): Option[] =>
-  SUBCATEGORY_VALUES.map((value) => ({ value, label: SUBCATEGORY_LABELS[value] ?? value }));
+const buildCategoryOptions = (taxonomy: TaxonomyOptions | null): Option[] =>
+  (taxonomy?.data.categories ?? [])
+    .filter((entry) => entry.isActive !== false)
+    .map((entry) => ({ value: entry.key, label: entry.label ?? entry.key }));
 
 const buildGenderOptions = (): Option[] => GENDER_OPTIONS.map((entry) => ({ value: entry.value, label: entry.label }));
 
 const buildSeasonOptions = (): Option[] => SEASON_OPTIONS.map((entry) => ({ value: entry.value, label: entry.label }));
 
-const buildStyleProfileOptions = (): Option[] =>
-  STYLE_PROFILES.map((profile) => ({ value: profile.key, label: profile.label }));
+const buildSubcategoryOptions = (taxonomy: TaxonomyOptions | null): Option[] =>
+  (taxonomy?.data.categories ?? []).flatMap((category) =>
+    (category.subcategories ?? [])
+      .filter((entry) => entry.isActive !== false)
+      .map((entry) => ({ value: entry.key, label: entry.label ?? entry.key })),
+  );
 
-const buildTagOptions = (values: string[], friendly: Record<string, string>): Option[] =>
-  values.map((value) => ({ value, label: friendly[value] ?? value }));
+const buildStyleProfileOptions = (taxonomy: TaxonomyOptions | null): Option[] =>
+  (taxonomy?.styleProfiles ?? []).map((profile) => ({ value: profile.key, label: profile.label ?? profile.key }));
+
+const buildTagOptionsFromTerms = (terms: TaxonomyTerm[] | undefined, onlyActive = true): Option[] => {
+  const list = Array.isArray(terms) ? terms : [];
+  return list
+    .filter((entry) => (onlyActive ? entry.isActive !== false : true))
+    .map((entry) => ({ value: entry.key, label: entry.label ?? entry.key }));
+};
 
 function classNames(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -135,7 +134,7 @@ function getAllowedOps(field: BulkField): BulkOperation[] {
   return FIELD_KIND[field] === "array" ? ["replace", "add", "remove", "clear"] : ["replace", "clear"];
 }
 
-function buildValuePreview(change: ChangeDraft): string {
+function buildValuePreview(change: ChangeDraft, taxonomy: TaxonomyOptions | null): string {
   if (change.op === "clear") return "Se limpiará el campo.";
   if (FIELD_KIND[change.field] === "array") {
     if (!change.tagValues.length) return "—";
@@ -144,9 +143,9 @@ function buildValuePreview(change: ChangeDraft): string {
 
   const raw = change.scalarValue.trim();
   if (!raw) return "—";
-  if (change.field === "category") return CATEGORY_LABELS[raw] ?? raw;
-  if (change.field === "subcategory") return SUBCATEGORY_LABELS[raw] ?? raw;
-  if (change.field === "stylePrimary" || change.field === "styleSecondary") return STYLE_PROFILE_LABELS[raw] ?? raw;
+  if (change.field === "category") return taxonomy?.categoryLabels?.[raw] ?? raw;
+  if (change.field === "subcategory") return taxonomy?.subcategoryLabels?.[raw] ?? raw;
+  if (change.field === "stylePrimary" || change.field === "styleSecondary") return taxonomy?.styleProfileLabels?.[raw] ?? raw;
   return raw;
 }
 
@@ -255,7 +254,7 @@ function CheckboxList({
   );
 }
 
-export default function BulkEditModal({ open, selectedCount, onClose, onApply }: Props) {
+export default function BulkEditModal({ open, selectedCount, taxonomyOptions, onClose, onApply }: Props) {
   const initialKey = useMemo(() => makeKey(), []);
   const [changes, setChanges] = useState<ChangeDraft[]>(() => [
     { key: initialKey, field: "category", op: "replace", scalarValue: "", tagValues: [] },
@@ -335,21 +334,21 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
   }, [open, onClose]);
 
   const scalarOptions: Option[] | null = useMemo(() => {
-    if (active.field === "category") return buildCategoryOptions();
-    if (active.field === "subcategory") return buildSubcategoryOptions();
+    if (active.field === "category") return buildCategoryOptions(taxonomyOptions);
+    if (active.field === "subcategory") return buildSubcategoryOptions(taxonomyOptions);
     if (active.field === "gender") return buildGenderOptions();
     if (active.field === "season") return buildSeasonOptions();
-    if (active.field === "stylePrimary" || active.field === "styleSecondary") return buildStyleProfileOptions();
+    if (active.field === "stylePrimary" || active.field === "styleSecondary") return buildStyleProfileOptions(taxonomyOptions);
     return null;
-  }, [active.field]);
+  }, [active.field, taxonomyOptions]);
 
   const tagOptions: Option[] | null = useMemo(() => {
-    if (active.field === "styleTags") return buildTagOptions(STYLE_TAGS, STYLE_TAG_FRIENDLY);
-    if (active.field === "materialTags") return buildTagOptions(MATERIAL_TAGS, MATERIAL_TAG_FRIENDLY);
-    if (active.field === "patternTags") return buildTagOptions(PATTERN_TAGS, PATTERN_TAG_FRIENDLY);
-    if (active.field === "occasionTags") return buildTagOptions(OCCASION_TAGS, OCCASION_TAG_FRIENDLY);
+    if (active.field === "styleTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.styleTags);
+    if (active.field === "materialTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.materials);
+    if (active.field === "patternTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.patterns);
+    if (active.field === "occasionTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.occasions);
     return null;
-  }, [active.field]);
+  }, [active.field, taxonomyOptions]);
 
   const addDisabled = useMemo(() => {
     const editableFields = FIELD_OPTIONS.filter((entry) => entry.editable).map((entry) => entry.value);
@@ -358,6 +357,7 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
 
   const applyDisabled = useMemo(() => {
     if (selectedCount <= 0) return true;
+    if (!taxonomyOptions) return true;
     if (!changes.length) return true;
     if (duplicateFields.length > 0) return true;
     for (const change of changes) {
@@ -369,7 +369,7 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
       }
     }
     return false;
-  }, [changes, duplicateFields.length, selectedCount]);
+  }, [changes, duplicateFields.length, selectedCount, taxonomyOptions]);
 
   const updateChange = (key: string, patch: Partial<ChangeDraft>) => {
     setChanges((prev) => prev.map((change) => (change.key === key ? { ...change, ...patch } : change)));
@@ -472,7 +472,7 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
               <div className="mt-4 space-y-2">
                 {changes.map((change, index) => {
                   const activeItem = change.key === active.key;
-                  const preview = buildValuePreview(change);
+                  const preview = buildValuePreview(change, taxonomyOptions);
                   return (
                     <div key={change.key} className="flex items-center gap-2">
                       <button
@@ -520,12 +520,18 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
                     {changes.map((change) => (
                       <p key={change.key} className="truncate">
                         <span className="font-semibold text-slate-800">{FIELD_LABELS[change.field] ?? change.field}:</span>{" "}
-                        {OP_LABELS[change.op]} · {buildValuePreview(change)}
+                        {OP_LABELS[change.op]} · {buildValuePreview(change, taxonomyOptions)}
                       </p>
                     ))}
                   </div>
                 </div>
               </div>
+
+              {!taxonomyOptions ? (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                  Cargando opciones de taxonomía… Si esto no termina, recarga la página o revisa sesión admin.
+                </div>
+              ) : null}
 
               {duplicateFields.length ? (
                 <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -635,6 +641,17 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
                             </option>
                           ))}
                         </select>
+                        {active.field === "subcategory" && active.op === "replace" && !usedFields.has("category") ? (
+                          <p className="mt-2 text-xs text-slate-500">
+                            Nota: si reemplazas subcategoría sin incluir categoría, el sistema ajustará <code>category</code>{" "}
+                            automáticamente.
+                          </p>
+                        ) : null}
+                        {active.field === "category" && active.op === "replace" && !usedFields.has("subcategory") ? (
+                          <p className="mt-2 text-xs text-slate-500">
+                            Nota: si un producto tiene una subcategoría incompatible, se limpiará automáticamente.
+                          </p>
+                        ) : null}
                       </div>
                     ) : (
                       <div>
@@ -663,7 +680,7 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
                       <span className="font-semibold text-slate-800">Acción:</span> {fieldMeta.label} · {OP_LABELS[active.op]}
                     </p>
                     <p className="truncate">
-                      <span className="font-semibold text-slate-800">Valor:</span> {buildValuePreview(active)}
+                      <span className="font-semibold text-slate-800">Valor:</span> {buildValuePreview(active, taxonomyOptions)}
                     </p>
                   </div>
                 </div>
@@ -703,4 +720,3 @@ export default function BulkEditModal({ open, selectedCount, onClose, onApply }:
     </div>
   );
 }
-
