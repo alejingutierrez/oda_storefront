@@ -251,6 +251,8 @@ export async function publishDraftTaxonomy(params: { adminEmail?: string | null 
     return { ok: false, error: "missing_draft" as const };
   }
 
+  const categoryByKey = new Map(draft.data.categories.map((entry) => [entry.key, entry]));
+
   const activeStyleTags = draft.data.styleTags.filter((tag) => tag.isActive !== false);
   if (activeStyleTags.length < 10) {
     return {
@@ -267,8 +269,7 @@ export async function publishDraftTaxonomy(params: { adminEmail?: string | null 
     "gafas_y_optica",
     "accesorios_textiles_y_medias",
   ];
-  const categoryKeySet = new Set(draft.data.categories.map((entry) => entry.key));
-  const missingRequired = requiredCategoryKeys.filter((key) => !categoryKeySet.has(key));
+  const missingRequired = requiredCategoryKeys.filter((key) => !categoryByKey.has(key));
   if (missingRequired.length > 0) {
     return {
       ok: false,
@@ -277,7 +278,84 @@ export async function publishDraftTaxonomy(params: { adminEmail?: string | null 
     };
   }
 
+  const inactiveRequired = requiredCategoryKeys.filter((key) => categoryByKey.get(key)?.isActive === false);
+  if (inactiveRequired.length > 0) {
+    return {
+      ok: false,
+      error: "required_categories_inactive" as const,
+      details: { inactive: inactiveRequired },
+    };
+  }
+
+  const requiredMissingSubcategories = requiredCategoryKeys.filter((key) => {
+    const category = categoryByKey.get(key);
+    if (!category) return true;
+    const activeSubs = (category.subcategories ?? []).filter((sub) => sub.isActive !== false);
+    return activeSubs.length === 0;
+  });
+  if (requiredMissingSubcategories.length > 0) {
+    return {
+      ok: false,
+      error: "required_categories_missing_active_subcategories" as const,
+      details: { categories: requiredMissingSubcategories },
+    };
+  }
+
+  const activeCategoriesMissingSubcategories = draft.data.categories
+    .filter((category) => category.isActive !== false)
+    .filter((category) => (category.subcategories ?? []).every((sub) => sub.isActive === false))
+    .map((category) => category.key);
+  if (activeCategoriesMissingSubcategories.length > 0) {
+    return {
+      ok: false,
+      error: "categories_missing_active_subcategories" as const,
+      details: { categories: activeCategoriesMissingSubcategories },
+    };
+  }
+
   const published = await getPublishedTaxonomyMeta();
+
+  const collectKeys = (data: TaxonomyDataV1) => ({
+    categories: new Set(data.categories.map((entry) => entry.key)),
+    subcategories: new Set(
+      data.categories.flatMap((entry) => (entry.subcategories ?? []).map((sub) => sub.key)),
+    ),
+    materials: new Set(data.materials.map((entry) => entry.key)),
+    patterns: new Set(data.patterns.map((entry) => entry.key)),
+    occasions: new Set(data.occasions.map((entry) => entry.key)),
+    styleTags: new Set(data.styleTags.map((entry) => entry.key)),
+  });
+
+  const publishedKeys = collectKeys(published.data);
+  const draftKeys = collectKeys(draft.data);
+  const removed: Record<string, string[]> = {};
+
+  const diffMissing = (name: string, prev: Set<string>, next: Set<string>) => {
+    const missing: string[] = [];
+    for (const key of prev) {
+      if (!next.has(key)) missing.push(key);
+    }
+    if (missing.length > 0) removed[name] = missing.sort();
+  };
+
+  diffMissing("categories", publishedKeys.categories, draftKeys.categories);
+  diffMissing("subcategories", publishedKeys.subcategories, draftKeys.subcategories);
+  diffMissing("materials", publishedKeys.materials, draftKeys.materials);
+  diffMissing("patterns", publishedKeys.patterns, draftKeys.patterns);
+  diffMissing("occasions", publishedKeys.occasions, draftKeys.occasions);
+  diffMissing("styleTags", publishedKeys.styleTags, draftKeys.styleTags);
+
+  if (Object.keys(removed).length > 0) {
+    return {
+      ok: false,
+      error: "taxonomy_keys_removed" as const,
+      details: {
+        removed,
+        note: "No borres keys. Para deprecarlas, mantenlas y marca isActive=false.",
+      },
+    };
+  }
+
   const nextVersion = published.version + 1;
   const now = new Date();
 

@@ -80,6 +80,46 @@ export const taxonomyDataV1Schema: z.ZodType<TaxonomyDataV1> = z
         ["categories", index, "subcategories"],
       );
     });
+
+    // We allow the same subcategory key to appear under multiple categories (some base catalogs reuse keys),
+    // but the meaning of a key must remain consistent across the taxonomy.
+    const subcategoryByKey = new Map<
+      string,
+      { label: string; description: string | null; isActive: boolean }
+    >();
+    const mismatched = new Set<string>();
+
+    value.categories.forEach((category) => {
+      (category.subcategories ?? []).forEach((sub) => {
+        const key = sub.key;
+        if (!key) return;
+        const normalized = {
+          label: (sub.label ?? "").trim(),
+          description: (sub.description ?? null) ? String(sub.description).trim() : null,
+          isActive: sub.isActive !== false,
+        };
+        const existing = subcategoryByKey.get(key);
+        if (!existing) {
+          subcategoryByKey.set(key, normalized);
+          return;
+        }
+        if (
+          existing.label !== normalized.label ||
+          (existing.description ?? null) !== (normalized.description ?? null) ||
+          existing.isActive !== normalized.isActive
+        ) {
+          mismatched.add(key);
+        }
+      });
+    });
+
+    if (mismatched.size > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `duplicate_subcategory_definitions:${Array.from(mismatched).join(",")}`,
+        path: ["categories", "subcategories"],
+      });
+    }
   });
 
 export function parseTaxonomyDataV1(value: unknown): TaxonomyDataV1 {
