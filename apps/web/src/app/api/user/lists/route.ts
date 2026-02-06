@@ -43,6 +43,7 @@ export async function POST(req: Request) {
       description: body.description?.trim() || null,
       visibility,
     },
+    include: { _count: { select: { items: true } } },
   });
 
   await logExperienceEvent({

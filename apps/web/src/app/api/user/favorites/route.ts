@@ -12,10 +12,34 @@ export async function GET() {
   const favorites = await prisma.userFavorite.findMany({
     where: { userId: session.user.id },
     orderBy: { createdAt: "desc" },
-    include: { product: true, variant: true },
+    include: { product: { include: { brand: true } }, variant: true },
   });
 
-  return NextResponse.json({ favorites });
+  return NextResponse.json({
+    favorites: favorites.map((favorite) => ({
+      id: favorite.id,
+      createdAt: favorite.createdAt,
+      product: {
+        id: favorite.product.id,
+        name: favorite.product.name,
+        imageCoverUrl: favorite.product.imageCoverUrl,
+        sourceUrl: favorite.product.sourceUrl,
+        currency: favorite.product.currency,
+        brand: favorite.product.brand
+          ? { id: favorite.product.brand.id, name: favorite.product.brand.name }
+          : null,
+      },
+      variant: favorite.variant
+        ? {
+            id: favorite.variant.id,
+            price: favorite.variant.price.toString(),
+            currency: favorite.variant.currency,
+            color: favorite.variant.color,
+            size: favorite.variant.size,
+          }
+        : null,
+    })),
+  });
 }
 
 export async function POST(req: Request) {

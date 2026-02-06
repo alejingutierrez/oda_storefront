@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { CatalogProduct } from "@/lib/catalog-data";
+import FavoriteToggle from "@/components/FavoriteToggle";
 
 function formatPrice(amount: string | null, currency: string | null) {
   if (!amount || Number(amount) <= 0) {
@@ -33,6 +34,9 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
 
   return (
     <article className="group relative overflow-hidden rounded-xl border border-[color:var(--oda-border)] bg-white shadow-[0_16px_36px_rgba(23,21,19,0.08)] transition duration-500 ease-out [transform-style:preserve-3d] hover:shadow-[0_30px_60px_rgba(23,21,19,0.14)] group-hover:[transform:perspective(900px)_rotateX(6deg)_translateY(-10px)]">
+      <div className="absolute right-3 top-3 z-10">
+        <FavoriteToggle productId={product.id} ariaLabel={`Guardar ${product.name} en favoritos`} />
+      </div>
       <Link href={href} className="relative block aspect-[3/4] w-full overflow-hidden bg-[color:var(--oda-stone)]">
         {product.imageCoverUrl ? (
           <Image

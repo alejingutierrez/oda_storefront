@@ -24,10 +24,33 @@ export async function GET(
   const items = await prisma.userListItem.findMany({
     where: { listId: list.id },
     orderBy: { position: "asc" },
-    include: { product: true, variant: true },
+    include: { product: { include: { brand: true } }, variant: true },
   });
 
-  return NextResponse.json({ items });
+  return NextResponse.json({
+    items: items.map((item) => ({
+      id: item.id,
+      position: item.position,
+      createdAt: item.createdAt,
+      product: {
+        id: item.product.id,
+        name: item.product.name,
+        imageCoverUrl: item.product.imageCoverUrl,
+        sourceUrl: item.product.sourceUrl,
+        currency: item.product.currency,
+        brand: item.product.brand ? { id: item.product.brand.id, name: item.product.brand.name } : null,
+      },
+      variant: item.variant
+        ? {
+            id: item.variant.id,
+            price: item.variant.price.toString(),
+            currency: item.variant.currency,
+            color: item.variant.color,
+            size: item.variant.size,
+          }
+        : null,
+    })),
+  });
 }
 
 export async function POST(

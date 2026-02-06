@@ -121,7 +121,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 
 ## Auth usuarios (public)
 - Login en `/sign-in` con Descope (Google/Apple/Facebook).
-- Perfil privado en `/perfil` (nombre, bio, conexiones, borrado de cuenta).
+- Perfil privado en `/perfil` (nombre, bio, favoritos + listas, borrado de cuenta). Botón "Guardar" en cards de `/catalogo` para agregar a favoritos.
 - Eventos de experiencia UI viven en `experience_events` y se vinculan a `experience_subjects` usando cookie persistente `oda_anon_id`.
 
 ## Home (public)

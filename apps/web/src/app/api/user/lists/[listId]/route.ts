@@ -35,6 +35,7 @@ export async function PATCH(
       description: body.description?.trim() ?? list.description,
       visibility,
     },
+    include: { _count: { select: { items: true } } },
   });
 
   await logExperienceEvent({
