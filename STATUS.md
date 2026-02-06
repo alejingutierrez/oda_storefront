@@ -14,6 +14,7 @@ Checklist obligatorio al cerrar una historia:
 5) Marcar la historia como terminada en `USER_STORIES.md`, `BACKLOG.md` y en este `STATUS.md`.
 
 Registros:
+- 2026-02-06 | MC-009 | done | Taxonomía editable (draft→publish) + editor admin `/admin/taxonomy` + endpoints (`/api/admin/taxonomy*`) + editor de `style_profiles` y backfill; consumo dinámico en enrichment, facets y curación humana | Vercel prod Ready: https://oda-storefront-6ee5.vercel.app (deploy dpl_BZDswfP2K8UHbaeHtR2M4s9Qqy9a). Smoke: `GET /api/admin/taxonomy?stage=draft` 200; `GET /api/admin/product-curation/products` 200.
 - 2026-02-05 | MC-115 | fix | Bulk edit ahora permite múltiples cambios en la misma modal (varios campos a la vez) y el endpoint `/api/admin/product-curation/bulk` acepta `changes[]` en una sola transacción por producto | Vercel prod Ready: https://oda-storefront-6ee5-ibrrdyb0u-alejingutierrezs-projects.vercel.app
 - 2026-02-05 | MC-115 | done | Curación humana: `/admin/product-curation` con scroll infinito + selección multi-producto + bulk edit de características (replace/add/remove/clear) con auditoría `metadata.enrichment_human` sin tocar enrichment IA ni SEO/description | Build local OK; push OK; Vercel prod Ready: https://oda-storefront-6ee5-ekyemts65-alejingutierrezs-projects.vercel.app
 - 2026-02-05 | fix | Auth externo: callback server-side + retorno a página original (SignInLink sin useSearchParams) | Vercel prod Ready: https://oda-storefront-6ee5-q9trvmilh-alejingutierrezs-projects.vercel.app
