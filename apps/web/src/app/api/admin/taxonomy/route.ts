@@ -15,15 +15,23 @@ export async function GET(req: Request) {
   const stage = (url.searchParams.get("stage") ?? "published").toLowerCase();
 
   if (stage === "draft") {
-    const draft = await getOrCreateDraftTaxonomyMeta({ adminEmail: admin.email });
-    return NextResponse.json({
-      ok: true,
-      stage: "draft",
-      source: draft.source,
-      version: draft.version,
-      updatedAt: draft.updatedAt ? draft.updatedAt.toISOString() : null,
-      data: draft.data,
-    });
+    try {
+      const draft = await getOrCreateDraftTaxonomyMeta({ adminEmail: admin.email });
+      return NextResponse.json({
+        ok: true,
+        stage: "draft",
+        source: draft.source,
+        version: draft.version,
+        updatedAt: draft.updatedAt ? draft.updatedAt.toISOString() : null,
+        data: draft.data,
+      });
+    } catch (err) {
+      console.warn("[taxonomy] draft.load.failed", err);
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "draft_failed" },
+        { status: 500 },
+      );
+    }
   }
 
   const published = await getPublishedTaxonomyMeta();
@@ -60,4 +68,3 @@ export async function PUT(req: Request) {
     );
   }
 }
-

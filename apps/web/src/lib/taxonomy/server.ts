@@ -32,6 +32,22 @@ function isMissingTableError(err: unknown, tableName: string) {
 }
 
 export async function ensureTaxonomySnapshotsTable() {
+  if (taxonomySnapshotsTableState === "ready") return;
+
+  // Avoid running CREATE statements on environments where the table already exists but the runtime role
+  // does not have CREATE privileges (common with pooled/proxied DB users).
+  try {
+    const rows = await prisma.$queryRaw<Array<{ name: string | null }>>(Prisma.sql`
+      select to_regclass('public.taxonomy_snapshots') as name
+    `);
+    if (rows?.[0]?.name) {
+      taxonomySnapshotsTableState = "ready";
+      return;
+    }
+  } catch (err) {
+    console.warn("[taxonomy] to_regclass check failed", err);
+  }
+
   // We cannot rely on Prisma migrations here because the target DB may have drift.
   // This is an additive, idempotent DDL guarded behind admin endpoints.
   await prisma.$executeRaw(Prisma.sql`
