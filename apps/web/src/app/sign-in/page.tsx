@@ -1,8 +1,10 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Descope } from "@descope/nextjs-sdk";
+import { useSession } from "@descope/nextjs-sdk/client";
 
 const computeReturnTo = () => {
   if (typeof window === "undefined") return null;
@@ -34,6 +36,8 @@ const computeReturnTo = () => {
 };
 
 export default function SignInPage() {
+  const router = useRouter();
+  const { isAuthenticated, isSessionLoading } = useSession();
   // @descope/nextjs-sdk types do not expose flowId (aunque el componente sí lo soporta).
   // Lo tipamos localmente para mantener build TS verde.
   const DescopeFlow = Descope as unknown as ComponentType<{
@@ -46,6 +50,10 @@ export default function SignInPage() {
     onError?: (...args: unknown[]) => void;
   }>;
   const [returnTo] = useState<string | null>(() => computeReturnTo());
+  const [callbackError] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("error")?.trim() || null;
+  });
   const [flowOverride] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const flow = new URLSearchParams(window.location.search).get("flow");
@@ -66,6 +74,15 @@ export default function SignInPage() {
     return `/auth/callback?${params.toString()}`;
   }, [returnTo]);
 
+  useEffect(() => {
+    if (callbackError) return;
+    if (isSessionLoading) return;
+    if (!isAuthenticated) return;
+    // Si el usuario ya esta autenticado, no mostramos el flow (puede causar estados raros en Descope);
+    // forzamos el callback para sincronizar en Neon y devolver al `next`.
+    router.replace(redirectAfterSuccess);
+  }, [callbackError, isAuthenticated, isSessionLoading, redirectAfterSuccess, router]);
+
   return (
     <main className="min-h-screen bg-[color:var(--oda-cream)]">
       <div className="oda-container flex min-h-screen flex-col items-center justify-center gap-8 py-16">
@@ -79,6 +96,11 @@ export default function SignInPage() {
           <p className="mt-3 text-sm text-[color:var(--oda-ink-soft)]">
             Accede con Google, Apple o Facebook usando Descope.
           </p>
+          {callbackError ? (
+            <p className="mt-4 text-sm font-medium text-[color:var(--oda-ink)]">
+              No pudimos confirmar tu sesion. Intenta de nuevo.
+            </p>
+          ) : null}
         </div>
         <div className="w-full max-w-md rounded-2xl border border-[color:var(--oda-border)] bg-white p-6 shadow-[0_30px_80px_rgba(23,21,19,0.12)]">
           <DescopeFlow
