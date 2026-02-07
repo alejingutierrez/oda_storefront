@@ -8,6 +8,7 @@
   --oda-taupe: #b9a895;
   --oda-gold: #d9c3a0;
   --oda-border: #e6dfd5;
+  --oda-love: #c1121f;
 }
 
 @theme inline {
@@ -43,6 +44,27 @@ summary::-webkit-details-marker {
 ::selection {
   background: var(--oda-gold);
   color: var(--oda-ink);
+}
+
+@keyframes oda-heartbeat {
+  0% {
+    transform: scale(1);
+  }
+  18% {
+    transform: scale(1.18);
+  }
+  36% {
+    transform: scale(0.92);
+  }
+  54% {
+    transform: scale(1.12);
+  }
+  72% {
+    transform: scale(0.98);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 @layer components {

@@ -2,6 +2,7 @@
 
 import { AuthProvider } from "@descope/nextjs-sdk";
 import ExperienceTracker from "./ExperienceTracker";
+import FavoritesProvider from "@/components/FavoritesProvider";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const isProd = process.env.NODE_ENV === "production";
@@ -14,8 +15,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       autoRefresh
       sessionTokenViaCookie={{ sameSite: "Lax", secure: isProd }}
     >
-      <ExperienceTracker />
-      {children}
+      <FavoritesProvider>
+        <ExperienceTracker />
+        {children}
+      </FavoritesProvider>
     </AuthProvider>
   );
 }

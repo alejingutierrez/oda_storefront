@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@descope/nextjs-sdk/client";
+import { useFavorites } from "@/components/FavoritesProvider";
 
 type FavoriteToggleProps = {
   productId: string;
@@ -42,14 +43,24 @@ export default function FavoriteToggle({
   ariaLabel,
 }: FavoriteToggleProps) {
   const router = useRouter();
-  const { isAuthenticated, isSessionLoading, sessionToken } = useSession();
-  const [favoriteId, setFavoriteId] = useState<string | null>(null);
+  const { isAuthenticated, isSessionLoading } = useSession();
+  const favorites = useFavorites();
   const [saving, setSaving] = useState(false);
+  const [pulse, setPulse] = useState(false);
+
+  const favoriteId = favorites?.getFavoriteId(productId, variantId) ?? null;
+  const favoritesLoaded = favorites?.loaded ?? true;
 
   const label = useMemo(() => {
     if (ariaLabel) return ariaLabel;
     return favoriteId ? "Quitar de favoritos" : "Guardar en favoritos";
   }, [ariaLabel, favoriteId]);
+
+  useEffect(() => {
+    if (!pulse) return;
+    const timeout = window.setTimeout(() => setPulse(false), 700);
+    return () => window.clearTimeout(timeout);
+  }, [pulse]);
 
   const handleClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -66,63 +77,52 @@ export default function FavoriteToggle({
     }
 
     if (saving) return;
+    if (!favorites) return;
     setSaving(true);
     try {
-      const authHeader =
-        sessionToken && typeof sessionToken === "string"
-          ? { Authorization: `Bearer ${sessionToken}` }
-          : undefined;
-      if (favoriteId) {
-        const res = await fetch(`/api/user/favorites/${favoriteId}`, {
-          method: "DELETE",
-          headers: authHeader,
-          credentials: "include",
-        });
-        if (res.status === 401) {
-          router.push(buildSignInHref("/catalogo"));
-          return;
-        }
-        if (!res.ok) throw new Error("favorite_delete_failed");
-        setFavoriteId(null);
-        return;
+      const wasFavorite = Boolean(favoriteId);
+      const result = await favorites.toggleFavorite(productId, variantId);
+      if (!wasFavorite && result.action === "added") {
+        setPulse(true);
       }
-
-      const res = await fetch("/api/user/favorites", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(authHeader ?? {}),
-        },
-        credentials: "include",
-        body: JSON.stringify({ productId, variantId: variantId ?? null }),
-      });
-      if (res.status === 401) {
+    } catch (error) {
+      if (error instanceof Error && error.message === "unauthorized") {
         router.push(buildSignInHref("/catalogo"));
         return;
       }
-      if (!res.ok) throw new Error("favorite_add_failed");
-      const data = (await res.json()) as { favorite: { id: string } };
-      setFavoriteId(data.favorite?.id ?? null);
-    } catch (error) {
       console.error("Favorite toggle failed", error);
     } finally {
       setSaving(false);
     }
   };
 
+  const filled = Boolean(favoriteId);
+
   return (
     <button
       type="button"
       className={
         className ??
-        "inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-white/70 text-[color:var(--oda-ink)] shadow-[0_18px_50px_rgba(23,21,19,0.16)] backdrop-blur transition hover:bg-white"
+        `inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-white/70 text-[color:var(--oda-ink)] shadow-[0_18px_50px_rgba(23,21,19,0.16)] backdrop-blur transition hover:bg-white ${
+          filled ? "text-[color:var(--oda-love)]" : ""
+        }`
       }
       onClick={handleClick}
       aria-label={label}
-      disabled={saving}
+      aria-pressed={filled}
+      disabled={saving || (isAuthenticated && !favoritesLoaded)}
+      title={isAuthenticated && !favoritesLoaded ? "Cargando favoritos…" : undefined}
     >
-      <span className={saving ? "opacity-40" : ""}>
-        <HeartIcon filled={Boolean(favoriteId)} />
+      <span
+        className={[
+          saving ? "opacity-40" : "",
+          pulse ? "animate-[oda-heartbeat_650ms_ease-in-out] motion-reduce:animate-none" : "",
+          "will-change-transform",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <HeartIcon filled={filled} />
       </span>
     </button>
   );
