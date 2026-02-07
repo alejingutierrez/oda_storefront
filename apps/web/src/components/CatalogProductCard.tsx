@@ -1,7 +1,13 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import type { CatalogProduct } from "@/lib/catalog-data";
 import FavoriteToggle from "@/components/FavoriteToggle";
+import { proxiedImageUrl } from "@/lib/image-proxy";
+
+const IMAGE_BLUR_DATA_URL =
+  "data:image/gif;base64,R0lGODlhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=";
 
 function formatPrice(amount: string | null, currency: string | null) {
   if (!amount || Number(amount) <= 0) {
@@ -31,6 +37,7 @@ function formatPriceRange(minPrice: string | null, maxPrice: string | null, curr
 
 export default function CatalogProductCard({ product }: { product: CatalogProduct }) {
   const href = product.sourceUrl ?? "#";
+  const imageUrl = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
 
   return (
     <article className="group relative overflow-hidden rounded-xl border border-[color:var(--oda-border)] bg-white shadow-[0_16px_36px_rgba(23,21,19,0.08)] transition duration-500 ease-out [transform-style:preserve-3d] hover:shadow-[0_30px_60px_rgba(23,21,19,0.14)] group-hover:[transform:perspective(900px)_rotateX(6deg)_translateY(-10px)]">
@@ -38,14 +45,15 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
         <FavoriteToggle productId={product.id} ariaLabel={`Guardar ${product.name} en favoritos`} />
       </div>
       <Link href={href} className="relative block aspect-[3/4] w-full overflow-hidden bg-[color:var(--oda-stone)]">
-        {product.imageCoverUrl ? (
+        {imageUrl ? (
           <Image
-            src={product.imageCoverUrl}
+            src={imageUrl}
             alt={product.name}
             fill
             sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
             className="object-cover object-center transition duration-700 group-hover:scale-[1.07] group-hover:-translate-y-1"
-            unoptimized
+            placeholder="blur"
+            blurDataURL={IMAGE_BLUR_DATA_URL}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">

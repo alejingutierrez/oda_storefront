@@ -30,6 +30,7 @@ export type CatalogFacetItem = {
   label: string;
   count: number;
   swatch?: string | null;
+  group?: string | null;
 };
 
 export type CatalogFacets = {
@@ -45,6 +46,11 @@ export type CatalogFacets = {
   seasons: CatalogFacetItem[];
   styles: CatalogFacetItem[];
 };
+
+export type CatalogFacetsLite = Pick<
+  CatalogFacets,
+  "categories" | "genders" | "brands" | "colors" | "materials" | "patterns"
+>;
 
 export type { CatalogFilters };
 
@@ -66,6 +72,11 @@ export type CatalogProduct = {
 export type CatalogProductResult = {
   items: CatalogProduct[];
   totalCount: number;
+};
+
+export type CatalogPriceBounds = {
+  min: number | null;
+  max: number | null;
 };
 
 function normalizeArray(values?: string[]) {
@@ -167,6 +178,18 @@ export async function getCatalogFacets(filters: CatalogFilters): Promise<Catalog
   return cached();
 }
 
+export async function getCatalogFacetsLite(filters: CatalogFilters): Promise<CatalogFacetsLite> {
+  const taxonomy = await getPublishedTaxonomyOptions();
+  const cacheKey = buildFacetsCacheKey(filters);
+  const cached = unstable_cache(
+    async () => computeCatalogFacetsLite(filters, taxonomy),
+    ["catalog-facets-lite", `taxonomy-v${taxonomy.version}`, cacheKey],
+    { revalidate: CATALOG_REVALIDATE_SECONDS },
+  );
+
+  return cached();
+}
+
 export async function getCatalogSubcategories(filters: CatalogFilters): Promise<CatalogFacetItem[]> {
   if (!filters.categories || filters.categories.length === 0) {
     return [];
@@ -176,6 +199,40 @@ export async function getCatalogSubcategories(filters: CatalogFilters): Promise<
   const cached = unstable_cache(
     async () => computeCatalogSubcategories(filters, taxonomy),
     ["catalog-subcategories", `taxonomy-v${taxonomy.version}`, cacheKey],
+    { revalidate: CATALOG_REVALIDATE_SECONDS },
+  );
+
+  return cached();
+}
+
+export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<CatalogPriceBounds> {
+  // El slider debe mostrar el rango disponible segun filtros (pero sin que el propio rango limite el dominio).
+  const boundsFilters = omitFilters(filters, ["priceMin", "priceMax"]);
+  const cacheKey = buildFacetsCacheKey(boundsFilters);
+  const cached = unstable_cache(
+    async () => {
+      const { productWhere, variantWhere } = buildVariantWhere(boundsFilters);
+      const rows = await prisma.$queryRaw<Array<{ min_price: string | null; max_price: string | null }>>(
+        Prisma.sql`
+          select
+            min(case when v.price > 0 then v.price end) as min_price,
+            max(case when v.price > 0 then v.price end) as max_price
+          from products p
+          join brands b on b.id = p."brandId"
+          join variants v on v."productId" = p.id
+          ${productWhere}
+          ${variantWhere}
+        `,
+      );
+      const row = rows[0];
+      const min = row?.min_price ? Number(row.min_price) : null;
+      const max = row?.max_price ? Number(row.max_price) : null;
+      return {
+        min: Number.isFinite(min) ? min : null,
+        max: Number.isFinite(max) ? max : null,
+      };
+    },
+    ["catalog-price-bounds", cacheKey],
     { revalidate: CATALOG_REVALIDATE_SECONDS },
   );
 
@@ -249,19 +306,22 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
       ${brandWhere}
       group by b.id, b.name
       order by cnt desc
-      limit 20
     `),
-    prisma.$queryRaw<Array<{ color: string; cnt: bigint }>>(Prisma.sql`
-      select v.color as color, count(*) as cnt
-      from products p
-      join brands b on b.id = p."brandId"
-      join variants v on v."productId" = p.id
-      ${colorProductWhere}
-      ${colorVariantWhere}
-      and v.color is not null and btrim(v.color) <> ''
-      group by v.color
-      order by cnt desc
-      limit 18
+    prisma.$queryRaw<Array<{ id: string; family: string; name: string; hex: string; cnt: bigint }>>(Prisma.sql`
+      with color_counts as (
+        select v."standardColorId" as id, count(*) as cnt
+        from products p
+        join brands b on b.id = p."brandId"
+        join variants v on v."productId" = p.id
+        ${colorProductWhere}
+        ${colorVariantWhere}
+        and v."standardColorId" is not null
+        group by v."standardColorId"
+      )
+      select sc.id, sc.family, sc.name, sc.hex, coalesce(cc.cnt, 0) as cnt
+      from standard_colors sc
+      left join color_counts cc on cc.id = sc.id
+      order by sc.family asc, sc.name asc
     `),
     prisma.$queryRaw<Array<{ size: string; cnt: bigint }>>(Prisma.sql`
       select v.size as size, count(*) as cnt
@@ -371,10 +431,11 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
     count: Number(row.cnt),
   }));
   const colorItems = colors.map((row) => ({
-    value: row.color,
-    label: row.color,
+    value: row.id,
+    label: row.name,
     count: Number(row.cnt),
-    swatch: row.color,
+    swatch: row.hex,
+    group: row.family,
   }));
   const sizeItems = sizes.map((row) => ({
     value: row.size,
@@ -461,31 +522,8 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
     }
   }
 
-  const selectedColors = filters.colors ?? [];
-  const missingColors = selectedColors.filter(
-    (value) => !colorItems.some((item) => item.value === value)
-  );
-  if (missingColors.length > 0) {
-    const rows = await prisma.$queryRaw<Array<{ color: string; cnt: bigint }>>(Prisma.sql`
-      select v.color as color, count(*) as cnt
-      from products p
-      join brands b on b.id = p."brandId"
-      join variants v on v."productId" = p.id
-      ${colorProductWhere}
-      ${colorVariantWhere}
-      and v.color in (${Prisma.join(missingColors)})
-      group by v.color
-    `);
-    const countMap = new Map(rows.map((row) => [row.color, Number(row.cnt)]));
-    for (const value of missingColors) {
-      colorItems.push({
-        value,
-        label: value,
-        count: countMap.get(value) ?? 0,
-        swatch: value,
-      });
-    }
-  }
+  // `colors` ya incluye toda la paleta estandarizada (con conteos 0), asi que
+  // no necesitamos "missingColors" como en otras facetas.
 
   const selectedSizes = filters.sizes ?? [];
   const missingSizes = selectedSizes.filter((value) => !sizeItems.some((item) => item.value === value));
@@ -668,6 +706,243 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
   };
 }
 
+async function computeCatalogFacetsLite(
+  filters: CatalogFilters,
+  taxonomy: TaxonomyOptions,
+): Promise<CatalogFacetsLite> {
+  const categoryFilters = omitFilters(filters, ["categories"]);
+  const genderFilters = omitFilters(filters, ["genders"]);
+  const brandFilters = omitFilters(filters, ["brandIds"]);
+  const colorFilters = omitFilters(filters, ["colors"]);
+  const materialFilters = omitFilters(filters, ["materials"]);
+  const patternFilters = omitFilters(filters, ["patterns"]);
+
+  const categoryWhere = buildWhere(categoryFilters);
+  const genderWhere = buildWhere(genderFilters);
+  const brandWhere = buildWhere(brandFilters);
+  const materialWhere = buildWhere(materialFilters);
+  const patternWhere = buildWhere(patternFilters);
+
+  const { productWhere: colorProductWhere, variantWhere: colorVariantWhere } =
+    buildVariantWhere(colorFilters);
+
+  const [categories, genders, brands, colors, materials, patterns] = await Promise.all([
+    prisma.$queryRaw<Array<{ category: string; cnt: bigint }>>(Prisma.sql`
+      select p.category as category, count(*) as cnt
+      from products p
+      join brands b on b.id = p."brandId"
+      ${categoryWhere}
+      and p.category is not null and p.category <> ''
+      group by p.category
+      order by cnt desc
+    `),
+    prisma.$queryRaw<Array<{ gender: string | null; cnt: bigint }>>(Prisma.sql`
+      select p.gender as gender, count(*) as cnt
+      from products p
+      join brands b on b.id = p."brandId"
+      ${genderWhere}
+      group by p.gender
+      order by cnt desc
+    `),
+    prisma.$queryRaw<Array<{ id: string; name: string; cnt: bigint }>>(Prisma.sql`
+      select b.id, b.name, count(p.id) as cnt
+      from brands b
+      join products p on p."brandId" = b.id
+      ${brandWhere}
+      group by b.id, b.name
+      order by cnt desc
+    `),
+    prisma.$queryRaw<Array<{ id: string; family: string; name: string; hex: string; cnt: bigint }>>(Prisma.sql`
+      with color_counts as (
+        select v."standardColorId" as id, count(*) as cnt
+        from products p
+        join brands b on b.id = p."brandId"
+        join variants v on v."productId" = p.id
+        ${colorProductWhere}
+        ${colorVariantWhere}
+        and v."standardColorId" is not null
+        group by v."standardColorId"
+      )
+      select sc.id, sc.family, sc.name, sc.hex, coalesce(cc.cnt, 0) as cnt
+      from standard_colors sc
+      left join color_counts cc on cc.id = sc.id
+      order by sc.family asc, sc.name asc
+    `),
+    prisma.$queryRaw<Array<{ tag: string; cnt: bigint }>>(Prisma.sql`
+      select tag, count(*) as cnt
+      from (
+        select unnest(p."materialTags") as tag
+        from products p
+        join brands b on b.id = p."brandId"
+        ${materialWhere}
+      ) t
+      where tag is not null and tag <> ''
+      group by tag
+      order by cnt desc
+      limit 18
+    `),
+    prisma.$queryRaw<Array<{ tag: string; cnt: bigint }>>(Prisma.sql`
+      select tag, count(*) as cnt
+      from (
+        select unnest(p."patternTags") as tag
+        from products p
+        join brands b on b.id = p."brandId"
+        ${patternWhere}
+      ) t
+      where tag is not null and tag <> ''
+      group by tag
+      order by cnt desc
+      limit 18
+    `),
+  ]);
+
+  const genderCounts = new Map<GenderKey, number>();
+  for (const row of genders) {
+    const gender = normalizeGender(row.gender);
+    genderCounts.set(gender, (genderCounts.get(gender) ?? 0) + Number(row.cnt));
+  }
+
+  const labelCategory = (value: string) => taxonomy.categoryLabels[value] ?? labelize(value);
+  const labelMaterial = (value: string) => taxonomy.materialLabels[value] ?? labelize(value);
+  const labelPattern = (value: string) => taxonomy.patternLabels[value] ?? labelize(value);
+
+  const categoryItems = categories.map((row) => ({
+    value: row.category,
+    label: labelCategory(row.category),
+    count: Number(row.cnt),
+  }));
+  const brandItems = brands.map((row) => ({
+    value: row.id,
+    label: row.name,
+    count: Number(row.cnt),
+  }));
+  const colorItems = colors.map((row) => ({
+    value: row.id,
+    label: row.name,
+    count: Number(row.cnt),
+    swatch: row.hex,
+    group: row.family,
+  }));
+  const materialItems = materials.map((row) => ({
+    value: row.tag,
+    label: labelMaterial(row.tag),
+    count: Number(row.cnt),
+  }));
+  const patternItems = patterns.map((row) => ({
+    value: row.tag,
+    label: labelPattern(row.tag),
+    count: Number(row.cnt),
+  }));
+
+  const selectedCategories = filters.categories ?? [];
+  const missingCategories = selectedCategories.filter(
+    (value) => !categoryItems.some((item) => item.value === value),
+  );
+  if (missingCategories.length > 0) {
+    const rows = await prisma.$queryRaw<Array<{ category: string; cnt: bigint }>>(Prisma.sql`
+      select p.category as category, count(*) as cnt
+      from products p
+      join brands b on b.id = p."brandId"
+      ${categoryWhere}
+      and p.category in (${Prisma.join(missingCategories)})
+      group by p.category
+    `);
+    const countMap = new Map(rows.map((row) => [row.category, Number(row.cnt)]));
+    for (const value of missingCategories) {
+      categoryItems.push({
+        value,
+        label: labelCategory(value),
+        count: countMap.get(value) ?? 0,
+      });
+    }
+  }
+
+  const selectedBrands = filters.brandIds ?? [];
+  const missingBrands = selectedBrands.filter((value) => !brandItems.some((item) => item.value === value));
+  if (missingBrands.length > 0) {
+    const rows = await prisma.$queryRaw<Array<{ id: string; name: string; cnt: bigint }>>(Prisma.sql`
+      select b.id, b.name, count(p.id) as cnt
+      from brands b
+      join products p on p."brandId" = b.id
+      ${brandWhere}
+      and b.id in (${Prisma.join(missingBrands)})
+      group by b.id, b.name
+    `);
+    const countMap = new Map(rows.map((row) => [row.id, { name: row.name, count: Number(row.cnt) }]));
+    for (const value of missingBrands) {
+      const row = countMap.get(value);
+      brandItems.push({
+        value,
+        label: row?.name ?? "Marca",
+        count: row?.count ?? 0,
+      });
+    }
+  }
+
+  const selectedMaterials = filters.materials ?? [];
+  const missingMaterials = selectedMaterials.filter(
+    (value) => !materialItems.some((item) => item.value === value),
+  );
+  if (missingMaterials.length > 0) {
+    const rows = await prisma.$queryRaw<Array<{ tag: string; cnt: bigint }>>(Prisma.sql`
+      select tag, count(*) as cnt
+      from (
+        select unnest(p."materialTags") as tag
+        from products p
+        join brands b on b.id = p."brandId"
+        ${materialWhere}
+      ) t
+      where tag in (${Prisma.join(missingMaterials)})
+      group by tag
+    `);
+    const countMap = new Map(rows.map((row) => [row.tag, Number(row.cnt)]));
+    for (const value of missingMaterials) {
+      materialItems.push({
+        value,
+        label: labelMaterial(value),
+        count: countMap.get(value) ?? 0,
+      });
+    }
+  }
+
+  const selectedPatterns = filters.patterns ?? [];
+  const missingPatterns = selectedPatterns.filter((value) => !patternItems.some((item) => item.value === value));
+  if (missingPatterns.length > 0) {
+    const rows = await prisma.$queryRaw<Array<{ tag: string; cnt: bigint }>>(Prisma.sql`
+      select tag, count(*) as cnt
+      from (
+        select unnest(p."patternTags") as tag
+        from products p
+        join brands b on b.id = p."brandId"
+        ${patternWhere}
+      ) t
+      where tag in (${Prisma.join(missingPatterns)})
+      group by tag
+    `);
+    const countMap = new Map(rows.map((row) => [row.tag, Number(row.cnt)]));
+    for (const value of missingPatterns) {
+      patternItems.push({
+        value,
+        label: labelPattern(value),
+        count: countMap.get(value) ?? 0,
+      });
+    }
+  }
+
+  return {
+    categories: categoryItems,
+    genders: (["Femenino", "Masculino", "Unisex", "Infantil"] as GenderKey[]).map((gender) => ({
+      value: gender,
+      label: gender,
+      count: genderCounts.get(gender) ?? 0,
+    })),
+    brands: brandItems,
+    colors: colorItems,
+    materials: materialItems,
+    patterns: patternItems,
+  };
+}
+
 async function computeCatalogSubcategories(
   filters: CatalogFilters,
   taxonomy: TaxonomyOptions,
@@ -744,8 +1019,14 @@ export async function getCatalogProducts(params: {
 }): Promise<CatalogProductResult> {
   const { filters, page, sort } = params;
   const offset = Math.max(0, (page - 1) * CATALOG_PAGE_SIZE);
-  const where = buildWhere(filters);
-  const orderBy = buildOrderBy(sort);
+  const productWhere = buildProductWhere(filters);
+  const variantConditions = buildVariantConditions(filters);
+  const variantWhere =
+    variantConditions.length > 0
+      ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
+      : Prisma.empty;
+  const requireMatchingVariant = variantConditions.length > 0;
+  const orderBy = buildOrderBy(sort, filters);
 
   const [items, countRows] = await Promise.all([
     prisma.$queryRaw<
@@ -773,45 +1054,39 @@ export async function getCatalogProducts(params: {
           p.category,
           p.subcategory,
           p."sourceUrl",
-          (
-            select min(v.price)
-            from variants v
-            where v."productId" = p.id and v.price > 0
-          ) as "minPrice",
-          (
-            select max(v.price)
-            from variants v
-            where v."productId" = p.id and v.price > 0
-          ) as "maxPrice",
-          (
-            select v.currency
-            from variants v
-            where v."productId" = p.id and v.price > 0
-            limit 1
-          ) as currency,
-          (
-            select count(*)
-            from variants v
-            where v."productId" = p.id
-          ) as "variantCount",
-          (
-            select array_remove(array_agg(distinct v.color), null)
-            from variants v
-            where v."productId" = p.id and v.color is not null and btrim(v.color) <> ''
-          ) as colors
+          min(case when v.price > 0 then v.price end) as "minPrice",
+          max(case when v.price > 0 then v.price end) as "maxPrice",
+          max(v.currency) as currency,
+          count(distinct v.id) as "variantCount",
+          array_remove(array_agg(distinct nullif(btrim(v.color), '')), null) as colors
         from products p
         join brands b on b.id = p."brandId"
-        ${where}
+        left join variants v on v."productId" = p.id
+          ${variantWhere}
+        ${productWhere}
+        ${requireMatchingVariant ? Prisma.sql`and v.id is not null` : Prisma.empty}
+        group by
+          p.id,
+          p.name,
+          p."imageCoverUrl",
+          b.name,
+          p.category,
+          p.subcategory,
+          p."sourceUrl",
+          p."createdAt"
         ${orderBy}
         limit ${CATALOG_PAGE_SIZE}
         offset ${offset}
       `
     ),
     prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
-      select count(*) as total
+      select count(distinct p.id) as total
       from products p
       join brands b on b.id = p."brandId"
-      ${where}
+      left join variants v on v."productId" = p.id
+        ${variantWhere}
+      ${productWhere}
+      ${requireMatchingVariant ? Prisma.sql`and v.id is not null` : Prisma.empty}
     `),
   ]);
 

@@ -80,7 +80,44 @@ export function buildProductConditions(filters: CatalogFilters): Prisma.Sql[] {
 export function buildVariantConditions(filters: CatalogFilters): Prisma.Sql[] {
   const variantConditions: Prisma.Sql[] = [];
   if (filters.colors && filters.colors.length > 0) {
-    variantConditions.push(Prisma.sql`v.color in (${Prisma.join(filters.colors)})`);
+    const raw = filters.colors.map((value) => value.trim()).filter(Boolean);
+    const uuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const hexRe = /^#?[0-9a-f]{6}$/i;
+
+    const ids: string[] = [];
+    const hexes: string[] = [];
+    const legacy: string[] = [];
+
+    for (const value of raw) {
+      if (uuidRe.test(value)) {
+        ids.push(value);
+      } else if (hexRe.test(value)) {
+        const normalized = value.startsWith("#") ? value.toLowerCase() : `#${value.toLowerCase()}`;
+        hexes.push(normalized);
+      } else {
+        legacy.push(value);
+      }
+    }
+
+    const conditions: Prisma.Sql[] = [];
+    if (ids.length > 0) {
+      conditions.push(Prisma.sql`v."standardColorId" in (${Prisma.join(ids)})`);
+    }
+    if (hexes.length > 0) {
+      // Compatibilidad: enlaces viejos que filtraban por hex o por v.color.
+      conditions.push(
+        Prisma.sql`v."standardColorId" in (select sc.id from standard_colors sc where sc.hex in (${Prisma.join(hexes)}))`,
+      );
+      conditions.push(Prisma.sql`v.color in (${Prisma.join(hexes)})`);
+    }
+    if (legacy.length > 0) {
+      conditions.push(Prisma.sql`v.color in (${Prisma.join(legacy)})`);
+    }
+
+    if (conditions.length > 0) {
+      variantConditions.push(Prisma.sql`(${Prisma.join(conditions, " or ")})`);
+    }
   }
   if (filters.sizes && filters.sizes.length > 0) {
     variantConditions.push(Prisma.sql`v.size in (${Prisma.join(filters.sizes)})`);
@@ -122,16 +159,26 @@ export function buildWhere(filters: CatalogFilters): Prisma.Sql {
   `;
 }
 
-export function buildOrderBy(sort: string): Prisma.Sql {
+export function buildOrderBy(sort: string, filters?: CatalogFilters): Prisma.Sql {
+  const q = filters?.q ? `%${filters.q}%` : null;
   switch (sort) {
     case "price_asc":
-      return Prisma.sql`order by (
-        select min(v.price) from variants v where v."productId" = p.id and v.price > 0
-      ) asc nulls last`;
+      return Prisma.sql`order by min(case when v.price > 0 then v.price end) asc nulls last, p."createdAt" desc`;
     case "price_desc":
-      return Prisma.sql`order by (
-        select min(v.price) from variants v where v."productId" = p.id and v.price > 0
-      ) desc nulls last`;
+      return Prisma.sql`order by min(case when v.price > 0 then v.price end) desc nulls last, p."createdAt" desc`;
+    case "relevancia":
+      if (q) {
+        return Prisma.sql`
+          order by
+            case
+              when p.name ilike ${q} then 0
+              when b.name ilike ${q} then 1
+              else 2
+            end asc,
+            p."createdAt" desc
+        `;
+      }
+      return Prisma.sql`order by p."createdAt" desc`;
     case "new":
       return Prisma.sql`order by p."createdAt" desc`;
     default:
