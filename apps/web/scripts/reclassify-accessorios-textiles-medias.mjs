@@ -86,6 +86,7 @@ const CAT = {
   gafas_y_optica: "gafas_y_optica",
   tarjeta_regalo: "tarjeta_regalo",
   hogar_y_lifestyle: "hogar_y_lifestyle",
+  trajes_de_bano_y_playa: "trajes_de_bano_y_playa",
 };
 
 const SUB = {
@@ -133,7 +134,9 @@ const SUB = {
   morral: "morral",
   rinonera_canguro: "rinonera_canguro",
   clutch_sobre: "clutch_sobre",
+  estuches_cartucheras_neceseres: "estuches_cartucheras_neceseres",
   billetera: "billetera",
+  llaveros: "llaveros",
   portadocumentos_porta_pasaporte: "portadocumentos_porta_pasaporte",
   bolso_de_viaje_duffel: "bolso_de_viaje_duffel",
 
@@ -159,9 +162,13 @@ const SUB = {
   cojines_y_fundas: "cojines_y_fundas",
   velas_y_aromas: "velas_y_aromas",
   arte_y_posters: "arte_y_posters",
+  papeleria_y_libros: "papeleria_y_libros",
   toallas_y_bano: "toallas_y_bano",
   mantas_y_cobijas: "mantas_y_cobijas",
   hogar_otros: "hogar_otros",
+
+  // trajes_de_bano_y_playa
+  pareo: "pareo",
 };
 
 const includesAny = (text, patterns) => patterns.some((re) => re.test(text));
@@ -205,6 +212,14 @@ const hasHairContext = (text) =>
     wordRe("scrunchies"),
     wordRe("diadema"),
     wordRe("diademas"),
+    wordRe("balaca"),
+    wordRe("balacas"),
+    wordRe("tiara"),
+    wordRe("tiaras"),
+    wordRe("vincha"),
+    wordRe("vinchas"),
+    wordRe("headband"),
+    wordRe("headbands"),
     wordRe("pasador"),
     wordRe("pasadores"),
     wordRe("pinza"),
@@ -307,6 +322,40 @@ const detectHome = (text) => {
     wordRe("laminas"),
   ];
 
+  const paperPatterns = [
+    wordRe("papeleria"),
+    wordRe("libro"),
+    wordRe("libros"),
+    wordRe("librito"),
+    wordRe("libritos"),
+    wordRe("agenda"),
+    wordRe("agendas"),
+    wordRe("cuaderno"),
+    wordRe("cuadernos"),
+    wordRe("sticker"),
+    wordRe("stickers"),
+    wordRe("separalibros"),
+    wordRe("marcapaginas"),
+    phraseRe("marca paginas"),
+    wordRe("bookmark"),
+    wordRe("bookmarks"),
+    wordRe("oraculo"),
+    wordRe("oraculos"),
+    wordRe("tarot"),
+    wordRe("journal"),
+    wordRe("journals"),
+    wordRe("notebook"),
+    wordRe("notebooks"),
+    // "book(s)" is useful for english-only titles; guard against lookbooks below.
+    wordRe("book"),
+    wordRe("books"),
+    phraseRe("para colorear"),
+    phraseRe("coloring book"),
+    phraseRe("colouring book"),
+    wordRe("postcard"),
+    wordRe("postcards"),
+  ];
+
   const towelPatterns = [
     wordRe("toalla"),
     wordRe("toallas"),
@@ -347,6 +396,27 @@ const detectHome = (text) => {
   }
   if (includesAny(text, posterPatterns)) {
     return { category: CAT.hogar_y_lifestyle, subcategory: SUB.arte_y_posters, confidence: 0.96, reasons: ["kw:home_poster"] };
+  }
+  const paperGuard = includesAny(text, [
+    // Avoid stealing "lookbook" content.
+    wordRe("lookbook"),
+    // Avoid misclassifying bags that mention "book/notebook" in the title.
+    wordRe("bolso"),
+    wordRe("bolsos"),
+    wordRe("cartera"),
+    wordRe("carteras"),
+    wordRe("bag"),
+    wordRe("bags"),
+    wordRe("tote"),
+    wordRe("mochila"),
+    wordRe("mochilas"),
+    wordRe("morral"),
+    wordRe("morrales"),
+    wordRe("wallet"),
+    wordRe("handbag"),
+  ]);
+  if (includesAny(text, paperPatterns) && !paperGuard) {
+    return { category: CAT.hogar_y_lifestyle, subcategory: SUB.papeleria_y_libros, confidence: 0.97, reasons: ["kw:lifestyle_paper"] };
   }
   if (includesAny(text, towelPatterns)) {
     return { category: CAT.hogar_y_lifestyle, subcategory: SUB.toallas_y_bano, confidence: 0.96, reasons: ["kw:home_towel"] };
@@ -427,6 +497,22 @@ const detectBags = (text) => {
     wordRe("billeteras"),
     wordRe("monedero"),
     wordRe("monederos"),
+    wordRe("cartuchera"),
+    wordRe("cartucheras"),
+    wordRe("cosmetiquera"),
+    wordRe("cosmetiqueras"),
+    wordRe("neceser"),
+    wordRe("neceseres"),
+    wordRe("estuche"),
+    wordRe("estuches"),
+    wordRe("pouch"),
+    wordRe("pouches"),
+    wordRe("lapicera"),
+    wordRe("lapiceras"),
+    wordRe("llavero"),
+    wordRe("llaveros"),
+    wordRe("keychain"),
+    wordRe("keychains"),
     wordRe("mochila"),
     wordRe("mochilas"),
     wordRe("morral"),
@@ -455,7 +541,25 @@ const detectBags = (text) => {
   const reasons = ["kw:bag"];
   let sub = SUB.cartera_bolso_de_mano;
 
-  if (includesAny(text, [wordRe("tote")])) sub = SUB.bolso_tote;
+  const keychain = includesAny(text, [wordRe("llavero"), wordRe("llaveros"), wordRe("keychain"), wordRe("keychains")]);
+  const cases = includesAny(text, [
+    wordRe("cartuchera"),
+    wordRe("cartucheras"),
+    wordRe("cosmetiquera"),
+    wordRe("cosmetiqueras"),
+    wordRe("neceser"),
+    wordRe("neceseres"),
+    wordRe("estuche"),
+    wordRe("estuches"),
+    wordRe("pouch"),
+    wordRe("pouches"),
+    wordRe("lapicera"),
+    wordRe("lapiceras"),
+  ]);
+
+  if (keychain) sub = SUB.llaveros;
+  else if (cases) sub = SUB.estuches_cartucheras_neceseres;
+  else if (includesAny(text, [wordRe("tote")])) sub = SUB.bolso_tote;
   else if (includesAny(text, [wordRe("crossbody"), wordRe("bandolera")])) sub = SUB.bolso_bandolera_crossbody;
   else if (includesAny(text, [wordRe("mochila"), wordRe("mochilas")])) sub = SUB.mochila;
   else if (includesAny(text, [wordRe("morral"), wordRe("morrales")])) sub = SUB.morral;
@@ -468,7 +572,8 @@ const detectBags = (text) => {
   else if (includesAny(text, [wordRe("cartera"), wordRe("handbag")])) sub = SUB.cartera_bolso_de_mano;
 
   reasons.push(`sub:${sub}`);
-  return { category: CAT.bolsos_y_marroquineria, subcategory: sub, confidence: 0.97, reasons };
+  const confidence = keychain || cases ? 0.98 : 0.97;
+  return { category: CAT.bolsos_y_marroquineria, subcategory: sub, confidence, reasons };
 };
 
 const detectFootwear = (text) => {
@@ -542,10 +647,46 @@ const detectFootwear = (text) => {
   return { category: CAT.calzado, subcategory: sub, confidence: 0.97, reasons };
 };
 
+const detectSwimwear = (text) => {
+  const pareo = includesAny(text, [wordRe("pareo"), wordRe("pareos"), wordRe("sarong"), wordRe("sarongs")]);
+  if (!pareo) return null;
+  return { category: CAT.trajes_de_bano_y_playa, subcategory: SUB.pareo, confidence: 0.98, reasons: ["kw:pareo"] };
+};
+
 const detectJewelry = (text) => {
   const hasCollar = includesAny(text, [wordRe("collar"), wordRe("collares"), wordRe("necklace"), wordRe("necklaces")]);
   const hasAnklet = includesAny(text, [wordRe("tobillera"), wordRe("tobilleras"), wordRe("anklet"), wordRe("anklets")]);
   const hasBroche = includesAny(text, [wordRe("broche"), wordRe("broches"), wordRe("prendedor"), wordRe("prendedores")]);
+  const hasChoker =
+    includesAny(text, [wordRe("choker"), wordRe("chokers"), wordRe("gargantilla"), wordRe("gargantillas")]) ||
+    text.includes("choker");
+  const hasRingContext = includesAny(text, [
+    wordRe("compromiso"),
+    wordRe("matrimonio"),
+    wordRe("boda"),
+    wordRe("alianza"),
+    wordRe("alianzas"),
+    wordRe("wedding"),
+    wordRe("engagement"),
+  ]);
+  const hasEarringSyn = includesAny(text, [
+    wordRe("candonga"),
+    wordRe("candongas"),
+    wordRe("earcuff"),
+    wordRe("earcuffs"),
+    phraseRe("ear cuff"),
+    phraseRe("ear cuffs"),
+    wordRe("topo"),
+    wordRe("topos"),
+    wordRe("stud"),
+    wordRe("studs"),
+    wordRe("hoop"),
+    wordRe("hoops"),
+    wordRe("argolla"),
+    wordRe("argollas"),
+    wordRe("arracada"),
+    wordRe("arracadas"),
+  ]);
   const jewelryPatterns = [
     wordRe("arete"),
     wordRe("aretes"),
@@ -557,6 +698,8 @@ const detectJewelry = (text) => {
     wordRe("anillos"),
     wordRe("ring"),
     wordRe("rings"),
+    wordRe("alianza"),
+    wordRe("alianzas"),
     wordRe("pulsera"),
     wordRe("pulseras"),
     wordRe("brazalete"),
@@ -580,7 +723,7 @@ const detectJewelry = (text) => {
     // Keep "collar" & "tobillera" special-cased for disambiguation below.
   ];
 
-  const anyJewelry = hasCollar || hasAnklet || hasBroche || includesAny(text, jewelryPatterns);
+  const anyJewelry = hasCollar || hasAnklet || hasBroche || hasChoker || hasEarringSyn || includesAny(text, jewelryPatterns);
   if (!anyJewelry) return null;
 
   // Disambiguation: "broche" can be a hair accessory (clip). Don't steal those from textiles.
@@ -626,12 +769,75 @@ const detectJewelry = (text) => {
     if (!otherJewelryCue) return null;
   }
 
+  // Disambiguation: "argolla/stud/hoops" can be hardware wording for belts/accessories.
+  const beltContext = includesAny(text, [
+    wordRe("cinturon"),
+    wordRe("cinturones"),
+    wordRe("belt"),
+    wordRe("correa"),
+    wordRe("correas"),
+    wordRe("hebilla"),
+    wordRe("hebillas"),
+  ]);
+  const strongEarringSyn = includesAny(text, [
+    wordRe("candonga"),
+    wordRe("candongas"),
+    wordRe("earcuff"),
+    wordRe("earcuffs"),
+    phraseRe("ear cuff"),
+    phraseRe("ear cuffs"),
+    wordRe("topo"),
+    wordRe("topos"),
+    wordRe("arracada"),
+    wordRe("arracadas"),
+  ]);
+  const weakHardwareSyn = includesAny(text, [
+    wordRe("argolla"),
+    wordRe("argollas"),
+    wordRe("stud"),
+    wordRe("studs"),
+    wordRe("hoop"),
+    wordRe("hoops"),
+  ]);
+  const otherJewelryCue = hasCollar || hasAnklet || hasBroche || hasChoker || includesAny(text, jewelryPatterns);
+  if (beltContext && weakHardwareSyn && !strongEarringSyn && !otherJewelryCue) return null;
+
   let sub = null;
   const reasons = ["kw:jewelry"];
 
-  if (includesAny(text, [wordRe("arete"), wordRe("aretes"), wordRe("pendiente"), wordRe("pendientes"), wordRe("earring"), wordRe("earrings")])) {
+  const argollaAsRing = hasRingContext && includesAny(text, [wordRe("argolla"), wordRe("argollas")]);
+  const alianzaAsRing = includesAny(text, [wordRe("alianza"), wordRe("alianzas")]);
+
+  if (argollaAsRing || alianzaAsRing) {
+    sub = SUB.anillos;
+  } else if (
+    includesAny(text, [
+      wordRe("arete"),
+      wordRe("aretes"),
+      wordRe("pendiente"),
+      wordRe("pendientes"),
+      wordRe("earring"),
+      wordRe("earrings"),
+      wordRe("candonga"),
+      wordRe("candongas"),
+      wordRe("earcuff"),
+      wordRe("earcuffs"),
+      phraseRe("ear cuff"),
+      phraseRe("ear cuffs"),
+      wordRe("topo"),
+      wordRe("topos"),
+      wordRe("stud"),
+      wordRe("studs"),
+      wordRe("hoop"),
+      wordRe("hoops"),
+      wordRe("argolla"),
+      wordRe("argollas"),
+      wordRe("arracada"),
+      wordRe("arracadas"),
+    ])
+  ) {
     sub = SUB.aretes_pendientes;
-  } else if (hasCollar) {
+  } else if (hasChoker || hasCollar) {
     sub = SUB.collares;
   } else if (includesAny(text, [wordRe("pulsera"), wordRe("pulseras"), wordRe("brazalete"), wordRe("brazaletes"), wordRe("bracelet"), wordRe("bracelets"), wordRe("bangle"), wordRe("bangles")])) {
     sub = SUB.pulseras_brazaletes;
@@ -673,6 +879,14 @@ const detectAccessorySubcategory = (text) => {
     wordRe("scrunchies"),
     wordRe("diadema"),
     wordRe("diademas"),
+    wordRe("balaca"),
+    wordRe("balacas"),
+    wordRe("tiara"),
+    wordRe("tiaras"),
+    wordRe("vincha"),
+    wordRe("vinchas"),
+    wordRe("headband"),
+    wordRe("headbands"),
     wordRe("pasador"),
     wordRe("pasadores"),
     wordRe("pinza"),
@@ -805,6 +1019,9 @@ const classify = (row) => {
   const footwear = detectFootwear(text);
   if (footwear) return { ...footwear, kind: "move_category" };
 
+  const swimwear = detectSwimwear(text);
+  if (swimwear) return { ...swimwear, kind: "move_category" };
+
   const jewelry = detectJewelry(text);
   if (jewelry) return { ...jewelry, kind: "move_category" };
 
@@ -828,7 +1045,7 @@ const client = new Client({ connectionString: databaseUrl });
 
 await client.connect();
 
-const scriptVersion = `rules_v1_${runKey}`;
+const scriptVersion = `rules_v2_${runKey}`;
 
 try {
   const limitSql = limit ? `limit ${Number(limit)}` : "";
@@ -1070,7 +1287,7 @@ try {
     `
       select category, count(*)::int as cnt
       from "products"
-      where category in ($1,$2,$3,$4,$5,$6,$7)
+      where category in ($1,$2,$3,$4,$5,$6,$7,$8)
       group by category
       order by cnt desc
     `,
@@ -1082,6 +1299,7 @@ try {
       CAT.gafas_y_optica,
       CAT.tarjeta_regalo,
       CAT.hogar_y_lifestyle,
+      CAT.trajes_de_bano_y_playa,
     ],
   );
 
