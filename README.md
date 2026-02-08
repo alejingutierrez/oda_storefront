@@ -127,6 +127,17 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Perfil privado en `/perfil` (nombre, bio, favoritos + listas, borrado de cuenta). Botón "Guardar" en cards de `/catalogo` para agregar a favoritos.
 - Eventos de experiencia UI viven en `experience_events` y se vinculan a `experience_subjects` usando cookie persistente `oda_anon_id`.
 
+## Catalogo (public)
+- Ruta `/catalogo` (y aliases `/buscar`, `/g/*`) con filtros, facets y scroll infinito.
+- El catálogo público fuerza `inStock=true` y `enrichedOnly=true` (no muestra productos sin `products.metadata.enrichment`).
+- Imágenes en cards:
+  - Si `products.imageCoverUrl` ya apunta a Vercel Blob (`*.public.blob.vercel-storage.com`), se sirve con `next/image` optimizado.
+  - Si el cover aún no está en Blob, se sirve via `/api/image-proxy` (cachea en Blob/CDN). En este caso se renderiza como `unoptimized` para evitar el 400 `INVALID_IMAGE_OPTIMIZE_REQUEST` de Vercel cuando `next/image` intenta optimizar un `src` bajo `/api/*`.
+- Backfill opcional de covers a Blob (recomendado cuando se detectan muchos covers remotos):
+  ```bash
+  IMAGE_BACKFILL_LIMIT=0 IMAGE_BACKFILL_CONCURRENCY=6 node apps/web/scripts/backfill-image-covers-to-blob.mjs
+  ```
+
 ## Home (public)
 - Ruta `/` con home editorial (estilo Farfetch) y grillas cuadradas.
 - Mega menu por género con estructura completa basada en categorías reales y reglas `category + subcategory` (ver `HOME_PLAN.md`).

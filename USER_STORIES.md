@@ -580,6 +580,23 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: `updatedCount/unchangedCount`, número de bulk edits por día, distribución de campos editados, tasa de errores por validación.
 - Estado: **done (2026-02-05)**.
 
+### MC-116 Catálogo público: ocultar no enriquecidos + fix imágenes proxy
+- Historia: Como usuario, quiero que el catálogo público muestre solo productos enriquecidos y que las imágenes carguen sin errores, para navegar sin fricción.
+- Alcance:
+  - Filtro interno `enrichedOnly` en queries de catálogo (oculta productos sin `products.metadata.enrichment`).
+  - `/catalogo` y `/api/catalog/products` fuerzan `inStock=true` y `enrichedOnly=true` (por alias aplica también a `/g/*` y `/buscar`).
+  - `CatalogProductCard` marca `unoptimized` cuando el `src` es `/api/image-proxy...` para evitar 400 `INVALID_IMAGE_OPTIMIZE_REQUEST` en Vercel cuando `next/image` intenta optimizar endpoints `/api/*`.
+  - Script `apps/web/scripts/backfill-image-covers-to-blob.mjs` para cachear covers remotos a Vercel Blob y persistir `products.imageCoverUrl`.
+- CA:
+  - `/catalogo` no lista productos sin enrichment.
+  - No se observan requests a `/_next/image?url=%2Fapi%2Fimage-proxy...` en runtime ni errores 400 asociados.
+  - Covers se sirven desde Blob cuando es posible; fallback via `/api/image-proxy` funciona.
+- Datos: `products.metadata.enrichment`, `products.imageCoverUrl`, Vercel Blob.
+- NF: Backfill con concurrencia configurable; timeouts y tamaño máximo por imagen para evitar jobs colgados.
+- Riesgos: Hotlinking bloqueado o imágenes demasiado grandes; mitigación con headers referer/UA, límites y reintentos/fallback.
+- Métricas: % covers en Blob para productos enriched; tasa de fallos del proxy/backfill; 4xx de `_next/image` (objetivo: 0 para URLs proxy).
+- Estado: **done (2026-02-08)**.
+
 ### MC-009 Taxonomía fija y catálogos
 - Historia: Como curador de datos, quiero editar y publicar catálogos cerrados (categorías, subcategorías, materiales, patrones, ocasiones y style tags), para que enrichment y UIs compartan una fuente de verdad.
 - Alcance:

@@ -35,6 +35,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-02)
+- MC-116 | done | P1 | Catálogo público: ocultar no enriquecidos + fix imágenes proxy | `/catalogo` (y aliases `/g/*`, `/buscar`) oculta productos sin `products.metadata.enrichment`; `next/image` evita optimizar `src=/api/image-proxy` (unoptimized) para no caer en 400 `INVALID_IMAGE_OPTIMIZE_REQUEST`; script de backfill de covers a Blob.
 - MC-115 | done | P1 | Curación humana (admin) + bulk edit de características | Nuevo módulo `/admin/product-curation` con filtros compartidos con `/catalogo`, scroll infinito, selección multi-producto y bulk edit modal (`replace/add/remove/clear`) con auditoría en `metadata.enrichment_human` sin tocar `metadata.enrichment`.
 - MC-114 | done | P1 | Auth usuarios externos (Descope) + perfil + favoritos/listas + analytics base | Login social con Descope, perfil privado, tablas y endpoints de experiencia/favoritos/listas.
 - MC-009 | done | P1 | Taxonomía editable + publicación (admin) | Nuevo panel `/admin/taxonomy` con draft→publish, tabla `taxonomy_snapshots`, endpoints admin, propagación a prompt enrichment, curación humana y labels de facets, editor de `style_profiles` + recompute.
