@@ -176,15 +176,45 @@ export async function GET(req: Request) {
     include: { brand: { select: { id: true, name: true } } },
   });
   stuckEnrichmentRuns.forEach((run) => {
+    const meta = readMetadata(run.metadata);
+    const createdBy = typeof meta.created_by === "string" ? meta.created_by : null;
+    const autoStart = typeof meta.auto_start === "boolean" ? meta.auto_start : null;
+    const isQueuedByRefresh = createdBy === "catalog_refresh" && autoStart === false;
+
+    const titlePrefix =
+      run.status === "processing"
+        ? "Enriquecimiento atascado"
+        : run.status === "blocked"
+          ? "Enriquecimiento bloqueado"
+          : isQueuedByRefresh
+            ? "Enriquecimiento pendiente"
+            : "Enriquecimiento pausado";
+
+    const level =
+      run.status === "processing"
+        ? ("danger" as const)
+        : run.status === "blocked"
+          ? ("danger" as const)
+          : isQueuedByRefresh
+            ? ("info" as const)
+            : ("warning" as const);
+
+    const parts = [
+      `Status ${run.status}`,
+      run.blockReason ? `Bloqueo ${run.blockReason}` : null,
+      run.lastError ? `Error ${run.lastError}` : null,
+      `Última actividad ${run.updatedAt.toISOString()}`,
+    ].filter(Boolean) as string[];
+
     alerts.push({
       id: `enrich_stuck:${run.id}`,
-      type: "enrichment_stuck",
-      level: "danger",
-      title: `Enriquecimiento atascado: ${run.brand?.name ?? "Marca"}`,
-      detail: `Status ${run.status} · Última actividad ${run.updatedAt.toISOString()}`,
+      type: isQueuedByRefresh ? "enrichment_queued" : "enrichment_stuck",
+      level,
+      title: `${titlePrefix}: ${run.brand?.name ?? "Marca"}`,
+      detail: parts.join(" · "),
       brandId: run.brandId ?? undefined,
       action: run.brandId
-        ? { type: "resume_enrichment", label: "Reanudar", brandId: run.brandId }
+        ? { type: "resume_enrichment", label: isQueuedByRefresh ? "Procesar" : "Reanudar", brandId: run.brandId }
         : undefined,
     });
   });

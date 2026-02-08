@@ -301,6 +301,8 @@ export default function CatalogRefreshPanel() {
               <th className="px-3">Productos</th>
               <th className="px-3">Último refresh</th>
               <th className="px-3">Estado</th>
+              <th className="px-3">Éxito</th>
+              <th className="px-3">Fallos</th>
               <th className="px-3">Nuevos</th>
               <th className="px-3">Cobertura</th>
               <th className="px-3">Precio</th>
@@ -332,8 +334,20 @@ export default function CatalogRefreshPanel() {
                   <td className="px-3 py-3 text-slate-600">
                     {formatDate(refresh.lastCompletedAt)}
                   </td>
-                  <td className="px-3 py-3 text-slate-600">
+                  <td className="px-3 py-3 text-slate-600" title={refresh.lastError ?? ""}>
                     {refresh.lastStatus ?? "—"}
+                  </td>
+                  <td className="px-3 py-3 text-slate-600">
+                    {typeof refresh.lastRunSuccessRate === "number"
+                      ? `${Math.round(refresh.lastRunSuccessRate * 100)}%`
+                      : typeof refresh.lastRunCompletedItems === "number" &&
+                          typeof refresh.lastRunTotalItems === "number" &&
+                          refresh.lastRunTotalItems > 0
+                        ? `${Math.round((refresh.lastRunCompletedItems / refresh.lastRunTotalItems) * 100)}%`
+                        : "—"}
+                  </td>
+                  <td className="px-3 py-3 text-slate-600">
+                    {typeof refresh.lastRunFailedItems === "number" ? refresh.lastRunFailedItems : "—"}
                   </td>
                   <td className="px-3 py-3 text-slate-600">
                     {refresh.lastNewProducts ?? 0}

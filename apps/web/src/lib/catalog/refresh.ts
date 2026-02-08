@@ -29,6 +29,7 @@ import {
 type CatalogRefreshMeta = {
   lastStartedAt?: string;
   lastCompletedAt?: string;
+  lastFinishedAt?: string;
   nextDueAt?: string;
   lastRunId?: string;
   lastStatus?: string;
@@ -36,6 +37,11 @@ type CatalogRefreshMeta = {
   lastPriceChanges?: number;
   lastStockChanges?: number;
   lastStockStatusChanges?: number;
+  lastRunTotalItems?: number;
+  lastRunCompletedItems?: number;
+  lastRunFailedItems?: number;
+  lastRunSuccessRate?: number;
+  lastRunDurationMs?: number;
   lastSitemapCount?: number;
   lastSitemapMatched?: number;
   lastSitemapCoverage?: number;
@@ -86,6 +92,11 @@ export const getRefreshConfig = () => {
   const maxBrands = Math.max(1, Number(process.env.CATALOG_REFRESH_MAX_BRANDS ?? 4));
   const maxRuntimeMs = Math.max(5000, Number(process.env.CATALOG_REFRESH_MAX_RUNTIME_MS ?? 25000));
   const minGapHours = Math.max(1, Number(process.env.CATALOG_REFRESH_MIN_GAP_HOURS ?? 3));
+  const maxFailedItems = Math.max(0, Number(process.env.CATALOG_REFRESH_MAX_FAILED_ITEMS ?? 5));
+  const maxFailedRateRaw = Number(process.env.CATALOG_REFRESH_MAX_FAILED_RATE ?? 0.01);
+  const maxFailedRate = Number.isFinite(maxFailedRateRaw)
+    ? Math.max(0, Math.min(1, maxFailedRateRaw))
+    : 0.01;
   const drainOnRun = process.env.CATALOG_REFRESH_DRAIN_ON_RUN === "true";
   const autoRecover = process.env.CATALOG_REFRESH_AUTO_RECOVER !== "false";
   const recoverMaxRuns = Math.max(
@@ -122,6 +133,8 @@ export const getRefreshConfig = () => {
     maxBrands,
     maxRuntimeMs,
     minGapHours,
+    maxFailedItems,
+    maxFailedRate,
     drainOnRun,
     autoRecover,
     recoverMaxRuns,
@@ -191,6 +204,11 @@ export const markRefreshCompleted = async (params: {
   priceChanges: number;
   stockChanges: number;
   stockStatusChanges: number;
+  runTotalItems?: number;
+  runCompletedItems?: number;
+  runFailedItems?: number;
+  runSuccessRate?: number;
+  runDurationMs?: number;
   lastError?: string | null;
 }) => {
   const brand = await prisma.brand.findUnique({ where: { id: params.brandId }, select: { metadata: true } });
@@ -199,6 +217,7 @@ export const markRefreshCompleted = async (params: {
   const config = getRefreshConfig();
   const nextMetadata = withRefreshMeta(metadata, {
     lastCompletedAt: params.status === "completed" ? new Date().toISOString() : undefined,
+    lastFinishedAt: new Date().toISOString(),
     nextDueAt:
       params.status === "completed"
         ? computeNextDueAt(new Date(), config.intervalDays, config.jitterHours)
@@ -209,6 +228,11 @@ export const markRefreshCompleted = async (params: {
     lastPriceChanges: params.priceChanges,
     lastStockChanges: params.stockChanges,
     lastStockStatusChanges: params.stockStatusChanges,
+    lastRunTotalItems: params.runTotalItems,
+    lastRunCompletedItems: params.runCompletedItems,
+    lastRunFailedItems: params.runFailedItems,
+    lastRunSuccessRate: params.runSuccessRate,
+    lastRunDurationMs: params.runDurationMs,
     lastError: params.lastError ?? null,
   });
   await prisma.brand.update({
@@ -382,7 +406,9 @@ const recoverEnrichmentRuns = async (config: ReturnType<typeof getRefreshConfig>
   const cutoff = new Date(Date.now() - config.recoverEnrichmentStuckMinutes * 60 * 1000);
   const runs = await prisma.productEnrichmentRun.findMany({
     where: {
-      status: { in: ["processing", "paused", "blocked"] },
+      // Only auto-recover runs that are already executing. Paused/stopped/blocked runs
+      // should remain manual to avoid unexpected OpenAI usage.
+      status: { in: ["processing"] },
       updatedAt: { lt: cutoff },
     },
     orderBy: { updatedAt: "asc" },
@@ -442,16 +468,11 @@ const reconcileStaleRefreshStates = async () => {
 
   for (const row of rows) {
     if (!row.runId || !row.startedAt) continue;
-    const failedCount = await prisma.catalogItem.count({
-      where: { runId: row.runId, status: "failed" },
-    });
     try {
       await finalizeRefreshForRun({
         brandId: row.brandId,
         runId: row.runId,
         startedAt: row.startedAt,
-        status: failedCount > 0 ? "failed" : "completed",
-        lastError: failedCount > 0 ? "catalog_failed_items" : null,
       });
     } catch (error) {
       console.warn("catalog.refresh.reconcile_failed", row.brandId, row.runId, error);
@@ -480,9 +501,7 @@ const getProductsMissingEnrichment = async (
 
 const enqueueNewProductEnrichment = async (brandId: string, startedAt: Date) => {
   const config = getRefreshConfig();
-  if (!isEnrichmentQueueEnabled()) return { queued: 0, skipped: "queue_disabled" };
   const existing = await findActiveEnrichmentRun({ scope: "brand", brandId });
-  if (existing) return { queued: 0, skipped: "existing_run" };
 
   const rows = await getProductsMissingEnrichment(
     brandId,
@@ -492,13 +511,48 @@ const enqueueNewProductEnrichment = async (brandId: string, startedAt: Date) => 
   const ids = rows.map((row) => row.id);
   if (!ids.length) return { queued: 0, skipped: "no_new_products" };
 
+  // If there's already a non-completed run, append new products to it but keep the
+  // run non-processing unless it was already processing.
+  if (existing) {
+    if (existing.status === "processing") {
+      return { queued: 0, skipped: "existing_processing_run", runId: existing.id };
+    }
+
+    const inserted = await prisma.productEnrichmentItem.createMany({
+      data: ids.map((productId) => ({
+        runId: existing.id,
+        productId,
+        status: "pending",
+        attempts: 0,
+      })),
+      skipDuplicates: true,
+    });
+
+    if (inserted.count > 0) {
+      await prisma.productEnrichmentRun.update({
+        where: { id: existing.id },
+        data: {
+          totalItems: { increment: inserted.count },
+          updatedAt: new Date(),
+        },
+      });
+    }
+
+    return { queued: inserted.count, runId: existing.id, appended: true };
+  }
+
   const run = await createEnrichmentRun({
     scope: "brand",
     brandId,
     productIds: ids,
-    status: "processing",
+    // The refresh pipeline should only queue pending enrichment work, not execute it.
+    // This avoids unexpected OpenAI quota usage. Admin/workers can resume the run
+    // explicitly via /api/admin/product-enrichment/run.
+    status: "paused",
     metadata: {
       mode: "new_products",
+      auto_start: false,
+      created_by: "catalog_refresh",
       created_at: new Date().toISOString(),
       provider: productEnrichmentProvider,
       model: productEnrichmentModel,
@@ -507,23 +561,82 @@ const enqueueNewProductEnrichment = async (brandId: string, startedAt: Date) => 
     },
   });
 
-  const pending = await listPendingEnrichmentItems(run.id, Math.max(10, ids.length));
-  await markEnrichmentItemsQueued(pending.map((item) => item.id));
-  await enqueueEnrichmentItems(pending);
-
-  return { queued: pending.length, runId: run.id };
+  // Keep items as "pending" and do not enqueue them into BullMQ. This ensures the
+  // Vercel cron drain doesn't pick up the run (it only drains status=processing).
+  return { queued: ids.length, runId: run.id, status: "paused" };
 };
 
 export const finalizeRefreshForRun = async (params: {
   brandId: string;
   runId: string;
   startedAt: Date;
-  status: "completed" | "blocked" | "failed";
   lastError?: string | null;
 }) => {
+  const run = await prisma.catalogRun.findUnique({
+    where: { id: params.runId },
+    select: { totalItems: true, lastError: true },
+  });
+  if (!run) {
+    await markRefreshCompleted({
+      brandId: params.brandId,
+      runId: params.runId,
+      status: "failed",
+      newProducts: 0,
+      priceChanges: 0,
+      stockChanges: 0,
+      stockStatusChanges: 0,
+      runTotalItems: 0,
+      runCompletedItems: 0,
+      runFailedItems: 0,
+      runSuccessRate: 0,
+      runDurationMs: Math.max(0, Date.now() - params.startedAt.getTime()),
+      lastError: params.lastError ?? "missing_catalog_run",
+    });
+    return;
+  }
+
+  const counts = await prisma.catalogItem.groupBy({
+    by: ["status"],
+    where: { runId: params.runId },
+    _count: { _all: true },
+  });
+  const map = new Map<string, number>();
+  counts.forEach((row) => map.set(row.status, row._count._all));
+  const completedItems = map.get("completed") ?? 0;
+  const failedItems = map.get("failed") ?? 0;
+  const totalFromCounts = Array.from(map.values()).reduce((acc, value) => acc + value, 0);
+  const totalItems = run.totalItems || totalFromCounts;
+  const successRate = totalItems > 0 ? completedItems / totalItems : 0;
+
+  const config = getRefreshConfig();
+  const shouldFail =
+    failedItems > config.maxFailedItems &&
+    (totalItems > 0 ? failedItems / totalItems : 1) > config.maxFailedRate;
+  const status: "completed" | "failed" = shouldFail ? "failed" : "completed";
+
+  const [topErrorRow] = failedItems
+    ? await prisma.$queryRaw<{ lastError: string | null; count: number }[]>(
+        Prisma.sql`
+          SELECT "lastError", COUNT(*)::int AS count
+          FROM "catalog_items"
+          WHERE "runId" = ${params.runId}
+            AND status = 'failed'
+          GROUP BY "lastError"
+          ORDER BY count DESC NULLS LAST
+          LIMIT 1
+        `,
+      )
+    : [];
+  const topError = topErrorRow?.lastError ?? null;
+  const lastError =
+    params.lastError ??
+    (failedItems > 0
+      ? (topError ?? run.lastError ?? (status === "failed" ? "catalog_failed_items" : `catalog_soft_failures:${failedItems}`))
+      : null);
+
   const metrics = await computeRefreshMetrics(params.brandId, params.startedAt);
   let enrichmentError: string | null = null;
-  if (params.status === "completed") {
+  if (status === "completed") {
     try {
       await enqueueNewProductEnrichment(params.brandId, params.startedAt);
     } catch (error) {
@@ -533,12 +646,17 @@ export const finalizeRefreshForRun = async (params: {
   await markRefreshCompleted({
     brandId: params.brandId,
     runId: params.runId,
-    status: params.status,
+    status,
     newProducts: metrics.newProducts,
     priceChanges: metrics.priceChanges,
     stockChanges: metrics.stockChanges,
     stockStatusChanges: metrics.stockStatusChanges,
-    lastError: params.lastError ?? enrichmentError ?? null,
+    runTotalItems: totalItems,
+    runCompletedItems: completedItems,
+    runFailedItems: failedItems,
+    runSuccessRate: Number.isFinite(successRate) ? successRate : 0,
+    runDurationMs: Math.max(0, Date.now() - params.startedAt.getTime()),
+    lastError: enrichmentError ?? lastError ?? null,
   });
 };
 
@@ -591,7 +709,7 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
   for (const brand of selected) {
     if (Date.now() - startedAt > config.maxRuntimeMs) break;
     const existingRun = await prisma.catalogRun.findFirst({
-      where: { brandId: brand.id, status: { in: ["processing", "paused", "blocked", "stopped"] } },
+      where: { brandId: brand.id, status: { in: ["processing", "paused", "blocked"] } },
       orderBy: { updatedAt: "desc" },
     });
     if (existingRun) {
@@ -659,7 +777,13 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
     });
     await markRefreshStarted(brand.id, run.id, coverage);
 
-    const pending = await listPendingItems(run.id, Math.max(10, deduped.length));
+    // Avoid dumping thousands of jobs into Redis at once. The worker refills the queue
+    // as items are completed/failed (allowQueueRefill=true).
+    const enqueueLimit = Math.max(
+      1,
+      Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
+    );
+    const pending = await listPendingItems(run.id, Math.max(10, enqueueLimit));
     await markItemsQueued(pending.map((item) => item.id));
     await enqueueCatalogItems(pending);
 

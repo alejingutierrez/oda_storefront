@@ -40,8 +40,6 @@ const finalizeRunIfIdle = async (runId: string) => {
     brandId: run.brand.id,
     runId: run.id,
     startedAt: run.startedAt,
-    status: failedCount > 0 ? "failed" : "completed",
-    lastError: failedCount > 0 ? "catalog_failed_items" : null,
   });
   if (failedCount > 0 || !run.brand) return;
 

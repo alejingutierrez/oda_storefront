@@ -215,8 +215,6 @@ export const processCatalogItemById = async (
         brandId: brand.id,
         runId: run.id,
         startedAt: run.startedAt,
-        status: failedCount > 0 ? "failed" : "completed",
-        lastError: failedCount > 0 ? "catalog_failed_items" : null,
       });
       await markBrandCatalogFinished({
         brand,
@@ -285,8 +283,6 @@ export const processCatalogItemById = async (
           brandId: brand.id,
           runId: run.id,
           startedAt: run.startedAt,
-          status: failedCount > 0 ? "failed" : "completed",
-          lastError: failedCount > 0 ? message : null,
         });
         await markBrandCatalogFinished({
           brand,

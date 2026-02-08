@@ -53,19 +53,33 @@ export const discoverCatalogRefs = async ({
   };
 
   const rawDiscoveryLimit = Number(process.env.CATALOG_EXTRACT_DISCOVERY_LIMIT ?? NaN);
+  const rawMultiplier = Number(process.env.CATALOG_DISCOVERY_MULTIPLIER ?? 5);
+  const multiplier = Number.isFinite(rawMultiplier) ? Math.max(1, rawMultiplier) : 5;
+  const rawMaxDiscovery = Number(process.env.CATALOG_DISCOVERY_MAX_LIMIT ?? 0);
+  const maxDiscoveryLimit = Number.isFinite(rawMaxDiscovery) ? Math.max(0, Math.floor(rawMaxDiscovery)) : 0;
   const discoveryBase =
     Number.isFinite(rawDiscoveryLimit) && rawDiscoveryLimit > 0
       ? rawDiscoveryLimit
-      : limit * 5;
-  const discoveryLimit = Math.max(limit, discoveryBase);
+      : limit * multiplier;
+  const discoveryLimitUncapped = Math.max(limit, discoveryBase);
+  const discoveryLimit =
+    maxDiscoveryLimit > 0
+      ? Math.min(discoveryLimitUncapped, Math.max(limit, maxDiscoveryLimit))
+      : discoveryLimitUncapped;
   const rawSitemapLimit = Number(process.env.CATALOG_EXTRACT_SITEMAP_LIMIT ?? 5000);
   const normalizedSitemapLimit = Number.isFinite(rawSitemapLimit) ? rawSitemapLimit : 5000;
   const isVtex = adapter.platform === "vtex";
-  const sitemapLimit = isVtex
+  const sitemapLimitUncapped = isVtex
     ? 0
     : normalizedSitemapLimit <= 0
       ? 0
       : Math.max(discoveryLimit, normalizedSitemapLimit);
+  const rawMaxSitemap = Number(process.env.CATALOG_SITEMAP_MAX_LIMIT ?? maxDiscoveryLimit);
+  const maxSitemapLimit = Number.isFinite(rawMaxSitemap) ? Math.max(0, Math.floor(rawMaxSitemap)) : 0;
+  const sitemapLimit =
+    maxSitemapLimit > 0
+      ? Math.min(sitemapLimitUncapped, Math.max(discoveryLimit, maxSitemapLimit))
+      : sitemapLimitUncapped;
 
   let refs: ProductRef[] = [];
   const combineSources = Boolean(combineSitemapAndAdapter);

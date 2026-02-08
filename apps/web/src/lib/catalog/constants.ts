@@ -13,6 +13,13 @@ export const isCatalogSoftError = (message: string) => {
     normalized.includes("no se pudo obtener producto") ||
     normalized.includes("llm_pdp_false") ||
     normalized.includes("no hay imágenes disponibles") ||
-    normalized.includes("no hay imagenes disponibles")
+    normalized.includes("no hay imagenes disponibles") ||
+    normalized.includes("this operation was aborted") ||
+    normalized.includes("fetch failed") ||
+    normalized.includes("econnreset") ||
+    normalized.includes("etimedout") ||
+    normalized.includes("enotfound") ||
+    normalized.includes("eai_again") ||
+    normalized.includes("socket hang up")
   );
 };

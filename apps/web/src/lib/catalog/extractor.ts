@@ -380,10 +380,20 @@ export const processCatalogRef = async ({
     blobFailure = error instanceof Error ? error.message : String(error);
     imageMapping = new Map();
   }
-  const blobImages = raw.images
+  // Some platforms provide images only per-variant (or the product gallery can be empty).
+  // If the product-level image array is empty, fall back to the union of variant images.
+  const variantImages = Array.from(
+    new Set(
+      (raw.variants ?? []).flatMap((variant) =>
+        [variant.image ?? "", ...(variant.images ?? [])].filter(Boolean),
+      ),
+    ),
+  );
+  const rawFallbackImages = raw.images.length ? raw.images : variantImages;
+  const blobFallbackImages = rawFallbackImages
     .map((url) => imageMapping.get(url)?.url)
     .filter(Boolean) as string[];
-  const fallbackImages = blobImages.length ? blobImages : raw.images;
+  const fallbackImages = blobFallbackImages.length ? blobFallbackImages : rawFallbackImages;
   if (!fallbackImages.length) {
     throw new Error("No hay imágenes disponibles tras upload");
   }

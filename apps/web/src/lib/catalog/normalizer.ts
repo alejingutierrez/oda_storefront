@@ -11,6 +11,40 @@ const MAX_LLM_IMAGES = Math.max(1, Number(process.env.CATALOG_LLM_NORMALIZE_MAX_
 const MAX_LLM_VARIANTS = Math.max(1, Number(process.env.CATALOG_LLM_NORMALIZE_MAX_VARIANTS ?? 60));
 const MAX_LLM_OPTION_VALUES = Math.max(1, Number(process.env.CATALOG_LLM_NORMALIZE_MAX_OPTION_VALUES ?? 20));
 
+const LLM_DISABLE_MINUTES_DEFAULT = 30;
+let llmDisabledUntil = 0;
+let llmDisabledReason: string | null = null;
+
+const toErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
+const isQuotaOrBillingError = (message: string) => {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("you exceeded your current quota") ||
+    lower.includes("insufficient_quota") ||
+    (lower.includes("429") && lower.includes("quota"))
+  );
+};
+
+const isMissingApiKeyError = (message: string) => message.toLowerCase().includes("openai_api_key is missing");
+
+const maybeDisableLlmTemporarily = (message: string) => {
+  if (!isQuotaOrBillingError(message)) return;
+  const minutes = Math.max(
+    1,
+    Number(process.env.CATALOG_LLM_NORMALIZE_DISABLE_MINUTES ?? LLM_DISABLE_MINUTES_DEFAULT),
+  );
+  llmDisabledUntil = Date.now() + minutes * 60 * 1000;
+  llmDisabledReason = message.slice(0, 240);
+  console.warn("catalog.normalizer.llm_disabled", {
+    minutes,
+    reason: llmDisabledReason,
+  });
+};
+
+const isLlmTemporarilyDisabled = () => llmDisabledUntil > Date.now();
+
 const catalogVariantSchema = z.object({
   sku: z.string().nullable().optional(),
   color: z.string().nullable().optional(),
@@ -585,5 +619,44 @@ export const normalizeCatalogProduct = async (rawProduct: RawProduct, platform?:
   if (!shouldUseLlmNormalizer(deterministic, platform)) {
     return deterministic;
   }
-  return normalizeCatalogProductWithOpenAI(rawProduct);
+
+  if (isLlmTemporarilyDisabled()) {
+    return {
+      ...deterministic,
+      metadata: {
+        ...(deterministic.metadata ?? {}),
+        llm_normalize: {
+          status: "skipped",
+          reason: llmDisabledReason ?? "temporarily_disabled",
+          disabled_until: new Date(llmDisabledUntil).toISOString(),
+          model: OPENAI_MODEL,
+        },
+      },
+    };
+  }
+
+  try {
+    return await normalizeCatalogProductWithOpenAI(rawProduct);
+  } catch (error) {
+    const message = toErrorMessage(error);
+    if (isQuotaOrBillingError(message) || isMissingApiKeyError(message)) {
+      maybeDisableLlmTemporarily(message);
+    }
+    console.warn("catalog.normalizer.llm_failed_fallback", {
+      platform: platform ?? null,
+      error: message,
+    });
+    return {
+      ...deterministic,
+      metadata: {
+        ...(deterministic.metadata ?? {}),
+        llm_normalize: {
+          status: "failed",
+          error: message.slice(0, 280),
+          model: OPENAI_MODEL,
+          at: new Date().toISOString(),
+        },
+      },
+    };
+  }
 };
