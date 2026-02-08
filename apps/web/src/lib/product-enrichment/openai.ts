@@ -731,6 +731,10 @@ Reglas de evidencia y consistencia:
 - "Accesorios textiles y medias" es solo textil (bandanas, pañuelos, bufandas, gorras, medias). Nunca usarlo para joyería.
 - Si el texto indica calzado (botas, botines, tenis, sandalias, tacones, mocasines, balerinas, zapatos), usa category "calzado".
 - Si el texto indica bolsos o marroquinería (bolso, cartera, bandolera, mochila, morral, riñonera, clutch, billetera), usa category "bolsos_y_marroquineria".
+- Si el texto indica estuches/cases (cartuchera, cosmetiquera, neceser, estuche, pouch), usa category "bolsos_y_marroquineria" y subcategory "estuches_cartucheras_neceseres".
+- Si el texto indica llavero (llavero, keychain), usa category "bolsos_y_marroquineria" y subcategory "llaveros".
+- Si el texto indica papelería/libros (agenda, cuaderno, libro, stickers, tarot/oráculo, marcapáginas/separalibros), usa category "hogar_y_lifestyle" y subcategory "papeleria_y_libros".
+- Si el texto indica pareo/sarong, usa category "trajes_de_bano_y_playa" y subcategory "pareo".
 - Si el texto indica gafas/lentes/óptica, usa category "gafas_y_optica".
 - Las imágenes solo ayudan a desambiguar detalles (fit, color, pattern), nunca para contradecir el texto.
 - Si hay conflicto entre imagen y texto, gana el texto.

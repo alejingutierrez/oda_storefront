@@ -145,6 +145,9 @@ const SUBCATEGORY_OVERRIDES: Record<string, string> = {
   leggings_deportivos: "Leggings",
   shorts_deportivos: "Shorts deportivos",
   sudadera_pants_deportivos: "Pants deportivos",
+  estuches_cartucheras_neceseres: "Estuches / cartucheras / neceseres",
+  papeleria_y_libros: "Papelería y libros",
+  llaveros: "Llaveros",
 };
 
 const SMALL_WORDS = new Set([

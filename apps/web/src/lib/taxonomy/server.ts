@@ -102,6 +102,57 @@ function normalizeData(data: TaxonomyDataV1): TaxonomyDataV1 {
   };
 }
 
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function mergeDraftWithBaseAdditions(params: { draft: TaxonomyDataV1; base: TaxonomyDataV1 }) {
+  // Only add missing keys from base. Never overwrite draft edits.
+  const next = cloneJson(params.draft);
+  const base = params.base;
+  let changed = false;
+
+  const nextCategoryByKey = new Map(next.categories.map((entry) => [entry.key, entry]));
+  for (const baseCategory of base.categories ?? []) {
+    const existingCategory = nextCategoryByKey.get(baseCategory.key);
+    if (!existingCategory) {
+      next.categories.push(cloneJson(baseCategory));
+      nextCategoryByKey.set(baseCategory.key, next.categories[next.categories.length - 1]);
+      changed = true;
+      continue;
+    }
+
+    const existingSubs = existingCategory.subcategories ?? [];
+    const existingSubKeys = new Set(existingSubs.map((sub) => sub.key));
+    for (const baseSub of baseCategory.subcategories ?? []) {
+      if (existingSubKeys.has(baseSub.key)) continue;
+      existingSubs.push(cloneJson(baseSub));
+      existingSubKeys.add(baseSub.key);
+      changed = true;
+    }
+    existingCategory.subcategories = existingSubs;
+  }
+
+  const mergeList = (key: "materials" | "patterns" | "occasions" | "styleTags") => {
+    const existing = (next[key] ?? []) as Array<{ key: string }>;
+    const existingKeys = new Set(existing.map((entry) => entry.key));
+    for (const baseEntry of (base[key] ?? []) as Array<{ key: string }>) {
+      if (existingKeys.has(baseEntry.key)) continue;
+      (existing as any).push(cloneJson(baseEntry));
+      existingKeys.add(baseEntry.key);
+      changed = true;
+    }
+    (next as any)[key] = existing;
+  };
+
+  mergeList("materials");
+  mergeList("patterns");
+  mergeList("occasions");
+  mergeList("styleTags");
+
+  return { changed, data: changed ? normalizeData(next) : normalizeData(params.draft) };
+}
+
 async function loadLatestSnapshot(status: TaxonomyStage): Promise<SnapshotMeta | null> {
   if (taxonomySnapshotsTableState === "missing") return null;
   try {
@@ -154,6 +205,24 @@ export async function getOrCreateDraftTaxonomyMeta(params: { adminEmail?: string
   if (draftRow) {
     try {
       const parsed = normalizeData(parseTaxonomyDataV1(draftRow.data));
+      const merged = mergeDraftWithBaseAdditions({ draft: parsed, base: published.data });
+      if (merged.changed) {
+        const updated = await prisma.taxonomySnapshot.update({
+          where: { id: draftRow.id },
+          data: {
+            data: JSON.parse(JSON.stringify(merged.data)),
+            createdBy: params.adminEmail ?? null,
+            updatedAt: new Date(),
+          },
+          select: { version: true, updatedAt: true },
+        });
+        return {
+          source: "db",
+          version: updated.version,
+          updatedAt: updated.updatedAt,
+          data: merged.data,
+        };
+      }
       return {
         source: "db",
         version: draftRow.version,
