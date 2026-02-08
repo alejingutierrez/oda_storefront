@@ -302,6 +302,9 @@ const rawCategories = [
       "Pajaritas / moños",
       "Tirantes",
       "Chales / pashminas",
+      "Accesorios para cabello",
+      "Gorros / beanies",
+      "Tapabocas / mascarillas",
     ],
   },
   {
@@ -361,6 +364,22 @@ const rawCategories = [
       "Relojes",
     ],
   },
+  {
+    label: "Tarjeta regalo",
+    subcategories: ["Gift card"],
+  },
+  {
+    label: "Hogar y lifestyle",
+    subcategories: [
+      "Textiles de mesa",
+      "Cojines y fundas",
+      "Velas y aromas",
+      "Arte y posters",
+      "Toallas y baño",
+      "Mantas y cobijas",
+      "Hogar (otros)",
+    ],
+  },
 ];
 
 const rawCategoryDescriptions: Record<string, string> = {
@@ -412,6 +431,10 @@ const rawCategoryDescriptions: Record<string, string> = {
     "Accesorios para ojos/rostro con lentes o monturas. Incluye gafas de sol y ópticas. Excluye gorras/sombreros y joyería.",
   "Joyería y bisutería":
     "Accesorios no textiles (metal, piedras, resina) para el cuerpo: aretes, collares, pulseras, anillos, piercings. Excluye bandanas o textiles.",
+  "Tarjeta regalo":
+    "Producto no físico (o bono) que representa crédito o saldo para compras en la tienda. No es moda; se mantiene separado para evitar contaminar búsqueda y recomendaciones.",
+  "Hogar y lifestyle":
+    "Artículos de hogar y lifestyle (mesa, decoración, baño, velas, posters). Se separa del catálogo de moda para mantener consistencia.",
 };
 
 const rawSubcategoryDescriptions: Record<string, string> = {
@@ -427,6 +450,9 @@ const rawSubcategoryDescriptions: Record<string, string> = {
   "Pajaritas / moños": "Corbatín/moño para cuello, generalmente formal.",
   Tirantes: "Tirantes elásticos para sostener pantalón.",
   "Chales / pashminas": "Textil grande para cubrir hombros o espalda.",
+  "Accesorios para cabello": "Accesorios para el cabello (scrunchies, diademas, pinzas, pasadores).",
+  "Gorros / beanies": "Gorros tejidos tipo beanie (sin visera).",
+  "Tapabocas / mascarillas": "Tapabocas o mascarillas textiles.",
   Botas: "Calzado alto que cubre tobillo o pantorrilla.",
   Botines: "Calzado hasta el tobillo.",
   "Tenis / sneakers": "Calzado deportivo o casual con suela de goma.",
@@ -464,6 +490,14 @@ const rawSubcategoryDescriptions: Record<string, string> = {
   "Sets de joyería": "Conjunto de piezas (aretes + collar, etc.).",
   Piercings: "Joyería para perforaciones (barbell, stud).",
   Relojes: "Accesorio de reloj de pulsera; puede ser metal o cuero.",
+  "Gift card": "Tarjeta o bono de regalo (digital o físico).",
+  "Textiles de mesa": "Textiles y accesorios de mesa (manteles, individuales, servilletas, caminos, posavasos).",
+  "Cojines y fundas": "Cojines decorativos y fundas.",
+  "Velas y aromas": "Velas, aromas, difusores e incienso.",
+  "Arte y posters": "Posters, prints y arte decorativo.",
+  "Toallas y baño": "Toallas y artículos textiles de baño.",
+  "Mantas y cobijas": "Mantas, cobijas y throws.",
+  "Hogar (otros)": "Otros artículos de hogar/lifestyle no clasificados.",
 };
 
 const rawMaterialTags = [

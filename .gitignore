@@ -13,6 +13,7 @@ yarn-error.log*
 .turbo
 dist
 coverage
+/reports
 /apps/web/.next
 /apps/web/node_modules
 /services/*/node_modules

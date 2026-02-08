@@ -61,7 +61,8 @@ export const CATEGORY_GROUPS = {
     "calzado",
     "gafas_y_optica",
     "accesorios",
-    "tarjeta regalo",
+    "tarjeta_regalo",
+    "hogar_y_lifestyle",
     "ropa_interior",
     "ropa_interior_basica",
     "lenceria_y_fajas_shapewear",
@@ -128,7 +129,8 @@ const LABEL_OVERRIDES: Record<string, string> = {
   calzado: "Calzado",
   vestidos: "Vestidos",
   faldas: "Faldas",
-  "tarjeta regalo": "Tarjeta regalo",
+  tarjeta_regalo: "Tarjeta regalo",
+  hogar_y_lifestyle: "Hogar y lifestyle",
 };
 
 const SUBCATEGORY_OVERRIDES: Record<string, string> = {
