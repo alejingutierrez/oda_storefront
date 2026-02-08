@@ -38,6 +38,8 @@ function formatPriceRange(minPrice: string | null, maxPrice: string | null, curr
 export default function CatalogProductCard({ product }: { product: CatalogProduct }) {
   const href = product.sourceUrl ?? "#";
   const imageUrl = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
+  // Vercel/Next bloquea optimizacion de `next/image` cuando el src es un endpoint `/api/*` (INVALID_IMAGE_OPTIMIZE_REQUEST).
+  const unoptimized = !!imageUrl && imageUrl.startsWith("/api/image-proxy");
 
   return (
     <article className="group relative overflow-hidden rounded-xl border border-[color:var(--oda-border)] bg-white shadow-[0_16px_36px_rgba(23,21,19,0.08)] transition duration-500 ease-out [transform-style:preserve-3d] hover:shadow-[0_30px_60px_rgba(23,21,19,0.14)] group-hover:[transform:perspective(900px)_rotateX(6deg)_translateY(-10px)]">
@@ -50,6 +52,7 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
             src={imageUrl}
             alt={product.name}
             fill
+            unoptimized={unoptimized}
             sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
             className="object-cover object-center transition duration-700 group-hover:scale-[1.07] group-hover:-translate-y-1"
             placeholder="blur"

@@ -18,6 +18,8 @@ export type CatalogFilters = {
   seasons?: string[];
   styles?: string[];
   inStock?: boolean;
+  // Interno: oculta productos sin `metadata.enrichment` (catalogo publico).
+  enrichedOnly?: boolean;
 };
 
 const genderSqlMap: Record<GenderKey, Prisma.Sql> = {
@@ -34,6 +36,10 @@ function buildTextArray(values: string[]): Prisma.Sql {
 export function buildProductConditions(filters: CatalogFilters): Prisma.Sql[] {
   const q = filters.q ? `%${filters.q}%` : null;
   const conditions: Prisma.Sql[] = [Prisma.sql`p."imageCoverUrl" is not null`];
+
+  if (filters.enrichedOnly) {
+    conditions.push(Prisma.sql`(p."metadata" -> 'enrichment') is not null`);
+  }
 
   if (filters.categories && filters.categories.length > 0) {
     conditions.push(Prisma.sql`p.category in (${Prisma.join(filters.categories)})`);

@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   const page = parseCatalogPageFromSearchParams(url.searchParams, 1);
   const sort = parseCatalogSortFromSearchParams(url.searchParams, "new");
   const parsedFilters = parseCatalogFiltersFromSearchParams(url.searchParams);
-  const filters = { ...parsedFilters, inStock: true };
+  const filters = { ...parsedFilters, inStock: true, enrichedOnly: true };
 
   const result = await getCatalogProducts({ filters, page, sort });
 
@@ -24,4 +24,3 @@ export async function GET(req: Request) {
     },
   });
 }
-

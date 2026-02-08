@@ -102,6 +102,7 @@ function buildFacetsCacheKey(filters: CatalogFilters) {
   if (filters.priceMin !== undefined) key.priceMin = filters.priceMin;
   if (filters.priceMax !== undefined) key.priceMax = filters.priceMax;
   if (filters.inStock) key.inStock = 1;
+  if (filters.enrichedOnly) key.enrichedOnly = 1;
   return JSON.stringify(key);
 }
 

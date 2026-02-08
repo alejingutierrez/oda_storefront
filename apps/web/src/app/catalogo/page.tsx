@@ -24,7 +24,7 @@ export default async function CatalogoPage({ searchParams }: { searchParams: Sea
   const params = await resolveSearchParams(searchParams);
   const sort = parseCatalogSortFromSearchParams(params, "new");
   const parsedFilters = parseCatalogFiltersFromSearchParams(params);
-  const filters: CatalogFilters = { ...parsedFilters, inStock: true };
+  const filters: CatalogFilters = { ...parsedFilters, inStock: true, enrichedOnly: true };
 
   const [menu, facets, subcategories, products, priceBounds] = await Promise.all([
     getMegaMenuData(),

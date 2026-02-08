@@ -517,6 +517,16 @@ const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, 
       source_images: raw.images ?? [],
     },
   };
+  const blobUploadFailure =
+    raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
+      ? (raw.metadata as Record<string, unknown>).blob_upload_failed
+      : null;
+  if (typeof blobUploadFailure === "string" && blobUploadFailure.trim()) {
+    mergedMetadata.blob_upload_failed = blobUploadFailure.trim();
+  } else if (imageCoverUrl && imageCoverUrl.includes("blob.vercel-storage.com")) {
+    // Limpia una falla anterior cuando ya estamos guardando covers en Blob.
+    if (existingMetadata.blob_upload_failed) mergedMetadata.blob_upload_failed = null;
+  }
   if (
     existingMetadata.enrichment !== undefined &&
     (normalizedMetadata.enrichment === undefined || normalizedMetadata.enrichment === null) &&
