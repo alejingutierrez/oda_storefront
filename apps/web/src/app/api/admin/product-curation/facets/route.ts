@@ -16,7 +16,9 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
-  const filters = parseCatalogFiltersFromSearchParams(url.searchParams);
+  const parsedFilters = parseCatalogFiltersFromSearchParams(url.searchParams);
+  // Curación humana solo aplica a productos ya enriquecidos.
+  const filters = { ...parsedFilters, enrichedOnly: true };
 
   const [facets, subcategories] = await Promise.all([
     getCatalogFacetsUncached(filters),
@@ -25,4 +27,3 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ facets, subcategories });
 }
-

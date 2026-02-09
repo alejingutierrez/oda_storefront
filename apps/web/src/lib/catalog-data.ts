@@ -316,7 +316,6 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
       and p.category is not null and p.category <> ''
       group by 1
       order by cnt desc
-      limit 16
     `),
     prisma.$queryRaw<Array<{ gender: string | null; cnt: bigint }>>(Prisma.sql`
       select p.gender as gender, count(*) as cnt

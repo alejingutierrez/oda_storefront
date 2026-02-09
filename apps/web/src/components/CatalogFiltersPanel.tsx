@@ -35,6 +35,24 @@ function buildSelectedLabel(count: number) {
   return `${count} seleccionados`;
 }
 
+function sortFacetItems(items: FacetItem[], selectedValues: string[]) {
+  const selectedSet = new Set(selectedValues);
+  const orderMap = new Map(selectedValues.map((value, index) => [value, index]));
+
+  return [...items].sort((a, b) => {
+    const aSelected = selectedSet.has(a.value);
+    const bSelected = selectedSet.has(b.value);
+    if (aSelected !== bSelected) return aSelected ? -1 : 1;
+
+    if (aSelected && bSelected) {
+      return (orderMap.get(a.value) ?? 0) - (orderMap.get(b.value) ?? 0);
+    }
+
+    if (a.count !== b.count) return b.count - a.count;
+    return a.label.localeCompare(b.label, "es", { sensitivity: "base" });
+  });
+}
+
 export default function CatalogFiltersPanel({ facets, subcategories }: Props) {
   const params = useSearchParams();
   const router = useRouter();
@@ -67,6 +85,7 @@ export default function CatalogFiltersPanel({ facets, subcategories }: Props) {
   }, [searchParamsString]);
 
   const [searchText, setSearchText] = useState(selected.q);
+  const [brandSearch, setBrandSearch] = useState("");
   const [priceMin, setPriceMin] = useState(selected.priceMin);
   const [priceMax, setPriceMax] = useState(selected.priceMax);
 
@@ -190,7 +209,7 @@ export default function CatalogFiltersPanel({ facets, subcategories }: Props) {
           </span>
         </summary>
         <div className="mt-4 flex flex-col gap-2">
-          {facets.categories.map((item) => (
+          {sortFacetItems(facets.categories, selected.categories).map((item) => (
             <label key={item.value} className="flex cursor-pointer items-center justify-between gap-3 text-sm">
               <span className="flex items-center gap-3">
                 <input
@@ -266,21 +285,42 @@ export default function CatalogFiltersPanel({ facets, subcategories }: Props) {
             {buildSelectedLabel(selected.brandIds.length)}
           </span>
         </summary>
-        <div className="mt-4 flex flex-col gap-2">
-          {facets.brands.map((item) => (
-            <label key={item.value} className="flex cursor-pointer items-center justify-between gap-3 text-sm">
-              <span className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={isChecked(selected.brandIds, item.value)}
-                  onChange={() => toggleMulti("brandId", item.value)}
-                  className="h-4 w-4 accent-[color:var(--oda-ink)]"
-                />
-                <span className="truncate">{item.label}</span>
-              </span>
-              <span className="text-xs text-[color:var(--oda-taupe)]">{item.count}</span>
-            </label>
-          ))}
+        <div className="mt-4 grid gap-3">
+          <input
+            value={brandSearch}
+            onChange={(event) => setBrandSearch(event.target.value)}
+            placeholder="Buscar marca…"
+            className="w-full rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-sm"
+            disabled={isPending}
+          />
+          <div className="max-h-64 overflow-auto pr-1">
+            <div className="flex flex-col gap-2">
+              {sortFacetItems(
+                facets.brands.filter((item) => {
+                  const query = brandSearch.trim().toLowerCase();
+                  if (!query) return true;
+                  return item.label.toLowerCase().includes(query);
+                }),
+                selected.brandIds,
+              ).map((item) => (
+                <label
+                  key={item.value}
+                  className="flex cursor-pointer items-center justify-between gap-3 text-sm"
+                >
+                  <span className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={isChecked(selected.brandIds, item.value)}
+                      onChange={() => toggleMulti("brandId", item.value)}
+                      className="h-4 w-4 accent-[color:var(--oda-ink)]"
+                    />
+                    <span className="truncate">{item.label}</span>
+                  </span>
+                  <span className="text-xs text-[color:var(--oda-taupe)]">{item.count}</span>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       </details>
 

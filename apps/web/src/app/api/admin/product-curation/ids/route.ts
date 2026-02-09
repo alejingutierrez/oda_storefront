@@ -30,7 +30,9 @@ export async function GET(req: Request) {
   const limit = Math.min(MAX_LIMIT, parsePositiveInt(params.get("limit"), MAX_LIMIT));
 
   const sort = parseCatalogSortFromSearchParams(params, "relevancia");
-  const filters = parseCatalogFiltersFromSearchParams(params);
+  const parsedFilters = parseCatalogFiltersFromSearchParams(params);
+  // Curación humana solo aplica a productos ya enriquecidos.
+  const filters = { ...parsedFilters, enrichedOnly: true };
   const where = buildWhere(filters);
   const orderBy = buildOrderBy(sort);
 
@@ -49,4 +51,3 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ ids, limit, hasMore });
 }
-

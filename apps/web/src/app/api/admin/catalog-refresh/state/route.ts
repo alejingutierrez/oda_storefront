@@ -11,6 +11,15 @@ const readMetadata = (metadata: unknown) =>
     ? (metadata as Record<string, unknown>)
     : {};
 
+const readFiniteNumber = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const parseDate = (value: unknown) => {
+  if (typeof value !== "string" || !value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 export async function GET(req: Request) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
@@ -101,13 +110,76 @@ export async function GET(req: Request) {
     };
   });
 
-  const coverageValues = brandRows
-    .map((brand) => (typeof brand.refresh?.lastCombinedCoverage === "number" ? brand.refresh.lastCombinedCoverage : null))
+  // Metrics are aligned to the same window shown in the UI. We treat "coverage" as discovery
+  // coverage (sitemap/adapter refs already present in DB pre-run), and "success" as run success
+  // rate (completed items / total items).
+  const windowBrands = brandRows.filter((brand) => {
+    const finishedAt = parseDate(brand.refresh?.lastFinishedAt);
+    return finishedAt ? finishedAt >= windowStart : false;
+  });
+
+  const discoveryRows = windowBrands
+    .map((brand) => {
+      const count = readFiniteNumber(brand.refresh?.lastCombinedCount);
+      const matched = readFiniteNumber(brand.refresh?.lastCombinedMatched);
+      const coverage = readFiniteNumber(brand.refresh?.lastCombinedCoverage);
+      return { count, matched, coverage };
+    })
+    .filter((row) => row.coverage !== null || (row.count !== null && row.matched !== null));
+
+  const discoveryCoverageValues = discoveryRows
+    .map((row) => row.coverage)
     .filter((value): value is number => value !== null);
-  const avgCoverage =
-    coverageValues.length > 0
-      ? coverageValues.reduce((acc, value) => acc + value, 0) / coverageValues.length
+  const discoveryMean =
+    discoveryCoverageValues.length > 0
+      ? discoveryCoverageValues.reduce((acc, value) => acc + value, 0) / discoveryCoverageValues.length
       : 0;
+
+  const discoveryWeighted = (() => {
+    let total = 0;
+    let matched = 0;
+    for (const row of discoveryRows) {
+      if (row.count === null || row.matched === null) continue;
+      if (row.count <= 0) continue;
+      total += row.count;
+      matched += Math.max(0, Math.min(row.count, row.matched));
+    }
+    return total > 0 ? matched / total : null;
+  })();
+
+  const avgDiscoveryCoverage = discoveryWeighted ?? discoveryMean ?? 0;
+
+  const successRows = windowBrands
+    .map((brand) => {
+      const successRate = readFiniteNumber(brand.refresh?.lastRunSuccessRate);
+      const totalItems = readFiniteNumber(brand.refresh?.lastRunTotalItems);
+      const completedItems = readFiniteNumber(brand.refresh?.lastRunCompletedItems);
+      const derived =
+        totalItems !== null && completedItems !== null && totalItems > 0
+          ? completedItems / totalItems
+          : null;
+      return { successRate: successRate ?? derived, totalItems, completedItems };
+    })
+    .filter((row) => row.successRate !== null);
+
+  const successMean =
+    successRows.length > 0
+      ? successRows.reduce((acc, row) => acc + (row.successRate ?? 0), 0) / successRows.length
+      : 0;
+
+  const successWeighted = (() => {
+    let total = 0;
+    let completed = 0;
+    for (const row of successRows) {
+      if (row.totalItems === null || row.completedItems === null) continue;
+      if (row.totalItems <= 0) continue;
+      total += row.totalItems;
+      completed += Math.max(0, Math.min(row.totalItems, row.completedItems));
+    }
+    return total > 0 ? completed / total : null;
+  })();
+
+  const avgRunSuccessRate = successWeighted ?? successMean ?? 0;
 
   const alertLimit = 12;
   const alerts: Array<{
@@ -226,7 +298,8 @@ export async function GET(req: Request) {
       totalBrands: brandTotals?.total ?? 0,
       freshBrands: brandTotals?.fresh ?? 0,
       staleBrands: brandTotals?.stale ?? 0,
-      avgCoverage,
+      avgDiscoveryCoverage,
+      avgRunSuccessRate,
       newProducts: newProducts?.count ?? 0,
       priceChanges: priceChanges?.count ?? 0,
       stockChanges: stockChanges?.count ?? 0,

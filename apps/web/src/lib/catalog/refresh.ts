@@ -295,35 +295,63 @@ const chunk = <T,>(items: T[], size: number) => {
   return result;
 };
 
-const collectMatchedProductIds = async (
+const collectMatchedDiscoveryKeys = async (
   brandId: string,
   refs: Array<{ url?: string | null; externalId?: string | null }>,
 ) => {
-  if (!refs.length) return new Set<string>();
-  const urls = Array.from(new Set(refs.map((ref) => ref.url).filter(Boolean))) as string[];
-  const externalIds = Array.from(
-    new Set(refs.map((ref) => ref.externalId).filter(Boolean)),
-  ) as string[];
+  if (!refs.length) {
+    return { matchedUrls: new Set<string>(), matchedExternalIds: new Set<string>() };
+  }
 
-  const matched = new Set<string>();
+  const urls = Array.from(new Set(refs.map((ref) => ref.url).filter(Boolean))) as string[];
+  const externalIds = Array.from(new Set(refs.map((ref) => ref.externalId).filter(Boolean))) as string[];
+
+  const matchedUrls = new Set<string>();
+  const matchedExternalIds = new Set<string>();
+
   const chunkSize = 500;
 
   for (const batch of chunk(urls, chunkSize)) {
     const rows = await prisma.product.findMany({
       where: { brandId, sourceUrl: { in: batch } },
-      select: { id: true },
+      select: { sourceUrl: true },
     });
-    rows.forEach((row) => matched.add(row.id));
+    rows.forEach((row) => {
+      if (row.sourceUrl) matchedUrls.add(row.sourceUrl);
+    });
   }
 
   for (const batch of chunk(externalIds, chunkSize)) {
     const rows = await prisma.product.findMany({
       where: { brandId, externalId: { in: batch } },
-      select: { id: true },
+      select: { externalId: true },
     });
-    rows.forEach((row) => matched.add(row.id));
+    rows.forEach((row) => {
+      if (row.externalId) matchedExternalIds.add(row.externalId);
+    });
   }
 
+  return { matchedUrls, matchedExternalIds };
+};
+
+const countMatchedDiscoveryRefs = (
+  refs: Array<{ url?: string | null; externalId?: string | null }>,
+  matchedUrls: Set<string>,
+  matchedExternalIds: Set<string>,
+) => {
+  if (!refs.length) return 0;
+  let matched = 0;
+  for (const ref of refs) {
+    const url = ref.url ?? null;
+    const externalId = ref.externalId ?? null;
+    if (url && matchedUrls.has(url)) {
+      matched += 1;
+      continue;
+    }
+    if (externalId && matchedExternalIds.has(externalId)) {
+      matched += 1;
+    }
+  }
   return matched;
 };
 
@@ -337,24 +365,40 @@ const computeCoverageMetrics = async (params: {
   const adapterTotal = params.adapterRefs.length;
   const combinedTotal = params.combinedRefs.length;
 
-  const sitemapMatched = await collectMatchedProductIds(params.brandId, params.sitemapRefs);
-  const adapterMatched = await collectMatchedProductIds(params.brandId, params.adapterRefs);
-  const combinedMatched = await collectMatchedProductIds(params.brandId, params.combinedRefs);
+  // Coverage is intended to reflect the % of discovery refs (URLs / externalIds) that already
+  // exist in our DB before the refresh. We compute matches at the ref-level (not distinct products)
+  // to avoid undercounting when multiple discovery refs map to the same product.
+  const keys = await collectMatchedDiscoveryKeys(params.brandId, params.combinedRefs);
+  const sitemapMatched = countMatchedDiscoveryRefs(
+    params.sitemapRefs,
+    keys.matchedUrls,
+    keys.matchedExternalIds,
+  );
+  const adapterMatched = countMatchedDiscoveryRefs(
+    params.adapterRefs,
+    keys.matchedUrls,
+    keys.matchedExternalIds,
+  );
+  const combinedMatched = countMatchedDiscoveryRefs(
+    params.combinedRefs,
+    keys.matchedUrls,
+    keys.matchedExternalIds,
+  );
 
   const toCoverage = (matched: number, total: number) => (total > 0 ? matched / total : 0);
 
   return {
     lastSitemapCount: sitemapTotal,
-    lastSitemapMatched: sitemapMatched.size,
-    lastSitemapCoverage: toCoverage(sitemapMatched.size, sitemapTotal),
+    lastSitemapMatched: sitemapMatched,
+    lastSitemapCoverage: toCoverage(sitemapMatched, sitemapTotal),
     lastAdapterCount: adapterTotal,
-    lastAdapterMatched: adapterMatched.size,
-    lastAdapterCoverage: toCoverage(adapterMatched.size, adapterTotal),
+    lastAdapterMatched: adapterMatched,
+    lastAdapterCoverage: toCoverage(adapterMatched, adapterTotal),
     lastCombinedCount: combinedTotal,
-    lastCombinedMatched: combinedMatched.size,
-    lastCombinedCoverage: toCoverage(combinedMatched.size, combinedTotal),
-    lastNewFromSitemap: Math.max(0, sitemapTotal - sitemapMatched.size),
-    lastNewFromAdapter: Math.max(0, adapterTotal - adapterMatched.size),
+    lastCombinedMatched: combinedMatched,
+    lastCombinedCoverage: toCoverage(combinedMatched, combinedTotal),
+    lastNewFromSitemap: Math.max(0, sitemapTotal - sitemapMatched),
+    lastNewFromAdapter: Math.max(0, adapterTotal - adapterMatched),
   };
 };
 

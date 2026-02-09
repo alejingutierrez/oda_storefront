@@ -28,7 +28,9 @@ export async function GET(req: Request) {
   const page = parsePositiveInt(params.get("page"), 1);
   const pageSize = Math.min(60, Math.max(1, parsePositiveInt(params.get("pageSize"), 36)));
   const sort = parseCatalogSortFromSearchParams(params, "relevancia");
-  const filters = parseCatalogFiltersFromSearchParams(params);
+  const parsedFilters = parseCatalogFiltersFromSearchParams(params);
+  // Curación humana solo aplica a productos ya enriquecidos.
+  const filters = { ...parsedFilters, enrichedOnly: true };
 
   const offset = Math.max(0, (page - 1) * pageSize);
   const where = buildWhere(filters);
@@ -148,4 +150,3 @@ export async function GET(req: Request) {
     })),
   });
 }
-

@@ -6,7 +6,8 @@ type RefreshSummary = {
   totalBrands: number;
   freshBrands: number;
   staleBrands: number;
-  avgCoverage: number;
+  avgDiscoveryCoverage: number;
+  avgRunSuccessRate: number;
   newProducts: number;
   priceChanges: number;
   stockChanges: number;
@@ -273,10 +274,18 @@ export default function CatalogRefreshPanel() {
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <p className="text-xs uppercase text-slate-500">Cobertura promedio</p>
+          <p className="text-xs uppercase text-slate-500">Éxito promedio</p>
           <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {summary ? `${Math.round(summary.avgCoverage * 100)}%` : "0%"}
+            {summary ? `${Math.round(summary.avgRunSuccessRate * 100)}%` : "0%"}
           </p>
+          <p className="mt-1 text-xs text-slate-500">Items completados / items totales (ventana)</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-xs uppercase text-slate-500">Cobertura discovery</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {summary ? `${Math.round(summary.avgDiscoveryCoverage * 100)}%` : "0%"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Refs (sitemap+adapter) ya existentes en DB</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <p className="text-xs uppercase text-slate-500">Cambios de stock</p>
@@ -304,7 +313,12 @@ export default function CatalogRefreshPanel() {
               <th className="px-3">Éxito</th>
               <th className="px-3">Fallos</th>
               <th className="px-3">Nuevos</th>
-              <th className="px-3">Cobertura</th>
+              <th
+                className="px-3"
+                title="Cobertura de discovery (sitemap+adapter): % de refs que ya existen como productos en la DB al iniciar el refresh."
+              >
+                Cobertura discovery
+              </th>
               <th className="px-3">Precio</th>
               <th className="px-3">Stock</th>
               <th className="px-3">Estado</th>
