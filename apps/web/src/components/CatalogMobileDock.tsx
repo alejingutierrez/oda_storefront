@@ -66,7 +66,6 @@ export default function CatalogMobileDock({
   const [draftParamsString, setDraftParamsString] = useState("");
 
   const openSheet = () => {
-    if (!facets) return;
     const next = new URLSearchParams(params.toString());
     next.delete("page");
     setDraftParamsString(next.toString());
@@ -117,10 +116,14 @@ export default function CatalogMobileDock({
           <button
             type="button"
             onClick={openSheet}
-            disabled={!facets}
             className="inline-flex items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-3 text-xs font-semibold text-[color:var(--oda-ink)] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {facetsLoading && !facets ? "Cargando…" : "Filtrar"}
+            Filtrar
+            {facetsLoading && !facets ? (
+              <span className="rounded-full bg-[color:var(--oda-stone)] px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                Cargando
+              </span>
+            ) : null}
             {filterCount > 0 ? (
               <span className="rounded-full bg-[color:var(--oda-ink)] px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-cream)]">
                 {filterCount}
@@ -170,7 +173,7 @@ export default function CatalogMobileDock({
         </div>
       </div>
 
-      {open && facets ? (
+      {open ? (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
           <button
             type="button"
@@ -198,14 +201,28 @@ export default function CatalogMobileDock({
             </div>
 
             <div className="max-h-[calc(85vh-10.5rem)] overflow-auto px-4 pb-6 pt-5">
-              <CatalogoFiltersPanel
-                facets={facets}
-                subcategories={subcategories}
-                priceBounds={priceBounds}
-                mode="draft"
-                draftParamsString={draftParamsString}
-                onDraftParamsStringChange={setDraftParamsString}
-              />
+              {facets ? (
+                <CatalogoFiltersPanel
+                  facets={facets}
+                  subcategories={subcategories}
+                  priceBounds={priceBounds}
+                  mode="draft"
+                  draftParamsString={draftParamsString}
+                  onDraftParamsStringChange={setDraftParamsString}
+                />
+              ) : (
+                <div className="grid gap-3">
+                  <p className="text-xs text-[color:var(--oda-taupe)]">
+                    Cargando filtros…
+                  </p>
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className="h-14 w-full rounded-2xl border border-[color:var(--oda-border)] bg-white"
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="border-t border-[color:var(--oda-border)] bg-white px-5 py-4">
@@ -213,6 +230,7 @@ export default function CatalogMobileDock({
                 <button
                   type="button"
                   onClick={clearAll}
+                  disabled={!facets}
                   className="rounded-full border border-[color:var(--oda-border)] bg-white px-5 py-3 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
                 >
                   Limpiar
@@ -220,7 +238,7 @@ export default function CatalogMobileDock({
                 <button
                   type="button"
                   onClick={applyDraft}
-                  disabled={isPending}
+                  disabled={isPending || !facets}
                   className="rounded-full bg-[color:var(--oda-ink)] px-6 py-3 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-cream)] disabled:opacity-70"
                 >
                   {isPending ? "Aplicando…" : "Aplicar"}
