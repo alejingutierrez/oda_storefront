@@ -15,6 +15,9 @@ import {
 } from "@/lib/catalog-query";
 
 const CATALOG_REVALIDATE_SECONDS = 60 * 30;
+// Products can change frequently (stock/price), but we still want to avoid DB spikes on filters.
+// Keep this short so the catalog stays fresh while being resilient.
+const CATALOG_PRODUCTS_REVALIDATE_SECONDS = 60;
 export const CATALOG_PAGE_SIZE = 24;
 // Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
 const CATALOG_CACHE_VERSION = 2;
@@ -236,13 +239,14 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
       const rows = await prisma.$queryRaw<Array<{ min_price: string | null; max_price: string | null }>>(
         Prisma.sql`
           select
-            min(case when v.price > 0 then v.price end) as min_price,
-            max(case when v.price > 0 then v.price end) as max_price
+            min(v.price) as min_price,
+            max(v.price) as max_price
           from products p
           join brands b on b.id = p."brandId"
           join variants v on v."productId" = p.id
           ${productWhere}
           ${variantWhere}
+          and v.price > 0
         `,
       );
       const row = rows[0];
@@ -1044,6 +1048,24 @@ export async function getCatalogSubcategoriesUncached(filters: CatalogFilters): 
 }
 
 export async function getCatalogProducts(params: {
+  filters: CatalogFilters;
+  page: number;
+  sort: string;
+}): Promise<CatalogProductResult> {
+  const cacheKey = JSON.stringify({
+    filters: buildFacetsCacheKey(params.filters),
+    page: params.page,
+    sort: params.sort || "new",
+  });
+  const cached = unstable_cache(
+    () => computeCatalogProducts(params),
+    ["catalog-products", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
+    { revalidate: CATALOG_PRODUCTS_REVALIDATE_SECONDS },
+  );
+  return cached();
+}
+
+async function computeCatalogProducts(params: {
   filters: CatalogFilters;
   page: number;
   sort: string;
