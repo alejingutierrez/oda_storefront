@@ -335,10 +335,12 @@ const rawCategories = [
       "Riñonera / canguro",
       "Clutch / sobre",
       "Estuches / cartucheras / neceseres",
+      "Loncheras",
       "Billetera",
       "Llaveros",
       "Portadocumentos / porta pasaporte",
       "Bolso de viaje / duffel",
+      "Maletas y equipaje",
     ],
   },
   {
@@ -374,8 +376,10 @@ const rawCategories = [
     label: "Hogar y lifestyle",
     subcategories: [
       "Textiles de mesa",
+      "Cocina y vajilla",
       "Cojines y fundas",
       "Velas y aromas",
+      "Cuidado personal y belleza",
       "Arte y posters",
       "Papelería y libros",
       "Toallas y baño",
@@ -475,9 +479,12 @@ const rawSubcategoryDescriptions: Record<string, string> = {
   Morral: "Bolso tipo mochila, a veces más casual/artesanal.",
   "Riñonera / canguro": "Bolso pequeño para cintura o crossbody.",
   "Clutch / sobre": "Bolso pequeño tipo sobre, sin correa.",
+  Loncheras: "Loncheras térmicas y lunch bags (bolsas/estuches para alimentos). Excluye botellas/termos y portacomidas rígidos.",
   Billetera: "Accesorio para dinero y tarjetas.",
   "Portadocumentos / porta pasaporte": "Accesorio pequeño para documentos.",
   "Bolso de viaje / duffel": "Bolso grande para viaje o gimnasio.",
+  "Maletas y equipaje":
+    "Maletas, trolleys y equipaje (con o sin ruedas), incluyendo protectores/fundas de maleta. No confundir con bolsos tote o mochilas.",
   "Estuches / cartucheras / neceseres":
     "Estuches, cartucheras, cosmetiqueras y neceseres (pouch) para organizar objetos. Normalmente pequeños y con cierre.",
   Llaveros: "Accesorio para llaves (keychain). Suele ser cuero, metal o caucho; se usa como accesorio de bolso o personal.",
@@ -498,8 +505,12 @@ const rawSubcategoryDescriptions: Record<string, string> = {
   Relojes: "Accesorio de reloj de pulsera; puede ser metal o cuero.",
   "Gift card": "Tarjeta o bono de regalo (digital o físico).",
   "Textiles de mesa": "Textiles y accesorios de mesa (manteles, individuales, servilletas, caminos, posavasos).",
+  "Cocina y vajilla":
+    "Vajilla, cristalería y utensilios de cocina/mesa (platos, vasos, copas, cubiertos, tablas para servir). Excluye textiles (manteles/servilletas) que van en 'Textiles de mesa'.",
   "Cojines y fundas": "Cojines decorativos y fundas.",
   "Velas y aromas": "Velas, aromas, difusores e incienso.",
+  "Cuidado personal y belleza":
+    "Cuidado personal y belleza (perfumes, body splash, colonias y fragancias de uso personal). Excluye ambientadores y difusores para el hogar.",
   "Arte y posters": "Posters, prints y arte decorativo.",
   "Papelería y libros":
     "Papelería, journals y libros (agendas, cuadernos, stickers, tarot/oráculo). No es moda, pero se mantiene en lifestyle para evitar contaminar categorías de ropa.",

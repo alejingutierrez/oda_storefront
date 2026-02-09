@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "../..", "..");
 
 dotenv.config({ path: path.join(repoRoot, ".env") });
+dotenv.config({ path: path.join(repoRoot, ".env.local") });
 
 const DEFAULT_CATEGORY = "accesorios_textiles_y_medias";
 const DEFAULT_MIN_CONFIDENCE = 0.92;
@@ -31,6 +32,9 @@ const apply = args.has("--apply") || String(process.env.RECLASS_APPLY || "").toL
 const minConfidence = Number(getArgValue("--min-confidence") || process.env.RECLASS_MIN_CONFIDENCE || DEFAULT_MIN_CONFIDENCE);
 const limit = Number(getArgValue("--limit") || process.env.RECLASS_LIMIT || 0) || null;
 const chunkSize = Number(getArgValue("--chunk-size") || process.env.RECLASS_CHUNK_SIZE || DEFAULT_CHUNK_SIZE);
+const includeNotEnriched =
+  args.has("--include-not-enriched") ||
+  String(process.env.RECLASS_INCLUDE_NOT_ENRICHED || "").toLowerCase() === "true";
 
 const databaseUrl = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -135,10 +139,12 @@ const SUB = {
   rinonera_canguro: "rinonera_canguro",
   clutch_sobre: "clutch_sobre",
   estuches_cartucheras_neceseres: "estuches_cartucheras_neceseres",
+  loncheras: "loncheras",
   billetera: "billetera",
   llaveros: "llaveros",
   portadocumentos_porta_pasaporte: "portadocumentos_porta_pasaporte",
   bolso_de_viaje_duffel: "bolso_de_viaje_duffel",
+  maletas_y_equipaje: "maletas_y_equipaje",
 
   // calzado
   botas: "botas",
@@ -159,8 +165,10 @@ const SUB = {
 
   // hogar_y_lifestyle
   textiles_de_mesa: "textiles_de_mesa",
+  cocina_y_vajilla: "cocina_y_vajilla",
   cojines_y_fundas: "cojines_y_fundas",
   velas_y_aromas: "velas_y_aromas",
+  cuidado_personal_y_belleza: "cuidado_personal_y_belleza",
   arte_y_posters: "arte_y_posters",
   papeleria_y_libros: "papeleria_y_libros",
   toallas_y_bano: "toallas_y_bano",
@@ -243,7 +251,15 @@ const detectGiftCard = (text) => {
   ];
 
   // Avoid matching generic "bono" (can be discount/bonus) unless also has gift cues.
-  const hasGiftCue = includesAny(text, [wordRe("gift"), phraseRe("tarjeta regalo"), phraseRe("tarjeta de regalo"), wordRe("voucher")]);
+  const hasGiftCue = includesAny(text, [
+    wordRe("gift"),
+    phraseRe("tarjeta regalo"),
+    phraseRe("tarjeta de regalo"),
+    phraseRe("bono de regalo"),
+    phraseRe("bono regalo"),
+    wordRe("voucher"),
+    wordRe("regalo"),
+  ]);
   if (includesAny(text, [wordRe("bono")]) && !hasGiftCue) return null;
 
   if (!includesAny(text, patterns)) return null;
@@ -255,7 +271,124 @@ const detectGiftCard = (text) => {
   };
 };
 
+const detectBeauty = (text) => {
+  const homeContext = includesAny(text, [
+    wordRe("hogar"),
+    wordRe("home"),
+    wordRe("ambiente"),
+    wordRe("ambientador"),
+    wordRe("difusor"),
+    wordRe("difusores"),
+    wordRe("incienso"),
+    wordRe("vela"),
+    wordRe("velas"),
+    phraseRe("fragancia de hogar"),
+    phraseRe("fragancia ambiente"),
+    phraseRe("en sticks"),
+  ]);
+  if (homeContext) return null;
+
+  const strong = includesAny(text, [
+    wordRe("perfume"),
+    wordRe("perfumes"),
+    wordRe("colonia"),
+    wordRe("colonias"),
+    phraseRe("body splash"),
+    phraseRe("splash corporal"),
+    phraseRe("eau de parfum"),
+    phraseRe("eau de toilette"),
+    wordRe("edp"),
+    wordRe("edt"),
+    wordRe("parfum"),
+  ]);
+  const fragancia = includesAny(text, [
+    wordRe("fragancia"),
+    wordRe("fragancias"),
+    wordRe("fragrance"),
+    wordRe("fragrances"),
+  ]);
+
+  const mlAmountRe = /\b\d{2,4}\s?ml\b/i;
+  const splash =
+    wordRe("splash").test(text) && (mlAmountRe.test(text) || wordRe("corporal").test(text) || wordRe("body").test(text));
+
+  const cream =
+    wordRe("crema").test(text) &&
+    includesAny(text, [
+      wordRe("hidratante"),
+      phraseRe("crema corporal"),
+      phraseRe("crema facial"),
+      phraseRe("crema de manos"),
+      phraseRe("crema para manos"),
+      wordRe("moisturizer"),
+      wordRe("moisturising"),
+      wordRe("moisturizing"),
+      wordRe("hyaluronic"),
+      wordRe("serum"),
+      wordRe("dermo"),
+      wordRe("piel"),
+      wordRe("facial"),
+      wordRe("corporal"),
+      wordRe("spf"),
+      phraseRe("protector solar"),
+    ]);
+  const gel =
+    wordRe("gel").test(text) && includesAny(text, [wordRe("corporal"), wordRe("body"), wordRe("piel"), wordRe("facial")]);
+  const lotion = includesAny(text, [wordRe("locion"), wordRe("lotion"), phraseRe("body lotion"), phraseRe("locion corporal")]);
+  const soap = includesAny(text, [wordRe("jabon"), wordRe("jabones"), wordRe("soap"), wordRe("soaps")]);
+  const deodorant = includesAny(text, [wordRe("desodorante"), wordRe("deodorant")]);
+  const care = cream || gel || lotion || soap || deodorant;
+
+  if (!strong && !fragancia && !splash && !care) return null;
+  return {
+    category: CAT.hogar_y_lifestyle,
+    subcategory: SUB.cuidado_personal_y_belleza,
+    confidence: strong || splash ? 0.99 : 0.96,
+    reasons: [strong || splash ? "kw:beauty_strong" : care ? "kw:beauty_care" : "kw:beauty_fragancia"],
+  };
+};
+
 const detectHome = (text) => {
+  const kitchenPatterns = [
+    // Tableware / kitchen
+    wordRe("plato"),
+    wordRe("platos"),
+    wordRe("plate"),
+    wordRe("plates"),
+    phraseRe("dinner plate"),
+    phraseRe("dessert plate"),
+    wordRe("bowl"),
+    wordRe("bowls"),
+    wordRe("tazon"),
+    wordRe("tazones"),
+    wordRe("vajilla"),
+    wordRe("dinnerware"),
+    wordRe("tumbler"),
+    wordRe("tumblers"),
+    wordRe("vaso"),
+    wordRe("vasos"),
+    wordRe("copa"),
+    wordRe("copas"),
+    wordRe("taza"),
+    wordRe("tazas"),
+    wordRe("mug"),
+    wordRe("mugs"),
+    wordRe("utensilio"),
+    wordRe("utensilios"),
+    wordRe("cutlery"),
+    wordRe("cuchara"),
+    wordRe("cucharas"),
+    wordRe("tenedor"),
+    wordRe("tenedores"),
+    wordRe("cuchillo"),
+    wordRe("cuchillos"),
+    // Serving boards
+    wordRe("tabla"),
+    wordRe("tablas"),
+    phraseRe("tabla para servir"),
+    phraseRe("tabla de madera"),
+  ];
+
   const tablePatterns = [
     wordRe("mantel"),
     wordRe("manteles"),
@@ -296,6 +429,8 @@ const detectHome = (text) => {
   const candlePatterns = [
     wordRe("vela"),
     wordRe("velas"),
+    wordRe("mikado"),
+    wordRe("mikados"),
     phraseRe("scented candle"),
     wordRe("candle"),
     wordRe("candles"),
@@ -320,10 +455,18 @@ const detectHome = (text) => {
     wordRe("afiches"),
     wordRe("lamina"),
     wordRe("laminas"),
+    wordRe("cuadro"),
+    wordRe("cuadros"),
+    wordRe("escultura"),
+    wordRe("esculturas"),
   ];
 
   const paperPatterns = [
     wordRe("papeleria"),
+    wordRe("plantilla"),
+    wordRe("plantillas"),
+    wordRe("stencil"),
+    wordRe("stencils"),
     wordRe("libro"),
     wordRe("libros"),
     wordRe("librito"),
@@ -332,6 +475,12 @@ const detectHome = (text) => {
     wordRe("agendas"),
     wordRe("cuaderno"),
     wordRe("cuadernos"),
+    wordRe("libreta"),
+    wordRe("libretas"),
+    wordRe("bitacora"),
+    wordRe("bitacoras"),
+    wordRe("diario"),
+    wordRe("diarios"),
     wordRe("sticker"),
     wordRe("stickers"),
     wordRe("separalibros"),
@@ -342,6 +491,9 @@ const detectHome = (text) => {
     wordRe("oraculo"),
     wordRe("oraculos"),
     wordRe("tarot"),
+    // Some brands concatenate words (e.g. "ASTROTAROT") so allow substring matches too.
+    new RegExp("oraculo", "i"),
+    new RegExp("tarot", "i"),
     wordRe("journal"),
     wordRe("journals"),
     wordRe("notebook"),
@@ -362,7 +514,6 @@ const detectHome = (text) => {
     wordRe("towel"),
     wordRe("towels"),
     wordRe("bath"),
-    wordRe("bano"),
   ];
 
   const blanketPatterns = [
@@ -383,8 +534,54 @@ const detectHome = (text) => {
     wordRe("mugs"),
     wordRe("vaso"),
     wordRe("vasos"),
+    wordRe("sabana"),
+    wordRe("sabanas"),
+    phraseRe("sabana bajera"),
+    phraseRe("fitted sheet"),
+    wordRe("edredon"),
+    wordRe("edredones"),
+    wordRe("colcha"),
+    wordRe("colchas"),
+    wordRe("cama"),
+    wordRe("camas"),
+    // Decor / misc
+    wordRe("canasta"),
+    wordRe("canastas"),
+    wordRe("canasto"),
+    wordRe("canastos"),
+    wordRe("cesta"),
+    wordRe("cestas"),
+    wordRe("basket"),
+    wordRe("baskets"),
+    wordRe("florero"),
+    wordRe("floreros"),
+    wordRe("jarron"),
+    wordRe("jarrones"),
+    wordRe("vase"),
+    wordRe("vases"),
+    wordRe("alfombra"),
+    wordRe("alfombras"),
+    wordRe("tapete"),
+    wordRe("tapetes"),
+    wordRe("figura"),
+    wordRe("figuras"),
+    wordRe("escultura"),
+    wordRe("esculturas"),
+    // Some brands sell non-fashion prints/toys under "personalized photo" etc.
+    phraseRe("foto personalizada"),
+    wordRe("botilito"),
+    wordRe("botilitos"),
+    wordRe("termo"),
+    wordRe("termos"),
+    phraseRe("botella de agua"),
+    phraseRe("water bottle"),
+    wordRe("portacomidas"),
+    phraseRe("porta comidas"),
   ];
 
+  if (includesAny(text, kitchenPatterns)) {
+    return { category: CAT.hogar_y_lifestyle, subcategory: SUB.cocina_y_vajilla, confidence: 0.97, reasons: ["kw:home_kitchen"] };
+  }
   if (includesAny(text, tablePatterns)) {
     return { category: CAT.hogar_y_lifestyle, subcategory: SUB.textiles_de_mesa, confidence: 0.97, reasons: ["kw:home_table"] };
   }
@@ -489,8 +686,20 @@ const detectEyewear = (text) => {
 
 const detectBags = (text) => {
   const anyBag = includesAny(text, [
+    wordRe("bolsa"),
+    wordRe("bolsas"),
+    phraseRe("bolsa de tela"),
+    phraseRe("bolsa tela"),
     wordRe("bolso"),
     wordRe("bolsos"),
+    wordRe("maleta"),
+    wordRe("maletas"),
+    wordRe("equipaje"),
+    wordRe("valija"),
+    wordRe("valijas"),
+    wordRe("trolley"),
+    wordRe("luggage"),
+    wordRe("suitcase"),
     wordRe("cartera"),
     wordRe("carteras"),
     wordRe("billetera"),
@@ -505,6 +714,11 @@ const detectBags = (text) => {
     wordRe("neceseres"),
     wordRe("estuche"),
     wordRe("estuches"),
+    wordRe("lonchera"),
+    wordRe("loncheras"),
+    wordRe("lunchbox"),
+    phraseRe("lunch box"),
+    phraseRe("lunch bag"),
     wordRe("pouch"),
     wordRe("pouches"),
     wordRe("lapicera"),
@@ -513,6 +727,18 @@ const detectBags = (text) => {
     wordRe("llaveros"),
     wordRe("keychain"),
     wordRe("keychains"),
+    // Colombian ecommerce commonly uses "manos libres" for crossbody bags.
+    phraseRe("manos libres"),
+    wordRe("manoslibres"),
+    // Card holders / wallet-like items.
+    wordRe("tarjetero"),
+    wordRe("tarjeteros"),
+    phraseRe("porta tarjetas"),
+    phraseRe("porta tarjeta"),
+    wordRe("portatarjetas"),
+    wordRe("cardholder"),
+    wordRe("cardholders"),
+    phraseRe("card holder"),
     wordRe("mochila"),
     wordRe("mochilas"),
     wordRe("morral"),
@@ -530,6 +756,8 @@ const detectBags = (text) => {
     phraseRe("porta documentos"),
     phraseRe("portadocumentos"),
     wordRe("duffel"),
+    wordRe("tula"),
+    wordRe("tulas"),
     phraseRe("bolso de viaje"),
     wordRe("wallet"),
     wordRe("handbag"),
@@ -556,28 +784,80 @@ const detectBags = (text) => {
     wordRe("lapicera"),
     wordRe("lapiceras"),
   ]);
+  const lunchbox = includesAny(text, [
+    wordRe("lonchera"),
+    wordRe("loncheras"),
+    wordRe("lunchbox"),
+    phraseRe("lunch box"),
+    phraseRe("lunch bag"),
+  ]);
+  const luggage = includesAny(text, [
+    wordRe("maleta"),
+    wordRe("maletas"),
+    wordRe("equipaje"),
+    wordRe("valija"),
+    wordRe("valijas"),
+    wordRe("trolley"),
+    wordRe("luggage"),
+    wordRe("suitcase"),
+  ]);
 
   if (keychain) sub = SUB.llaveros;
   else if (cases) sub = SUB.estuches_cartucheras_neceseres;
+  else if (lunchbox) sub = SUB.loncheras;
+  else if (luggage) sub = SUB.maletas_y_equipaje;
   else if (includesAny(text, [wordRe("tote")])) sub = SUB.bolso_tote;
-  else if (includesAny(text, [wordRe("crossbody"), wordRe("bandolera")])) sub = SUB.bolso_bandolera_crossbody;
+  else if (
+    includesAny(text, [
+      wordRe("crossbody"),
+      wordRe("bandolera"),
+      phraseRe("manos libres"),
+      wordRe("manoslibres"),
+    ])
+  ) {
+    sub = SUB.bolso_bandolera_crossbody;
+  }
   else if (includesAny(text, [wordRe("mochila"), wordRe("mochilas")])) sub = SUB.mochila;
   else if (includesAny(text, [wordRe("morral"), wordRe("morrales")])) sub = SUB.morral;
   else if (includesAny(text, [wordRe("rinonera"), wordRe("rinoneras"), wordRe("canguro"), phraseRe("belt bag")])) sub = SUB.rinonera_canguro;
   else if (includesAny(text, [wordRe("clutch"), wordRe("sobre")])) sub = SUB.clutch_sobre;
-  else if (includesAny(text, [wordRe("billetera"), wordRe("billeteras"), wordRe("wallet"), wordRe("monedero"), wordRe("monederos")])) sub = SUB.billetera;
+  else if (
+    includesAny(text, [
+      wordRe("tarjetero"),
+      wordRe("tarjeteros"),
+      phraseRe("porta tarjetas"),
+      phraseRe("porta tarjeta"),
+      wordRe("portatarjetas"),
+      wordRe("cardholder"),
+      wordRe("cardholders"),
+      phraseRe("card holder"),
+    ])
+  ) {
+    sub = SUB.billetera;
+  } else if (
+    includesAny(text, [
+      wordRe("billetera"),
+      wordRe("billeteras"),
+      wordRe("wallet"),
+      wordRe("monedero"),
+      wordRe("monederos"),
+    ])
+  ) {
+    sub = SUB.billetera;
+  }
   else if (includesAny(text, [phraseRe("porta pasaporte"), phraseRe("portapasaporte"), phraseRe("porta documentos"), phraseRe("portadocumentos")])) {
     sub = SUB.portadocumentos_porta_pasaporte;
-  } else if (includesAny(text, [wordRe("duffel"), phraseRe("bolso de viaje")])) sub = SUB.bolso_de_viaje_duffel;
+  } else if (includesAny(text, [wordRe("duffel"), wordRe("tula"), wordRe("tulas"), phraseRe("bolso de viaje")])) sub = SUB.bolso_de_viaje_duffel;
   else if (includesAny(text, [wordRe("cartera"), wordRe("handbag")])) sub = SUB.cartera_bolso_de_mano;
 
   reasons.push(`sub:${sub}`);
-  const confidence = keychain || cases ? 0.98 : 0.97;
+  const confidence = keychain || cases || lunchbox ? 0.98 : 0.97;
   return { category: CAT.bolsos_y_marroquineria, subcategory: sub, confidence, reasons };
 };
 
 const detectFootwear = (text) => {
-  const anyFootwear = includesAny(text, [
+  // "bota" is ambiguous in Spanish catalogs ("pantalon bota recta/ancha/flare..."). Avoid those false positives.
+  const strongFootwear = includesAny(text, [
     wordRe("zapato"),
     wordRe("zapatos"),
     wordRe("tenis"),
@@ -594,10 +874,6 @@ const detectFootwear = (text) => {
     wordRe("tacones"),
     wordRe("heel"),
     wordRe("heels"),
-    wordRe("bota"),
-    wordRe("botas"),
-    wordRe("boot"),
-    wordRe("boots"),
     wordRe("botin"),
     wordRe("botines"),
     wordRe("bootie"),
@@ -625,12 +901,34 @@ const detectFootwear = (text) => {
     wordRe("slipper"),
     wordRe("slippers"),
   ]);
-  if (!anyFootwear) return null;
+  const bootOnly = includesAny(text, [wordRe("bota"), wordRe("botas"), wordRe("boot"), wordRe("boots")]);
+
+  const botaFitPhrases = includesAny(text, [
+    phraseRe("bota recta"),
+    phraseRe("bota recto"),
+    phraseRe("bota ancha"),
+    phraseRe("bota amplia"),
+    phraseRe("bota muy ancha"),
+    phraseRe("bota campana"),
+    phraseRe("bota flare"),
+    phraseRe("bota resortada"),
+    phraseRe("bota tubo"),
+    phraseRe("bota skinny"),
+    phraseRe("bota medio"),
+    phraseRe("bota media"),
+    phraseRe("bota palazzo"),
+    phraseRe("bota ajustable"),
+    phraseRe("botas ajustables"),
+    phraseRe("efecto en bota"),
+  ]);
+  if (bootOnly && botaFitPhrases) return null;
+
+  if (!strongFootwear && !bootOnly) return null;
 
   const reasons = ["kw:footwear"];
   let sub = SUB.zapatos_formales;
 
-  if (includesAny(text, [wordRe("bota"), wordRe("botas"), wordRe("boot"), wordRe("boots")])) sub = SUB.botas;
+  if (bootOnly) sub = SUB.botas;
   else if (includesAny(text, [wordRe("botin"), wordRe("botines"), wordRe("bootie"), wordRe("booties")])) sub = SUB.botines;
   else if (includesAny(text, [wordRe("tenis"), wordRe("sneaker"), wordRe("sneakers")])) sub = SUB.tenis_sneakers;
   else if (includesAny(text, [phraseRe("zapato deportivo"), phraseRe("zapatos deportivos")])) sub = SUB.zapatos_deportivos;
@@ -855,12 +1153,19 @@ const detectJewelry = (text) => {
     sub = SUB.relojes;
   }
 
-  // "Set" of jewelry: only if we already have a jewelry signal and "set" is present.
+  // "Set" of jewelry: if explicitly stated or if we have no better subcategory.
   const hasSet = includesAny(text, [wordRe("set"), wordRe("sets"), phraseRe("set of")]);
-  if (hasSet && sub) {
+  const setIsExplicit = includesAny(text, [
+    phraseRe("set de joyeria"),
+    phraseRe("set joyeria"),
+    phraseRe("set de bisuteria"),
+    phraseRe("set bisuteria"),
+    phraseRe("set jewelry"),
+    phraseRe("jewelry set"),
+  ]);
+  if (hasSet) {
     reasons.push("kw:set");
-    // Keep explicit subcategory unless it's missing.
-    if (!sub) sub = SUB.sets_de_joyeria;
+    if (!sub || setIsExplicit) sub = SUB.sets_de_joyeria;
   }
 
   if (!sub) {
@@ -1002,10 +1307,16 @@ const detectAccessorySubcategory = (text) => {
 const classify = (row) => {
   const title = row.product_name || "";
   const url = row.source_url || "";
+  const titleText = normalizeText(title);
+  // Use URL slug for "move_category" detection (many catalogs encode strong product hints in the URL),
+  // but keep subcategory inference title-only to avoid noisy slugs (e.g. a towel with "/medias-.../" in URL).
   const text = normalizeText(`${title} ${url}`);
 
   const gift = detectGiftCard(text);
   if (gift) return { ...gift, kind: "move_category" };
+
+  const beauty = detectBeauty(text);
+  if (beauty) return { ...beauty, kind: "move_category" };
 
   const home = detectHome(text);
   if (home) return { ...home, kind: "move_category" };
@@ -1025,7 +1336,7 @@ const classify = (row) => {
   const jewelry = detectJewelry(text);
   if (jewelry) return { ...jewelry, kind: "move_category" };
 
-  const accessorySub = detectAccessorySubcategory(text);
+  const accessorySub = detectAccessorySubcategory(titleText);
   if (accessorySub) {
     return {
       category: CAT.accesorios_textiles_y_medias,
@@ -1049,6 +1360,11 @@ const scriptVersion = `rules_v2_${runKey}`;
 
 try {
   const limitSql = limit ? `limit ${Number(limit)}` : "";
+const enrichedOnlySql = includeNotEnriched
+    ? ""
+    : `
+      and (p.metadata -> 'enrichment') is not null
+    `;
   const res = await client.query(
     `
       select
@@ -1063,6 +1379,7 @@ try {
       from "products" p
       join "brands" b on b.id = p."brandId"
       where p.category = $1
+      ${enrichedOnlySql}
       order by p.id asc
       ${limitSql}
     `,
@@ -1126,6 +1443,7 @@ try {
     scriptVersion,
     apply,
     minConfidence,
+    includeNotEnriched,
     scanned: suggestions.length,
     changes: changes.length,
     eligibleChanges: eligibleChanges.length,
@@ -1188,6 +1506,7 @@ try {
   md.push(`- Script version: \`${scriptVersion}\``);
   md.push(`- Apply: **${apply ? "YES" : "NO"}**`);
   md.push(`- Min confidence: **${minConfidence}**`);
+  md.push(`- Solo enriched (metadata.enrichment): **${includeNotEnriched ? "NO" : "YES"}**`);
   md.push(`- Productos escaneados: **${suggestions.length}**`);
   md.push(`- Cambios detectados (cualquier confianza): **${changes.length}**`);
   md.push(`- Cambios elegibles (>= min-confidence): **${eligibleChanges.length}**`);

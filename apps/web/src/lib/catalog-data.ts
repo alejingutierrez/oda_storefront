@@ -16,6 +16,30 @@ import {
 
 const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 export const CATALOG_PAGE_SIZE = 24;
+// Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
+const CATALOG_CACHE_VERSION = 2;
+
+// Canonicalize legacy category keys at query time so facets/filters stay consistent without rewriting the DB.
+const CATEGORY_CANON_EXPR = Prisma.sql`
+  case
+    when p.category='tops' and p.subcategory='camisetas' then 'camisetas_y_tops'
+    when p.category='tops' and p.subcategory in ('blusas','camisas') then 'camisas_y_blusas'
+    when p.category='bottoms' and p.subcategory='jeans' then 'jeans_y_denim'
+    when p.category='bottoms' and p.subcategory='pantalones' then 'pantalones_no_denim'
+    when p.category='bottoms' and p.subcategory='faldas' then 'faldas'
+    when p.category='bottoms' and p.subcategory='shorts' then 'shorts_y_bermudas'
+    when p.category='outerwear' and p.subcategory='blazers' then 'blazers_y_sastreria'
+    when p.category='outerwear' and p.subcategory='buzos' then 'buzos_hoodies_y_sueteres'
+    when p.category='outerwear' and p.subcategory in ('chaquetas','abrigos') then 'chaquetas_y_abrigos'
+    when p.category='knitwear' then 'buzos_hoodies_y_sueteres'
+    when p.category in ('ropa_interior','ropa interior') then 'ropa_interior_basica'
+    when p.category='trajes_de_bano' then 'trajes_de_bano_y_playa'
+    when p.category='deportivo' then 'ropa_deportiva_y_performance'
+    when p.category='enterizos' then 'enterizos_y_overoles'
+    when p.category='accesorios' and p.subcategory='bolsos' then 'bolsos_y_marroquineria'
+    else p.category
+  end
+`;
 
 export type CatalogStats = {
   brandCount: number;
@@ -160,7 +184,7 @@ export async function getCatalogStats(): Promise<CatalogStats> {
         comboCount: Number(row?.combo_count ?? 0),
       };
     },
-    ["catalog-stats"],
+    ["catalog-stats", `cache-v${CATALOG_CACHE_VERSION}`],
     { revalidate: CATALOG_REVALIDATE_SECONDS }
   );
 
@@ -172,7 +196,7 @@ export async function getCatalogFacets(filters: CatalogFilters): Promise<Catalog
   const cacheKey = buildFacetsCacheKey(filters);
   const cached = unstable_cache(
     async () => computeCatalogFacets(filters, taxonomy),
-    ["catalog-facets", `taxonomy-v${taxonomy.version}`, cacheKey],
+    ["catalog-facets", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`, cacheKey],
     { revalidate: CATALOG_REVALIDATE_SECONDS },
   );
 
@@ -184,7 +208,7 @@ export async function getCatalogFacetsLite(filters: CatalogFilters): Promise<Cat
   const cacheKey = buildFacetsCacheKey(filters);
   const cached = unstable_cache(
     async () => computeCatalogFacetsLite(filters, taxonomy),
-    ["catalog-facets-lite", `taxonomy-v${taxonomy.version}`, cacheKey],
+    ["catalog-facets-lite", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`, cacheKey],
     { revalidate: CATALOG_REVALIDATE_SECONDS },
   );
 
@@ -199,7 +223,7 @@ export async function getCatalogSubcategories(filters: CatalogFilters): Promise<
   const cacheKey = buildFacetsCacheKey(filters);
   const cached = unstable_cache(
     async () => computeCatalogSubcategories(filters, taxonomy),
-    ["catalog-subcategories", `taxonomy-v${taxonomy.version}`, cacheKey],
+    ["catalog-subcategories", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`, cacheKey],
     { revalidate: CATALOG_REVALIDATE_SECONDS },
   );
 
@@ -233,7 +257,7 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
         max: Number.isFinite(max) ? max : null,
       };
     },
-    ["catalog-price-bounds", cacheKey],
+    ["catalog-price-bounds", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
     { revalidate: CATALOG_REVALIDATE_SECONDS },
   );
 
@@ -283,12 +307,14 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
     styles,
   ] = await Promise.all([
     prisma.$queryRaw<Array<{ category: string; cnt: bigint }>>(Prisma.sql`
-      select p.category as category, count(*) as cnt
+      select
+        ${CATEGORY_CANON_EXPR} as category,
+        count(*) as cnt
       from products p
       join brands b on b.id = p."brandId"
       ${categoryWhere}
       and p.category is not null and p.category <> ''
-      group by p.category
+      group by 1
       order by cnt desc
       limit 16
     `),
@@ -480,12 +506,13 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
   );
   if (missingCategories.length > 0) {
     const rows = await prisma.$queryRaw<Array<{ category: string; cnt: bigint }>>(Prisma.sql`
-      select p.category as category, count(*) as cnt
+      select ${CATEGORY_CANON_EXPR} as category, count(*) as cnt
       from products p
       join brands b on b.id = p."brandId"
       ${categoryWhere}
-      and p.category in (${Prisma.join(missingCategories)})
-      group by p.category
+      and p.category is not null and p.category <> ''
+      and ${CATEGORY_CANON_EXPR} in (${Prisma.join(missingCategories)})
+      group by 1
     `);
     const countMap = new Map(rows.map((row) => [row.category, Number(row.cnt)]));
     for (const value of missingCategories) {
@@ -729,12 +756,12 @@ async function computeCatalogFacetsLite(
 
   const [categories, genders, brands, colors, materials, patterns] = await Promise.all([
     prisma.$queryRaw<Array<{ category: string; cnt: bigint }>>(Prisma.sql`
-      select p.category as category, count(*) as cnt
+      select ${CATEGORY_CANON_EXPR} as category, count(*) as cnt
       from products p
       join brands b on b.id = p."brandId"
       ${categoryWhere}
       and p.category is not null and p.category <> ''
-      group by p.category
+      group by 1
       order by cnt desc
     `),
     prisma.$queryRaw<Array<{ gender: string | null; cnt: bigint }>>(Prisma.sql`
@@ -841,12 +868,13 @@ async function computeCatalogFacetsLite(
   );
   if (missingCategories.length > 0) {
     const rows = await prisma.$queryRaw<Array<{ category: string; cnt: bigint }>>(Prisma.sql`
-      select p.category as category, count(*) as cnt
+      select ${CATEGORY_CANON_EXPR} as category, count(*) as cnt
       from products p
       join brands b on b.id = p."brandId"
       ${categoryWhere}
-      and p.category in (${Prisma.join(missingCategories)})
-      group by p.category
+      and p.category is not null and p.category <> ''
+      and ${CATEGORY_CANON_EXPR} in (${Prisma.join(missingCategories)})
+      group by 1
     `);
     const countMap = new Map(rows.map((row) => [row.category, Number(row.cnt)]));
     for (const value of missingCategories) {

@@ -33,6 +33,43 @@ function buildTextArray(values: string[]): Prisma.Sql {
   return Prisma.sql`ARRAY[${Prisma.join(values)}]`;
 }
 
+// Query-time category canonicalization:
+// - Keeps the DB unchanged (important while we re-enrich/migrate legacy rows).
+// - Makes filters/facets consistent with the canonical taxonomy keys.
+//
+// NOTE: `accesorios` is intentionally not bulk-mapped here (too ambiguous). We only map the
+// explicit `accesorios/bolsos` legacy combo to `bolsos_y_marroquineria`.
+const CATEGORY_FILTER_ALIASES: Record<string, Prisma.Sql[]> = {
+  camisetas_y_tops: [Prisma.sql`(p.category='tops' and p.subcategory='camisetas')`],
+  camisas_y_blusas: [Prisma.sql`(p.category='tops' and p.subcategory in ('blusas','camisas'))`],
+  jeans_y_denim: [Prisma.sql`(p.category='bottoms' and p.subcategory='jeans')`],
+  pantalones_no_denim: [Prisma.sql`(p.category='bottoms' and p.subcategory='pantalones')`],
+  faldas: [Prisma.sql`(p.category='bottoms' and p.subcategory='faldas')`],
+  shorts_y_bermudas: [Prisma.sql`(p.category='bottoms' and p.subcategory='shorts')`],
+  blazers_y_sastreria: [Prisma.sql`(p.category='outerwear' and p.subcategory='blazers')`],
+  buzos_hoodies_y_sueteres: [
+    Prisma.sql`(p.category='outerwear' and p.subcategory='buzos')`,
+    Prisma.sql`p.category='knitwear'`,
+  ],
+  chaquetas_y_abrigos: [Prisma.sql`(p.category='outerwear' and p.subcategory in ('chaquetas','abrigos'))`],
+  trajes_de_bano_y_playa: [Prisma.sql`p.category='trajes_de_bano'`],
+  ropa_deportiva_y_performance: [Prisma.sql`p.category='deportivo'`],
+  ropa_interior_basica: [Prisma.sql`p.category in ('ropa_interior','ropa interior')`],
+  enterizos_y_overoles: [Prisma.sql`p.category='enterizos'`],
+  bolsos_y_marroquineria: [Prisma.sql`(p.category='accesorios' and p.subcategory='bolsos')`],
+};
+
+function buildCategoryFilterCondition(categories: string[]): Prisma.Sql {
+  const normalized = categories.map((value) => value.trim()).filter(Boolean);
+  const groups = normalized.map((category) => {
+    const parts: Prisma.Sql[] = [Prisma.sql`p.category = ${category}`];
+    const aliases = CATEGORY_FILTER_ALIASES[category];
+    if (aliases?.length) parts.push(...aliases);
+    return Prisma.sql`(${Prisma.join(parts, " or ")})`;
+  });
+  return Prisma.sql`(${Prisma.join(groups, " or ")})`;
+}
+
 export function buildProductConditions(filters: CatalogFilters): Prisma.Sql[] {
   const q = filters.q ? `%${filters.q}%` : null;
   const conditions: Prisma.Sql[] = [Prisma.sql`p."imageCoverUrl" is not null`];
@@ -40,9 +77,8 @@ export function buildProductConditions(filters: CatalogFilters): Prisma.Sql[] {
   if (filters.enrichedOnly) {
     conditions.push(Prisma.sql`(p."metadata" -> 'enrichment') is not null`);
   }
-
   if (filters.categories && filters.categories.length > 0) {
-    conditions.push(Prisma.sql`p.category in (${Prisma.join(filters.categories)})`);
+    conditions.push(buildCategoryFilterCondition(filters.categories));
   }
   if (filters.subcategories && filters.subcategories.length > 0) {
     conditions.push(Prisma.sql`p.subcategory in (${Prisma.join(filters.subcategories)})`);

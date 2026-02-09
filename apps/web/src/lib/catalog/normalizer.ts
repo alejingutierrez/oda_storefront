@@ -2,6 +2,11 @@ import { z } from "zod";
 import { getOpenAIClient } from "@/lib/openai";
 import { guessCurrency, normalizeSize, pickOption } from "@/lib/catalog/utils";
 import type { CanonicalProduct, CanonicalVariant, RawProduct, RawVariant } from "@/lib/catalog/types";
+import {
+  CATEGORY_VALUES,
+  SUBCATEGORY_BY_CATEGORY,
+} from "@/lib/product-enrichment/constants";
+import { normalizeEnumValue } from "@/lib/product-enrichment/utils";
 
 const OPENAI_MODEL = process.env.CATALOG_OPENAI_MODEL ?? "gpt-5-mini";
 const MAX_RETRIES = 3;
@@ -154,6 +159,30 @@ const addTag = (set: Set<string>, tag: string) => {
 
 type TagRule = { tag: string; keywords: string[] };
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const hasAnyKeyword = (text: string, keywords: string[]) => {
+  for (const keyword of keywords) {
+    const cleaned = keyword.trim();
+    if (!cleaned) continue;
+    if (cleaned.includes(" ")) {
+      if (text.includes(cleaned)) return true;
+      continue;
+    }
+    const re = new RegExp(`(^|\\s)${escapeRegExp(cleaned)}(\\s|$)`);
+    if (re.test(text)) return true;
+  }
+  return false;
+};
+
+const canonicalizeCategorySubcategory = (rawCategory?: string | null, rawSubcategory?: string | null) => {
+  const category = normalizeEnumValue(rawCategory ?? null, CATEGORY_VALUES);
+  if (!category) return { category: null, subcategory: null };
+  const allowedSubs = SUBCATEGORY_BY_CATEGORY[category] ?? [];
+  const subcategory = normalizeEnumValue(rawSubcategory ?? null, allowedSubs);
+  return { category, subcategory };
+};
+
 const MATERIAL_RULES: TagRule[] = [
   { tag: "algodon", keywords: ["algodon", "cotton", "algodon organico"] },
   { tag: "lino", keywords: ["lino", "linen"] },
@@ -214,31 +243,267 @@ const SEASON_RULES: TagRule[] = [
   { tag: "otono", keywords: ["otono", "fall", "autumn"] },
 ];
 
-const CATEGORY_RULES: Array<{
-  category: string;
-  subcategory?: string;
-  keywords: string[];
-}> = [
+const CATEGORY_KEYWORDS: Array<{ category: string; subcategory?: string; keywords: string[] }> = [
+  {
+    category: "tarjeta_regalo",
+    subcategory: "gift_card",
+    keywords: ["gift card", "giftcard", "tarjeta de regalo", "tarjeta regalo", "bono de regalo", "voucher"],
+  },
+  {
+    category: "bolsos_y_marroquineria",
+    keywords: [
+      "bolso",
+      "bolsos",
+      "cartera",
+      "carteras",
+      "mochila",
+      "mochilas",
+      "morral",
+      "morrales",
+      "rinonera",
+      "rinoneras",
+      "canguro",
+      "clutch",
+      "tote",
+      "bandolera",
+      "crossbody",
+      "billetera",
+      "billeteras",
+      "monedero",
+      "monederos",
+      "cartuchera",
+      "cartucheras",
+      "neceser",
+      "neceseres",
+      "cosmetiquera",
+      "cosmetiqueras",
+      "estuche",
+      "estuches",
+      "pouch",
+      "pouches",
+      "lapicera",
+      "lapiceras",
+      "maleta",
+      "maletas",
+      "equipaje",
+      "trolley",
+      "luggage",
+      "suitcase",
+      "llavero",
+      "llaveros",
+      "keychain",
+      "keychains",
+      "porta pasaporte",
+      "portapasaporte",
+      "porta documentos",
+      "portadocumentos",
+      "duffel",
+      "bolso de viaje",
+    ],
+  },
+  {
+    category: "joyeria_y_bisuteria",
+    keywords: [
+      "arete",
+      "aretes",
+      "topo",
+      "topos",
+      "pendiente",
+      "pendientes",
+      "argolla",
+      "argollas",
+      "collar",
+      "collares",
+      "cadena",
+      "cadenas",
+      "pulsera",
+      "pulseras",
+      "brazalete",
+      "brazaletes",
+      "anillo",
+      "anillos",
+      "tobillera",
+      "tobilleras",
+      "dije",
+      "dijes",
+      "charm",
+      "charms",
+      "broche",
+      "broches",
+      "prendedor",
+      "prendedores",
+      "piercing",
+      "piercings",
+      "reloj",
+      "relojes",
+      "joya",
+      "joyas",
+      "bisuteria",
+    ],
+  },
+  {
+    category: "gafas_y_optica",
+    keywords: ["gafas", "lente", "lentes", "montura", "monturas", "optica", "sunglasses", "goggle", "goggles"],
+  },
+  {
+    category: "calzado",
+    keywords: [
+      "zapato",
+      "zapatos",
+      "tenis",
+      "sneaker",
+      "sneakers",
+      "sandalia",
+      "sandalias",
+      "tacon",
+      "tacones",
+      "stiletto",
+      "bota",
+      "botas",
+      "botin",
+      "botines",
+      "mocasin",
+      "mocasines",
+      "loafer",
+      "loafers",
+      "balerina",
+      "balerinas",
+      "alpargata",
+      "alpargatas",
+      "espadrille",
+      "espadrilles",
+      "zueco",
+      "zuecos",
+      "chancla",
+      "chanclas",
+      "flip flop",
+      "flip flops",
+      "oxford",
+    ],
+  },
+  {
+    category: "accesorios_textiles_y_medias",
+    keywords: [
+      "media",
+      "medias",
+      "calcetin",
+      "calcetines",
+      "pantimedia",
+      "pantimedias",
+      "cinturon",
+      "cinturones",
+      "gorra",
+      "gorras",
+      "sombrero",
+      "sombreros",
+      "bufanda",
+      "bufandas",
+      "panuel",
+      "panuelos",
+      "bandana",
+      "bandanas",
+      "corbata",
+      "corbatas",
+      "pajarita",
+      "pajaritas",
+      "tirante",
+      "tirantes",
+      "chal",
+      "chales",
+      "pashmina",
+      "pashminas",
+      "guante",
+      "guantes",
+      "tapabocas",
+      "mascarilla",
+      "mascarillas",
+      "beanie",
+      "gorro",
+      "gorros",
+      "scrunchie",
+      "diadema",
+      "diademas",
+      "balaca",
+      "balacas",
+      "pasador",
+      "pasadores",
+      "pinza",
+      "pinzas",
+    ],
+  },
+  {
+    category: "trajes_de_bano_y_playa",
+    keywords: [
+      "bikini",
+      "trikini",
+      "tankini",
+      "traje de bano",
+      "vestido de bano",
+      "swim",
+      "banador",
+      "pareo",
+      "rashguard",
+      "licra uv",
+      "licra",
+    ],
+  },
+  {
+    category: "lenceria_y_fajas_shapewear",
+    keywords: ["faja", "fajas", "shapewear", "moldeador", "moldeadora", "corset", "corse", "bustier", "liguero"],
+  },
+  {
+    category: "ropa_interior_basica",
+    keywords: [
+      "brasier",
+      "bralette",
+      "bra",
+      "panty",
+      "trusa",
+      "tanga",
+      "brasilera",
+      "boxer",
+      "brief",
+      "interior",
+      "interiores",
+      "lingerie",
+      "jockstrap",
+      "suspensorio",
+      "thong",
+      "thongs",
+      "trunk",
+      "trunks",
+    ],
+  },
+  {
+    category: "ropa_deportiva_y_performance",
+    keywords: [
+      "activewear",
+      "athleisure",
+      "gym",
+      "running",
+      "ciclismo",
+      "training",
+      "entrenamiento",
+      "compresion",
+      "compresivo",
+      "deportivo",
+      "deportiva",
+      "deportivos",
+      "deportivas",
+    ],
+  },
   { category: "vestidos", keywords: ["vestido", "dress"] },
-  { category: "enterizos", keywords: ["enterizo", "jumpsuit", "overall", "overol"] },
-  { category: "tops", subcategory: "camisetas", keywords: ["camiseta", "tshirt", "t-shirt"] },
-  { category: "tops", subcategory: "blusas", keywords: ["blusa", "top"] },
-  { category: "tops", subcategory: "camisas", keywords: ["camisa", "shirt"] },
-  { category: "bottoms", subcategory: "pantalones", keywords: ["pantalon", "pantalones", "trouser", "pant"] },
-  { category: "bottoms", subcategory: "jeans", keywords: ["jean", "jeans", "denim"] },
-  { category: "bottoms", subcategory: "shorts", keywords: ["short", "shorts", "bermuda"] },
-  { category: "bottoms", subcategory: "faldas", keywords: ["falda", "skirt"] },
-  { category: "outerwear", subcategory: "blazers", keywords: ["blazer"] },
-  { category: "outerwear", subcategory: "chaquetas", keywords: ["chaqueta", "jacket"] },
-  { category: "outerwear", subcategory: "abrigos", keywords: ["abrigo", "coat"] },
-  { category: "outerwear", subcategory: "buzos", keywords: ["buzo", "hoodie", "sweatshirt"] },
-  { category: "knitwear", subcategory: "sweaters", keywords: ["sueter", "sweater", "cardigan", "knit"] },
-  { category: "calzado", keywords: ["zapato", "tenis", "sneaker", "sandalia", "bota", "botas"] },
-  { category: "accesorios", subcategory: "bolsos", keywords: ["bolso", "cartera", "mochila"] },
-  { category: "accesorios", keywords: ["accesorio", "arete", "collar", "gorro", "bufanda"] },
-  { category: "trajes_de_bano", keywords: ["bikini", "traje de bano", "swim", "banador"] },
-  { category: "ropa_interior", keywords: ["bra", "brasier", "bralette", "panty", "interior", "lingerie"] },
-  { category: "deportivo", keywords: ["deportivo", "activewear", "legging", "gym"] },
+  { category: "enterizos_y_overoles", keywords: ["enterizo", "jumpsuit", "overall", "overol", "romper", "jardinera"] },
+  { category: "blazers_y_sastreria", keywords: ["blazer", "tuxedo", "smoking"] },
+  { category: "chaquetas_y_abrigos", keywords: ["chaqueta", "jacket", "abrigo", "coat", "trench", "parka", "bomber", "rompevientos", "impermeable"] },
+  { category: "buzos_hoodies_y_sueteres", keywords: ["buzo", "hoodie", "sweatshirt", "sueter", "sweater", "cardigan", "knit", "tejido"] },
+  { category: "camisas_y_blusas", keywords: ["camisa", "blusa", "guayabera", "shirt"] },
+  { category: "camisetas_y_tops", keywords: ["camiseta", "tshirt", "t shirt", "tank", "crop", "polo", "henley", "bodysuit", "body", "camisilla", "esqueleto"] },
+  { category: "faldas", keywords: ["falda", "skirt"] },
+  // Jeans before pantalón to avoid collisions on "denim".
+  { category: "jeans_y_denim", keywords: ["jean", "jeans", "denim"] },
+  { category: "shorts_y_bermudas", keywords: ["short", "shorts", "bermuda"] },
+  { category: "pantalones_no_denim", keywords: ["pantalon", "pantalones", "trouser"] },
 ];
 
 const GENDER_RULES: TagRule[] = [
@@ -288,10 +553,53 @@ const collectTags = (text: string, rules: TagRule[]) => {
   return Array.from(tags);
 };
 
+// Spanish fashion catalogs commonly use "bota" to describe pant leg shape (bota recta/ancha/skinny...),
+// which should NOT be inferred as footwear.
+const looksLikePantsBotaFit = (text: string) => {
+  const botaFitPhrases = [
+    "bota recta",
+    "bota recto",
+    "bota ancha",
+    "bota amplia",
+    "bota muy ancha",
+    "bota campana",
+    "bota flare",
+    "bota resortada",
+    "bota tubo",
+    "bota skinny",
+    "bota medio",
+    "bota media",
+    "bota palazzo",
+    "bota ajustable",
+    "botas ajustables",
+    "efecto en bota",
+  ];
+  if (botaFitPhrases.some((phrase) => text.includes(phrase))) return true;
+  const hasBottoms =
+    hasAnyKeyword(text, [
+      "pantalon",
+      "pantalones",
+      "jogger",
+      "cargo",
+      "palazzo",
+      "culotte",
+      "legging",
+      "leggings",
+    ]) && hasAnyKeyword(text, ["bota", "botas"]);
+  return hasBottoms;
+};
+
 const inferCategory = (text: string) => {
-  for (const rule of CATEGORY_RULES) {
-    if (rule.keywords.some((keyword) => text.includes(keyword))) {
-      return { category: rule.category, subcategory: rule.subcategory ?? null };
+  for (const rule of CATEGORY_KEYWORDS) {
+    if (rule.category === "calzado" && looksLikePantsBotaFit(text)) {
+      // Only ignore footwear when the only hit would be bota/botas.
+      const filtered = rule.keywords.filter((kw) => kw !== "bota" && kw !== "botas");
+      if (!hasAnyKeyword(text, filtered)) continue;
+    }
+
+    if (hasAnyKeyword(text, rule.keywords)) {
+      const coerced = canonicalizeCategorySubcategory(rule.category, rule.subcategory ?? null);
+      return coerced;
     }
   }
   return { category: null, subcategory: null };
@@ -452,7 +760,7 @@ const normalizeCatalogProductDeterministic = (rawProduct: RawProduct, platform?:
     }),
     metadata: {
       platform: platform ?? rawProduct.metadata?.platform ?? null,
-      normalized_by: "rules_v2",
+      normalized_by: "rules_v3_taxonomy_canon",
     },
   };
 };
@@ -596,6 +904,12 @@ export const normalizeCatalogProductWithOpenAI = async (rawProduct: RawProduct) 
         throw new Error(`JSON validation failed: ${validation.error.message}`);
       }
       const product = validation.data.product as CanonicalProduct;
+      // Ensure categories/subcategories are canonical so we never re-introduce legacy taxonomy keys.
+      {
+        const canon = canonicalizeCategorySubcategory(product.category ?? null, product.subcategory ?? null);
+        product.category = canon.category;
+        product.subcategory = canon.subcategory;
+      }
       if (Array.isArray(product.variants)) {
         product.variants = product.variants.map((variant) => {
           const price = typeof variant.price === "number" ? variant.price : null;

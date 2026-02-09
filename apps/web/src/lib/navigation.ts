@@ -38,13 +38,8 @@ export const CATEGORY_GROUPS = {
     "conjuntos_y_sets_2_piezas",
     "vestidos",
     "enterizos_y_overoles",
-    "tops",
     "uniformes_y_ropa_de_trabajo_escolar",
-    "outerwear",
     "ropa_deportiva_y_performance",
-    "deportivo",
-    "knitwear",
-    "enterizos",
     "ropa_de_bebe_0_24_meses",
   ],
   Inferiores: [
@@ -52,7 +47,6 @@ export const CATEGORY_GROUPS = {
     "jeans_y_denim",
     "faldas",
     "shorts_y_bermudas",
-    "bottoms",
   ],
   Accesorios: [
     "accesorios_textiles_y_medias",
@@ -60,23 +54,16 @@ export const CATEGORY_GROUPS = {
     "joyeria_y_bisuteria",
     "calzado",
     "gafas_y_optica",
-    "accesorios",
     "tarjeta_regalo",
     "hogar_y_lifestyle",
-    "ropa_interior",
     "ropa_interior_basica",
     "lenceria_y_fajas_shapewear",
     "pijamas_y_ropa_de_descanso_loungewear",
     "trajes_de_bano_y_playa",
-    "trajes_de_bano",
   ],
 } as const;
 
 export const SPECIAL_SUBCATEGORY_SPLITS = {
-  outerwear: {
-    column: "Superiores",
-    subcategories: ["chaquetas", "buzos", "abrigos", "blazers"],
-  },
   ropa_deportiva_y_performance: {
     superiores: [
       "top_deportivo_bra_deportivo",
@@ -146,6 +133,9 @@ const SUBCATEGORY_OVERRIDES: Record<string, string> = {
   shorts_deportivos: "Shorts deportivos",
   sudadera_pants_deportivos: "Pants deportivos",
   estuches_cartucheras_neceseres: "Estuches / cartucheras / neceseres",
+  maletas_y_equipaje: "Maletas y equipaje",
+  cuidado_personal_y_belleza: "Cuidado personal y belleza",
+  cocina_y_vajilla: "Cocina y vajilla",
   papeleria_y_libros: "Papelería y libros",
   llaveros: "Llaveros",
 };

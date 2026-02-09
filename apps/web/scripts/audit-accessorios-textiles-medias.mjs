@@ -14,7 +14,7 @@ const repoRoot = path.resolve(__dirname, "../..", "..");
 dotenv.config({ path: path.join(repoRoot, ".env") });
 
 const DEFAULT_CATEGORY = "accesorios_textiles_y_medias";
-const DEFAULT_SAMPLE_PER_SUBCATEGORY = 120;
+const DEFAULT_SAMPLE_PER_SUBCATEGORY = 200;
 
 const args = new Set(process.argv.slice(2));
 const getArgValue = (flag) => {
@@ -61,6 +61,22 @@ const normalizeText = (value) =>
 const wordRe = (word) => new RegExp(`(^|\\s)${word}(\\s|$)`, "i");
 const phraseRe = (phrase) => new RegExp(`\\b${phrase.replace(/\s+/g, "\\s+")}\\b`, "i");
 
+const includesAny = (text, patterns) => patterns.some((re) => re.test(text));
+
+// "tobillera" is ambiguous: can mean jewelry anklet or ankle socks ("medias tobilleras").
+// Avoid suggesting "joyeria_y_bisuteria" when there is strong sock context.
+const hasSockContext = (text) =>
+  includesAny(text, [
+    wordRe("media"),
+    wordRe("medias"),
+    wordRe("calcetin"),
+    wordRe("calcetines"),
+    wordRe("sock"),
+    wordRe("socks"),
+    wordRe("soquete"),
+    wordRe("soquetes"),
+  ]);
+
 const CATEGORY_OUT_RULES = [
   {
     category: "joyeria_y_bisuteria",
@@ -92,7 +108,7 @@ const CATEGORY_OUT_RULES = [
     ],
   },
   { category: "gafas_y_optica", patterns: [wordRe("gafas"), wordRe("lentes"), wordRe("montura"), wordRe("monturas"), wordRe("optica"), wordRe("sunglasses"), wordRe("goggles")] },
-  { category: "bolsos_y_marroquineria", patterns: [wordRe("bolso"), wordRe("bolsos"), wordRe("cartera"), wordRe("carteras"), wordRe("billetera"), wordRe("billeteras"), wordRe("monedero"), wordRe("monederos"), wordRe("mochila"), wordRe("mochilas"), wordRe("morral"), wordRe("morrales"), wordRe("rinonera"), wordRe("rinoneras"), wordRe("canguro"), wordRe("clutch"), wordRe("sobre"), wordRe("bandolera"), wordRe("crossbody"), phraseRe("porta pasaporte"), phraseRe("porta documentos"), phraseRe("portadocumentos")] },
+  { category: "bolsos_y_marroquineria", patterns: [wordRe("bolso"), wordRe("bolsos"), wordRe("cartera"), wordRe("carteras"), wordRe("billetera"), wordRe("billeteras"), wordRe("monedero"), wordRe("monederos"), wordRe("mochila"), wordRe("mochilas"), wordRe("morral"), wordRe("morrales"), wordRe("rinonera"), wordRe("rinoneras"), wordRe("canguro"), wordRe("clutch"), wordRe("sobre"), wordRe("bandolera"), wordRe("crossbody"), wordRe("cartuchera"), wordRe("cartucheras"), wordRe("estuche"), wordRe("estuches"), wordRe("neceser"), wordRe("neceseres"), wordRe("cosmetiquera"), wordRe("cosmetiqueras"), wordRe("pouch"), wordRe("pouches"), wordRe("lapicera"), wordRe("lapiceras"), wordRe("maleta"), wordRe("maletas"), wordRe("equipaje"), wordRe("trolley"), wordRe("luggage"), wordRe("suitcase"), wordRe("llavero"), wordRe("llaveros"), wordRe("keychain"), wordRe("keychains"), phraseRe("porta pasaporte"), phraseRe("porta documentos"), phraseRe("portadocumentos")] },
   { category: "calzado", patterns: [wordRe("zapato"), wordRe("zapatos"), wordRe("tenis"), wordRe("sneaker"), wordRe("sneakers"), wordRe("sandalia"), wordRe("sandalias"), wordRe("tacon"), wordRe("tacones"), wordRe("bota"), wordRe("botas"), wordRe("botin"), wordRe("botines"), wordRe("mocasin"), wordRe("mocasines"), wordRe("loafers"), wordRe("balerina"), wordRe("balerinas"), wordRe("flats"), wordRe("alpargata"), wordRe("alpargatas"), wordRe("espadrille"), wordRe("espadrilles"), wordRe("zueco"), wordRe("zuecos"), wordRe("chancla"), wordRe("chanclas"), phraseRe("flip flops"), phraseRe("flip flop")] },
   // NOTE: "panty" es ambiguo (ropa interior vs panty media); se trata en reglas de subcategoría.
 ];
@@ -110,6 +126,9 @@ const SUBCATEGORY_LABELS = {
   pajaritas_monos: "Pajaritas / moños",
   tirantes: "Tirantes",
   chales_pashminas: "Chales / pashminas",
+  accesorios_para_cabello: "Accesorios para cabello",
+  gorros_beanies: "Gorros / beanies (tejidos)",
+  tapabocas_mascarillas: "Tapabocas / mascarillas",
 };
 
 const SUBCATEGORY_RULES = [
@@ -172,63 +191,63 @@ const SUBCATEGORY_RULES = [
   { key: "chales_pashminas", patterns: [wordRe("chal"), wordRe("chales"), wordRe("pashmina"), wordRe("pashminas"), wordRe("estola"), wordRe("estolas"), wordRe("stole"), wordRe("stoles")] },
   { key: "gorras", patterns: [wordRe("gorra"), wordRe("gorras"), wordRe("cap"), wordRe("caps"), wordRe("visera"), wordRe("viseras"), wordRe("snapback"), wordRe("trucker")] },
   { key: "sombreros", patterns: [wordRe("sombrero"), wordRe("sombreros"), phraseRe("bucket hat"), wordRe("bucket"), wordRe("fedora"), wordRe("panama")] },
+  {
+    key: "accesorios_para_cabello",
+    patterns: [
+      wordRe("scrunchie"),
+      wordRe("scrunchies"),
+      wordRe("diadema"),
+      wordRe("diademas"),
+      wordRe("balaca"),
+      wordRe("balacas"),
+      wordRe("tiara"),
+      wordRe("tiaras"),
+      wordRe("vincha"),
+      wordRe("vinchas"),
+      wordRe("headband"),
+      wordRe("headbands"),
+      wordRe("pasador"),
+      wordRe("pasadores"),
+      wordRe("pinza"),
+      wordRe("pinzas"),
+      wordRe("gancho"),
+      wordRe("ganchos"),
+      wordRe("coletero"),
+      wordRe("coleteros"),
+      wordRe("caucho"),
+      wordRe("cauchos"),
+      wordRe("liguita"),
+      wordRe("liguitas"),
+      phraseRe("para el cabello"),
+      phraseRe("para cabello"),
+      phraseRe("para el pelo"),
+      phraseRe("para pelo"),
+      wordRe("hair"),
+    ],
+  },
+  {
+    key: "gorros_beanies",
+    patterns: [wordRe("beanie"), wordRe("beanies"), wordRe("gorro"), wordRe("gorros")],
+  },
+  { key: "tapabocas_mascarillas", patterns: [wordRe("tapabocas"), wordRe("mascarilla"), wordRe("mascarillas"), phraseRe("face mask")] },
 ];
 
-const NEW_BUCKETS = {
-  accesorios_para_cabello: { key: "__NEW__accesorios_para_cabello", label: "Accesorios para cabello" },
-  gorro_beanie: { key: "__NEW__gorro_beanie", label: "Gorros / beanies (tejidos)" },
-  tapabocas_mascarillas: { key: "__NEW__tapabocas_mascarillas", label: "Tapabocas / mascarillas" },
-};
+const hasHairContext = (text) =>
+  includesAny(text, (SUBCATEGORY_RULES.find((r) => r.key === "accesorios_para_cabello")?.patterns ?? []));
 
 const inferCategoryOut = (text) => {
   for (const rule of CATEGORY_OUT_RULES) {
-    if (rule.patterns.some((re) => re.test(text))) return rule.category;
+    if (!rule.patterns.some((re) => re.test(text))) continue;
+
+    if (rule.category === "joyeria_y_bisuteria") {
+      const hasTobillera = wordRe("tobillera").test(text) || wordRe("tobilleras").test(text);
+      if (hasTobillera && hasSockContext(text)) {
+        continue;
+      }
+    }
+
+    return rule.category;
   }
-  return null;
-};
-
-const inferNewBucket = (text) => {
-  // Hair accessories bucket.
-  const hairPatterns = [
-    wordRe("scrunchie"),
-    wordRe("scrunchies"),
-    wordRe("diadema"),
-    wordRe("diademas"),
-    wordRe("pasador"),
-    wordRe("pasadores"),
-    wordRe("pinza"),
-    wordRe("pinzas"),
-    wordRe("gancho"),
-    wordRe("ganchos"),
-    wordRe("coletero"),
-    wordRe("coleteros"),
-    wordRe("caucho"),
-    wordRe("cauchos"),
-    wordRe("liguita"),
-    wordRe("liguitas"),
-    phraseRe("para el cabello"),
-    phraseRe("para cabello"),
-    phraseRe("para el pelo"),
-    phraseRe("para pelo"),
-    wordRe("hair"),
-  ];
-  if (hairPatterns.some((re) => re.test(text))) return NEW_BUCKETS.accesorios_para_cabello;
-
-  // Beanie bucket: avoid stealing "bucket hat" and classify knit caps.
-  const hasBucketHat = phraseRe("bucket hat").test(text) || wordRe("bucket").test(text);
-  const hasBeanie = wordRe("beanie").test(text) || wordRe("beanies").test(text);
-  const hasGorro = wordRe("gorro").test(text) || wordRe("gorros").test(text);
-  const hasKnitSignal =
-    wordRe("tejido").test(text) ||
-    wordRe("lana").test(text) ||
-    wordRe("termico").test(text) ||
-    wordRe("invierno").test(text) ||
-    wordRe("wool").test(text);
-  if (!hasBucketHat && (hasBeanie || (hasGorro && hasKnitSignal))) return NEW_BUCKETS.gorro_beanie;
-
-  const maskPatterns = [wordRe("tapabocas"), wordRe("mascarilla"), wordRe("mascarillas")];
-  if (maskPatterns.some((re) => re.test(text))) return NEW_BUCKETS.tapabocas_mascarillas;
-
   return null;
 };
 
@@ -242,8 +261,7 @@ const inferAccessorySubcategory = (text) => {
     if (wordRe("corbatin").test(text) || wordRe("pajarita").test(text) || wordRe("cuello").test(text) || wordRe("camisa").test(text)) {
       return "pajaritas_monos";
     }
-    const newBucket = inferNewBucket(text);
-    if (newBucket?.key === NEW_BUCKETS.accesorios_para_cabello.key) return null;
+    if (hasHairContext(text)) return "accesorios_para_cabello";
     return "pajaritas_monos";
   }
   return null;
@@ -345,8 +363,6 @@ try {
     const text = normalizeText(row.product_name);
     const inferredOut = inferCategoryOut(text);
     const inferredSub = inferredOut ? null : inferAccessorySubcategory(text);
-    // Nuevos buckets solo se consideran si NO hay match claro a subcategoria existente.
-    const newBucket = inferredOut || inferredSub ? null : inferNewBucket(text);
 
     let suggestedCategory = row.category;
     let suggestedSubcategory = subKeyOf(row.subcategory);
@@ -356,9 +372,6 @@ try {
       suggestedCategory = inferredOut;
       suggestedSubcategory = "";
       suggestionKind = "move_category";
-    } else if (newBucket) {
-      // Keep in same category for now, but flag as candidate for new subcategory.
-      suggestionKind = "new_subcategory_candidate";
     } else if (inferredSub) {
       const currentSub = subKeyOf(row.subcategory);
       if (currentSub !== inferredSub) {
@@ -377,8 +390,8 @@ try {
       suggested_category: suggestedCategory,
       suggested_subcategory: suggestedSubcategory || "",
       suggested_subcategory_label: SUBCATEGORY_LABELS[suggestedSubcategory] || suggestedSubcategory || "",
-      suggested_new_bucket: newBucket?.key || "",
-      suggested_new_bucket_label: newBucket?.label || "",
+      suggested_new_bucket: "",
+      suggested_new_bucket_label: "",
       suggestion_kind: suggestionKind,
       source_url: row.source_url || "",
       updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : "",

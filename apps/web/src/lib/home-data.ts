@@ -13,6 +13,8 @@ import {
 } from "@/lib/navigation";
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
+// Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
+const HOME_CACHE_VERSION = 2;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 
 export type MenuSubcategory = {
@@ -107,10 +109,34 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
                 when gender is null then 'Unisex'
                 else 'Unisex'
               end as gender_bucket,
-              category,
-              subcategory
-            from products
-            where category is not null and category <> ''
+              case
+                when p.category='tops' and p.subcategory='camisetas' then 'camisetas_y_tops'
+                when p.category='tops' and p.subcategory in ('blusas','camisas') then 'camisas_y_blusas'
+                when p.category='bottoms' and p.subcategory='jeans' then 'jeans_y_denim'
+                when p.category='bottoms' and p.subcategory='pantalones' then 'pantalones_no_denim'
+                when p.category='bottoms' and p.subcategory='faldas' then 'faldas'
+                when p.category='bottoms' and p.subcategory='shorts' then 'shorts_y_bermudas'
+                when p.category='outerwear' and p.subcategory='blazers' then 'blazers_y_sastreria'
+                when p.category='outerwear' and p.subcategory='buzos' then 'buzos_hoodies_y_sueteres'
+                when p.category='outerwear' and p.subcategory in ('chaquetas','abrigos') then 'chaquetas_y_abrigos'
+                when p.category='knitwear' then 'buzos_hoodies_y_sueteres'
+                when p.category in ('ropa_interior','ropa interior') then 'ropa_interior_basica'
+                when p.category='trajes_de_bano' then 'trajes_de_bano_y_playa'
+                when p.category='deportivo' then 'ropa_deportiva_y_performance'
+                when p.category='enterizos' then 'enterizos_y_overoles'
+                when p.category='accesorios' and p.subcategory='bolsos' then 'bolsos_y_marroquineria'
+                else p.category
+              end as category,
+              p.subcategory as subcategory
+            from products p
+            where p.category is not null and p.category <> ''
+              and p."imageCoverUrl" is not null
+              and (p."metadata" -> 'enrichment') is not null
+              and exists (
+                select 1 from variants v
+                where v."productId" = p.id
+                  and (v.stock > 0 or v."stockStatus" in ('in_stock','preorder'))
+              )
           )
           select gender_bucket, category, subcategory, count(*) as cnt
           from bucketed
@@ -154,25 +180,6 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
           for (const category of categories) {
             const entry = catMap.get(category);
             if (!entry || entry.count <= 0) {
-              continue;
-            }
-
-            if (category === "outerwear") {
-              const subcategories = (SPECIAL_SUBCATEGORY_SPLITS.outerwear.subcategories || [])
-                .map((sub) => ({
-                  key: sub,
-                  label: labelizeSubcategory(sub),
-                  count: entry.sub.get(sub) ?? 0,
-                  href: buildCategoryHref(gender, category, sub),
-                }))
-                .filter((sub) => sub.count > 0);
-              items.push({
-                key: category,
-                label: labelize(category),
-                count: entry.count,
-                href: buildCategoryHref(gender, category),
-                subcategories,
-              });
               continue;
             }
 
@@ -227,7 +234,7 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
 
       return result;
     },
-    ["home-mega-menu"],
+    [`home-v${HOME_CACHE_VERSION}-mega-menu`],
     { revalidate: HOME_REVALIDATE_SECONDS }
   );
 
@@ -267,7 +274,7 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
       );
       return rows[0] ?? null;
     },
-    [`home-hero-${seed}`],
+    [`home-v${HOME_CACHE_VERSION}-hero-${seed}`],
     { revalidate: HOME_REVALIDATE_SECONDS }
   );
 
@@ -306,7 +313,7 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
         `
       );
     },
-    [`home-new-${seed}-${limit}`],
+    [`home-v${HOME_CACHE_VERSION}-new-${seed}-${limit}`],
     { revalidate: HOME_REVALIDATE_SECONDS }
   );
 
@@ -345,7 +352,7 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
         `
       );
     },
-    [`home-picks-${seed}-${limit}`],
+    [`home-v${HOME_CACHE_VERSION}-picks-${seed}-${limit}`],
     { revalidate: HOME_REVALIDATE_SECONDS }
   );
 
@@ -394,7 +401,7 @@ export async function getCategoryHighlights(
         href: buildCategoryHref("Unisex", row.category),
       }));
     },
-    [`home-categories-${seed}-${limit}`],
+    [`home-v${HOME_CACHE_VERSION}-categories-${seed}-${limit}`],
     { revalidate: HOME_REVALIDATE_SECONDS }
   );
 
@@ -458,7 +465,7 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
 
       return groups;
     },
-    [`home-styles-${seed}-${limit}`],
+    [`home-v${HOME_CACHE_VERSION}-styles-${seed}-${limit}`],
     { revalidate: HOME_REVALIDATE_SECONDS }
   );
 
@@ -517,7 +524,7 @@ export async function getColorCombos(seed: number, limit = 6): Promise<ColorComb
         };
       });
     },
-    [`home-colors-${seed}-${limit}`],
+    [`home-v${HOME_CACHE_VERSION}-colors-${seed}-${limit}`],
     { revalidate: HOME_REVALIDATE_SECONDS }
   );
 
@@ -537,7 +544,7 @@ export async function getBrandLogos(seed: number, limit = 24): Promise<BrandLogo
         `
       );
     },
-    [`home-brands-${seed}-${limit}`],
+    [`home-v${HOME_CACHE_VERSION}-brands-${seed}-${limit}`],
     { revalidate: HOME_REVALIDATE_SECONDS }
   );
 
