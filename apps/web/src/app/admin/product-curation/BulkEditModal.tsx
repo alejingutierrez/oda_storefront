@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  GENDER_OPTIONS,
-  SEASON_OPTIONS,
-} from "@/lib/product-enrichment/constants";
+import { GENDER_OPTIONS, SEASON_OPTIONS } from "@/lib/product-enrichment/constants";
 import type { TaxonomyOptions, TaxonomyTerm } from "@/lib/taxonomy/types";
 
 export type BulkOperation = "replace" | "add" | "remove" | "clear";
@@ -41,60 +38,15 @@ type Props = {
   selectedCount: number;
   selectedIds: string[];
   categoriesFromFilters: string[];
+  searchKey: string;
   taxonomyOptions: TaxonomyOptions | null;
   onClose: () => void;
-  onApply: (payload: { changes: BulkChange[] }) => Promise<BulkResult>;
+  onApply: (payload: { productIds: string[]; changes: BulkChange[] }) => Promise<BulkResult>;
 };
 
 type Option = { value: string; label: string };
-
-type SelectionSummaryCategory = { key: string | null; label: string; count: number };
-type SelectionSummary = {
-  foundCount: number;
-  missingCount: number;
-  limit: number;
-  categories: SelectionSummaryCategory[];
-};
-
-type ChangeDraft = {
-  key: string;
-  field: BulkField;
-  op: BulkOperation;
-  scalarValue: string;
-  tagValues: string[];
-};
-
-const FIELD_OPTIONS: Array<{ value: BulkField; label: string; kind: "scalar" | "array"; editable: boolean }> = [
-  { value: "category", label: "Categoría", kind: "scalar", editable: true },
-  { value: "subcategory", label: "Subcategoría", kind: "scalar", editable: true },
-  { value: "gender", label: "Género", kind: "scalar", editable: true },
-  { value: "season", label: "Temporada", kind: "scalar", editable: true },
-  { value: "stylePrimary", label: "Perfil de estilo (principal)", kind: "scalar", editable: true },
-  { value: "styleSecondary", label: "Perfil de estilo (secundario)", kind: "scalar", editable: true },
-  { value: "styleTags", label: "Tags de estilo", kind: "array", editable: true },
-  { value: "materialTags", label: "Materiales", kind: "array", editable: true },
-  { value: "patternTags", label: "Patrones", kind: "array", editable: true },
-  { value: "occasionTags", label: "Ocasiones", kind: "array", editable: true },
-  { value: "care", label: "Cuidado", kind: "scalar", editable: true },
-  { value: "origin", label: "Origen", kind: "scalar", editable: true },
-];
-
-const FIELD_LABELS = Object.fromEntries(FIELD_OPTIONS.map((entry) => [entry.value, entry.label])) as Record<
-  BulkField,
-  string
->;
-
-const FIELD_KIND = Object.fromEntries(FIELD_OPTIONS.map((entry) => [entry.value, entry.kind])) as Record<
-  BulkField,
-  "scalar" | "array"
->;
-
-const OP_LABELS: Record<BulkOperation, string> = {
-  replace: "Reemplazar",
-  add: "Agregar",
-  remove: "Quitar",
-  clear: "Limpiar",
-};
+type Scope = "filtered" | "selected";
+type Mode = "taxonomy" | "attributes" | "tags" | "notes";
 
 const MAX_BULK_IDS = 1200;
 
@@ -103,42 +55,18 @@ const buildCategoryOptions = (taxonomy: TaxonomyOptions | null): Option[] =>
     .filter((entry) => entry.isActive !== false)
     .map((entry) => ({ value: entry.key, label: entry.label ?? entry.key }));
 
+const buildSubcategoryOptionsForCategory = (taxonomy: TaxonomyOptions | null, categoryKey: string): Option[] => {
+  const key = categoryKey.trim();
+  if (!key) return [];
+  const category = (taxonomy?.data.categories ?? []).find((entry) => entry.key === key);
+  const subs = category?.subcategories ?? [];
+  return subs
+    .filter((entry) => entry.isActive !== false)
+    .map((entry) => ({ value: entry.key, label: entry.label ?? entry.key }));
+};
+
 const buildGenderOptions = (): Option[] => GENDER_OPTIONS.map((entry) => ({ value: entry.value, label: entry.label }));
-
 const buildSeasonOptions = (): Option[] => SEASON_OPTIONS.map((entry) => ({ value: entry.value, label: entry.label }));
-
-const buildSubcategoryOptions = (taxonomy: TaxonomyOptions | null, categories?: string[] | null): Option[] =>
-  (() => {
-    const wanted = new Set((categories ?? []).map((value) => value.trim()).filter(Boolean));
-    const options = new Map<string, string>();
-
-    for (const category of taxonomy?.data.categories ?? []) {
-      if (category.isActive === false) continue;
-      if (wanted.size > 0 && !wanted.has(category.key)) continue;
-      for (const entry of category.subcategories ?? []) {
-        if (entry.isActive === false) continue;
-        const key = entry.key;
-        if (!key) continue;
-        if (!options.has(key)) options.set(key, entry.label ?? key);
-      }
-    }
-
-    // If the caller passed categories but none matched, fallback to the full taxonomy list.
-    if (wanted.size > 0 && options.size === 0) {
-      for (const category of taxonomy?.data.categories ?? []) {
-        if (category.isActive === false) continue;
-        for (const entry of category.subcategories ?? []) {
-          if (entry.isActive === false) continue;
-          const key = entry.key;
-          if (!key) continue;
-          if (!options.has(key)) options.set(key, entry.label ?? key);
-        }
-      }
-    }
-
-    return Array.from(options.entries()).map(([value, label]) => ({ value, label }));
-  })();
-
 const buildStyleProfileOptions = (taxonomy: TaxonomyOptions | null): Option[] =>
   (taxonomy?.styleProfiles ?? []).map((profile) => ({ value: profile.key, label: profile.label ?? profile.key }));
 
@@ -157,28 +85,12 @@ function normalizeUnique(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort();
 }
 
-function makeKey() {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  } catch {
-    // ignore
-  }
-  return `chg_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
-
-function getAllowedOps(field: BulkField): BulkOperation[] {
-  return FIELD_KIND[field] === "array" ? ["replace", "add", "remove", "clear"] : ["replace", "clear"];
-}
-
-function buildValuePreview(change: ChangeDraft, taxonomy: TaxonomyOptions | null): string {
+function buildValuePreview(change: BulkChange, taxonomy: TaxonomyOptions | null): string {
   if (change.op === "clear") return "Se limpiará el campo.";
-  if (FIELD_KIND[change.field] === "array") {
-    if (!change.tagValues.length) return "—";
-    return `${change.tagValues.length} valor(es)`;
+  if (Array.isArray(change.value)) {
+    return change.value.length ? `${change.value.length} valor(es)` : "—";
   }
-
-  const raw = change.scalarValue.trim();
+  const raw = typeof change.value === "string" ? change.value : "";
   if (!raw) return "—";
   if (change.field === "category") return taxonomy?.categoryLabels?.[raw] ?? raw;
   if (change.field === "subcategory") return taxonomy?.subcategoryLabels?.[raw] ?? raw;
@@ -296,80 +208,80 @@ export default function BulkEditModal({
   selectedCount,
   selectedIds,
   categoriesFromFilters,
+  searchKey,
   taxonomyOptions,
   onClose,
   onApply,
 }: Props) {
-  const initialKey = useMemo(() => makeKey(), []);
-  const [changes, setChanges] = useState<ChangeDraft[]>(() => [
-    { key: initialKey, field: "category", op: "replace", scalarValue: "", tagValues: [] },
-  ]);
-  const [activeKey, setActiveKey] = useState(initialKey);
+  const [scope, setScope] = useState<Scope>("selected");
+  const [mode, setMode] = useState<Mode>("taxonomy");
   const [applying, setApplying] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BulkResult | null>(null);
-  const [selectionSummary, setSelectionSummary] = useState<SelectionSummary | null>(null);
-  const [selectionSummaryError, setSelectionSummaryError] = useState<string | null>(null);
 
-  const usedFields = useMemo(() => new Set(changes.map((change) => change.field)), [changes]);
+  const [filteredIds, setFilteredIds] = useState<string[]>([]);
+  const [filteredHasMore, setFilteredHasMore] = useState(false);
+  const [filteredLoading, setFilteredLoading] = useState(false);
+  const [filteredError, setFilteredError] = useState<string | null>(null);
 
-  const duplicateFields = useMemo(() => {
-    const counts = new Map<BulkField, number>();
-    for (const change of changes) {
-      counts.set(change.field, (counts.get(change.field) ?? 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .filter(([, count]) => count > 1)
-      .map(([field]) => field);
-  }, [changes]);
+  const cleanedFilterCategories = useMemo(() => {
+    const cleaned = categoriesFromFilters.map((value) => value.trim()).filter(Boolean);
+    return Array.from(new Set(cleaned));
+  }, [categoriesFromFilters]);
 
-  const activeIndex = useMemo(() => {
-    const found = changes.findIndex((change) => change.key === activeKey);
-    return found >= 0 ? found : 0;
-  }, [activeKey, changes]);
+  const singleFilterCategory = cleanedFilterCategories.length === 1 ? cleanedFilterCategories[0] : "";
 
-  const active = changes[activeIndex] ?? changes[0];
+  // --- Taxonomy form state ---
+  const [taxCategoryOp, setTaxCategoryOp] = useState<"replace" | "clear">("replace");
+  const [taxCategory, setTaxCategory] = useState<string>("");
+  const [taxSubOp, setTaxSubOp] = useState<"none" | "replace" | "clear">("none");
+  const [taxSubcategory, setTaxSubcategory] = useState<string>("");
 
-  const usedByOthers = useMemo(() => {
-    const next = new Set<BulkField>();
-    for (const change of changes) {
-      if (change.key === active?.key) continue;
-      next.add(change.field);
-    }
-    return next;
-  }, [active?.key, changes]);
+  // --- Attributes form state ---
+  const [attrField, setAttrField] = useState<"gender" | "season" | "stylePrimary" | "styleSecondary">("gender");
+  const [attrOp, setAttrOp] = useState<"replace" | "clear">("replace");
+  const [attrValue, setAttrValue] = useState<string>("");
 
-  const fieldMeta = useMemo(() => {
-    const label = FIELD_LABELS[active.field] ?? active.field;
-    const kind = FIELD_KIND[active.field];
-    return { label, kind };
-  }, [active.field]);
+  // --- Tags form state ---
+  const [tagField, setTagField] = useState<"styleTags" | "materialTags" | "patternTags" | "occasionTags">("styleTags");
+  const [tagOp, setTagOp] = useState<BulkOperation>("add");
+  const [tagValues, setTagValues] = useState<string[]>([]);
 
-  const allowedOps = useMemo(() => getAllowedOps(active.field), [active.field]);
-  const isArray = fieldMeta.kind === "array";
+  // --- Notes form state ---
+  const [noteField, setNoteField] = useState<"care" | "origin">("care");
+  const [noteOp, setNoteOp] = useState<"replace" | "clear">("replace");
+  const [noteValue, setNoteValue] = useState<string>("");
 
   useEffect(() => {
-    if (!allowedOps.includes(active.op)) {
-      setChanges((prev) =>
-        prev.map((change) => (change.key === active.key ? { ...change, op: allowedOps[0] ?? "replace" } : change)),
-      );
-    }
-  }, [active.key, active.op, allowedOps]);
-
-  const changeSignature = useMemo(
-    () =>
-      changes
-        .map((change) => `${change.field}:${change.op}:${change.scalarValue}:${change.tagValues.join(",")}`)
-        .join("|"),
-    [changes],
-  );
-
-  useEffect(() => {
+    if (!open) return;
     setError(null);
-    setConfirming(false);
     setResult(null);
-  }, [changeSignature, selectedCount]);
+    setConfirming(false);
+    setScope(selectedIds.length > 0 ? "selected" : "filtered");
+    setMode("taxonomy");
+  }, [open, selectedIds.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    // Initialize taxonomy defaults from filters (common case: filter a single category and bulk assign subcategory).
+    setTaxCategoryOp("replace");
+    setTaxCategory(singleFilterCategory);
+    setTaxSubOp("none");
+    setTaxSubcategory("");
+
+    setAttrField("gender");
+    setAttrOp("replace");
+    setAttrValue("");
+
+    setTagField("styleTags");
+    setTagOp("add");
+    setTagValues([]);
+
+    setNoteField("care");
+    setNoteOp("replace");
+    setNoteValue("");
+  }, [open, singleFilterCategory]);
 
   useEffect(() => {
     if (!open) return;
@@ -380,246 +292,172 @@ export default function BulkEditModal({
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  const selectionOverLimit = selectedCount > MAX_BULK_IDS;
+  const fetchFilteredIds = async () => {
+    setFilteredLoading(true);
+    setFilteredError(null);
+    try {
+      const params = new URLSearchParams(searchKey);
+      params.set("limit", String(MAX_BULK_IDS));
+      const url = `/api/admin/product-curation/ids?${params.toString()}`;
+      const res = await fetch(url, { cache: "no-store" });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error ?? "No se pudieron cargar IDs del filtro");
+      }
+      const ids = Array.isArray(payload?.ids) ? payload.ids.filter((id: unknown) => typeof id === "string") : [];
+      setFilteredIds(ids);
+      setFilteredHasMore(Boolean(payload?.hasMore));
+    } catch (err) {
+      console.warn(err);
+      setFilteredIds([]);
+      setFilteredHasMore(false);
+      setFilteredError(err instanceof Error ? err.message : "No se pudieron cargar IDs del filtro");
+    } finally {
+      setFilteredLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
+    if (scope !== "filtered") return;
+    fetchFilteredIds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, scope, searchKey]);
 
-    setSelectionSummary(null);
-    setSelectionSummaryError(null);
+  const targetIds = useMemo(() => (scope === "selected" ? selectedIds : filteredIds), [filteredIds, scope, selectedIds]);
+  const targetCount = targetIds.length;
+  const overLimit = targetCount > MAX_BULK_IDS;
 
-    if (selectedIds.length === 0) return;
-    if (selectedIds.length > MAX_BULK_IDS) {
-      setSelectionSummaryError(
-        `La selección excede el límite (${MAX_BULK_IDS.toLocaleString("es-CO")}). Ajusta filtros o limpia selección.`,
-      );
-      return;
-    }
+  const categoryOptions = useMemo(() => buildCategoryOptions(taxonomyOptions), [taxonomyOptions]);
+  const subcategoryOptions = useMemo(
+    () => buildSubcategoryOptionsForCategory(taxonomyOptions, taxCategoryOp === "replace" ? taxCategory : ""),
+    [taxCategory, taxCategoryOp, taxonomyOptions],
+  );
 
-    const controller = new AbortController();
-    (async () => {
-      try {
-        const res = await fetch("/api/admin/product-curation/selection-summary", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productIds: selectedIds }),
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        const payload = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(payload?.error ?? "No se pudo analizar la selección");
-        }
-        if (!payload?.ok) {
-          throw new Error(payload?.error ?? "No se pudo analizar la selección");
-        }
-        setSelectionSummary({
-          foundCount: typeof payload.foundCount === "number" ? payload.foundCount : 0,
-          missingCount: typeof payload.missingCount === "number" ? payload.missingCount : 0,
-          limit: typeof payload.limit === "number" ? payload.limit : MAX_BULK_IDS,
-          categories: Array.isArray(payload.categories)
-            ? payload.categories
-                .map((entry: any) => ({
-                  key: typeof entry?.key === "string" ? entry.key : null,
-                  label: typeof entry?.label === "string" ? entry.label : "—",
-                  count: typeof entry?.count === "number" ? entry.count : 0,
-                }))
-                .filter((entry: SelectionSummaryCategory) => entry.count > 0)
-            : [],
-        });
-      } catch (err) {
-        if ((err as any)?.name === "AbortError") return;
-        console.warn(err);
-        setSelectionSummary(null);
-        setSelectionSummaryError(err instanceof Error ? err.message : "No se pudo analizar la selección");
+  const attributeValueOptions = useMemo(() => {
+    if (attrField === "gender") return buildGenderOptions();
+    if (attrField === "season") return buildSeasonOptions();
+    if (attrField === "stylePrimary" || attrField === "styleSecondary") return buildStyleProfileOptions(taxonomyOptions);
+    return [];
+  }, [attrField, taxonomyOptions]);
+
+  const tagOptions = useMemo(() => {
+    if (tagField === "styleTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.styleTags);
+    if (tagField === "materialTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.materials);
+    if (tagField === "patternTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.patterns);
+    if (tagField === "occasionTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.occasions);
+    return [];
+  }, [tagField, taxonomyOptions]);
+
+  const changes = useMemo((): BulkChange[] => {
+    if (mode === "taxonomy") {
+      const out: BulkChange[] = [];
+      if (taxCategoryOp === "clear") {
+        out.push({ field: "category", op: "clear", value: null });
+      } else if (taxCategory.trim()) {
+        out.push({ field: "category", op: "replace", value: taxCategory.trim() });
       }
-    })();
 
-    return () => controller.abort();
-  }, [open, selectedIds]);
-
-  const categoryDraft = useMemo(() => changes.find((change) => change.field === "category") ?? null, [changes]);
-  const categoryOverride = useMemo(() => {
-    if (!categoryDraft) return null;
-    if (categoryDraft.op !== "replace") return null;
-    const value = categoryDraft.scalarValue.trim();
-    return value.length ? value : null;
-  }, [categoryDraft]);
-
-  const categoryFromSelection = useMemo(() => {
-    if (!selectionSummary) return null;
-    const hasMissingCategory = selectionSummary.categories.some((entry) => entry.key === null);
-    const nonNull = selectionSummary.categories
-      .filter((entry) => entry.key)
-      .map((entry) => entry.key as string);
-    if (hasMissingCategory) return null;
-    if (nonNull.length !== 1) return null;
-    return nonNull[0] ?? null;
-  }, [selectionSummary]);
-
-  const subcategoryContext = useMemo(() => {
-    const cleanedFilters = Array.from(
-      new Set(categoriesFromFilters.map((value) => value.trim()).filter(Boolean)),
-    );
-
-    if (categoryOverride) {
-      return { source: "modal" as const, categories: [categoryOverride] };
-    }
-    if (categoryFromSelection) {
-      return { source: "selection" as const, categories: [categoryFromSelection] };
-    }
-    if (cleanedFilters.length > 0) {
-      return { source: "filters" as const, categories: cleanedFilters };
-    }
-    return { source: "none" as const, categories: [] as string[] };
-  }, [categoriesFromFilters, categoryFromSelection, categoryOverride]);
-
-  const subcategoryContextNote = useMemo(() => {
-    if (active.field !== "subcategory") return null;
-    if (!taxonomyOptions) return null;
-
-    const labelize = (key: string) => taxonomyOptions.categoryLabels?.[key] ?? key;
-
-    if (subcategoryContext.source === "modal") {
-      return `Subcategorías acotadas por Categoría (cambio en modal): ${labelize(subcategoryContext.categories[0] ?? "")}.`;
-    }
-    if (subcategoryContext.source === "selection") {
-      return `Subcategorías acotadas por Categoría (selección): ${labelize(subcategoryContext.categories[0] ?? "")}.`;
-    }
-    if (subcategoryContext.source === "filters") {
-      if (subcategoryContext.categories.length === 1) {
-        return `Subcategorías acotadas por Categoría (filtro): ${labelize(subcategoryContext.categories[0] ?? "")}.`;
+      if (taxSubOp === "clear") {
+        out.push({ field: "subcategory", op: "clear", value: null });
+      } else if (taxSubOp === "replace" && taxSubcategory.trim()) {
+        out.push({ field: "subcategory", op: "replace", value: taxSubcategory.trim() });
       }
-      return `Subcategorías acotadas por ${subcategoryContext.categories.length} categorías del filtro.`;
+      return out;
     }
-    return "Tip: filtra una categoría o agrega un cambio de Categoría para acotar subcategorías.";
-  }, [active.field, subcategoryContext, taxonomyOptions]);
 
-  const scalarOptions: Option[] | null = useMemo(() => {
-    if (active.field === "category") return buildCategoryOptions(taxonomyOptions);
-    if (active.field === "subcategory") return buildSubcategoryOptions(taxonomyOptions, subcategoryContext.categories);
-    if (active.field === "gender") return buildGenderOptions();
-    if (active.field === "season") return buildSeasonOptions();
-    if (active.field === "stylePrimary" || active.field === "styleSecondary") return buildStyleProfileOptions(taxonomyOptions);
-    return null;
-  }, [active.field, subcategoryContext.categories, taxonomyOptions]);
+    if (mode === "attributes") {
+      if (attrOp === "clear") return [{ field: attrField, op: "clear", value: null }];
+      return [{ field: attrField, op: "replace", value: attrValue.trim() }];
+    }
 
-  const tagOptions: Option[] | null = useMemo(() => {
-    if (active.field === "styleTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.styleTags);
-    if (active.field === "materialTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.materials);
-    if (active.field === "patternTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.patterns);
-    if (active.field === "occasionTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.occasions);
-    return null;
-  }, [active.field, taxonomyOptions]);
+    if (mode === "tags") {
+      if (tagOp === "clear") return [{ field: tagField, op: "clear", value: null }];
+      return [{ field: tagField, op: tagOp, value: tagValues }];
+    }
 
-  const addDisabled = useMemo(() => {
-    const editableFields = FIELD_OPTIONS.filter((entry) => entry.editable).map((entry) => entry.value);
-    return editableFields.every((field) => usedFields.has(field));
-  }, [usedFields]);
+    // notes
+    if (noteOp === "clear") return [{ field: noteField, op: "clear", value: null }];
+    return [{ field: noteField, op: "replace", value: noteValue.trim() }];
+  }, [
+    attrField,
+    attrOp,
+    attrValue,
+    mode,
+    noteField,
+    noteOp,
+    noteValue,
+    tagField,
+    tagOp,
+    tagValues,
+    taxCategory,
+    taxCategoryOp,
+    taxSubOp,
+    taxSubcategory,
+  ]);
 
-  const preflightIssue = useMemo(() => {
-    if (!taxonomyOptions) return null;
+  const validationError = useMemo(() => {
     if (!open) return null;
-    if (selectedCount <= 0) return null;
-    if (selectedCount > MAX_BULK_IDS) {
-      return `La selección excede el límite (${MAX_BULK_IDS.toLocaleString("es-CO")}).`;
-    }
+    if (!taxonomyOptions) return "Cargando opciones de taxonomía…";
+    if (targetCount <= 0) return "No hay productos objetivo para aplicar cambios.";
+    if (overLimit) return `La selección excede el límite (${MAX_BULK_IDS.toLocaleString("es-CO")}).`;
+    if (scope === "filtered" && filteredLoading) return "Cargando IDs del filtro…";
+    if (scope === "filtered" && filteredError) return filteredError;
 
-    const subcategoryChange = changes.find((change) => change.field === "subcategory");
-    if (!subcategoryChange) return null;
-    if (subcategoryChange.op === "clear") return null;
-    if (subcategoryChange.op !== "replace") return null;
-
-    const desiredSubcategory = subcategoryChange.scalarValue.trim();
-    if (!desiredSubcategory) return null;
-
-    const categoryChange = changes.find((change) => change.field === "category");
-    if (categoryChange) {
-      if (categoryChange.op === "clear") {
-        return "No puedes asignar una subcategoría si estás limpiando la categoría.";
+    if (mode === "taxonomy") {
+      if (taxCategoryOp === "replace" && !taxCategory.trim()) {
+        return "Selecciona una categoría (o usa Limpiar).";
       }
-      if (categoryChange.op === "replace") {
-        const desiredCategory = categoryChange.scalarValue.trim();
-        if (!desiredCategory) return null;
-        const allowed = taxonomyOptions.subcategoryByCategory[desiredCategory] ?? [];
-        if (!allowed.includes(desiredSubcategory)) {
-          const categoryLabel = taxonomyOptions.categoryLabels?.[desiredCategory] ?? desiredCategory;
-          const subLabel = taxonomyOptions.subcategoryLabels?.[desiredSubcategory] ?? desiredSubcategory;
-          return `La subcategoría ${subLabel} no pertenece a la categoría ${categoryLabel}.`;
-        }
-        return null;
+      if (taxSubOp === "replace") {
+        if (taxCategoryOp !== "replace" || !taxCategory.trim()) return "Para asignar subcategoría, primero define una categoría.";
+        if (!taxSubcategory.trim()) return "Selecciona una subcategoría (o usa No tocar/Limpiar).";
       }
     }
 
-    if (!selectionSummary) return null;
-
-    const missingCategoryCount = selectionSummary.categories.find((entry) => entry.key === null)?.count ?? 0;
-    if (missingCategoryCount > 0) {
-      return "Hay productos sin categoría en la selección. Agrega también un cambio de Categoría.";
+    if (mode === "attributes") {
+      if (attrOp === "replace" && !attrValue.trim()) return "Selecciona un valor para el atributo.";
     }
 
-    const presentCategories = selectionSummary.categories
-      .filter((entry) => entry.key)
-      .map((entry) => entry.key as string);
-    const invalidCategories = presentCategories.filter((category) => {
-      const allowed = taxonomyOptions.subcategoryByCategory[category] ?? [];
-      return !allowed.includes(desiredSubcategory);
-    });
-    if (invalidCategories.length > 0) {
-      const subLabel = taxonomyOptions.subcategoryLabels?.[desiredSubcategory] ?? desiredSubcategory;
-      const sample = invalidCategories
-        .slice(0, 4)
-        .map((key) => taxonomyOptions.categoryLabels?.[key] ?? key)
-        .join(", ");
-      const suffix = invalidCategories.length > 4 ? ` (+${invalidCategories.length - 4} más)` : "";
-      return `La subcategoría ${subLabel} no aplica para todas las categorías presentes en la selección: ${sample}${suffix}. Agrega un cambio de Categoría o ajusta la selección.`;
+    if (mode === "tags") {
+      if (tagOp !== "clear" && tagValues.length === 0) return "Selecciona uno o más tags (o usa Limpiar).";
     }
+
+    if (mode === "notes") {
+      if (noteOp === "replace" && !noteValue.trim()) return "Escribe un valor (o usa Limpiar).";
+    }
+
+    if (changes.length === 0) return "Define al menos un cambio.";
 
     return null;
-  }, [changes, open, selectedCount, selectionSummary, taxonomyOptions]);
+  }, [
+    attrOp,
+    attrValue,
+    changes.length,
+    filteredError,
+    filteredLoading,
+    mode,
+    noteOp,
+    noteValue,
+    open,
+    overLimit,
+    scope,
+    tagOp,
+    tagValues.length,
+    targetCount,
+    taxCategory,
+    taxCategoryOp,
+    taxSubOp,
+    taxSubcategory,
+    taxonomyOptions,
+  ]);
 
-  const applyDisabled = useMemo(() => {
-    if (selectedCount <= 0) return true;
-    if (selectedCount > MAX_BULK_IDS) return true;
-    if (!taxonomyOptions) return true;
-    if (!changes.length) return true;
-    if (duplicateFields.length > 0) return true;
-    if (preflightIssue) return true;
-    for (const change of changes) {
-      if (change.op === "clear") continue;
-      if (FIELD_KIND[change.field] === "array") {
-        if (!change.tagValues.length) return true;
-      } else {
-        if (!change.scalarValue.trim().length) return true;
-      }
-    }
-    return false;
-  }, [changes, duplicateFields.length, preflightIssue, selectedCount, taxonomyOptions]);
+  const applyDisabled = Boolean(validationError) || applying;
 
-  const updateChange = (key: string, patch: Partial<ChangeDraft>) => {
-    setChanges((prev) => prev.map((change) => (change.key === key ? { ...change, ...patch } : change)));
-  };
-
-  const handleAddChange = () => {
-    const editableFields = FIELD_OPTIONS.filter((entry) => entry.editable).map((entry) => entry.value);
-    const nextField = editableFields.find((field) => !usedFields.has(field));
-    if (!nextField) return;
-    const nextKey = makeKey();
-    const next: ChangeDraft = { key: nextKey, field: nextField, op: "replace", scalarValue: "", tagValues: [] };
-    setChanges((prev) => [...prev, next]);
-    setActiveKey(nextKey);
-  };
-
-  const handleRemoveChange = (key: string) => {
-    setChanges((prev) => {
-      if (prev.length <= 1) return prev;
-      const next = prev.filter((change) => change.key !== key);
-      if (activeKey === key) {
-        setActiveKey(next[0]?.key ?? prev[0].key);
-      }
-      return next;
-    });
-  };
+  const scopeLabel = useMemo(() => {
+    if (scope === "selected") return `Selección (${selectedCount.toLocaleString("es-CO")})`;
+    const suffix = filteredLoading ? "…" : `(${targetCount.toLocaleString("es-CO")})`;
+    return `Filtro actual ${suffix}`;
+  }, [filteredLoading, scope, selectedCount, targetCount]);
 
   const handleApply = async () => {
     if (applyDisabled) return;
@@ -631,24 +469,14 @@ export default function BulkEditModal({
     setApplying(true);
     setError(null);
     try {
-      const payloadChanges: BulkChange[] = changes.map((change) => {
-        const value =
-          change.op === "clear"
-            ? null
-            : FIELD_KIND[change.field] === "array"
-              ? change.tagValues
-              : change.scalarValue.trim();
-        return { field: change.field, op: change.op, value };
-      });
-
-      const response = await onApply({ changes: payloadChanges });
+      const response = await onApply({ productIds: targetIds, changes });
       setResult(response);
       if (!response.ok) {
         setError("No se pudo aplicar el bulk edit.");
-      } else {
-        setConfirming(false);
-        onClose();
+        return;
       }
+      setConfirming(false);
+      onClose();
     } catch (err) {
       console.warn(err);
       setError(err instanceof Error ? err.message : "Error desconocido");
@@ -662,313 +490,433 @@ export default function BulkEditModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-6" onClick={onClose}>
       <div
-        className="w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+        className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Curación</p>
-            <h3 className="mt-1 text-lg font-semibold text-slate-900">Editar en bloque (multi-cambios)</h3>
+            <h3 className="mt-1 text-lg font-semibold text-slate-900">Editar en bloque</h3>
+            <p className="mt-1 text-xs text-slate-500">Aplicar a: {scopeLabel}</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
-          >
-            Cerrar
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+            >
+              Cerrar
+            </button>
+          </div>
         </div>
 
         <div className="max-h-[72vh] overflow-y-auto px-6 py-6">
-          <div className="grid gap-5 lg:grid-cols-[0.95fr,1.05fr]">
-            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Cambios</p>
-                <button
-                  type="button"
-                  onClick={handleAddChange}
-                  disabled={addDisabled}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 disabled:opacity-50"
-                >
-                  Agregar cambio
-                </button>
-              </div>
-
-              <div className="mt-4 space-y-2">
-                {changes.map((change, index) => {
-                  const activeItem = change.key === active.key;
-                  const preview = buildValuePreview(change, taxonomyOptions);
-                  return (
-                    <div key={change.key} className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setActiveKey(change.key)}
-                        className={classNames(
-                          "flex-1 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
-                          activeItem ? "border-slate-900 bg-white text-slate-900" : "border-slate-200 bg-white text-slate-700",
-                        )}
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="min-w-0">
-                            {index + 1}. {FIELD_LABELS[change.field] ?? change.field}
-                          </span>
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                            {OP_LABELS[change.op]}
-                          </span>
-                        </div>
-                        <p className="mt-1 truncate text-xs font-normal text-slate-500">{preview}</p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveChange(change.key)}
-                        disabled={changes.length <= 1}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 disabled:opacity-50"
-                        title="Quitar cambio"
-                      >
-                        Quitar
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-                <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Previsualización</p>
-                  <div className="mt-3 space-y-2 text-sm text-slate-700">
-                    <p>
-                      <span className="font-semibold text-slate-800">Productos:</span> {selectedCount}
-                    </p>
-                    <p>
-                      <span className="font-semibold text-slate-800">Cambios:</span> {changes.length}
-                    </p>
-                    <div className="space-y-1 text-xs text-slate-600">
-                      {changes.map((change) => (
-                        <p key={change.key} className="truncate">
-                          <span className="font-semibold text-slate-800">{FIELD_LABELS[change.field] ?? change.field}:</span>{" "}
-                          {OP_LABELS[change.op]} · {buildValuePreview(change, taxonomyOptions)}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Selección</p>
-                  {selectionOverLimit ? (
-                    <p className="mt-3 text-sm text-amber-800">
-                      La selección excede el límite ({MAX_BULK_IDS.toLocaleString("es-CO")}). Ajusta filtros o limpia selección.
-                    </p>
-                  ) : selectionSummary ? (
-                    <div className="mt-3 space-y-2 text-sm text-slate-700">
-                      <p>
-                        <span className="font-semibold text-slate-800">Encontrados:</span>{" "}
-                        {selectionSummary.foundCount.toLocaleString("es-CO")}
-                        {selectionSummary.missingCount ? (
-                          <span className="ml-2 text-xs text-slate-500">
-                            ({selectionSummary.missingCount.toLocaleString("es-CO")} ya no existen)
-                          </span>
-                        ) : null}
-                      </p>
-
-                      <div className="space-y-1 text-xs text-slate-600">
-                        <p className="font-semibold text-slate-800">Categorías en selección:</p>
-                        {selectionSummary.categories.length ? (
-                          <>
-                            {selectionSummary.categories.slice(0, 4).map((entry) => (
-                              <p key={entry.key ?? "__null__"} className="flex items-center justify-between gap-3">
-                                <span className="truncate">{entry.label}</span>
-                                <span className="text-slate-500">{entry.count.toLocaleString("es-CO")}</span>
-                              </p>
-                            ))}
-                            {selectionSummary.categories.length > 4 ? (
-                              <p className="text-slate-500">+{selectionSummary.categories.length - 4} más</p>
-                            ) : null}
-                          </>
-                        ) : (
-                          <p className="text-slate-500">—</p>
-                        )}
-                      </div>
-
-                      {selectionSummary.categories.length > 1 ? (
-                        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                          Selección mixta: si vas a reemplazar <code>subcategory</code> sin tocar <code>category</code>, puede fallar.
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : selectionSummaryError ? (
-                    <p className="mt-3 text-sm text-amber-800">{selectionSummaryError}</p>
-                  ) : (
-                    <p className="mt-3 text-sm text-slate-500">Analizando selección…</p>
-                  )}
-                </div>
-
-                {!taxonomyOptions ? (
-                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                    Cargando opciones de taxonomía… Si esto no termina, recarga la página o revisa sesión admin.
-                  </div>
-                ) : null}
-
-              {duplicateFields.length ? (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                  Hay cambios duplicados para:{" "}
-                  <span className="font-semibold">
-                    {duplicateFields.map((field) => FIELD_LABELS[field] ?? field).join(", ")}
-                  </span>
-                  . Deja cada característica solo una vez.
-                </div>
-              ) : null}
-
-              {preflightIssue ? (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                  {preflightIssue}
-                </div>
-              ) : null}
-
-              {error ? (
-                <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>
-              ) : null}
-
-              {result?.ok ? (
-                <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-                  Aplicado. Actualizados: {result.updatedCount}. Sin cambios: {result.unchangedCount}.
-                  {result.missingCount ? ` Faltantes: ${result.missingCount}.` : ""}
-                </div>
-              ) : null}
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Editar cambio</p>
-
-              <div className="mt-4 space-y-4">
-                <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-field">
-                    Característica
-                  </label>
-                  <select
-                    id="bulk-field"
-                    value={active.field}
-                    onChange={(event) => {
-                      const nextField = event.target.value as BulkField;
-                      const nextAllowedOps = getAllowedOps(nextField);
-                      updateChange(active.key, {
-                        field: nextField,
-                        op: nextAllowedOps.includes(active.op) ? active.op : nextAllowedOps[0] ?? "replace",
-                        scalarValue: "",
-                        tagValues: [],
-                      });
-                    }}
-                    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+          <div className="grid gap-6 lg:grid-cols-[1fr,1fr]">
+            <section className="space-y-5">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Objetivo</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setScope("filtered")}
+                    className={classNames(
+                      "rounded-full border px-3 py-1 text-xs font-semibold",
+                      scope === "filtered" ? "border-slate-900 bg-white text-slate-900" : "border-slate-200 bg-white text-slate-600",
+                    )}
                   >
-                    {FIELD_OPTIONS.filter((item) => item.editable).map((item) => (
-                      <option key={item.value} value={item.value} disabled={usedByOthers.has(item.value)}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                  {usedByOthers.has(active.field) ? (
-                    <p className="mt-2 text-xs text-amber-700">
-                      Esta característica ya está usada en otro cambio. Selecciona una diferente.
-                    </p>
+                    Filtro actual
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScope("selected")}
+                    disabled={selectedIds.length === 0}
+                    className={classNames(
+                      "rounded-full border px-3 py-1 text-xs font-semibold disabled:opacity-50",
+                      scope === "selected" ? "border-slate-900 bg-white text-slate-900" : "border-slate-200 bg-white text-slate-600",
+                    )}
+                  >
+                    Selección
+                  </button>
+                  {scope === "filtered" ? (
+                    <button
+                      type="button"
+                      onClick={fetchFilteredIds}
+                      disabled={filteredLoading}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 disabled:opacity-50"
+                      title="Recargar IDs del filtro"
+                    >
+                      {filteredLoading ? "Cargando…" : "Actualizar"}
+                    </button>
                   ) : null}
                 </div>
 
-                <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-op">
-                    Operación
-                  </label>
-                  <select
-                    id="bulk-op"
-                    value={active.op}
-                    onChange={(event) => updateChange(active.key, { op: event.target.value as BulkOperation })}
-                    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                  >
-                    {allowedOps.map((value) => (
-                      <option key={value} value={value}>
-                        {OP_LABELS[value]}
-                      </option>
-                    ))}
-                  </select>
+                <div className="mt-4 space-y-2 text-sm text-slate-700">
+                  <p>
+                    <span className="font-semibold text-slate-800">Productos objetivo:</span>{" "}
+                    {scope === "filtered" && filteredLoading ? "…" : targetCount.toLocaleString("es-CO")}
+                    <span className="ml-2 text-xs text-slate-500">(máx {MAX_BULK_IDS.toLocaleString("es-CO")})</span>
+                  </p>
+                  {scope === "filtered" && filteredHasMore ? (
+                    <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                      Hay más resultados que el límite. Este bulk edit aplica solo a los primeros {MAX_BULK_IDS.toLocaleString("es-CO")} (según el sort actual).
+                    </p>
+                  ) : null}
+                  {scope === "selected" && selectedIds.length > 0 ? (
+                    <p className="text-xs text-slate-500">
+                      Tip: si quieres editar todo el filtro, usa la pestaña <span className="font-semibold">Filtro actual</span> (sin seleccionar manualmente).
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Qué quieres cambiar</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {(
+                    [
+                      { key: "taxonomy", label: "Taxonomía" },
+                      { key: "attributes", label: "Atributos" },
+                      { key: "tags", label: "Tags" },
+                      { key: "notes", label: "Notas" },
+                    ] as const
+                  ).map((entry) => (
+                    <button
+                      key={entry.key}
+                      type="button"
+                      onClick={() => setMode(entry.key)}
+                      className={classNames(
+                        "rounded-full border px-3 py-1 text-xs font-semibold",
+                        mode === entry.key ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600",
+                      )}
+                    >
+                      {entry.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Vista previa</p>
+                <div className="mt-4 space-y-2 text-sm text-slate-700">
+                  {changes.length ? (
+                    <div className="space-y-1 text-xs text-slate-600">
+                      {changes.map((change) => (
+                        <p key={change.field}>
+                          <span className="font-semibold text-slate-800">{change.field}:</span> {change.op} ·{" "}
+                          {buildValuePreview(change, taxonomyOptions)}
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">—</p>
+                  )}
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Valor</p>
-                  <div className="mt-3">
-                    {active.op === "clear" ? (
-                      <p className="text-sm text-slate-600">
-                        Esta operación dejará el campo vacío en los productos seleccionados.
-                      </p>
-                    ) : isArray && tagOptions ? (
-                      <CheckboxList
-                        options={tagOptions}
-                        selected={active.tagValues}
-                        onChange={(next) => updateChange(active.key, { tagValues: next })}
-                        emptyLabel="Selecciona uno o más valores."
-                      />
-                    ) : scalarOptions ? (
+                {validationError ? (
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    {validationError}
+                  </div>
+                ) : null}
+                {error ? (
+                  <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    {error}
+                  </div>
+                ) : null}
+                {result?.ok ? (
+                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    Aplicado. Actualizados: {result.updatedCount}. Sin cambios: {result.unchangedCount}.
+                    {result.missingCount ? ` Faltantes: ${result.missingCount}.` : ""}
+                  </div>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="space-y-5">
+              {mode === "taxonomy" ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Taxonomía (categoría + subcategoría)</p>
+
+                  {singleFilterCategory && taxCategoryOp === "replace" && taxCategory === singleFilterCategory ? (
+                    <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                      Detectado desde filtro:{" "}
+                      <span className="font-semibold text-slate-800">
+                        {taxonomyOptions?.categoryLabels?.[singleFilterCategory] ?? singleFilterCategory}
+                      </span>
+                      . Subcategorías se acotan automáticamente.
+                    </p>
+                  ) : null}
+
+                  <div className="mt-4 grid gap-4">
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-cat-op">
+                        Acción categoría
+                      </label>
+                      <select
+                        id="bulk-tax-cat-op"
+                        value={taxCategoryOp}
+                        onChange={(event) => setTaxCategoryOp(event.target.value as any)}
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="replace">Reemplazar</option>
+                        <option value="clear">Limpiar</option>
+                      </select>
+                    </div>
+
+                    {taxCategoryOp === "replace" ? (
                       <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-scalar">
-                          Valor
+                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-category">
+                          Categoría
                         </label>
                         <select
-                          id="bulk-scalar"
-                          value={active.scalarValue}
-                          onChange={(event) => updateChange(active.key, { scalarValue: event.target.value })}
+                          id="bulk-tax-category"
+                          value={taxCategory}
+                          onChange={(event) => {
+                            const next = event.target.value;
+                            setTaxCategory(next);
+                            setTaxSubcategory("");
+                            if (taxSubOp === "replace") setTaxSubOp("none");
+                          }}
                           className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                         >
                           <option value="">Selecciona…</option>
-                          {scalarOptions.map((option) => (
+                          {categoryOptions.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
                             </option>
                           ))}
                         </select>
-                        {active.field === "subcategory" && subcategoryContextNote ? (
-                          <p className="mt-2 text-xs text-slate-500">{subcategoryContextNote}</p>
-                        ) : null}
-                        {active.field === "subcategory" && active.op === "replace" && !usedFields.has("category") ? (
-                          <p className="mt-2 text-xs text-slate-500">
-                            Nota: si reemplazas subcategoría sin incluir categoría, se validará contra la categoría actual de cada producto.
-                            Si la selección mezcla categorías, agrega también un cambio de <code>category</code>.
-                          </p>
-                        ) : null}
-                        {active.field === "category" && active.op === "replace" && !usedFields.has("subcategory") ? (
-                          <p className="mt-2 text-xs text-slate-500">
-                            Nota: si un producto tiene una subcategoría incompatible, se limpiará automáticamente.
-                          </p>
-                        ) : null}
                       </div>
-                    ) : (
+                    ) : null}
+
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-sub-op">
+                        Acción subcategoría
+                      </label>
+                      <select
+                        id="bulk-tax-sub-op"
+                        value={taxSubOp}
+                        onChange={(event) => setTaxSubOp(event.target.value as any)}
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="none">No tocar</option>
+                        <option value="replace">Reemplazar</option>
+                        <option value="clear">Limpiar</option>
+                      </select>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Recomendación: si estás asignando subcategoría, mantén categoría en “Reemplazar” para que quede consistente.
+                      </p>
+                    </div>
+
+                    {taxSubOp === "replace" ? (
                       <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-text">
+                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-subcategory">
+                          Subcategoría
+                        </label>
+                        <select
+                          id="bulk-tax-subcategory"
+                          value={taxSubcategory}
+                          onChange={(event) => setTaxSubcategory(event.target.value)}
+                          disabled={taxCategoryOp !== "replace" || !taxCategory.trim()}
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 disabled:opacity-50"
+                        >
+                          <option value="">
+                            {taxCategoryOp !== "replace" || !taxCategory.trim()
+                              ? "Selecciona categoría primero…"
+                              : "Selecciona…"}
+                          </option>
+                          {subcategoryOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {mode === "attributes" ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Atributos (scalar)</p>
+                  <div className="mt-4 grid gap-4">
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-attr-field">
+                        Campo
+                      </label>
+                      <select
+                        id="bulk-attr-field"
+                        value={attrField}
+                        onChange={(event) => {
+                          const next = event.target.value as any;
+                          setAttrField(next);
+                          setAttrOp("replace");
+                          setAttrValue("");
+                        }}
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="gender">Género</option>
+                        <option value="season">Temporada</option>
+                        <option value="stylePrimary">Perfil de estilo (principal)</option>
+                        <option value="styleSecondary">Perfil de estilo (secundario)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-attr-op">
+                        Operación
+                      </label>
+                      <select
+                        id="bulk-attr-op"
+                        value={attrOp}
+                        onChange={(event) => setAttrOp(event.target.value as any)}
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="replace">Reemplazar</option>
+                        <option value="clear">Limpiar</option>
+                      </select>
+                    </div>
+
+                    {attrOp === "replace" ? (
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-attr-value">
                           Valor
                         </label>
-                        <input
-                          id="bulk-text"
-                          value={active.scalarValue}
-                          onChange={(event) => updateChange(active.key, { scalarValue: event.target.value })}
-                          placeholder="Escribe el valor…"
+                        <select
+                          id="bulk-attr-value"
+                          value={attrValue}
+                          onChange={(event) => setAttrValue(event.target.value)}
                           className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        />
-                        <p className="mt-2 text-xs text-slate-500">
-                          Campo libre. Se recomienda usarlo para notas estables (cuidado/origen).
-                        </p>
+                        >
+                          <option value="">Selecciona…</option>
+                          {attributeValueOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {mode === "tags" ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Tags (arrays)</p>
+                  <div className="mt-4 grid gap-4">
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tag-field">
+                        Campo
+                      </label>
+                      <select
+                        id="bulk-tag-field"
+                        value={tagField}
+                        onChange={(event) => {
+                          const next = event.target.value as any;
+                          setTagField(next);
+                          setTagValues([]);
+                          setTagOp("add");
+                        }}
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="styleTags">Tags de estilo</option>
+                        <option value="materialTags">Materiales</option>
+                        <option value="patternTags">Patrones</option>
+                        <option value="occasionTags">Ocasiones</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tag-op">
+                        Operación
+                      </label>
+                      <select
+                        id="bulk-tag-op"
+                        value={tagOp}
+                        onChange={(event) => setTagOp(event.target.value as any)}
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="add">Agregar</option>
+                        <option value="remove">Quitar</option>
+                        <option value="replace">Reemplazar</option>
+                        <option value="clear">Limpiar</option>
+                      </select>
+                    </div>
+
+                    {tagOp === "clear" ? (
+                      <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        Esta operación limpiará el array completo.
+                      </p>
+                    ) : (
+                      <CheckboxList
+                        options={tagOptions}
+                        selected={tagValues}
+                        onChange={setTagValues}
+                        emptyLabel="Selecciona uno o más valores."
+                      />
                     )}
                   </div>
                 </div>
+              ) : null}
 
-                <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Resumen del cambio activo</p>
-                  <div className="mt-3 space-y-1">
-                    <p>
-                      <span className="font-semibold text-slate-800">Acción:</span> {fieldMeta.label} · {OP_LABELS[active.op]}
-                    </p>
-                    <p className="truncate">
-                      <span className="font-semibold text-slate-800">Valor:</span> {buildValuePreview(active, taxonomyOptions)}
-                    </p>
+              {mode === "notes" ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Notas (texto)</p>
+                  <div className="mt-4 grid gap-4">
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-note-field">
+                        Campo
+                      </label>
+                      <select
+                        id="bulk-note-field"
+                        value={noteField}
+                        onChange={(event) => {
+                          const next = event.target.value as any;
+                          setNoteField(next);
+                          setNoteOp("replace");
+                          setNoteValue("");
+                        }}
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="care">Cuidado</option>
+                        <option value="origin">Origen</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-note-op">
+                        Operación
+                      </label>
+                      <select
+                        id="bulk-note-op"
+                        value={noteOp}
+                        onChange={(event) => setNoteOp(event.target.value as any)}
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="replace">Reemplazar</option>
+                        <option value="clear">Limpiar</option>
+                      </select>
+                    </div>
+
+                    {noteOp === "replace" ? (
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-note-value">
+                          Valor
+                        </label>
+                        <input
+                          id="bulk-note-value"
+                          value={noteValue}
+                          onChange={(event) => setNoteValue(event.target.value)}
+                          placeholder="Escribe el valor…"
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                        />
+                        <p className="mt-2 text-xs text-slate-500">Campo libre. Útil para notas estables.</p>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
-              </div>
+              ) : null}
             </section>
           </div>
         </div>
@@ -989,12 +937,13 @@ export default function BulkEditModal({
             <button
               type="button"
               onClick={handleApply}
-              disabled={applyDisabled || applying}
+              disabled={applyDisabled}
               className={classNames(
                 "rounded-full px-4 py-2 text-sm font-semibold",
                 confirming ? "bg-rose-600 text-white" : "bg-slate-900 text-white",
-                (applyDisabled || applying) && "opacity-50",
+                applyDisabled && "opacity-50",
               )}
+              title={validationError ?? undefined}
             >
               {applying ? "Aplicando…" : confirming ? "Confirmar cambios" : "Aplicar cambios"}
             </button>
@@ -1004,3 +953,4 @@ export default function BulkEditModal({
     </div>
   );
 }
+

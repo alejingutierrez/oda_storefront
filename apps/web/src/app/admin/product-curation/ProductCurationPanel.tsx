@@ -346,12 +346,12 @@ export default function ProductCurationPanel() {
   }, [searchKey, selectingAll]);
 
   const handleBulkApply = useCallback(
-    async (payload: { changes: BulkChange[] }) => {
+    async (payload: { productIds: string[]; changes: BulkChange[] }) => {
       const res = await fetch("/api/admin/product-curation/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          productIds: Array.from(selectedIds),
+          productIds: payload.productIds,
           changes: payload.changes,
         }),
       });
@@ -368,7 +368,7 @@ export default function ProductCurationPanel() {
       fetchPage(1, "reset");
       return { ok: true, ...responsePayload } as BulkResult;
     },
-    [clearSelection, fetchFacets, fetchPage, router, selectedIds],
+    [clearSelection, fetchFacets, fetchPage],
   );
 
   const catalogThemeVars = useMemo(() => {
@@ -406,6 +406,15 @@ export default function ProductCurationPanel() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setBulkOpen(true)}
+                disabled={loading || selectingAll || totalCount === 0}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                title="Abre el modal. Puedes aplicar a la selección o al filtro actual."
+              >
+                Editar en bloque
+              </button>
               <button
                 type="button"
                 onClick={handleSelectAll}
@@ -625,6 +634,7 @@ export default function ProductCurationPanel() {
         selectedCount={selectedCount}
         selectedIds={selectedIdList}
         categoriesFromFilters={filterCategoryKeys}
+        searchKey={searchKey}
         taxonomyOptions={taxonomyOptions}
         onClose={() => setBulkOpen(false)}
         onApply={handleBulkApply}

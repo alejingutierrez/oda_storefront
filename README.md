@@ -108,7 +108,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Directorio de productos scrapeados con cards (carrusel de imágenes si hay múltiples fotos), modal de detalle enriquecido (precio/stock, tallas y colores visibles con swatches, fit/material por variante) y filtros por marca.
 - Panel `/admin/product-curation` (curación humana):
   - Experiencia similar a `/catalogo` pero en admin (mismos filtros/query params), sin paginación UI y con scroll infinito.
-  - Permite seleccionar productos y aplicar un bulk edit desde una modal (operaciones `replace/add/remove/clear` según el campo).
+  - Bulk edit: la modal puede aplicar cambios a la **selección** o directamente al **filtro actual** (sin seleccionar manualmente), con límite de 1200 productos por request.
   - Integridad: al reemplazar `category` se limpia `subcategory` si deja de pertenecer; al reemplazar `subcategory` se valida contra la categoría.
   - No permite editar `description` ni campos SEO. Preserva `products.metadata.enrichment` y registra trazabilidad en `products.metadata.enrichment_human`.
 - Panel `/admin/taxonomy` (taxonomía):
