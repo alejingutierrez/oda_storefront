@@ -165,12 +165,14 @@ export default function CatalogoClient({
           </div>
 
           <div className="flex flex-col gap-6">
-            <CatalogToolbar
-              totalCount={totalCount}
-              activeBrandCount={activeBrandCount}
-              searchKey={uiSearchKey || initialSearchParams}
-              labels={labels}
-            />
+            <div className="hidden lg:block">
+              <CatalogToolbar
+                totalCount={totalCount}
+                activeBrandCount={activeBrandCount}
+                searchKey={uiSearchKey || initialSearchParams}
+                labels={labels}
+              />
+            </div>
 
             <CatalogProductsInfinite
               key={initialSearchParams}
