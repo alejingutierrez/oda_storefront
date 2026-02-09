@@ -724,28 +724,19 @@ function PriceRange({
   commitParams: (next: URLSearchParams) => void;
   disabled?: boolean;
 }) {
-  if (typeof bounds.min !== "number" || typeof bounds.max !== "number") {
-    return (
-      <div className="mt-4 grid gap-3">
-        <div className="h-3 w-40 rounded-full bg-[color:var(--oda-stone)]" />
-        <div className="h-10 w-full rounded-xl bg-[color:var(--oda-stone)]" />
-        <div className="h-3 w-56 rounded-full bg-[color:var(--oda-stone)]" />
-      </div>
-    );
-  }
-
-  const minBound = bounds.min;
-  const maxBound = bounds.max;
+  const hasBounds = typeof bounds.min === "number" && typeof bounds.max === "number";
+  const minBound = typeof bounds.min === "number" ? bounds.min : 0;
+  const maxBound = typeof bounds.max === "number" ? bounds.max : 0;
   const step = getStep(maxBound);
-  const hasRange = Number.isFinite(minBound) && Number.isFinite(maxBound) && maxBound > minBound;
+  const hasRange = hasBounds && Number.isFinite(minBound) && Number.isFinite(maxBound) && maxBound > minBound;
 
   const selectedMin = selectedMinRaw ? Number(selectedMinRaw) : null;
   const selectedMax = selectedMaxRaw ? Number(selectedMaxRaw) : null;
 
-  const [minValue, setMinValue] = useState(
+  const [minValue, setMinValue] = useState(() =>
     hasRange ? clamp(selectedMin ?? minBound, minBound, maxBound) : 0,
   );
-  const [maxValue, setMaxValue] = useState(
+  const [maxValue, setMaxValue] = useState(() =>
     hasRange ? clamp(selectedMax ?? maxBound, minBound, maxBound) : 0,
   );
   const userChangedRef = useRef(false);
@@ -771,6 +762,16 @@ function PriceRange({
 
     return () => window.clearTimeout(timeout);
   }, [commitParams, disabled, hasRange, maxBound, maxValue, minBound, minValue, searchParamsString, step]);
+
+  if (!hasBounds) {
+    return (
+      <div className="mt-4 grid gap-3">
+        <div className="h-3 w-40 rounded-full bg-[color:var(--oda-stone)]" />
+        <div className="h-10 w-full rounded-xl bg-[color:var(--oda-stone)]" />
+        <div className="h-3 w-56 rounded-full bg-[color:var(--oda-stone)]" />
+      </div>
+    );
+  }
 
   if (!hasRange) {
     return (

@@ -39,7 +39,7 @@ export default function CatalogToolbar({
   labels,
 }: {
   totalCount: number;
-  activeBrandCount: number;
+  activeBrandCount?: number | null;
   searchKey: string;
   labels?: CatalogFilterLabelMaps;
 }) {
@@ -154,9 +154,16 @@ export default function CatalogToolbar({
           <p className="text-sm text-[color:var(--oda-ink)]">
             <span className="font-semibold">{totalCount.toLocaleString("es-CO")}</span> productos
           </p>
-          <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-            {activeBrandCount.toLocaleString("es-CO")} marcas activas
-          </p>
+          {typeof activeBrandCount === "number" ? (
+            <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+              {activeBrandCount.toLocaleString("es-CO")} marcas activas
+            </p>
+          ) : (
+            <div
+              className="h-3 w-28 rounded-full bg-[color:var(--oda-stone)]"
+              aria-label="Cargando marcas activas"
+            />
+          )}
           {isPending ? (
             <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
               Actualizando…

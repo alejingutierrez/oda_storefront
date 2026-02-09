@@ -39,12 +39,14 @@ export default function CatalogMobileDock({
   facets,
   subcategories,
   priceBounds,
+  facetsLoading = false,
 }: {
   totalCount: number;
-  activeBrandCount: number;
-  facets: Facets;
+  activeBrandCount?: number | null;
+  facets: Facets | null;
   subcategories: FacetItem[];
   priceBounds: CatalogPriceBounds;
+  facetsLoading?: boolean;
 }) {
   const params = useSearchParams();
   const pathname = usePathname();
@@ -64,6 +66,7 @@ export default function CatalogMobileDock({
   const [draftParamsString, setDraftParamsString] = useState("");
 
   const openSheet = () => {
+    if (!facets) return;
     const next = new URLSearchParams(params.toString());
     next.delete("page");
     setDraftParamsString(next.toString());
@@ -114,9 +117,10 @@ export default function CatalogMobileDock({
           <button
             type="button"
             onClick={openSheet}
-            className="inline-flex items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-3 text-xs font-semibold text-[color:var(--oda-ink)]"
+            disabled={!facets}
+            className="inline-flex items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-3 text-xs font-semibold text-[color:var(--oda-ink)] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Filtrar
+            {facetsLoading && !facets ? "Cargando…" : "Filtrar"}
             {filterCount > 0 ? (
               <span className="rounded-full bg-[color:var(--oda-ink)] px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-cream)]">
                 {filterCount}
@@ -158,11 +162,15 @@ export default function CatalogMobileDock({
           <span>
             {totalCount.toLocaleString("es-CO")} productos
           </span>
-          <span>{activeBrandCount.toLocaleString("es-CO")} marcas</span>
+          {typeof activeBrandCount === "number" ? (
+            <span>{activeBrandCount.toLocaleString("es-CO")} marcas</span>
+          ) : (
+            <span className="inline-flex h-3 w-16 rounded-full bg-[color:var(--oda-stone)]" />
+          )}
         </div>
       </div>
 
-      {open ? (
+      {open && facets ? (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
           <button
             type="button"
