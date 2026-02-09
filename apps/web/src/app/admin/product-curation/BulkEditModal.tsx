@@ -39,12 +39,22 @@ export type BulkResult = {
 type Props = {
   open: boolean;
   selectedCount: number;
+  selectedIds: string[];
+  categoriesFromFilters: string[];
   taxonomyOptions: TaxonomyOptions | null;
   onClose: () => void;
   onApply: (payload: { changes: BulkChange[] }) => Promise<BulkResult>;
 };
 
 type Option = { value: string; label: string };
+
+type SelectionSummaryCategory = { key: string | null; label: string; count: number };
+type SelectionSummary = {
+  foundCount: number;
+  missingCount: number;
+  limit: number;
+  categories: SelectionSummaryCategory[];
+};
 
 type ChangeDraft = {
   key: string;
@@ -86,6 +96,8 @@ const OP_LABELS: Record<BulkOperation, string> = {
   clear: "Limpiar",
 };
 
+const MAX_BULK_IDS = 1200;
+
 const buildCategoryOptions = (taxonomy: TaxonomyOptions | null): Option[] =>
   (taxonomy?.data.categories ?? [])
     .filter((entry) => entry.isActive !== false)
@@ -95,10 +107,14 @@ const buildGenderOptions = (): Option[] => GENDER_OPTIONS.map((entry) => ({ valu
 
 const buildSeasonOptions = (): Option[] => SEASON_OPTIONS.map((entry) => ({ value: entry.value, label: entry.label }));
 
-const buildSubcategoryOptions = (taxonomy: TaxonomyOptions | null): Option[] =>
+const buildSubcategoryOptions = (taxonomy: TaxonomyOptions | null, categories?: string[] | null): Option[] =>
   (() => {
+    const wanted = new Set((categories ?? []).map((value) => value.trim()).filter(Boolean));
     const options = new Map<string, string>();
+
     for (const category of taxonomy?.data.categories ?? []) {
+      if (category.isActive === false) continue;
+      if (wanted.size > 0 && !wanted.has(category.key)) continue;
       for (const entry of category.subcategories ?? []) {
         if (entry.isActive === false) continue;
         const key = entry.key;
@@ -106,6 +122,20 @@ const buildSubcategoryOptions = (taxonomy: TaxonomyOptions | null): Option[] =>
         if (!options.has(key)) options.set(key, entry.label ?? key);
       }
     }
+
+    // If the caller passed categories but none matched, fallback to the full taxonomy list.
+    if (wanted.size > 0 && options.size === 0) {
+      for (const category of taxonomy?.data.categories ?? []) {
+        if (category.isActive === false) continue;
+        for (const entry of category.subcategories ?? []) {
+          if (entry.isActive === false) continue;
+          const key = entry.key;
+          if (!key) continue;
+          if (!options.has(key)) options.set(key, entry.label ?? key);
+        }
+      }
+    }
+
     return Array.from(options.entries()).map(([value, label]) => ({ value, label }));
   })();
 
@@ -261,7 +291,15 @@ function CheckboxList({
   );
 }
 
-export default function BulkEditModal({ open, selectedCount, taxonomyOptions, onClose, onApply }: Props) {
+export default function BulkEditModal({
+  open,
+  selectedCount,
+  selectedIds,
+  categoriesFromFilters,
+  taxonomyOptions,
+  onClose,
+  onApply,
+}: Props) {
   const initialKey = useMemo(() => makeKey(), []);
   const [changes, setChanges] = useState<ChangeDraft[]>(() => [
     { key: initialKey, field: "category", op: "replace", scalarValue: "", tagValues: [] },
@@ -271,6 +309,8 @@ export default function BulkEditModal({ open, selectedCount, taxonomyOptions, on
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BulkResult | null>(null);
+  const [selectionSummary, setSelectionSummary] = useState<SelectionSummary | null>(null);
+  const [selectionSummaryError, setSelectionSummaryError] = useState<string | null>(null);
 
   const usedFields = useMemo(() => new Set(changes.map((change) => change.field)), [changes]);
 
@@ -340,14 +380,129 @@ export default function BulkEditModal({ open, selectedCount, taxonomyOptions, on
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
+  const selectionOverLimit = selectedCount > MAX_BULK_IDS;
+
+  useEffect(() => {
+    if (!open) return;
+
+    setSelectionSummary(null);
+    setSelectionSummaryError(null);
+
+    if (selectedIds.length === 0) return;
+    if (selectedIds.length > MAX_BULK_IDS) {
+      setSelectionSummaryError(
+        `La selección excede el límite (${MAX_BULK_IDS.toLocaleString("es-CO")}). Ajusta filtros o limpia selección.`,
+      );
+      return;
+    }
+
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/product-curation/selection-summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productIds: selectedIds }),
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload?.error ?? "No se pudo analizar la selección");
+        }
+        if (!payload?.ok) {
+          throw new Error(payload?.error ?? "No se pudo analizar la selección");
+        }
+        setSelectionSummary({
+          foundCount: typeof payload.foundCount === "number" ? payload.foundCount : 0,
+          missingCount: typeof payload.missingCount === "number" ? payload.missingCount : 0,
+          limit: typeof payload.limit === "number" ? payload.limit : MAX_BULK_IDS,
+          categories: Array.isArray(payload.categories)
+            ? payload.categories
+                .map((entry: any) => ({
+                  key: typeof entry?.key === "string" ? entry.key : null,
+                  label: typeof entry?.label === "string" ? entry.label : "—",
+                  count: typeof entry?.count === "number" ? entry.count : 0,
+                }))
+                .filter((entry: SelectionSummaryCategory) => entry.count > 0)
+            : [],
+        });
+      } catch (err) {
+        if ((err as any)?.name === "AbortError") return;
+        console.warn(err);
+        setSelectionSummary(null);
+        setSelectionSummaryError(err instanceof Error ? err.message : "No se pudo analizar la selección");
+      }
+    })();
+
+    return () => controller.abort();
+  }, [open, selectedIds]);
+
+  const categoryDraft = useMemo(() => changes.find((change) => change.field === "category") ?? null, [changes]);
+  const categoryOverride = useMemo(() => {
+    if (!categoryDraft) return null;
+    if (categoryDraft.op !== "replace") return null;
+    const value = categoryDraft.scalarValue.trim();
+    return value.length ? value : null;
+  }, [categoryDraft]);
+
+  const categoryFromSelection = useMemo(() => {
+    if (!selectionSummary) return null;
+    const hasMissingCategory = selectionSummary.categories.some((entry) => entry.key === null);
+    const nonNull = selectionSummary.categories
+      .filter((entry) => entry.key)
+      .map((entry) => entry.key as string);
+    if (hasMissingCategory) return null;
+    if (nonNull.length !== 1) return null;
+    return nonNull[0] ?? null;
+  }, [selectionSummary]);
+
+  const subcategoryContext = useMemo(() => {
+    const cleanedFilters = Array.from(
+      new Set(categoriesFromFilters.map((value) => value.trim()).filter(Boolean)),
+    );
+
+    if (categoryOverride) {
+      return { source: "modal" as const, categories: [categoryOverride] };
+    }
+    if (categoryFromSelection) {
+      return { source: "selection" as const, categories: [categoryFromSelection] };
+    }
+    if (cleanedFilters.length > 0) {
+      return { source: "filters" as const, categories: cleanedFilters };
+    }
+    return { source: "none" as const, categories: [] as string[] };
+  }, [categoriesFromFilters, categoryFromSelection, categoryOverride]);
+
+  const subcategoryContextNote = useMemo(() => {
+    if (active.field !== "subcategory") return null;
+    if (!taxonomyOptions) return null;
+
+    const labelize = (key: string) => taxonomyOptions.categoryLabels?.[key] ?? key;
+
+    if (subcategoryContext.source === "modal") {
+      return `Subcategorías acotadas por Categoría (cambio en modal): ${labelize(subcategoryContext.categories[0] ?? "")}.`;
+    }
+    if (subcategoryContext.source === "selection") {
+      return `Subcategorías acotadas por Categoría (selección): ${labelize(subcategoryContext.categories[0] ?? "")}.`;
+    }
+    if (subcategoryContext.source === "filters") {
+      if (subcategoryContext.categories.length === 1) {
+        return `Subcategorías acotadas por Categoría (filtro): ${labelize(subcategoryContext.categories[0] ?? "")}.`;
+      }
+      return `Subcategorías acotadas por ${subcategoryContext.categories.length} categorías del filtro.`;
+    }
+    return "Tip: filtra una categoría o agrega un cambio de Categoría para acotar subcategorías.";
+  }, [active.field, subcategoryContext, taxonomyOptions]);
+
   const scalarOptions: Option[] | null = useMemo(() => {
     if (active.field === "category") return buildCategoryOptions(taxonomyOptions);
-    if (active.field === "subcategory") return buildSubcategoryOptions(taxonomyOptions);
+    if (active.field === "subcategory") return buildSubcategoryOptions(taxonomyOptions, subcategoryContext.categories);
     if (active.field === "gender") return buildGenderOptions();
     if (active.field === "season") return buildSeasonOptions();
     if (active.field === "stylePrimary" || active.field === "styleSecondary") return buildStyleProfileOptions(taxonomyOptions);
     return null;
-  }, [active.field, taxonomyOptions]);
+  }, [active.field, subcategoryContext.categories, taxonomyOptions]);
 
   const tagOptions: Option[] | null = useMemo(() => {
     if (active.field === "styleTags") return buildTagOptionsFromTerms(taxonomyOptions?.data.styleTags);
@@ -362,11 +517,74 @@ export default function BulkEditModal({ open, selectedCount, taxonomyOptions, on
     return editableFields.every((field) => usedFields.has(field));
   }, [usedFields]);
 
+  const preflightIssue = useMemo(() => {
+    if (!taxonomyOptions) return null;
+    if (!open) return null;
+    if (selectedCount <= 0) return null;
+    if (selectedCount > MAX_BULK_IDS) {
+      return `La selección excede el límite (${MAX_BULK_IDS.toLocaleString("es-CO")}).`;
+    }
+
+    const subcategoryChange = changes.find((change) => change.field === "subcategory");
+    if (!subcategoryChange) return null;
+    if (subcategoryChange.op === "clear") return null;
+    if (subcategoryChange.op !== "replace") return null;
+
+    const desiredSubcategory = subcategoryChange.scalarValue.trim();
+    if (!desiredSubcategory) return null;
+
+    const categoryChange = changes.find((change) => change.field === "category");
+    if (categoryChange) {
+      if (categoryChange.op === "clear") {
+        return "No puedes asignar una subcategoría si estás limpiando la categoría.";
+      }
+      if (categoryChange.op === "replace") {
+        const desiredCategory = categoryChange.scalarValue.trim();
+        if (!desiredCategory) return null;
+        const allowed = taxonomyOptions.subcategoryByCategory[desiredCategory] ?? [];
+        if (!allowed.includes(desiredSubcategory)) {
+          const categoryLabel = taxonomyOptions.categoryLabels?.[desiredCategory] ?? desiredCategory;
+          const subLabel = taxonomyOptions.subcategoryLabels?.[desiredSubcategory] ?? desiredSubcategory;
+          return `La subcategoría ${subLabel} no pertenece a la categoría ${categoryLabel}.`;
+        }
+        return null;
+      }
+    }
+
+    if (!selectionSummary) return null;
+
+    const missingCategoryCount = selectionSummary.categories.find((entry) => entry.key === null)?.count ?? 0;
+    if (missingCategoryCount > 0) {
+      return "Hay productos sin categoría en la selección. Agrega también un cambio de Categoría.";
+    }
+
+    const presentCategories = selectionSummary.categories
+      .filter((entry) => entry.key)
+      .map((entry) => entry.key as string);
+    const invalidCategories = presentCategories.filter((category) => {
+      const allowed = taxonomyOptions.subcategoryByCategory[category] ?? [];
+      return !allowed.includes(desiredSubcategory);
+    });
+    if (invalidCategories.length > 0) {
+      const subLabel = taxonomyOptions.subcategoryLabels?.[desiredSubcategory] ?? desiredSubcategory;
+      const sample = invalidCategories
+        .slice(0, 4)
+        .map((key) => taxonomyOptions.categoryLabels?.[key] ?? key)
+        .join(", ");
+      const suffix = invalidCategories.length > 4 ? ` (+${invalidCategories.length - 4} más)` : "";
+      return `La subcategoría ${subLabel} no aplica para todas las categorías presentes en la selección: ${sample}${suffix}. Agrega un cambio de Categoría o ajusta la selección.`;
+    }
+
+    return null;
+  }, [changes, open, selectedCount, selectionSummary, taxonomyOptions]);
+
   const applyDisabled = useMemo(() => {
     if (selectedCount <= 0) return true;
+    if (selectedCount > MAX_BULK_IDS) return true;
     if (!taxonomyOptions) return true;
     if (!changes.length) return true;
     if (duplicateFields.length > 0) return true;
+    if (preflightIssue) return true;
     for (const change of changes) {
       if (change.op === "clear") continue;
       if (FIELD_KIND[change.field] === "array") {
@@ -376,7 +594,7 @@ export default function BulkEditModal({ open, selectedCount, taxonomyOptions, on
       }
     }
     return false;
-  }, [changes, duplicateFields.length, selectedCount, taxonomyOptions]);
+  }, [changes, duplicateFields.length, preflightIssue, selectedCount, taxonomyOptions]);
 
   const updateChange = (key: string, patch: Partial<ChangeDraft>) => {
     setChanges((prev) => prev.map((change) => (change.key === key ? { ...change, ...patch } : change)));
@@ -514,31 +732,81 @@ export default function BulkEditModal({ open, selectedCount, taxonomyOptions, on
                 })}
               </div>
 
-              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Previsualización</p>
-                <div className="mt-3 space-y-2 text-sm text-slate-700">
-                  <p>
-                    <span className="font-semibold text-slate-800">Productos:</span> {selectedCount}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-800">Cambios:</span> {changes.length}
-                  </p>
-                  <div className="space-y-1 text-xs text-slate-600">
-                    {changes.map((change) => (
-                      <p key={change.key} className="truncate">
-                        <span className="font-semibold text-slate-800">{FIELD_LABELS[change.field] ?? change.field}:</span>{" "}
-                        {OP_LABELS[change.op]} · {buildValuePreview(change, taxonomyOptions)}
-                      </p>
-                    ))}
+                <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Previsualización</p>
+                  <div className="mt-3 space-y-2 text-sm text-slate-700">
+                    <p>
+                      <span className="font-semibold text-slate-800">Productos:</span> {selectedCount}
+                    </p>
+                    <p>
+                      <span className="font-semibold text-slate-800">Cambios:</span> {changes.length}
+                    </p>
+                    <div className="space-y-1 text-xs text-slate-600">
+                      {changes.map((change) => (
+                        <p key={change.key} className="truncate">
+                          <span className="font-semibold text-slate-800">{FIELD_LABELS[change.field] ?? change.field}:</span>{" "}
+                          {OP_LABELS[change.op]} · {buildValuePreview(change, taxonomyOptions)}
+                        </p>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {!taxonomyOptions ? (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                  Cargando opciones de taxonomía… Si esto no termina, recarga la página o revisa sesión admin.
+                <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Selección</p>
+                  {selectionOverLimit ? (
+                    <p className="mt-3 text-sm text-amber-800">
+                      La selección excede el límite ({MAX_BULK_IDS.toLocaleString("es-CO")}). Ajusta filtros o limpia selección.
+                    </p>
+                  ) : selectionSummary ? (
+                    <div className="mt-3 space-y-2 text-sm text-slate-700">
+                      <p>
+                        <span className="font-semibold text-slate-800">Encontrados:</span>{" "}
+                        {selectionSummary.foundCount.toLocaleString("es-CO")}
+                        {selectionSummary.missingCount ? (
+                          <span className="ml-2 text-xs text-slate-500">
+                            ({selectionSummary.missingCount.toLocaleString("es-CO")} ya no existen)
+                          </span>
+                        ) : null}
+                      </p>
+
+                      <div className="space-y-1 text-xs text-slate-600">
+                        <p className="font-semibold text-slate-800">Categorías en selección:</p>
+                        {selectionSummary.categories.length ? (
+                          <>
+                            {selectionSummary.categories.slice(0, 4).map((entry) => (
+                              <p key={entry.key ?? "__null__"} className="flex items-center justify-between gap-3">
+                                <span className="truncate">{entry.label}</span>
+                                <span className="text-slate-500">{entry.count.toLocaleString("es-CO")}</span>
+                              </p>
+                            ))}
+                            {selectionSummary.categories.length > 4 ? (
+                              <p className="text-slate-500">+{selectionSummary.categories.length - 4} más</p>
+                            ) : null}
+                          </>
+                        ) : (
+                          <p className="text-slate-500">—</p>
+                        )}
+                      </div>
+
+                      {selectionSummary.categories.length > 1 ? (
+                        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          Selección mixta: si vas a reemplazar <code>subcategory</code> sin tocar <code>category</code>, puede fallar.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : selectionSummaryError ? (
+                    <p className="mt-3 text-sm text-amber-800">{selectionSummaryError}</p>
+                  ) : (
+                    <p className="mt-3 text-sm text-slate-500">Analizando selección…</p>
+                  )}
                 </div>
-              ) : null}
+
+                {!taxonomyOptions ? (
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    Cargando opciones de taxonomía… Si esto no termina, recarga la página o revisa sesión admin.
+                  </div>
+                ) : null}
 
               {duplicateFields.length ? (
                 <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -547,6 +815,12 @@ export default function BulkEditModal({ open, selectedCount, taxonomyOptions, on
                     {duplicateFields.map((field) => FIELD_LABELS[field] ?? field).join(", ")}
                   </span>
                   . Deja cada característica solo una vez.
+                </div>
+              ) : null}
+
+              {preflightIssue ? (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                  {preflightIssue}
                 </div>
               ) : null}
 
@@ -648,10 +922,13 @@ export default function BulkEditModal({ open, selectedCount, taxonomyOptions, on
                             </option>
                           ))}
                         </select>
+                        {active.field === "subcategory" && subcategoryContextNote ? (
+                          <p className="mt-2 text-xs text-slate-500">{subcategoryContextNote}</p>
+                        ) : null}
                         {active.field === "subcategory" && active.op === "replace" && !usedFields.has("category") ? (
                           <p className="mt-2 text-xs text-slate-500">
-                            Nota: si reemplazas subcategoría sin incluir categoría, se validará contra la categoría actual del producto.
-                            Si estás mezclando categorías, agrega también un cambio de <code>category</code>.
+                            Nota: si reemplazas subcategoría sin incluir categoría, se validará contra la categoría actual de cada producto.
+                            Si la selección mezcla categorías, agrega también un cambio de <code>category</code>.
                           </p>
                         ) : null}
                         {active.field === "category" && active.op === "replace" && !usedFields.has("subcategory") ? (

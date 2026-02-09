@@ -147,6 +147,15 @@ export default function ProductCurationPanel() {
   const abortRef = useRef<AbortController | null>(null);
 
   const searchKey = useMemo(() => buildSearchKey(searchParams), [searchParams]);
+  const filterCategoryKeys = useMemo(() => {
+    const params = new URLSearchParams(searchKey);
+    const raw = params
+      .getAll("category")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    return Array.from(new Set(raw));
+  }, [searchKey]);
+  const selectedIdList = useMemo(() => Array.from(selectedIds), [selectedIds]);
 
   const fetchTaxonomyOptions = useCallback(async () => {
     try {
@@ -614,6 +623,8 @@ export default function ProductCurationPanel() {
       <BulkEditModal
         open={bulkOpen}
         selectedCount={selectedCount}
+        selectedIds={selectedIdList}
+        categoriesFromFilters={filterCategoryKeys}
         taxonomyOptions={taxonomyOptions}
         onClose={() => setBulkOpen(false)}
         onApply={handleBulkApply}
