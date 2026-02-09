@@ -97,16 +97,16 @@ export default function FavoriteToggle({
   };
 
   const filled = Boolean(favoriteId);
+  const baseClass =
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-white/70 text-[color:var(--oda-ink)] shadow-[0_18px_50px_rgba(23,21,19,0.16)] backdrop-blur transition hover:bg-white";
+  const buttonClass = [baseClass, className, filled ? "text-[color:var(--oda-love)]" : ""]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <button
       type="button"
-      className={
-        className ??
-        `inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-white/70 text-[color:var(--oda-ink)] shadow-[0_18px_50px_rgba(23,21,19,0.16)] backdrop-blur transition hover:bg-white ${
-          filled ? "text-[color:var(--oda-love)]" : ""
-        }`
-      }
+      className={buttonClass}
       onClick={handleClick}
       aria-label={label}
       aria-pressed={filled}

@@ -221,7 +221,7 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
 
   return (
     <article
-      className="group relative overflow-hidden rounded-xl border border-[color:var(--oda-border)] bg-white shadow-[0_16px_36px_rgba(23,21,19,0.08)] transition duration-500 ease-out [transform-style:preserve-3d] hover:shadow-[0_30px_60px_rgba(23,21,19,0.14)] group-hover:[transform:perspective(900px)_rotateX(6deg)_translateY(-10px)]"
+      className="group relative overflow-hidden rounded-xl border border-[color:var(--oda-border)] bg-white shadow-[0_12px_28px_rgba(23,21,19,0.08)] lg:transition lg:duration-500 lg:ease-out lg:[transform-style:preserve-3d] lg:hover:shadow-[0_30px_60px_rgba(23,21,19,0.14)] lg:group-hover:[transform:perspective(900px)_rotateX(6deg)_translateY(-10px)]"
       onMouseEnter={() => {
         if (canHover) scheduleCarousel();
       }}
@@ -241,7 +241,7 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
             aria-pressed={compared}
             aria-label={compared ? "Quitar de comparar" : "Agregar a comparar"}
             className={[
-              "inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/50 shadow-[0_18px_50px_rgba(23,21,19,0.16)] backdrop-blur transition",
+              "inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/50 shadow-[0_18px_50px_rgba(23,21,19,0.16)] backdrop-blur transition lg:h-10 lg:w-10",
               compared
                 ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
                 : "bg-white/70 text-[color:var(--oda-ink)] hover:bg-white",
@@ -253,7 +253,11 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
         </div>
       ) : null}
       <div className="absolute right-3 top-3 z-10">
-        <FavoriteToggle productId={product.id} ariaLabel={`Guardar ${product.name} en favoritos`} />
+        <FavoriteToggle
+          productId={product.id}
+          ariaLabel={`Guardar ${product.name} en favoritos`}
+          className="h-9 w-9 lg:h-10 lg:w-10"
+        />
       </div>
       <Link
         href={href}
@@ -280,19 +284,19 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
         {/* Mobile: siempre visible (bottom glass). Desktop: aparece al hover desde abajo. */}
         <div
           className={[
-            "absolute inset-x-0 bottom-0 h-[24%] border-t border-white/40 bg-white/45 backdrop-blur-xl",
+            "absolute inset-x-0 bottom-0 h-[22%] border-t border-white/40 bg-white/45 backdrop-blur-xl",
             "transition duration-500",
             "lg:h-[26%] lg:translate-y-6 lg:opacity-0 lg:group-hover:translate-y-0 lg:group-hover:opacity-100",
           ].join(" ")}
         >
-          <div className="flex h-full flex-col justify-start gap-1.5 px-4 py-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--oda-ink-soft)]">
+          <div className="flex h-full flex-col justify-start gap-1.5 px-3 py-2.5 lg:px-4 lg:py-4">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-[color:var(--oda-ink-soft)] lg:text-[10px]">
               {product.brandName}
             </p>
-            <h3 className="truncate text-sm font-semibold leading-snug text-[color:var(--oda-ink)]">
+            <h3 className="truncate text-[13px] font-semibold leading-snug text-[color:var(--oda-ink)] lg:text-sm">
               {product.name}
             </h3>
-            <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)]">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)] lg:text-xs">
               {priceLabel}
             </p>
           </div>
