@@ -277,15 +277,15 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
           </div>
         )}
 
-        {/* Mobile: siempre visible (top glass). Desktop: aparece al hover desde abajo. */}
+        {/* Mobile: siempre visible (bottom glass). Desktop: aparece al hover desde abajo. */}
         <div
           className={[
-            "absolute inset-x-0 top-0 h-[22%] border-b border-white/40 bg-white/45 backdrop-blur-xl",
+            "absolute inset-x-0 bottom-0 h-[24%] border-t border-white/40 bg-white/45 backdrop-blur-xl",
             "transition duration-500",
-            "lg:top-auto lg:bottom-0 lg:h-[26%] lg:translate-y-6 lg:border-b-0 lg:border-t lg:opacity-0 lg:group-hover:translate-y-0 lg:group-hover:opacity-100",
+            "lg:h-[26%] lg:translate-y-6 lg:opacity-0 lg:group-hover:translate-y-0 lg:group-hover:opacity-100",
           ].join(" ")}
         >
-          <div className="flex h-full flex-col justify-start gap-2 px-4 py-4">
+          <div className="flex h-full flex-col justify-start gap-1.5 px-4 py-3">
             <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--oda-ink-soft)]">
               {product.brandName}
             </p>
