@@ -139,12 +139,13 @@ export default function CatalogMobileDock({
             ) : null}
           </button>
 
-          <label className="flex flex-1 items-center justify-end gap-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-            Ordenar
+          <label className="ml-auto flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+            <span className="sr-only">Ordenar</span>
             <select
               value={selectedOption.value}
               onChange={(event) => handleSortChange(event.target.value)}
-              className="min-w-[9.5rem] rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-3 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+              aria-label="Ordenar"
+              className="h-11 min-w-[8.25rem] rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
             >
               {SORT_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -159,13 +160,15 @@ export default function CatalogMobileDock({
             onClick={handleClearCommitted}
             disabled={!hasFilters || isPending}
             className={[
-              "rounded-full border px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] transition",
+              "inline-flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold transition",
               hasFilters && !isPending
                 ? "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink)]"
                 : "cursor-not-allowed border-[color:var(--oda-border)] bg-white text-[color:var(--oda-taupe)] opacity-70",
             ].join(" ")}
+            aria-label="Limpiar filtros"
+            title="Limpiar"
           >
-            Limpiar
+            ×
           </button>
         </div>
 

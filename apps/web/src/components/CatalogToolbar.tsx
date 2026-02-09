@@ -225,7 +225,7 @@ export default function CatalogToolbar({
   };
 
   return (
-    <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-4 lg:sticky lg:top-24 lg:z-30 lg:shadow-[0_30px_80px_rgba(23,21,19,0.10)]">
+    <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-4 py-3 lg:sticky lg:top-24 lg:z-30 lg:px-5 lg:py-4 lg:shadow-[0_30px_80px_rgba(23,21,19,0.10)]">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <p className="text-sm text-[color:var(--oda-ink)]">
@@ -352,17 +352,17 @@ export default function CatalogToolbar({
       </div>
 
       {chips.length > 0 ? (
-        <div className="mt-4 flex gap-2 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible">
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:mt-4 lg:flex-wrap lg:overflow-visible">
           {chips.map((chip) => (
             <button
               key={chip.id}
               type="button"
               onClick={() => removeChip(chip)}
               disabled={isPending}
-              className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex max-w-[70vw] shrink-0 items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
               title="Quitar filtro"
             >
-              <span className="truncate">{chip.label}</span>
+              <span className="min-w-0 truncate">{chip.label}</span>
               <span className="text-[12px] leading-none text-[color:var(--oda-taupe)]" aria-hidden>
                 ×
               </span>
