@@ -25,6 +25,9 @@ type Props = {
   facets: Facets;
   subcategories: FacetItem[];
   priceBounds: CatalogPriceBounds;
+  mode?: "instant" | "draft";
+  draftParamsString?: string;
+  onDraftParamsStringChange?: (next: string) => void;
 };
 
 function buildSelectedLabel(count: number) {
@@ -49,6 +52,13 @@ function formatCop(value: number) {
 function clamp(value: number, min: number, max: number) {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
+}
+
+function isAbortError(err: unknown) {
+  if (!err) return false;
+  if (err instanceof DOMException) return err.name === "AbortError";
+  if (err instanceof Error) return err.name === "AbortError";
+  return false;
 }
 
 function sortFacetItems(items: FacetItem[], selectedValues: string[]) {
@@ -114,16 +124,24 @@ function getStep(max: number) {
   return 10_000;
 }
 
-export default function CatalogoFiltersPanel({ facets, subcategories, priceBounds }: Props) {
+export default function CatalogoFiltersPanel({
+  facets,
+  subcategories,
+  priceBounds,
+  mode = "instant",
+  draftParamsString = "",
+  onDraftParamsStringChange,
+}: Props) {
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
 
   const searchParamsString = params.toString();
+  const currentParamsString = mode === "draft" ? draftParamsString : searchParamsString;
 
   const selected = useMemo(() => {
-    const current = new URLSearchParams(searchParamsString);
+    const current = new URLSearchParams(currentParamsString);
     return {
       categories: current.getAll("category"),
       subcategories: current.getAll("subcategory"),
@@ -136,13 +154,71 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
       priceMax: current.get("price_max"),
       sort: current.get("sort") ?? "",
     };
-  }, [searchParamsString]);
+  }, [currentParamsString]);
 
   const [brandSearch, setBrandSearch] = useState("");
+  const [resolvedSubcategories, setResolvedSubcategories] = useState<FacetItem[]>(subcategories);
+  const [subcategoriesLoading, setSubcategoriesLoading] = useState(false);
+  const subcategoriesAbortRef = useRef<AbortController | null>(null);
+  const subcategoriesFetchKey = useMemo(() => {
+    const next = new URLSearchParams(currentParamsString);
+    next.delete("page");
+    next.delete("sort");
+    return next.toString();
+  }, [currentParamsString]);
+  const brandSearchResetKey = useMemo(
+    () =>
+      `${selected.categories.join(",")}::${selected.genders.join(",")}::${selected.subcategories.join(",")}`,
+    [selected.categories, selected.genders, selected.subcategories],
+  );
 
   useEffect(() => {
     setBrandSearch("");
-  }, [selected.categories.join(","), selected.genders.join(","), selected.subcategories.join(",")]);
+  }, [brandSearchResetKey]);
+
+  useEffect(() => {
+    setResolvedSubcategories(subcategories);
+  }, [subcategories]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(subcategoriesFetchKey);
+    const categories = next.getAll("category").filter((value) => value.trim().length > 0);
+    if (categories.length === 0) {
+      subcategoriesAbortRef.current?.abort();
+      setResolvedSubcategories([]);
+      setSubcategoriesLoading(false);
+      return;
+    }
+
+    subcategoriesAbortRef.current?.abort();
+    const controller = new AbortController();
+    subcategoriesAbortRef.current = controller;
+    setSubcategoriesLoading(true);
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/catalog/subcategories?${next.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          throw new Error(`http_${res.status}`);
+        }
+        const payload = (await res.json()) as { items?: FacetItem[] };
+        setResolvedSubcategories(Array.isArray(payload?.items) ? payload.items : []);
+      } catch (err) {
+        if (isAbortError(err)) return;
+        setResolvedSubcategories([]);
+      } finally {
+        setSubcategoriesLoading(false);
+      }
+    }, 150);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [subcategoriesFetchKey]);
 
   const applyParams = (next: URLSearchParams) => {
     if (selected.sort && !next.get("sort")) {
@@ -156,8 +232,17 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
     });
   };
 
+  const commitParams = (next: URLSearchParams) => {
+    next.delete("page");
+    if (mode === "draft") {
+      onDraftParamsStringChange?.(next.toString());
+      return;
+    }
+    applyParams(next);
+  };
+
   const toggleMulti = (key: string, value: string) => {
-    const next = new URLSearchParams(searchParamsString);
+    const next = new URLSearchParams(currentParamsString);
     const values = next.getAll(key);
     next.delete(key);
     if (values.includes(value)) {
@@ -166,7 +251,7 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
       values.forEach((item) => next.append(key, item));
       next.append(key, value);
     }
-    applyParams(next);
+    commitParams(next);
   };
 
   const isChecked = (list: string[], value: string) => list.includes(value);
@@ -176,7 +261,7 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
       <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
         <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
           <span className="flex items-center gap-3">
-            Genero
+            Género
             {isPending ? (
               <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                 Actualizando…
@@ -190,7 +275,7 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
         <div className="mt-4 flex flex-col gap-2">
           {sortFacetItems(facets.genders, selected.genders).map((item) => {
             const checked = isChecked(selected.genders, item.value);
-            const disabled = item.count === 0 && !checked;
+            const disabled = (item.count === 0 && !checked) || isPending;
             return (
               <label
                 key={item.value}
@@ -218,7 +303,14 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
 
       <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
         <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
-          Categoria
+          <span className="flex items-center gap-3">
+            Categoría
+            {isPending ? (
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                Actualizando…
+              </span>
+            ) : null}
+          </span>
           <span className="text-[10px] text-[color:var(--oda-taupe)]">
             {buildSelectedLabel(selected.categories.length)}
           </span>
@@ -226,7 +318,7 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
         <div className="mt-4 flex flex-col gap-2">
           {sortFacetItems(facets.categories, selected.categories).map((item) => {
             const checked = isChecked(selected.categories, item.value);
-            const disabled = item.count === 0 && !checked;
+            const disabled = (item.count === 0 && !checked) || isPending;
             return (
               <label
                 key={item.value}
@@ -252,47 +344,76 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
         </div>
       </details>
 
-      {subcategories.length > 0 ? (
+      {selected.categories.length > 0 ? (
         <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
           <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
-            Subcategoria
+            <span className="flex items-center gap-3">
+              Subcategoría
+              {subcategoriesLoading || isPending ? (
+                <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                  Actualizando…
+                </span>
+              ) : null}
+            </span>
             <span className="text-[10px] text-[color:var(--oda-taupe)]">
               {buildSelectedLabel(selected.subcategories.length)}
             </span>
           </summary>
           <div className="mt-4 flex flex-col gap-2">
-            {sortFacetItems(subcategories, selected.subcategories).map((item) => {
-              const checked = isChecked(selected.subcategories, item.value);
-              const disabled = item.count === 0 && !checked;
-              return (
-                <label
-                  key={item.value}
-                  className={[
-                    "flex items-center justify-between gap-3 text-sm",
-                    disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
-                  ].join(" ")}
-                >
-                  <span className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleMulti("subcategory", item.value)}
-                      className="h-4 w-4 accent-[color:var(--oda-ink)]"
-                      disabled={disabled}
-                    />
-                    {item.label}
-                  </span>
-                  <span className="text-xs text-[color:var(--oda-taupe)]">{item.count}</span>
-                </label>
-              );
-            })}
+            {subcategoriesLoading && resolvedSubcategories.length === 0 ? (
+              <div className="grid gap-2">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="h-6 w-full rounded-lg bg-[color:var(--oda-stone)]"
+                  />
+                ))}
+              </div>
+            ) : resolvedSubcategories.length === 0 ? (
+              <p className="rounded-xl border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] p-4 text-sm text-[color:var(--oda-taupe)]">
+                No hay subcategorías disponibles con estos filtros.
+              </p>
+            ) : (
+              sortFacetItems(resolvedSubcategories, selected.subcategories).map((item) => {
+                const checked = isChecked(selected.subcategories, item.value);
+                const disabled = (item.count === 0 && !checked) || isPending;
+                return (
+                  <label
+                    key={item.value}
+                    className={[
+                      "flex items-center justify-between gap-3 text-sm",
+                      disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+                    ].join(" ")}
+                  >
+                    <span className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleMulti("subcategory", item.value)}
+                        className="h-4 w-4 accent-[color:var(--oda-ink)]"
+                        disabled={disabled}
+                      />
+                      {item.label}
+                    </span>
+                    <span className="text-xs text-[color:var(--oda-taupe)]">{item.count}</span>
+                  </label>
+                );
+              })
+            )}
           </div>
         </details>
       ) : null}
 
       <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
         <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
-          Marca
+          <span className="flex items-center gap-3">
+            Marca
+            {isPending ? (
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                Actualizando…
+              </span>
+            ) : null}
+          </span>
           <span className="text-[10px] text-[color:var(--oda-taupe)]">
             {buildSelectedLabel(selected.brandIds.length)}
           </span>
@@ -303,6 +424,7 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
             onChange={(event) => setBrandSearch(event.target.value)}
             placeholder="Buscar marca…"
             className="w-full rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-sm"
+            disabled={isPending}
           />
           <div className="max-h-64 overflow-auto pr-1">
             <div className="flex flex-col gap-2">
@@ -315,7 +437,7 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
                 selected.brandIds,
               ).map((item) => {
                 const checked = isChecked(selected.brandIds, item.value);
-                const disabled = item.count === 0 && !checked;
+                const disabled = (item.count === 0 && !checked) || isPending;
                 return (
                   <label
                     key={item.value}
@@ -345,26 +467,45 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
 
       <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
         <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
-          Precio
+          <span className="flex items-center gap-3">
+            Precio
+            {isPending ? (
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                Actualizando…
+              </span>
+            ) : null}
+          </span>
         </summary>
         <PriceRange
-          key={[
-            priceBounds.min ?? "min",
-            priceBounds.max ?? "max",
-            selected.priceMin ?? "",
-            selected.priceMax ?? "",
-          ].join(":")}
+          key={
+            mode === "instant"
+              ? [
+                  priceBounds.min ?? "min",
+                  priceBounds.max ?? "max",
+                  selected.priceMin ?? "",
+                  selected.priceMax ?? "",
+                ].join(":")
+              : undefined
+          }
           bounds={priceBounds}
           selectedMinRaw={selected.priceMin}
           selectedMaxRaw={selected.priceMax}
-          searchParamsString={searchParamsString}
-          applyParams={applyParams}
+          searchParamsString={currentParamsString}
+          commitParams={commitParams}
+          disabled={isPending}
         />
       </details>
 
       <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
         <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
-          Color
+          <span className="flex items-center gap-3">
+            Color
+            {isPending ? (
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                Actualizando…
+              </span>
+            ) : null}
+          </span>
           <span className="text-[10px] text-[color:var(--oda-taupe)]">
             {buildSelectedLabel(selected.colors.length)}
           </span>
@@ -372,6 +513,8 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
         <div className="mt-4 grid gap-4">
           {Array.from(
             facets.colors.reduce((map, item) => {
+              const checked = isChecked(selected.colors, item.value);
+              if (item.count === 0 && !checked) return map;
               const rawFamily = item.group?.trim() ?? "";
               const family = COLOR_FAMILY_LABEL[rawFamily] ?? (rawFamily || "Otros");
               if (!map.has(family)) map.set(family, []);
@@ -388,7 +531,7 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
                 <div className="flex flex-wrap gap-2">
                   {sortFacetItems(items, selected.colors).map((item) => {
                     const checked = isChecked(selected.colors, item.value);
-                    const disabled = item.count === 0 && !checked;
+                    const disabled = (item.count === 0 && !checked) || isPending;
                     return (
                       <label
                         key={item.value}
@@ -425,7 +568,14 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
 
       <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5">
         <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
-          Material
+          <span className="flex items-center gap-3">
+            Material
+            {isPending ? (
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                Actualizando…
+              </span>
+            ) : null}
+          </span>
           <span className="text-[10px] text-[color:var(--oda-taupe)]">
             {buildSelectedLabel(selected.materials.length)}
           </span>
@@ -433,7 +583,7 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
         <div className="mt-4 flex flex-col gap-2">
           {sortFacetItems(facets.materials, selected.materials).map((item) => {
             const checked = isChecked(selected.materials, item.value);
-            const disabled = item.count === 0 && !checked;
+            const disabled = (item.count === 0 && !checked) || isPending;
             return (
               <label
                 key={item.value}
@@ -461,7 +611,14 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
 
       <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5">
         <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
-          Patron
+          <span className="flex items-center gap-3">
+            Patrón
+            {isPending ? (
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                Actualizando…
+              </span>
+            ) : null}
+          </span>
           <span className="text-[10px] text-[color:var(--oda-taupe)]">
             {buildSelectedLabel(selected.patterns.length)}
           </span>
@@ -469,7 +626,7 @@ export default function CatalogoFiltersPanel({ facets, subcategories, priceBound
         <div className="mt-4 flex flex-col gap-2">
           {sortFacetItems(facets.patterns, selected.patterns).map((item) => {
             const checked = isChecked(selected.patterns, item.value);
-            const disabled = item.count === 0 && !checked;
+            const disabled = (item.count === 0 && !checked) || isPending;
             return (
               <label
                 key={item.value}
@@ -503,13 +660,15 @@ function PriceRange({
   selectedMinRaw,
   selectedMaxRaw,
   searchParamsString,
-  applyParams,
+  commitParams,
+  disabled,
 }: {
   bounds: CatalogPriceBounds;
   selectedMinRaw?: string | null;
   selectedMaxRaw?: string | null;
   searchParamsString: string;
-  applyParams: (next: URLSearchParams) => void;
+  commitParams: (next: URLSearchParams) => void;
+  disabled?: boolean;
 }) {
   const minBound = bounds.min ?? 0;
   const maxBound = bounds.max ?? 0;
@@ -530,6 +689,7 @@ function PriceRange({
   useEffect(() => {
     if (!hasRange) return;
     if (!userChangedRef.current) return;
+    if (disabled) return;
 
     const timeout = window.setTimeout(() => {
       const next = new URLSearchParams(searchParamsString);
@@ -542,11 +702,11 @@ function PriceRange({
       if (nextMax >= maxBound) next.delete("price_max");
       else next.set("price_max", String(nextMax));
 
-      applyParams(next);
+      commitParams(next);
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [applyParams, hasRange, maxBound, maxValue, minBound, minValue, searchParamsString, step]);
+  }, [commitParams, disabled, hasRange, maxBound, maxValue, minBound, minValue, searchParamsString, step]);
 
   if (!hasRange) {
     return (
@@ -594,6 +754,7 @@ function PriceRange({
           onChange={(event) => commitMin(Number(event.target.value))}
           className="absolute left-0 right-0 top-1/2 w-full -translate-y-1/2 appearance-none bg-transparent accent-[color:var(--oda-ink)]"
           style={{ zIndex: minValue > maxBound - step * 2 ? 5 : 3 }}
+          disabled={disabled}
         />
         <input
           type="range"
@@ -604,6 +765,7 @@ function PriceRange({
           onChange={(event) => commitMax(Number(event.target.value))}
           className="absolute left-0 right-0 top-1/2 w-full -translate-y-1/2 appearance-none bg-transparent accent-[color:var(--oda-ink)]"
           style={{ zIndex: 4 }}
+          disabled={disabled}
         />
       </div>
 

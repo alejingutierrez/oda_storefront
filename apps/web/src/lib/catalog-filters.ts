@@ -103,3 +103,155 @@ export function parseCatalogSortFromSearchParams(
   return getParamFromSearch(params, "sort") ?? fallback;
 }
 
+// --- Legacy category URL canonicalization ---
+
+const LEGACY_CATEGORY_KEYS = new Set([
+  "tops",
+  "bottoms",
+  "outerwear",
+  "knitwear",
+  "enterizos",
+  "deportivo",
+  "trajes_de_bano",
+  "ropa_interior",
+  "ropa interior",
+  "accesorios",
+]);
+
+const LEGACY_SUBCATEGORY_KEYS = new Set([
+  // Legacy navigation buckets (pre-taxonomy cleanup).
+  "camisetas",
+  "camisas",
+  "blusas",
+  "jeans",
+  "pantalones",
+  "shorts",
+  "faldas",
+  "blazers",
+  "buzos",
+  "chaquetas",
+  "abrigos",
+  "bolsos",
+]);
+
+function dedupePreserveOrder(values: string[]) {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (!value) continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+export function mapLegacyCategoryToCanonicalCategories(
+  category: string,
+  subcategories: Iterable<string> = [],
+): string[] | null {
+  const cat = String(category || "").trim().toLowerCase();
+  if (!LEGACY_CATEGORY_KEYS.has(cat)) return null;
+
+  const subSet = new Set(Array.from(subcategories, (value) => String(value || "").trim().toLowerCase()));
+  const hasAny = (values: string[]) => values.some((value) => subSet.has(value));
+
+  switch (cat) {
+    case "tops": {
+      const out: string[] = [];
+      if (subSet.has("camisetas")) out.push("camisetas_y_tops");
+      if (hasAny(["camisas", "blusas"])) out.push("camisas_y_blusas");
+      if (out.length === 0) out.push("camisetas_y_tops", "camisas_y_blusas");
+      return out;
+    }
+    case "bottoms": {
+      const out: string[] = [];
+      if (subSet.has("jeans")) out.push("jeans_y_denim");
+      if (subSet.has("pantalones")) out.push("pantalones_no_denim");
+      if (subSet.has("shorts")) out.push("shorts_y_bermudas");
+      if (subSet.has("faldas")) out.push("faldas");
+      if (out.length === 0) out.push("pantalones_no_denim", "jeans_y_denim", "shorts_y_bermudas", "faldas");
+      return out;
+    }
+    case "outerwear": {
+      const out: string[] = [];
+      if (subSet.has("blazers")) out.push("blazers_y_sastreria");
+      if (subSet.has("buzos")) out.push("buzos_hoodies_y_sueteres");
+      if (hasAny(["chaquetas", "abrigos"])) out.push("chaquetas_y_abrigos");
+      if (out.length === 0) out.push("chaquetas_y_abrigos", "buzos_hoodies_y_sueteres", "blazers_y_sastreria");
+      return out;
+    }
+    case "knitwear":
+      return ["buzos_hoodies_y_sueteres"];
+    case "enterizos":
+      return ["enterizos_y_overoles"];
+    case "deportivo":
+      return ["ropa_deportiva_y_performance"];
+    case "trajes_de_bano":
+      return ["trajes_de_bano_y_playa"];
+    case "ropa_interior":
+    case "ropa interior":
+      return ["ropa_interior_basica"];
+    case "accesorios":
+      // "accesorios" historically meant "everything accessories-like" in navigation.
+      if (subSet.has("bolsos")) return ["bolsos_y_marroquineria"];
+      return [
+        "accesorios_textiles_y_medias",
+        "bolsos_y_marroquineria",
+        "joyeria_y_bisuteria",
+        "calzado",
+        "gafas_y_optica",
+        "hogar_y_lifestyle",
+        "tarjeta_regalo",
+        "ropa_interior_basica",
+        "lenceria_y_fajas_shapewear",
+        "pijamas_y_ropa_de_descanso_loungewear",
+        "trajes_de_bano_y_playa",
+      ];
+    default:
+      return null;
+  }
+}
+
+export function canonicalizeCatalogSearchParams(params: URLSearchParams): {
+  params: URLSearchParams;
+  changed: boolean;
+} {
+  const rawCategories = params
+    .getAll("category")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  const rawSubcategories = params
+    .getAll("subcategory")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  const hasLegacyCategory = rawCategories.some((value) => LEGACY_CATEGORY_KEYS.has(value.toLowerCase()));
+  const hasLegacySubcategory = rawSubcategories.some((value) => LEGACY_SUBCATEGORY_KEYS.has(value.toLowerCase()));
+  if (!hasLegacyCategory && !hasLegacySubcategory) return { params, changed: false };
+
+  const subSet = new Set(rawSubcategories.map((value) => value.toLowerCase()));
+
+  const nextCategories: string[] = [];
+  for (const category of rawCategories) {
+    const mapped = mapLegacyCategoryToCanonicalCategories(category, subSet);
+    if (mapped) {
+      nextCategories.push(...mapped);
+    } else {
+      // Keys are case-sensitive in DB filters; normalize to lowercase for robustness.
+      nextCategories.push(category.toLowerCase());
+    }
+  }
+
+  const nextSubcategories = rawSubcategories
+    .map((value) => value.toLowerCase())
+    .filter((value) => !LEGACY_SUBCATEGORY_KEYS.has(value));
+
+  const next = new URLSearchParams(params.toString());
+  next.delete("category");
+  next.delete("subcategory");
+  for (const value of dedupePreserveOrder(nextCategories)) next.append("category", value);
+  for (const value of dedupePreserveOrder(nextSubcategories)) next.append("subcategory", value);
+
+  return { params: next, changed: next.toString() !== params.toString() };
+}

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { Prisma } from "@prisma/client";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { buildBaseTaxonomyDataV1 } from "./base";
 import type { StyleProfileRow, TaxonomyDataV1, TaxonomyOptions, TaxonomyStage, TaxonomyTerm } from "./types";
@@ -15,6 +16,9 @@ type SnapshotMeta = {
 
 let cachedOptions: { value: TaxonomyOptions; expiresAt: number } | null = null;
 let taxonomySnapshotsTableState: "unknown" | "missing" | "ready" = "unknown";
+
+const TAXONOMY_OPTIONS_CACHE_VERSION = 1;
+const TAXONOMY_OPTIONS_REVALIDATE_SECONDS = 60 * 10;
 
 export function invalidateTaxonomyCache() {
   cachedOptions = null;
@@ -498,24 +502,34 @@ function buildTaxonomyMaps(data: TaxonomyDataV1) {
   };
 }
 
+const getPublishedTaxonomyOptionsCached = unstable_cache(
+  async () => {
+    const [taxonomy, styleProfiles] = await Promise.all([
+      getPublishedTaxonomyMeta(),
+      getStyleProfiles(),
+    ]);
+    const maps = buildTaxonomyMaps(taxonomy.data);
+    const styleProfileLabels = buildLabelMap(styleProfiles);
+
+    return {
+      source: taxonomy.source,
+      version: taxonomy.version,
+      updatedAt: taxonomy.updatedAt ? taxonomy.updatedAt.toISOString() : null,
+      data: taxonomy.data,
+      ...maps,
+      styleProfiles,
+      styleProfileLabels,
+    } satisfies TaxonomyOptions;
+  },
+  ["taxonomy-options", `cache-v${TAXONOMY_OPTIONS_CACHE_VERSION}`],
+  { revalidate: TAXONOMY_OPTIONS_REVALIDATE_SECONDS },
+);
+
 export async function getPublishedTaxonomyOptions(): Promise<TaxonomyOptions> {
   const now = Date.now();
   if (cachedOptions && cachedOptions.expiresAt > now) return cachedOptions.value;
 
-  const [taxonomy, styleProfiles] = await Promise.all([getPublishedTaxonomyMeta(), getStyleProfiles()]);
-  const maps = buildTaxonomyMaps(taxonomy.data);
-  const styleProfileLabels = buildLabelMap(styleProfiles);
-
-  const value: TaxonomyOptions = {
-    source: taxonomy.source,
-    version: taxonomy.version,
-    updatedAt: taxonomy.updatedAt ? taxonomy.updatedAt.toISOString() : null,
-    data: taxonomy.data,
-    ...maps,
-    styleProfiles,
-    styleProfileLabels,
-  };
-
-  cachedOptions = { value, expiresAt: now + 30_000 };
+  const value = await getPublishedTaxonomyOptionsCached();
+  cachedOptions = { value, expiresAt: now + 60_000 };
   return value;
 }

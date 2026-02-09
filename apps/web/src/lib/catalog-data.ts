@@ -83,14 +83,10 @@ export type CatalogProduct = {
   name: string;
   imageCoverUrl: string | null;
   brandName: string;
-  category: string | null;
-  subcategory: string | null;
   sourceUrl: string | null;
   minPrice: string | null;
   maxPrice: string | null;
   currency: string | null;
-  variantCount: number;
-  colors: string[];
 };
 
 export type CatalogProductResult = {
@@ -457,13 +453,16 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
     label: row.name,
     count: Number(row.cnt),
   }));
-  const colorItems = colors.map((row) => ({
-    value: row.id,
-    label: row.name,
-    count: Number(row.cnt),
-    swatch: row.hex,
-    group: row.family,
-  }));
+  const selectedColors = new Set(filters.colors ?? []);
+  const colorItems = colors
+    .map((row) => ({
+      value: row.id,
+      label: row.name,
+      count: Number(row.cnt),
+      swatch: row.hex,
+      group: row.family,
+    }))
+    .filter((item) => item.count > 0 || selectedColors.has(item.value));
   const sizeItems = sizes.map((row) => ({
     value: row.size,
     label: row.size,
@@ -844,13 +843,16 @@ async function computeCatalogFacetsLite(
     label: row.name,
     count: Number(row.cnt),
   }));
-  const colorItems = colors.map((row) => ({
-    value: row.id,
-    label: row.name,
-    count: Number(row.cnt),
-    swatch: row.hex,
-    group: row.family,
-  }));
+  const selectedColors = new Set(filters.colors ?? []);
+  const colorItems = colors
+    .map((row) => ({
+      value: row.id,
+      label: row.name,
+      count: Number(row.cnt),
+      swatch: row.hex,
+      group: row.family,
+    }))
+    .filter((item) => item.count > 0 || selectedColors.has(item.value));
   const materialItems = materials.map((row) => ({
     value: row.tag,
     label: labelMaterial(row.tag),
@@ -1054,70 +1056,148 @@ export async function getCatalogProducts(params: {
     variantConditions.length > 0
       ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
       : Prisma.empty;
-  const requireMatchingVariant = variantConditions.length > 0;
-  const orderBy = buildOrderBy(sort, filters);
+  const variantExists =
+    variantConditions.length > 0
+      ? Prisma.sql`
+          and exists (
+            select 1 from variants v
+            where v."productId" = p.id
+              ${variantWhere}
+          )
+        `
+      : Prisma.empty;
 
-  const [items, countRows] = await Promise.all([
-    prisma.$queryRaw<
+  const countPromise = prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
+    select count(*) as total
+    from products p
+    join brands b on b.id = p."brandId"
+    ${productWhere}
+    ${variantExists}
+  `);
+
+  const sortKey = sort || "new";
+  const itemsPromise: Promise<
+    Array<{
+      id: string;
+      name: string;
+      imageCoverUrl: string | null;
+      brandName: string;
+      sourceUrl: string | null;
+      minPrice: string | null;
+      maxPrice: string | null;
+      currency: string | null;
+    }>
+  > = (() => {
+    if (sortKey === "price_asc" || sortKey === "price_desc") {
+      const orderBy = buildOrderBy(sortKey, filters);
+      return prisma.$queryRaw<
+        Array<{
+          id: string;
+          name: string;
+          imageCoverUrl: string | null;
+          brandName: string;
+          sourceUrl: string | null;
+          minPrice: string | null;
+          maxPrice: string | null;
+          currency: string | null;
+        }>
+      >(
+        Prisma.sql`
+          select
+            p.id,
+            p.name,
+            p."imageCoverUrl",
+            b.name as "brandName",
+            p."sourceUrl",
+            min(case when v.price > 0 then v.price end) as "minPrice",
+            max(case when v.price > 0 then v.price end) as "maxPrice",
+            max(v.currency) as currency
+          from products p
+          join brands b on b.id = p."brandId"
+          join variants v on v."productId" = p.id
+            ${variantWhere}
+          ${productWhere}
+          group by
+            p.id,
+            p.name,
+            p."imageCoverUrl",
+            b.name,
+            p."sourceUrl",
+            p."createdAt"
+          ${orderBy}
+          limit ${CATALOG_PAGE_SIZE}
+          offset ${offset}
+        `,
+      );
+    }
+
+    const q = filters.q ? `%${filters.q}%` : null;
+    const isRelevancia = sortKey === "relevancia" && Boolean(q);
+
+    return prisma.$queryRaw<
       Array<{
         id: string;
         name: string;
         imageCoverUrl: string | null;
         brandName: string;
-        category: string | null;
-        subcategory: string | null;
         sourceUrl: string | null;
         minPrice: string | null;
         maxPrice: string | null;
         currency: string | null;
-        variantCount: bigint;
-        colors: string[] | null;
       }>
     >(
       Prisma.sql`
+        with ids as (
+          select
+            p.id,
+            p."createdAt" as created_at
+            ${isRelevancia
+              ? Prisma.sql`,
+                case
+                  when p.name ilike ${q} then 0
+                  when b.name ilike ${q} then 1
+                  else 2
+                end as rank`
+              : Prisma.empty}
+          from products p
+          join brands b on b.id = p."brandId"
+          ${productWhere}
+          ${variantExists}
+          order by
+            ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
+            p."createdAt" desc
+          limit ${CATALOG_PAGE_SIZE}
+          offset ${offset}
+        )
         select
           p.id,
           p.name,
           p."imageCoverUrl",
           b.name as "brandName",
-          p.category,
-          p.subcategory,
           p."sourceUrl",
-          min(case when v.price > 0 then v.price end) as "minPrice",
-          max(case when v.price > 0 then v.price end) as "maxPrice",
-          max(v.currency) as currency,
-          count(distinct v.id) as "variantCount",
-          array_remove(array_agg(distinct nullif(btrim(v.color), '')), null) as colors
-        from products p
+          vagg."minPrice",
+          vagg."maxPrice",
+          vagg.currency
+        from ids
+        join products p on p.id = ids.id
         join brands b on b.id = p."brandId"
-        left join variants v on v."productId" = p.id
-          ${variantWhere}
-        ${productWhere}
-        ${requireMatchingVariant ? Prisma.sql`and v.id is not null` : Prisma.empty}
-        group by
-          p.id,
-          p.name,
-          p."imageCoverUrl",
-          b.name,
-          p.category,
-          p.subcategory,
-          p."sourceUrl",
-          p."createdAt"
-        ${orderBy}
-        limit ${CATALOG_PAGE_SIZE}
-        offset ${offset}
-      `
-    ),
-    prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
-      select count(distinct p.id) as total
-      from products p
-      join brands b on b.id = p."brandId"
-      left join variants v on v."productId" = p.id
-        ${variantWhere}
-      ${productWhere}
-      ${requireMatchingVariant ? Prisma.sql`and v.id is not null` : Prisma.empty}
-    `),
-  ]);
+        left join lateral (
+          select
+            min(case when v.price > 0 then v.price end) as "minPrice",
+            max(case when v.price > 0 then v.price end) as "maxPrice",
+            max(v.currency) as currency
+          from variants v
+          where v."productId" = p.id
+            ${variantWhere}
+        ) vagg on true
+        order by
+          ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
+          ids.created_at desc
+      `,
+    );
+  })();
+
+  const [items, countRows] = await Promise.all([itemsPromise, countPromise]);
 
   const totalCount = Number(countRows[0]?.total ?? 0);
 
@@ -1127,14 +1207,10 @@ export async function getCatalogProducts(params: {
       name: item.name,
       imageCoverUrl: item.imageCoverUrl,
       brandName: item.brandName,
-      category: item.category,
-      subcategory: item.subcategory,
       sourceUrl: item.sourceUrl,
       minPrice: item.minPrice,
       maxPrice: item.maxPrice,
       currency: item.currency,
-      variantCount: Number(item.variantCount ?? 0),
-      colors: (item.colors ?? []).filter(Boolean),
     })),
     totalCount,
   };

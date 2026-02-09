@@ -36,6 +36,10 @@ export default function CatalogProductsInfinite({
   }, [initialItems, initialSearchParams]);
 
   const hasMore = useMemo(() => items.length < totalCount, [items.length, totalCount]);
+  const progressPct = useMemo(() => {
+    if (!totalCount) return 0;
+    return Math.max(0, Math.min(100, (items.length / totalCount) * 100));
+  }, [items.length, totalCount]);
 
   const loadMore = useCallback(async () => {
     if (loading || !hasMore) return;
@@ -122,6 +126,30 @@ export default function CatalogProductsInfinite({
       </div>
 
       <div className="flex flex-col items-center gap-3">
+        <div className="w-full rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+              Mostrando{" "}
+              <span className="font-semibold text-[color:var(--oda-ink)]">
+                {items.length.toLocaleString("es-CO")}
+              </span>{" "}
+              de{" "}
+              <span className="font-semibold text-[color:var(--oda-ink)]">
+                {totalCount.toLocaleString("es-CO")}
+              </span>
+            </p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+              {Math.round(progressPct)}%
+            </p>
+          </div>
+          <div className="mt-3 h-2 w-full rounded-full bg-[color:var(--oda-stone)]">
+            <div
+              className="h-2 rounded-full bg-[color:var(--oda-ink)] transition-[width] duration-300 ease-out motion-reduce:transition-none"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        </div>
+
         {error ? (
           <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-4 text-center">
             <p className="text-sm text-[color:var(--oda-ink-soft)]">

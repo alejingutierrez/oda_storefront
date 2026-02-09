@@ -63,8 +63,8 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
             Sin imagen
           </div>
         )}
-        <div className="absolute inset-x-0 bottom-0 h-[40%] translate-y-6 border-t border-white/40 bg-white/35 opacity-0 backdrop-blur-xl transition duration-500 group-hover:translate-y-0 group-hover:opacity-100">
-          <div className="flex h-full flex-col justify-end gap-2 px-4 py-4">
+        <div className="absolute inset-x-0 bottom-0 hidden h-[28%] translate-y-6 border-t border-white/40 bg-white/35 opacity-0 backdrop-blur-xl transition duration-500 group-hover:translate-y-0 group-hover:opacity-100 lg:block">
+          <div className="flex h-full flex-col justify-start gap-2 px-4 py-4">
             <p className="text-[10px] uppercase tracking-[0.25em] text-[color:var(--oda-ink-soft)]">
               {product.brandName}
             </p>
@@ -74,6 +74,16 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
             </p>
           </div>
         </div>
+      </Link>
+
+      <Link href={href} className="block px-4 py-4 lg:hidden">
+        <p className="text-[10px] uppercase tracking-[0.25em] text-[color:var(--oda-ink-soft)]">
+          {product.brandName}
+        </p>
+        <h3 className="mt-2 text-sm font-semibold text-[color:var(--oda-ink)]">{product.name}</h3>
+        <p className="mt-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)]">
+          {formatPriceRange(product.minPrice, product.maxPrice, product.currency)}
+        </p>
       </Link>
     </article>
   );
