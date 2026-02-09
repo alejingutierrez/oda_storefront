@@ -12,26 +12,6 @@ export const SORT_OPTIONS: SortOption[] = [
   { value: "price_desc", label: "Precio: mayor" },
 ];
 
-export type CatalogFilterLabelMaps = Partial<
-  Record<
-    "category" | "subcategory" | "gender" | "brandId" | "color" | "material" | "pattern",
-    Record<string, string>
-  >
->;
-
-function formatCop(value: number) {
-  if (!Number.isFinite(value)) return "";
-  try {
-    return new Intl.NumberFormat("es-CO", {
-      style: "currency",
-      currency: "COP",
-      maximumFractionDigits: 0,
-    }).format(value);
-  } catch {
-    return `COP ${value.toFixed(0)}`;
-  }
-}
-
 type SavedSearch = {
   id: string;
   name: string;
@@ -75,14 +55,12 @@ export default function CatalogToolbar({
   totalCount,
   activeBrandCount,
   searchKey,
-  labels,
   filtersCollapsed = false,
   onToggleFiltersCollapsed,
 }: {
   totalCount: number;
   activeBrandCount?: number | null;
   searchKey: string;
-  labels?: CatalogFilterLabelMaps;
   filtersCollapsed?: boolean;
   onToggleFiltersCollapsed?: () => void;
 }) {
@@ -99,67 +77,31 @@ export default function CatalogToolbar({
     return next.toString().length > 0;
   }, [params]);
 
-  const chips = useMemo(() => {
-    const next: Array<{ id: string; key: string; value?: string; label: string }> = [];
-
-    const pushList = (paramKey: string, labelKey: keyof CatalogFilterLabelMaps, prefix: string) => {
-      const values = params.getAll(paramKey).filter((value) => value.trim().length > 0);
-      for (const value of values) {
-        const friendly = labels?.[labelKey]?.[value] ?? value;
-        next.push({
-          id: `${paramKey}:${value}`,
-          key: paramKey,
-          value,
-          label: `${prefix}: ${friendly}`,
-        });
-      }
-    };
-
-    pushList("gender", "gender", "Género");
-    pushList("category", "category", "Categoría");
-    pushList("subcategory", "subcategory", "Subcategoría");
-    pushList("brandId", "brandId", "Marca");
-    pushList("color", "color", "Color");
-    pushList("material", "material", "Material");
-    pushList("pattern", "pattern", "Patrón");
-
-    const priceMinRaw = params.get("price_min");
-    const priceMaxRaw = params.get("price_max");
-    const priceMin = priceMinRaw ? Number(priceMinRaw) : null;
-    const priceMax = priceMaxRaw ? Number(priceMaxRaw) : null;
-    if (priceMinRaw || priceMaxRaw) {
-      const parts: string[] = [];
-      if (Number.isFinite(priceMin)) parts.push(formatCop(priceMin!));
-      if (Number.isFinite(priceMax)) parts.push(formatCop(priceMax!));
-      next.push({
-        id: "price",
-        key: "price",
-        label: `Precio: ${parts.length > 0 ? parts.join(" - ") : "—"}`,
-      });
-    }
-
-    return next;
-  }, [labels, params]);
-
-  const removeChip = (chip: { key: string; value?: string }) => {
+  const activeFiltersCount = useMemo(() => {
     const next = new URLSearchParams(params.toString());
-    if (chip.key === "price") {
+    next.delete("sort");
+    next.delete("page");
+
+    let count = 0;
+
+    const hasPrice = next.has("price_min") || next.has("price_max");
+    if (hasPrice) {
+      count += 1;
       next.delete("price_min");
       next.delete("price_max");
-    } else if (chip.value) {
-      const values = next.getAll(chip.key);
-      next.delete(chip.key);
-      values.filter((value) => value !== chip.value).forEach((value) => next.append(chip.key, value));
-    } else {
-      next.delete(chip.key);
     }
-    next.set("page", "1");
-    const query = next.toString();
-    const url = query ? `${pathname}?${query}` : pathname;
-    startTransition(() => {
-      router.replace(url, { scroll: false });
-    });
-  };
+
+    const keys = ["gender", "category", "subcategory", "brandId", "color", "material", "pattern"];
+    for (const key of keys) {
+      const values = next.getAll(key).filter((value) => value.trim().length > 0);
+      count += values.length;
+      next.delete(key);
+    }
+
+    // Cuenta cualquier filtro extra no contemplado arriba.
+    for (const _ of next.entries()) count += 1;
+    return count;
+  }, [params]);
 
   const applyParams = (next: URLSearchParams) => {
     next.set("page", "1");
@@ -266,13 +208,20 @@ export default function CatalogToolbar({
           </div>
 
           <div className="flex items-center gap-2">
-            {onToggleFiltersCollapsed ? (
+            {filtersCollapsed && onToggleFiltersCollapsed ? (
               <button
                 type="button"
                 onClick={onToggleFiltersCollapsed}
                 className="rounded-full border border-[color:var(--oda-border)] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
               >
-                {filtersCollapsed ? "Mostrar filtros" : "Ocultar filtros"}
+                <span className="inline-flex items-center gap-2">
+                  <span>Filtros</span>
+                  {activeFiltersCount > 0 ? (
+                    <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[color:var(--oda-ink)] px-2 py-0.5 text-[10px] font-semibold leading-none text-[color:var(--oda-cream)]">
+                      {activeFiltersCount}
+                    </span>
+                  ) : null}
+                </span>
               </button>
             ) : null}
 
@@ -315,28 +264,6 @@ export default function CatalogToolbar({
             </button>
           </div>
         </div>
-
-        {chips.length > 0 ? (
-          <div className="mt-3 overflow-x-auto pb-1">
-            <div className="flex flex-nowrap gap-2">
-              {chips.map((chip) => (
-                <button
-                  key={chip.id}
-                  type="button"
-                  onClick={() => removeChip(chip)}
-                  disabled={isPending}
-                  className="inline-flex max-w-[22rem] shrink-0 items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
-                  title="Quitar filtro"
-                >
-                  <span className="min-w-0 truncate">{chip.label}</span>
-                  <span className="text-[12px] leading-none text-[color:var(--oda-taupe)]" aria-hidden>
-                    ×
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
 
       {savedOpen ? (

@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import CatalogoFiltersPanel from "@/components/CatalogoFiltersPanel";
 import CatalogMobileDock from "@/components/CatalogMobileDock";
 import CatalogProductsInfinite from "@/components/CatalogProductsInfinite";
-import CatalogToolbar, { type CatalogFilterLabelMaps } from "@/components/CatalogToolbar";
+import CatalogToolbar from "@/components/CatalogToolbar";
 import type { CatalogPriceBounds, CatalogProduct } from "@/lib/catalog-data";
 
 type FacetItem = {
@@ -151,18 +151,6 @@ export default function CatalogoClient({
     return facets.brands.filter((brand) => brand.count > 0).length;
   }, [facets]);
 
-  const labels = useMemo((): CatalogFilterLabelMaps | undefined => {
-    if (!facets) return undefined;
-    return {
-      gender: Object.fromEntries(facets.genders.map((item) => [item.value, item.label])),
-      category: Object.fromEntries(facets.categories.map((item) => [item.value, item.label])),
-      brandId: Object.fromEntries(facets.brands.map((item) => [item.value, item.label])),
-      color: Object.fromEntries(facets.colors.map((item) => [item.value, item.label])),
-      material: Object.fromEntries(facets.materials.map((item) => [item.value, item.label])),
-      pattern: Object.fromEntries(facets.patterns.map((item) => [item.value, item.label])),
-    };
-  }, [facets]);
-
   const priceBounds: CatalogPriceBounds = { min: null, max: null };
 
   return (
@@ -185,6 +173,20 @@ export default function CatalogoClient({
         >
           {!filtersCollapsed ? (
             <div className="hidden lg:block lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-auto lg:pr-1 lg:pb-8">
+              <div className="sticky top-0 z-20 bg-[color:var(--oda-cream)] pb-4">
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-3 shadow-[0_18px_50px_rgba(23,21,19,0.08)]">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                    Filtros
+                  </p>
+                  <button
+                    type="button"
+                    onClick={toggleFiltersCollapsed}
+                    className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
+                  >
+                    Ocultar
+                  </button>
+                </div>
+              </div>
               {facets ? (
                 <CatalogoFiltersPanel facets={facets} subcategories={[]} priceBounds={priceBounds} />
               ) : (
@@ -199,7 +201,6 @@ export default function CatalogoClient({
                 totalCount={totalCount}
                 activeBrandCount={activeBrandCount}
                 searchKey={uiSearchKey || initialSearchParams}
-                labels={labels}
                 filtersCollapsed={filtersCollapsed}
                 onToggleFiltersCollapsed={toggleFiltersCollapsed}
               />
