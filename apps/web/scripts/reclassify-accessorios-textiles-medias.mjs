@@ -1214,9 +1214,15 @@ const detectAccessorySubcategory = (text) => {
   const hasBucketHat = phraseRe("bucket hat").test(text) || phraseRe("sombrero bucket").test(text);
   const hasBeanie = includesAny(text, [wordRe("beanie"), wordRe("beanies")]);
   const hasGorro = includesAny(text, [wordRe("gorro"), wordRe("gorros")]);
-  const hasKnitSignal = includesAny(text, [wordRe("tejido"), wordRe("lana"), wordRe("termico"), wordRe("invierno"), wordRe("wool"), wordRe("knit")]);
-  if (!hasBucketHat && (hasBeanie || (hasGorro && hasKnitSignal))) {
-    return { subcategory: SUB.gorros_beanies, confidence: 0.93, reasons: ["kw:beanie"] };
+  const hasBalaclava = includesAny(text, [wordRe("balaclava"), wordRe("pasamontanas")]);
+  // Regla relajada: "gorro" suele ser beanie incluso si no dice "tejido/lana".
+  // Evitamos robar bucket hats a esta regla.
+  if (!hasBucketHat && (hasBeanie || hasBalaclava || hasGorro)) {
+    return {
+      subcategory: SUB.gorros_beanies,
+      confidence: hasBeanie || hasBalaclava ? 0.95 : 0.92,
+      reasons: [hasBeanie ? "kw:beanie" : hasBalaclava ? "kw:balaclava" : "kw:gorro"],
+    };
   }
 
   const mask = includesAny(text, [wordRe("tapabocas"), wordRe("mascarilla"), wordRe("mascarillas"), wordRe("mask"), wordRe("masks")]);

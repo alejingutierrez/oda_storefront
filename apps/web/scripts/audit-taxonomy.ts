@@ -61,6 +61,8 @@ const enrichedOnly = args.has("--enriched-only") || String(process.env.AUDIT_ENR
 const minMoveCategory = Number(getArgValue("--min-move-category") || process.env.AUDIT_MIN_MOVE_CATEGORY || DEFAULT_MIN_CONF_MOVE_CATEGORY);
 const minMoveSubcategory = Number(getArgValue("--min-move-subcategory") || process.env.AUDIT_MIN_MOVE_SUBCATEGORY || DEFAULT_MIN_CONF_MOVE_SUBCATEGORY);
 const minFillSubcategory = Number(getArgValue("--min-fill-subcategory") || process.env.AUDIT_MIN_FILL_SUBCATEGORY || DEFAULT_MIN_CONF_FILL_SUBCATEGORY);
+const onlyCategory = (getArgValue("--only-category") || process.env.AUDIT_ONLY_CATEGORY || "").trim() || null;
+const onlySubcategory = (getArgValue("--only-subcategory") || process.env.AUDIT_ONLY_SUBCATEGORY || "").trim() || null;
 
 const databaseUrl = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -913,7 +915,14 @@ async function main() {
     );
 
     const all: Row[] = res.rows;
-    const scoped = enrichedOnly ? all.filter((r) => r.is_enriched) : all;
+    const scopedBase = enrichedOnly ? all.filter((r) => r.is_enriched) : all;
+    const scoped = scopedBase.filter((r) => {
+      const cat = r.category ? String(r.category).trim() : "";
+      const sub = r.subcategory ? String(r.subcategory).trim() : "";
+      if (onlyCategory && cat !== onlyCategory) return false;
+      if (onlySubcategory && sub !== onlySubcategory) return false;
+      return true;
+    });
 
   const categories = new Map<string, Row[]>();
   for (const row of scoped) {
@@ -942,6 +951,8 @@ async function main() {
   md.push("");
   md.push(`- Seed: \`${seed}\``);
   md.push(`- Alcance: \`${enrichedOnly ? "solo_enriched" : "todos"}\``);
+  md.push(`- Only category: \`${onlyCategory || "(none)"}\``);
+  md.push(`- Only subcategory: \`${onlySubcategory || "(none)"}\``);
   md.push(`- Sample por (categoria, subcategoria): **${samplePerSub}**`);
   md.push(`- Total productos considerados: **${scoped.length.toLocaleString("es-CO")}**`);
   md.push("");

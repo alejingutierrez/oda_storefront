@@ -20,7 +20,7 @@ const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 const CATALOG_PRODUCTS_REVALIDATE_SECONDS = 60;
 export const CATALOG_PAGE_SIZE = 24;
 // Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
-const CATALOG_CACHE_VERSION = 2;
+const CATALOG_CACHE_VERSION = 3;
 
 // Canonicalize legacy category keys at query time so facets/filters stay consistent without rewriting the DB.
 const CATEGORY_CANON_EXPR = Prisma.sql`
