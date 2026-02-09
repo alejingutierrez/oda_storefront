@@ -67,6 +67,56 @@ summary::-webkit-details-marker {
   }
 }
 
+/* Dual-range slider: permitir arrastrar ambos thumbs sin que el input superior capture todo. */
+.oda-range {
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 40px;
+}
+
+.oda-range::-webkit-slider-thumb {
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  width: 18px;
+  border-radius: 999px;
+  background: var(--oda-ink);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 30px rgba(23, 21, 19, 0.18);
+  cursor: pointer;
+}
+
+.oda-range::-moz-range-thumb {
+  pointer-events: auto;
+  height: 18px;
+  width: 18px;
+  border-radius: 999px;
+  background: var(--oda-ink);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 30px rgba(23, 21, 19, 0.18);
+  cursor: pointer;
+}
+
+.oda-range::-webkit-slider-runnable-track {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+.oda-range::-moz-range-track {
+  background: transparent;
+}
+
+.oda-range--min {
+  z-index: 5;
+}
+
+.oda-range--max {
+  z-index: 4;
+}
+
 @layer components {
   .oda-container {
     @apply mx-auto w-full max-w-[1320px] px-6;

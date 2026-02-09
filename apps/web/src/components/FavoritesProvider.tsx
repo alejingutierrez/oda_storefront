@@ -40,6 +40,14 @@ function makeKey(productId: string, variantId?: string | null): FavoriteKey {
   return `${productId}::${variantId ?? ""}`;
 }
 
+const FAVORITES_CACHE_KEY = "oda_favorites_cache_v1";
+
+type PersistedFavorites = {
+  version: 1;
+  ts: number;
+  favoritesByKey: Record<FavoriteKey, string>;
+};
+
 export function useFavorites() {
   return useContext(FavoritesContext);
 }
@@ -55,10 +63,57 @@ export default function FavoritesProvider({
   const [loaded, setLoaded] = useState(false);
   const [favoritesByKey, setFavoritesByKey] = useState<Record<FavoriteKey, string>>({});
   const favoritesRef = useRef(favoritesByKey);
+  const hydratedRef = useRef(false);
 
   useEffect(() => {
     favoritesRef.current = favoritesByKey;
   }, [favoritesByKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (isSessionLoading) return;
+    if (!isAuthenticated) {
+      hydratedRef.current = false;
+      try {
+        window.sessionStorage.removeItem(FAVORITES_CACHE_KEY);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    try {
+      const raw = window.sessionStorage.getItem(FAVORITES_CACHE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<PersistedFavorites> | null;
+      if (!parsed || parsed.version !== 1) return;
+      if (typeof parsed.ts !== "number") return;
+      if (!parsed.favoritesByKey || typeof parsed.favoritesByKey !== "object") return;
+      // Cache corta: solo para evitar "flash" en recargas/back navigation.
+      if (Date.now() - parsed.ts > 1000 * 60 * 45) return;
+      setFavoritesByKey(parsed.favoritesByKey as Record<FavoriteKey, string>);
+    } catch {
+      // ignore
+    }
+  }, [isAuthenticated, isSessionLoading]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (isSessionLoading) return;
+    if (!isAuthenticated) return;
+    try {
+      const payload: PersistedFavorites = {
+        version: 1,
+        ts: Date.now(),
+        favoritesByKey,
+      };
+      window.sessionStorage.setItem(FAVORITES_CACHE_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  }, [favoritesByKey, isAuthenticated, isSessionLoading]);
 
   const authHeader = useMemo(() => {
     if (!sessionToken || typeof sessionToken !== "string") return null;
@@ -219,4 +274,3 @@ export default function FavoritesProvider({
 
   return <FavoritesContext.Provider value={value}>{children}</FavoritesContext.Provider>;
 }
-

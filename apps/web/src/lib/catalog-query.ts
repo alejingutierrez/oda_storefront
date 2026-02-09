@@ -125,6 +125,7 @@ export function buildVariantConditions(filters: CatalogFilters): Prisma.Sql[] {
     const raw = filters.colors.map((value) => value.trim()).filter(Boolean);
     const uuidRe =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const hex32Re = /^[0-9a-f]{32}$/i;
     const hexRe = /^#?[0-9a-f]{6}$/i;
 
     const ids: string[] = [];
@@ -132,7 +133,8 @@ export function buildVariantConditions(filters: CatalogFilters): Prisma.Sql[] {
     const legacy: string[] = [];
 
     for (const value of raw) {
-      if (uuidRe.test(value)) {
+      // `standard_colors.id` puede ser UUID o un id hex (char(32) legacy). Ambos deben tratarse como ids.
+      if (uuidRe.test(value) || hex32Re.test(value)) {
         ids.push(value);
       } else if (hexRe.test(value)) {
         const normalized = value.startsWith("#") ? value.toLowerCase() : `#${value.toLowerCase()}`;
@@ -207,7 +209,7 @@ export function buildOrderBy(sort: string, filters?: CatalogFilters): Prisma.Sql
     case "price_asc":
       return Prisma.sql`order by min(case when v.price > 0 then v.price end) asc nulls last, p."createdAt" desc`;
     case "price_desc":
-      return Prisma.sql`order by min(case when v.price > 0 then v.price end) desc nulls last, p."createdAt" desc`;
+      return Prisma.sql`order by max(case when v.price > 0 then v.price end) desc nulls last, p."createdAt" desc`;
     case "relevancia":
       if (q) {
         return Prisma.sql`

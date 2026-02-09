@@ -102,6 +102,16 @@ export type CatalogPriceBounds = {
   max: number | null;
 };
 
+export type CatalogPriceHistogram = {
+  bucketCount: number;
+  buckets: number[];
+};
+
+export type CatalogPriceInsights = {
+  bounds: CatalogPriceBounds;
+  histogram: CatalogPriceHistogram | null;
+};
+
 function normalizeArray(values?: string[]) {
   if (!values || values.length === 0) return undefined;
   return Array.from(new Set(values)).sort();
@@ -258,6 +268,84 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
       };
     },
     ["catalog-price-bounds", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
+    { revalidate: CATALOG_REVALIDATE_SECONDS },
+  );
+
+  return cached();
+}
+
+export async function getCatalogPriceInsights(
+  filters: CatalogFilters,
+  bucketCount = 18,
+): Promise<CatalogPriceInsights> {
+  const boundsFilters = omitFilters(filters, ["priceMin", "priceMax"]);
+  const cacheKey = `${buildFacetsCacheKey(boundsFilters)}::buckets:${bucketCount}`;
+  const cached = unstable_cache(
+    async () => {
+      const { productWhere, variantWhere } = buildVariantWhere(boundsFilters);
+
+      const boundsRows = await prisma.$queryRaw<
+        Array<{ min_price: string | null; max_price: string | null }>
+      >(Prisma.sql`
+        select
+          min(v.price) as min_price,
+          max(v.price) as max_price
+        from products p
+        join brands b on b.id = p."brandId"
+        join variants v on v."productId" = p.id
+        ${productWhere}
+        ${variantWhere}
+        and v.price > 0
+      `);
+      const boundsRow = boundsRows[0];
+      const min = boundsRow?.min_price ? Number(boundsRow.min_price) : null;
+      const max = boundsRow?.max_price ? Number(boundsRow.max_price) : null;
+      const bounds: CatalogPriceBounds = {
+        min: Number.isFinite(min) ? min : null,
+        max: Number.isFinite(max) ? max : null,
+      };
+
+      const histogramRangeOk =
+        typeof bounds.min === "number" &&
+        typeof bounds.max === "number" &&
+        Number.isFinite(bounds.min) &&
+        Number.isFinite(bounds.max) &&
+        bounds.max > bounds.min;
+
+      if (!histogramRangeOk || bucketCount < 6) {
+        return { bounds, histogram: null };
+      }
+
+      const rows = await prisma.$queryRaw<Array<{ bucket: number; cnt: bigint }>>(Prisma.sql`
+        with prices as (
+          select v.price as price
+          from products p
+          join brands b on b.id = p."brandId"
+          join variants v on v."productId" = p.id
+          ${productWhere}
+          ${variantWhere}
+          and v.price > 0
+        )
+        select
+          least(${bucketCount}, greatest(1, width_bucket(price, ${bounds.min}, ${bounds.max}, ${bucketCount}))) as bucket,
+          count(*) as cnt
+        from prices
+        group by 1
+        order by 1 asc
+      `);
+
+      const buckets = Array.from({ length: bucketCount }, () => 0);
+      for (const row of rows) {
+        const index = Math.max(0, Math.min(bucketCount - 1, Number(row.bucket) - 1));
+        buckets[index] = Number(row.cnt ?? 0);
+      }
+
+      return {
+        bounds,
+        histogram: { bucketCount, buckets },
+      };
+    },
+    ["catalog-price-insights", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
     { revalidate: CATALOG_REVALIDATE_SECONDS },
   );
 

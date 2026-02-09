@@ -76,11 +76,16 @@ export default function CatalogoClient({
     return next.toString();
   }, [params]);
 
-  const searchKey = useMemo(() => {
+  const uiSearchKey = useMemo(() => {
     const next = new URLSearchParams(params.toString());
     next.delete("page");
     return next.toString();
   }, [params]);
+
+  // Cuando el usuario cambia filtros (router.replace), `useSearchParams()` se actualiza antes
+  // de que lleguen los nuevos props SSR. En ese lapso, evitamos "re-key" del grid para no
+  // mostrar productos antiguos bajo filtros nuevos.
+  const navigationPending = uiSearchKey !== initialSearchParams;
 
   const [facets, setFacets] = useState<FacetsLite | null>(null);
   const [facetsLoading, setFacetsLoading] = useState(false);
@@ -150,15 +155,8 @@ export default function CatalogoClient({
           </div>
         </div>
 
-        <CatalogToolbar
-          totalCount={totalCount}
-          activeBrandCount={activeBrandCount}
-          searchKey={searchKey || initialSearchParams}
-          labels={labels}
-        />
-
         <div className="grid gap-8 lg:grid-cols-[340px_minmax(0,1fr)]">
-          <div className="hidden lg:block lg:sticky lg:top-28 lg:max-h-[calc(100vh-7rem)] lg:overflow-auto lg:pr-1">
+          <div className="hidden lg:block lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-auto lg:pr-1 lg:pb-8">
             {facets ? (
               <CatalogoFiltersPanel facets={facets} subcategories={[]} priceBounds={priceBounds} />
             ) : (
@@ -166,12 +164,23 @@ export default function CatalogoClient({
             )}
           </div>
 
-          <CatalogProductsInfinite
-            key={searchKey || initialSearchParams}
-            initialItems={initialItems}
-            totalCount={totalCount}
-            initialSearchParams={searchKey || initialSearchParams}
-          />
+          <div className="flex flex-col gap-6">
+            <CatalogToolbar
+              totalCount={totalCount}
+              activeBrandCount={activeBrandCount}
+              searchKey={uiSearchKey || initialSearchParams}
+              labels={labels}
+            />
+
+            <CatalogProductsInfinite
+              key={initialSearchParams}
+              initialItems={initialItems}
+              totalCount={totalCount}
+              initialSearchParams={initialSearchParams}
+              navigationPending={navigationPending}
+              optimisticSearchParams={uiSearchKey}
+            />
+          </div>
         </div>
       </div>
 

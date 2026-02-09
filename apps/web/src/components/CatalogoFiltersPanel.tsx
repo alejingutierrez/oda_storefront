@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { CatalogPriceBounds } from "@/lib/catalog-data";
+import type { CatalogPriceBounds, CatalogPriceHistogram } from "@/lib/catalog-data";
 
 type FacetItem = {
   value: string;
@@ -167,6 +167,7 @@ export default function CatalogoFiltersPanel({
     return next.toString();
   }, [currentParamsString]);
   const [resolvedPriceBounds, setResolvedPriceBounds] = useState<CatalogPriceBounds>(priceBounds);
+  const [resolvedPriceHistogram, setResolvedPriceHistogram] = useState<CatalogPriceHistogram | null>(null);
   const [priceBoundsLoading, setPriceBoundsLoading] = useState(false);
   const priceBoundsAbortRef = useRef<AbortController | null>(null);
   const priceBoundsFetchKey = useMemo(() => {
@@ -254,15 +255,24 @@ export default function CatalogoFiltersPanel({
         if (!res.ok) {
           throw new Error(`http_${res.status}`);
         }
-        const payload = (await res.json()) as { bounds?: CatalogPriceBounds };
+        const payload = (await res.json()) as {
+          bounds?: CatalogPriceBounds;
+          histogram?: CatalogPriceHistogram | null;
+        };
         const bounds = payload?.bounds;
         setResolvedPriceBounds({
           min: typeof bounds?.min === "number" ? bounds.min : null,
           max: typeof bounds?.max === "number" ? bounds.max : null,
         });
+
+        const histogram = payload?.histogram;
+        setResolvedPriceHistogram(
+          histogram && Array.isArray(histogram.buckets) ? histogram : null,
+        );
       } catch (err) {
         if (isAbortError(err)) return;
         setResolvedPriceBounds({ min: null, max: null });
+        setResolvedPriceHistogram(null);
       } finally {
         setPriceBoundsLoading(false);
       }
@@ -309,6 +319,44 @@ export default function CatalogoFiltersPanel({
   };
 
   const isChecked = (list: string[], value: string) => list.includes(value);
+
+  const colorGroups = useMemo(() => {
+    const selectedSet = new Set(selected.colors);
+    const selectedFamilies = new Set<string>();
+    for (const item of facets.colors) {
+      if (!selectedSet.has(item.value)) continue;
+      const rawFamily = item.group?.trim() ?? "";
+      const family = COLOR_FAMILY_LABEL[rawFamily] ?? (rawFamily || "Otros");
+      selectedFamilies.add(family);
+    }
+
+    const selectedItems = sortFacetItems(
+      facets.colors.filter((item) => selectedSet.has(item.value)),
+      selected.colors,
+    );
+
+    const familyMap = new Map<string, FacetItem[]>();
+    for (const item of facets.colors) {
+      const checked = selectedSet.has(item.value);
+      if (checked) continue;
+      if (item.count === 0) continue;
+      const rawFamily = item.group?.trim() ?? "";
+      const family = COLOR_FAMILY_LABEL[rawFamily] ?? (rawFamily || "Otros");
+      if (!familyMap.has(family)) familyMap.set(family, []);
+      familyMap.get(family)!.push(item);
+    }
+
+    const families = Array.from(familyMap.entries())
+      .sort(([a], [b]) => getFamilyRank(a) - getFamilyRank(b) || a.localeCompare(b, "es"))
+      .map(([family, items], index) => ({
+        family,
+        // Abrimos por defecto la familia seleccionada; si no hay seleccion, abrimos la primera.
+        open: selectedFamilies.size > 0 ? selectedFamilies.has(family) : index === 0,
+        items: sortFacetItems(items, selected.colors),
+      }));
+
+    return { selectedItems, families };
+  }, [facets.colors, selected.colors]);
 
   return (
     <aside className="flex flex-col gap-6">
@@ -536,12 +584,14 @@ export default function CatalogoFiltersPanel({
               ? [
                   resolvedPriceBounds.min ?? "min",
                   resolvedPriceBounds.max ?? "max",
+                  resolvedPriceHistogram?.bucketCount ?? "buckets",
                   selected.priceMin ?? "",
                   selected.priceMax ?? "",
                 ].join(":")
               : undefined
           }
           bounds={resolvedPriceBounds}
+          histogram={resolvedPriceHistogram}
           selectedMinRaw={selected.priceMin}
           selectedMaxRaw={selected.priceMax}
           searchParamsString={currentParamsString}
@@ -565,58 +615,87 @@ export default function CatalogoFiltersPanel({
           </span>
         </summary>
         <div className="mt-4 grid gap-4">
-          {Array.from(
-            facets.colors.reduce((map, item) => {
-              const checked = isChecked(selected.colors, item.value);
-              if (item.count === 0 && !checked) return map;
-              const rawFamily = item.group?.trim() ?? "";
-              const family = COLOR_FAMILY_LABEL[rawFamily] ?? (rawFamily || "Otros");
-              if (!map.has(family)) map.set(family, []);
-              map.get(family)!.push(item);
-              return map;
-            }, new Map<string, FacetItem[]>()),
-          )
-            .sort(([a], [b]) => getFamilyRank(a) - getFamilyRank(b) || a.localeCompare(b, "es"))
-            .map(([family, items]) => (
-              <div key={family} className="grid gap-2">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                  {family}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {sortFacetItems(items, selected.colors).map((item) => {
-                    const checked = isChecked(selected.colors, item.value);
-                    const disabled = (item.count === 0 && !checked) || isPending;
-                    return (
-                      <label
-                        key={item.value}
+          {colorGroups.selectedItems.length > 0 ? (
+            <div className="grid gap-2">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                Seleccionados
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {colorGroups.selectedItems.map((item) => {
+                  const checked = true;
+                  const disabled = isPending;
+                  return (
+                    <label
+                      key={item.value}
+                      className={[
+                        "relative",
+                        disabled ? "cursor-not-allowed opacity-35" : "cursor-pointer",
+                      ].join(" ")}
+                      title={`${item.label} (${item.count})`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleMulti("color", item.value)}
+                        className="peer sr-only"
+                        disabled={disabled}
+                      />
+                      <span
                         className={[
-                          "relative",
-                          disabled ? "cursor-not-allowed opacity-35" : "cursor-pointer",
+                          "block h-8 w-8 rounded-[12px] border border-[color:var(--oda-ink)] shadow-[0_16px_30px_rgba(23,21,19,0.16)] transition",
                         ].join(" ")}
-                        title={`${item.label} (${item.count})`}
+                        style={{ backgroundColor: item.swatch ?? "#fff" }}
                       >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleMulti("color", item.value)}
-                          className="peer sr-only"
-                          disabled={disabled}
-                        />
-                        <span
-                          className={[
-                            "block h-7 w-7 rounded-[10px] border border-[color:var(--oda-border)] shadow-[0_10px_22px_rgba(23,21,19,0.10)] transition",
-                            "peer-checked:border-[color:var(--oda-ink)] peer-checked:shadow-[0_16px_30px_rgba(23,21,19,0.16)]",
-                          ].join(" ")}
-                          style={{ backgroundColor: item.swatch ?? "#fff" }}
-                        >
-                          <span className="sr-only">{item.label}</span>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
+                        <span className="sr-only">{item.label}</span>
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
-            ))}
+            </div>
+          ) : null}
+
+          {colorGroups.families.map((group) => (
+            <details key={group.family} open={group.open} className="rounded-xl border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-3">
+              <summary className="flex cursor-pointer items-center justify-between gap-3 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                <span>{group.family}</span>
+                <span>{group.items.length}</span>
+              </summary>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {group.items.map((item) => {
+                  const checked = isChecked(selected.colors, item.value);
+                  const disabled = (item.count === 0 && !checked) || isPending;
+                  return (
+                    <label
+                      key={item.value}
+                      className={[
+                        "relative",
+                        disabled ? "cursor-not-allowed opacity-35" : "cursor-pointer",
+                      ].join(" ")}
+                      title={`${item.label} (${item.count})`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleMulti("color", item.value)}
+                        className="peer sr-only"
+                        disabled={disabled}
+                      />
+                      <span
+                        className={[
+                          "block h-7 w-7 rounded-[10px] border border-[color:var(--oda-border)] shadow-[0_10px_22px_rgba(23,21,19,0.10)] transition",
+                          "peer-checked:border-[color:var(--oda-ink)] peer-checked:shadow-[0_16px_30px_rgba(23,21,19,0.16)]",
+                        ].join(" ")}
+                        style={{ backgroundColor: item.swatch ?? "#fff" }}
+                      >
+                        <span className="sr-only">{item.label}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </details>
+          ))}
         </div>
       </details>
 
@@ -711,6 +790,7 @@ export default function CatalogoFiltersPanel({
 
 function PriceRange({
   bounds,
+  histogram,
   selectedMinRaw,
   selectedMaxRaw,
   searchParamsString,
@@ -718,6 +798,7 @@ function PriceRange({
   disabled,
 }: {
   bounds: CatalogPriceBounds;
+  histogram?: CatalogPriceHistogram | null;
   selectedMinRaw?: string | null;
   selectedMaxRaw?: string | null;
   searchParamsString: string;
@@ -784,6 +865,57 @@ function PriceRange({
   const minPct = ((minValue - minBound) / (maxBound - minBound)) * 100;
   const maxPct = ((maxValue - minBound) / (maxBound - minBound)) * 100;
 
+  const presets = (() => {
+    const range = maxBound - minBound;
+    if (!Number.isFinite(range) || range <= 0) return [];
+    const q = (value: number) => Math.round(value / step) * step;
+
+    const b1 = clamp(q(minBound + range * 0.25), minBound, maxBound);
+    const b2 = clamp(q(minBound + range * 0.5), minBound, maxBound);
+    const b3 = clamp(q(minBound + range * 0.75), minBound, maxBound);
+
+    const unique = Array.from(new Set([b1, b2, b3])).filter((v) => v > minBound && v < maxBound);
+    const cuts = [minBound, ...unique, maxBound];
+    if (cuts.length < 3) return [];
+
+    const next: Array<{ id: string; label: string; min: number | null; max: number | null }> = [];
+    const firstMax = cuts[1];
+    next.push({ id: "under", label: `Hasta ${formatCop(firstMax)}`, min: null, max: firstMax });
+    for (let i = 1; i < cuts.length - 2; i += 1) {
+      const from = cuts[i];
+      const to = cuts[i + 1];
+      next.push({ id: `mid_${i}`, label: `${formatCop(from)} a ${formatCop(to)}`, min: from, max: to });
+    }
+    const lastMin = cuts[cuts.length - 2];
+    next.push({ id: "over", label: `Desde ${formatCop(lastMin)}`, min: lastMin, max: null });
+
+    return next.slice(0, 4);
+  })();
+
+  const histogramBars = (() => {
+    if (!histogram) return null;
+    if (!Array.isArray(histogram.buckets)) return null;
+    if (histogram.buckets.length < 6) return null;
+    const maxCount = Math.max(...histogram.buckets.map((value) => (Number.isFinite(value) ? value : 0)));
+    if (!maxCount) return null;
+    return histogram.buckets.map((count, index) => ({
+      key: index,
+      // 5px..20px
+      height: 5 + Math.round((Math.max(0, count) / maxCount) * 15),
+    }));
+  })();
+
+  const applyPreset = (preset: { min: number | null; max: number | null }) => {
+    const next = new URLSearchParams(searchParamsString);
+    if (preset.min === null || preset.min <= minBound) next.delete("price_min");
+    else next.set("price_min", String(preset.min));
+
+    if (preset.max === null || preset.max >= maxBound) next.delete("price_max");
+    else next.set("price_max", String(preset.max));
+
+    commitParams(next);
+  };
+
   const commitMin = (value: number) => {
     userChangedRef.current = true;
     const clamped = clamp(value, minBound, maxBound);
@@ -803,7 +935,46 @@ function PriceRange({
         <span>{formatCop(maxValue)}</span>
       </div>
 
+      {presets.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {presets.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => applyPreset(preset)}
+              disabled={disabled}
+              className="rounded-full border border-[color:var(--oda-border)] bg-white px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {preset.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => applyPreset({ min: null, max: null })}
+            disabled={disabled}
+            className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Todos
+          </button>
+        </div>
+      ) : null}
+
       <div className="relative h-10">
+        {histogramBars ? (
+          <div
+            className="absolute inset-x-0 top-1/2 flex h-6 -translate-y-1/2 items-end gap-[2px] opacity-70"
+            aria-hidden
+          >
+            {histogramBars.map((bar) => (
+              <span
+                key={bar.key}
+                className="flex-1 rounded-[3px] bg-[color:var(--oda-stone)]"
+                style={{ height: `${bar.height}px` }}
+              />
+            ))}
+          </div>
+        ) : null}
+
         <div className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-[color:var(--oda-stone)]" />
         <div
           className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-[color:var(--oda-ink)]"
@@ -817,8 +988,7 @@ function PriceRange({
           step={step}
           value={minValue}
           onChange={(event) => commitMin(Number(event.target.value))}
-          className="absolute left-0 right-0 top-1/2 w-full -translate-y-1/2 appearance-none bg-transparent accent-[color:var(--oda-ink)]"
-          style={{ zIndex: minValue > maxBound - step * 2 ? 5 : 3 }}
+          className="oda-range oda-range--min absolute left-0 right-0 top-1/2 w-full -translate-y-1/2 bg-transparent"
           disabled={disabled}
         />
         <input
@@ -828,8 +998,7 @@ function PriceRange({
           step={step}
           value={maxValue}
           onChange={(event) => commitMax(Number(event.target.value))}
-          className="absolute left-0 right-0 top-1/2 w-full -translate-y-1/2 appearance-none bg-transparent accent-[color:var(--oda-ink)]"
-          style={{ zIndex: 4 }}
+          className="oda-range oda-range--max absolute left-0 right-0 top-1/2 w-full -translate-y-1/2 bg-transparent"
           disabled={disabled}
         />
       </div>

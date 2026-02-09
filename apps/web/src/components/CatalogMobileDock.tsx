@@ -81,6 +81,14 @@ export default function CatalogMobileDock({
       router.replace(url, { scroll: false });
     });
     setOpen(false);
+
+    // En mobile, al aplicar filtros queremos llevar al usuario directo a resultados.
+    window.setTimeout(() => {
+      const target = document.getElementById("catalog-results");
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 60);
   };
 
   const clearAll = () => {
