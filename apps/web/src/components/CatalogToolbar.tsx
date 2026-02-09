@@ -225,9 +225,9 @@ export default function CatalogToolbar({
   };
 
   return (
-    <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-4 py-3 lg:sticky lg:top-24 lg:z-30 lg:px-5 lg:py-4 lg:shadow-[0_30px_80px_rgba(23,21,19,0.10)]">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-3 lg:sticky lg:top-24 lg:z-30 lg:shadow-[0_30px_80px_rgba(23,21,19,0.10)]">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
           <p className="text-sm text-[color:var(--oda-ink)]">
             <span className="font-semibold">{totalCount.toLocaleString("es-CO")}</span> productos
           </p>
@@ -241,6 +241,11 @@ export default function CatalogToolbar({
               aria-label="Cargando marcas activas"
             />
           )}
+          {chips.length > 0 ? (
+            <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+              {chips.length} filtros
+            </p>
+          ) : null}
           {isPending ? (
             <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
               Actualizando…
@@ -248,7 +253,7 @@ export default function CatalogToolbar({
           ) : null}
         </div>
 
-        <div className="hidden flex-wrap items-center gap-3 lg:flex">
+        <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
             Ordenar
             <select
@@ -352,14 +357,14 @@ export default function CatalogToolbar({
       </div>
 
       {chips.length > 0 ? (
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:mt-4 lg:flex-wrap lg:overflow-visible">
+        <div className="mt-4 flex flex-wrap gap-2">
           {chips.map((chip) => (
             <button
               key={chip.id}
               type="button"
               onClick={() => removeChip(chip)}
               disabled={isPending}
-              className="inline-flex max-w-[70vw] shrink-0 items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex max-w-[26rem] items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
               title="Quitar filtro"
             >
               <span className="min-w-0 truncate">{chip.label}</span>

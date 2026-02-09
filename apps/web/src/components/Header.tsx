@@ -11,7 +11,7 @@ function MobileMenu({ menu }: { menu: MegaMenuData }) {
     <details className="group lg:hidden">
       <summary className="flex cursor-pointer list-none items-center gap-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
         Menu
-        <span className="text-[10px] text-[color:var(--oda-taupe)] transition group-open:rotate-180">
+        <span className="inline-flex h-8 w-8 items-center justify-center text-base text-[color:var(--oda-taupe)] transition group-open:rotate-180">
           ▾
         </span>
       </summary>
@@ -40,7 +40,7 @@ function MobileMenu({ menu }: { menu: MegaMenuData }) {
                 >
                   <summary className="flex cursor-pointer list-none items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
                     {gender}
-                    <span className="text-[10px] text-[color:var(--oda-taupe)] transition group-open/section:rotate-180">
+                    <span className="inline-flex h-8 w-8 items-center justify-center text-base text-[color:var(--oda-taupe)] transition group-open/section:rotate-180">
                       ▾
                     </span>
                   </summary>
@@ -104,12 +104,9 @@ export default function Header({ menu }: { menu: MegaMenuData }) {
       <div className="oda-container relative flex items-center gap-8">
         <Link
           href="/"
-          className="flex items-center gap-2 py-6 text-lg font-semibold uppercase tracking-[0.32em]"
+          className="flex items-center py-6 text-lg font-semibold uppercase tracking-[0.32em]"
         >
           ODA
-          <span className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-            Storefront
-          </span>
         </Link>
         <div className="hidden lg:flex flex-1 items-center">
           <MegaMenu menu={menu} />

@@ -122,6 +122,9 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
       );
       setImages((prev) => {
         const merged = uniqStrings([...prev, ...proxied]);
+        // Importante: `beginCarousel()` lee `imagesRef.current` inmediatamente después de `ensureExtras()`.
+        // Sin esto, el carrusel puede ser intermitente por el timing del setState/useEffect.
+        imagesRef.current = merged;
         return merged;
       });
       setExtrasLoaded(true);
@@ -210,7 +213,43 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
   }, [stopCarousel]);
 
   const activeImageUrl = images[activeIndex] ?? coverUrl ?? null;
-  const unoptimized = !!activeImageUrl && activeImageUrl.startsWith("/api/image-proxy");
+
+  // Crossfade: mantenemos una imagen base y montamos una overlay que hace fade-in.
+  // Esto mejora la percepcion del carrusel (menos "blink" al cambiar src).
+  const [baseImageUrl, setBaseImageUrl] = useState<string | null>(() => activeImageUrl);
+  const [transitionImageUrl, setTransitionImageUrl] = useState<string | null>(null);
+  const transitionTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (transitionTimeoutRef.current) {
+      window.clearTimeout(transitionTimeoutRef.current);
+      transitionTimeoutRef.current = null;
+    }
+    if (!activeImageUrl) {
+      setBaseImageUrl(null);
+      setTransitionImageUrl(null);
+      return;
+    }
+    if (!baseImageUrl) {
+      setBaseImageUrl(activeImageUrl);
+      setTransitionImageUrl(null);
+      return;
+    }
+    if (activeImageUrl === baseImageUrl) return;
+
+    setTransitionImageUrl(activeImageUrl);
+    transitionTimeoutRef.current = window.setTimeout(() => {
+      setBaseImageUrl(activeImageUrl);
+      setTransitionImageUrl(null);
+      transitionTimeoutRef.current = null;
+    }, 620);
+    return () => {
+      if (transitionTimeoutRef.current) {
+        window.clearTimeout(transitionTimeoutRef.current);
+        transitionTimeoutRef.current = null;
+      }
+    };
+  }, [activeImageUrl, baseImageUrl]);
 
   const priceLabel = useMemo(
     () => formatPriceRange(product.minPrice, product.maxPrice, product.currency),
@@ -264,17 +303,34 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
         ref={viewRef}
         className="relative block aspect-[3/4] w-full overflow-hidden bg-[color:var(--oda-stone)]"
       >
-        {activeImageUrl ? (
-          <Image
-            src={activeImageUrl}
-            alt={product.name}
-            fill
-            unoptimized={unoptimized}
-            sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
-            className="object-cover object-center transition duration-700 group-hover:scale-[1.07] group-hover:-translate-y-1"
-            placeholder="blur"
-            blurDataURL={IMAGE_BLUR_DATA_URL}
-          />
+        {baseImageUrl ? (
+          <>
+            <Image
+              src={baseImageUrl}
+              alt={product.name}
+              fill
+              unoptimized={!!baseImageUrl && baseImageUrl.startsWith("/api/image-proxy")}
+              sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
+              className="object-cover object-center transition duration-700 group-hover:scale-[1.07] group-hover:-translate-y-1 motion-reduce:transition-none"
+              placeholder="blur"
+              blurDataURL={IMAGE_BLUR_DATA_URL}
+              priority={false}
+            />
+            {transitionImageUrl ? (
+              <Image
+                key={transitionImageUrl}
+                src={transitionImageUrl}
+                alt={product.name}
+                fill
+                unoptimized={!!transitionImageUrl && transitionImageUrl.startsWith("/api/image-proxy")}
+                sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
+                className="object-cover object-center oda-fade-in motion-reduce:animate-none"
+                placeholder="blur"
+                blurDataURL={IMAGE_BLUR_DATA_URL}
+                priority={false}
+              />
+            ) : null}
+          </>
         ) : (
           <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
             Sin imagen
