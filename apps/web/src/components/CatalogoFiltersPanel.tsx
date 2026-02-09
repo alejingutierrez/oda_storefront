@@ -724,8 +724,7 @@ function PriceRange({
   commitParams: (next: URLSearchParams) => void;
   disabled?: boolean;
 }) {
-  const boundsReady = typeof bounds.min === "number" && typeof bounds.max === "number";
-  if (!boundsReady) {
+  if (typeof bounds.min !== "number" || typeof bounds.max !== "number") {
     return (
       <div className="mt-4 grid gap-3">
         <div className="h-3 w-40 rounded-full bg-[color:var(--oda-stone)]" />
