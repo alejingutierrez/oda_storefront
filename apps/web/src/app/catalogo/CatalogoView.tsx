@@ -6,7 +6,6 @@ import CatalogMobileDock from "@/components/CatalogMobileDock";
 import {
   getCatalogFacetsLite,
   getCatalogProducts,
-  getCatalogPriceBounds,
   type CatalogFilters,
 } from "@/lib/catalog-data";
 import { getMegaMenuData } from "@/lib/home-data";
@@ -26,12 +25,12 @@ export default async function CatalogoView({ searchParams }: { searchParams: Sea
   const parsedFilters = parseCatalogFiltersFromSearchParams(params);
   const filters: CatalogFilters = { ...parsedFilters, inStock: true, enrichedOnly: true };
 
-  const [menu, facets, products, priceBounds] = await Promise.all([
+  const [menu, facets, products] = await Promise.all([
     getMegaMenuData(),
     getCatalogFacetsLite(filters),
     getCatalogProducts({ filters, page: 1, sort }),
-    getCatalogPriceBounds(filters),
   ]);
+  const priceBounds = { min: null, max: null };
 
   const activeBrandCount = facets.brands.filter((brand) => brand.count > 0).length;
   const searchKeyParams = new URLSearchParams(params.toString());

@@ -166,6 +166,18 @@ export default function CatalogoFiltersPanel({
     next.delete("sort");
     return next.toString();
   }, [currentParamsString]);
+  const [resolvedPriceBounds, setResolvedPriceBounds] = useState<CatalogPriceBounds>(priceBounds);
+  const [priceBoundsLoading, setPriceBoundsLoading] = useState(false);
+  const priceBoundsAbortRef = useRef<AbortController | null>(null);
+  const priceBoundsFetchKey = useMemo(() => {
+    const next = new URLSearchParams(currentParamsString);
+    next.delete("page");
+    next.delete("sort");
+    // El slider muestra el rango disponible segun filtros, pero no debe re-contarse contra si mismo.
+    next.delete("price_min");
+    next.delete("price_max");
+    return next.toString();
+  }, [currentParamsString]);
   const brandSearchResetKey = useMemo(
     () =>
       `${selected.categories.join(",")}::${selected.genders.join(",")}::${selected.subcategories.join(",")}`,
@@ -177,8 +189,14 @@ export default function CatalogoFiltersPanel({
   }, [brandSearchResetKey]);
 
   useEffect(() => {
+    if (subcategories.length === 0) return;
     setResolvedSubcategories(subcategories);
   }, [subcategories]);
+
+  useEffect(() => {
+    if (typeof priceBounds.min !== "number" || typeof priceBounds.max !== "number") return;
+    setResolvedPriceBounds(priceBounds);
+  }, [priceBounds]);
 
   useEffect(() => {
     const next = new URLSearchParams(subcategoriesFetchKey);
@@ -219,6 +237,42 @@ export default function CatalogoFiltersPanel({
       controller.abort();
     };
   }, [subcategoriesFetchKey]);
+
+  useEffect(() => {
+    priceBoundsAbortRef.current?.abort();
+    const controller = new AbortController();
+    priceBoundsAbortRef.current = controller;
+    setPriceBoundsLoading(true);
+
+    const next = new URLSearchParams(priceBoundsFetchKey);
+    const timeout = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/catalog/price-bounds?${next.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          throw new Error(`http_${res.status}`);
+        }
+        const payload = (await res.json()) as { bounds?: CatalogPriceBounds };
+        const bounds = payload?.bounds;
+        setResolvedPriceBounds({
+          min: typeof bounds?.min === "number" ? bounds.min : null,
+          max: typeof bounds?.max === "number" ? bounds.max : null,
+        });
+      } catch (err) {
+        if (isAbortError(err)) return;
+        setResolvedPriceBounds({ min: null, max: null });
+      } finally {
+        setPriceBoundsLoading(false);
+      }
+    }, 150);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [priceBoundsFetchKey]);
 
   const applyParams = (next: URLSearchParams) => {
     if (selected.sort && !next.get("sort")) {
@@ -469,7 +523,7 @@ export default function CatalogoFiltersPanel({
         <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
           <span className="flex items-center gap-3">
             Precio
-            {isPending ? (
+            {isPending || priceBoundsLoading ? (
               <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                 Actualizando…
               </span>
@@ -480,14 +534,14 @@ export default function CatalogoFiltersPanel({
           key={
             mode === "instant"
               ? [
-                  priceBounds.min ?? "min",
-                  priceBounds.max ?? "max",
+                  resolvedPriceBounds.min ?? "min",
+                  resolvedPriceBounds.max ?? "max",
                   selected.priceMin ?? "",
                   selected.priceMax ?? "",
                 ].join(":")
               : undefined
           }
-          bounds={priceBounds}
+          bounds={resolvedPriceBounds}
           selectedMinRaw={selected.priceMin}
           selectedMaxRaw={selected.priceMax}
           searchParamsString={currentParamsString}
@@ -670,8 +724,19 @@ function PriceRange({
   commitParams: (next: URLSearchParams) => void;
   disabled?: boolean;
 }) {
-  const minBound = bounds.min ?? 0;
-  const maxBound = bounds.max ?? 0;
+  const boundsReady = typeof bounds.min === "number" && typeof bounds.max === "number";
+  if (!boundsReady) {
+    return (
+      <div className="mt-4 grid gap-3">
+        <div className="h-3 w-40 rounded-full bg-[color:var(--oda-stone)]" />
+        <div className="h-10 w-full rounded-xl bg-[color:var(--oda-stone)]" />
+        <div className="h-3 w-56 rounded-full bg-[color:var(--oda-stone)]" />
+      </div>
+    );
+  }
+
+  const minBound = bounds.min;
+  const maxBound = bounds.max;
   const step = getStep(maxBound);
   const hasRange = Number.isFinite(minBound) && Number.isFinite(maxBound) && maxBound > minBound;
 
