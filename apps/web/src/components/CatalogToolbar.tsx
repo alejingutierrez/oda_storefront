@@ -76,11 +76,15 @@ export default function CatalogToolbar({
   activeBrandCount,
   searchKey,
   labels,
+  filtersCollapsed = false,
+  onToggleFiltersCollapsed,
 }: {
   totalCount: number;
   activeBrandCount?: number | null;
   searchKey: string;
   labels?: CatalogFilterLabelMaps;
+  filtersCollapsed?: boolean;
+  onToggleFiltersCollapsed?: () => void;
 }) {
   const params = useSearchParams();
   const pathname = usePathname();
@@ -188,10 +192,25 @@ export default function CatalogToolbar({
 
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() => loadSavedSearches());
   const [saveName, setSaveName] = useState("");
+  const [savedOpen, setSavedOpen] = useState(false);
 
   useEffect(() => {
     persistSavedSearches(savedSearches);
   }, [savedSearches]);
+
+  useEffect(() => {
+    if (!savedOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSavedOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [savedOpen]);
 
   const saveCurrentSearch = () => {
     const query = (searchKey ?? "").trim();
@@ -225,74 +244,129 @@ export default function CatalogToolbar({
   };
 
   return (
-    <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-3 lg:sticky lg:top-24 lg:z-30 lg:shadow-[0_30px_80px_rgba(23,21,19,0.10)]">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <p className="text-sm text-[color:var(--oda-ink)]">
-            <span className="font-semibold">{totalCount.toLocaleString("es-CO")}</span> productos
-          </p>
-          {typeof activeBrandCount === "number" ? (
-            <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-              {activeBrandCount.toLocaleString("es-CO")} marcas activas
+    <>
+      <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-3 lg:sticky lg:top-24 lg:z-30 lg:shadow-[0_30px_80px_rgba(23,21,19,0.10)]">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-baseline gap-4">
+            <p className="text-sm text-[color:var(--oda-ink)]">
+              <span className="font-semibold">{totalCount.toLocaleString("es-CO")}</span> productos
             </p>
-          ) : (
-            <div
-              className="h-3 w-28 rounded-full bg-[color:var(--oda-stone)]"
-              aria-label="Cargando marcas activas"
-            />
-          )}
-          {chips.length > 0 ? (
-            <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-              {chips.length} filtros
-            </p>
-          ) : null}
-          {isPending ? (
-            <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-              Actualizando…
-            </p>
-          ) : null}
-        </div>
+            {typeof activeBrandCount === "number" ? (
+              <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                {activeBrandCount.toLocaleString("es-CO")} marcas
+              </p>
+            ) : (
+              <div className="h-3 w-20 rounded-full bg-[color:var(--oda-stone)]" aria-label="Cargando marcas" />
+            )}
+            {isPending ? (
+              <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                Actualizando…
+              </p>
+            ) : null}
+          </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-            Ordenar
-            <select
-              key={searchKey}
-              value={selectedOption.value}
-              onChange={(event) => handleSortChange(event.target.value)}
-              className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
-            >
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={handleClear}
-            disabled={!hasFilters || isPending}
-            className={[
-              "rounded-full border px-4 py-2 text-xs uppercase tracking-[0.2em] transition",
-              hasFilters && !isPending
-                ? "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]"
-                : "cursor-not-allowed border-[color:var(--oda-border)] bg-white text-[color:var(--oda-taupe)] opacity-70",
-            ].join(" ")}
-          >
-            Limpiar
-          </button>
-
-          <details className="relative">
-            <summary className="list-none">
+          <div className="flex items-center gap-2">
+            {onToggleFiltersCollapsed ? (
               <button
                 type="button"
+                onClick={onToggleFiltersCollapsed}
                 className="rounded-full border border-[color:var(--oda-border)] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
               >
-                Guardados
+                {filtersCollapsed ? "Mostrar filtros" : "Ocultar filtros"}
               </button>
-            </summary>
-            <div className="absolute right-0 mt-3 w-[22rem] rounded-2xl border border-[color:var(--oda-border)] bg-white p-4 shadow-[0_30px_80px_rgba(23,21,19,0.20)]">
+            ) : null}
+
+            <label className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+              Ordenar
+              <select
+                key={searchKey}
+                value={selectedOption.value}
+                onChange={(event) => handleSortChange(event.target.value)}
+                className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setSavedOpen(true)}
+              className="rounded-full border border-[color:var(--oda-border)] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
+            >
+              Guardados
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClear}
+              disabled={!hasFilters || isPending}
+              className={[
+                "rounded-full border px-4 py-2 text-xs uppercase tracking-[0.2em] transition",
+                hasFilters && !isPending
+                  ? "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]"
+                  : "cursor-not-allowed border-[color:var(--oda-border)] bg-white text-[color:var(--oda-taupe)] opacity-60",
+              ].join(" ")}
+            >
+              Limpiar
+            </button>
+          </div>
+        </div>
+
+        {chips.length > 0 ? (
+          <div className="mt-3 overflow-x-auto pb-1">
+            <div className="flex flex-nowrap gap-2">
+              {chips.map((chip) => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => removeChip(chip)}
+                  disabled={isPending}
+                  className="inline-flex max-w-[22rem] shrink-0 items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
+                  title="Quitar filtro"
+                >
+                  <span className="min-w-0 truncate">{chip.label}</span>
+                  <span className="text-[12px] leading-none text-[color:var(--oda-taupe)]" aria-hidden>
+                    ×
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {savedOpen ? (
+        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Cerrar guardados"
+            onClick={() => setSavedOpen(false)}
+          />
+          <div className="absolute right-0 top-0 flex h-full w-full max-w-[26rem] flex-col border-l border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] shadow-[0_30px_90px_rgba(23,21,19,0.35)]">
+            <div className="flex items-center justify-between gap-3 border-b border-[color:var(--oda-border)] bg-white px-5 py-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                  Guardados
+                </p>
+                <p className="mt-1 text-sm font-semibold text-[color:var(--oda-ink)]">
+                  Tus búsquedas
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSavedOpen(false)}
+                className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto px-5 pb-6 pt-5">
               <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
                 Guardar búsqueda actual
               </p>
@@ -301,7 +375,7 @@ export default function CatalogToolbar({
                   value={saveName}
                   onChange={(event) => setSaveName(event.target.value)}
                   placeholder="Nombre (ej: básicos blancos)"
-                  className="flex-1 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-sm"
+                  className="flex-1 rounded-full border border-[color:var(--oda-border)] bg-white px-4 py-2 text-sm"
                 />
                 <button
                   type="button"
@@ -314,67 +388,53 @@ export default function CatalogToolbar({
               </div>
 
               {savedSearches.length > 0 ? (
-                <div className="mt-4 grid gap-2">
+                <div className="mt-6 grid gap-2">
                   <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-                    Tus búsquedas
+                    Guardadas
                   </p>
-                  <div className="max-h-64 overflow-auto pr-1">
-                    <div className="grid gap-2">
-                      {savedSearches.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-2"
+                  <div className="grid gap-2">
+                    {savedSearches.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-3 rounded-2xl border border-[color:var(--oda-border)] bg-white px-4 py-3"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            applySavedSearch(item.query);
+                            setSavedOpen(false);
+                          }}
+                          className="min-w-0 flex-1 text-left"
+                          title="Aplicar búsqueda"
                         >
-                          <button
-                            type="button"
-                            onClick={() => applySavedSearch(item.query)}
-                            className="min-w-0 flex-1 text-left text-sm font-medium text-[color:var(--oda-ink)]"
-                            title="Aplicar búsqueda"
-                          >
-                            <span className="block truncate">{item.name}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteSavedSearch(item.id)}
-                            className="rounded-full border border-[color:var(--oda-border)] bg-white px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]"
-                            title="Eliminar"
-                          >
-                            Quitar
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                          <span className="block truncate text-sm font-semibold text-[color:var(--oda-ink)]">
+                            {item.name}
+                          </span>
+                          <span className="mt-1 block truncate text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                            {item.query}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteSavedSearch(item.id)}
+                          className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]"
+                          title="Eliminar"
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ) : (
-                <p className="mt-4 text-sm text-[color:var(--oda-ink-soft)]">
+                <p className="mt-6 text-sm text-[color:var(--oda-ink-soft)]">
                   Aún no has guardado búsquedas.
                 </p>
               )}
             </div>
-          </details>
-        </div>
-      </div>
-
-      {chips.length > 0 ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {chips.map((chip) => (
-            <button
-              key={chip.id}
-              type="button"
-              onClick={() => removeChip(chip)}
-              disabled={isPending}
-              className="inline-flex max-w-[26rem] items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
-              title="Quitar filtro"
-            >
-              <span className="min-w-0 truncate">{chip.label}</span>
-              <span className="text-[12px] leading-none text-[color:var(--oda-taupe)]" aria-hidden>
-                ×
-              </span>
-            </button>
-          ))}
+          </div>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }

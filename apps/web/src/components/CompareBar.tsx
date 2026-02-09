@@ -55,7 +55,7 @@ function ValueChips({ values }: { values: string[] }) {
       {values.map((value) => (
         <span
           key={value}
-          className="inline-flex rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-1 text-xs text-[color:var(--oda-ink)]"
+          className="inline-flex rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-2.5 py-0.5 text-[11px] text-[color:var(--oda-ink)]"
         >
           {value}
         </span>
@@ -116,19 +116,19 @@ export default function CompareBar() {
     return map;
   }, [details]);
 
-  const colsTemplate = useMemo(() => `180px repeat(${Math.max(1, items.length)}, minmax(0, 1fr))`, [items.length]);
+  const colsTemplate = useMemo(() => `150px repeat(${Math.max(1, items.length)}, minmax(0, 1fr))`, [items.length]);
 
   if (!compare || items.length === 0) return null;
 
   return (
     <>
       <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] z-40 px-4 lg:bottom-6 lg:px-6">
-        <div className="mx-auto flex w-full max-w-[1320px] items-center justify-between gap-3 rounded-2xl border border-[color:var(--oda-border)] bg-white/92 px-4 py-3 shadow-[0_30px_80px_rgba(23,21,19,0.18)] backdrop-blur">
+        <div className="mx-auto flex w-full max-w-[1320px] items-center justify-between gap-3 rounded-xl border border-[color:var(--oda-border)] bg-white/92 px-3 py-2 shadow-[0_24px_70px_rgba(23,21,19,0.16)] backdrop-blur">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
               Comparar
             </p>
-            <p className="mt-1 truncate text-sm font-semibold text-[color:var(--oda-ink)]">
+            <p className="mt-1 truncate text-[13px] font-semibold text-[color:var(--oda-ink)]">
               {title}
             </p>
           </div>
@@ -143,10 +143,10 @@ export default function CompareBar() {
                   key={item.id}
                   type="button"
                   onClick={() => compare.remove(item.id)}
-                  className="inline-flex max-w-[18rem] items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-1 text-xs text-[color:var(--oda-ink)]"
+                  className="inline-flex max-w-[12rem] items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-2.5 py-1 text-[11px] text-[color:var(--oda-ink)]"
                   title="Quitar"
                 >
-                  <span className="relative h-6 w-6 overflow-hidden rounded-full bg-[color:var(--oda-stone)]">
+                  <span className="relative h-5 w-5 overflow-hidden rounded-full bg-[color:var(--oda-stone)]">
                     {src ? (
                       <Image
                         src={src}
@@ -159,7 +159,7 @@ export default function CompareBar() {
                       />
                     ) : null}
                   </span>
-                  <span className="truncate">{item.name}</span>
+                  <span className="truncate">{item.brandName}</span>
                   <span className="text-[12px] leading-none text-[color:var(--oda-taupe)]" aria-hidden>
                     ×
                   </span>
@@ -172,7 +172,7 @@ export default function CompareBar() {
             <button
               type="button"
               onClick={() => compare.clear()}
-              className="hidden rounded-full border border-[color:var(--oda-border)] bg-white px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)] lg:inline-flex"
+              className="hidden rounded-full border border-[color:var(--oda-border)] bg-white px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)] lg:inline-flex"
             >
               Limpiar
             </button>
@@ -180,7 +180,7 @@ export default function CompareBar() {
               type="button"
               onClick={() => setOpen(true)}
               disabled={!canCompare}
-              className="rounded-full bg-[color:var(--oda-ink)] px-5 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[color:var(--oda-cream)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-full bg-[color:var(--oda-ink)] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[color:var(--oda-cream)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Comparar
             </button>
@@ -205,25 +205,25 @@ export default function CompareBar() {
             onClick={() => setOpen(false)}
           />
           <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-hidden rounded-t-3xl border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] shadow-[0_-30px_80px_rgba(23,21,19,0.30)] lg:inset-x-6 lg:bottom-6 lg:mx-auto lg:max-w-5xl lg:rounded-3xl">
-            <div className="flex items-center justify-between gap-3 border-b border-[color:var(--oda-border)] bg-white px-5 py-4">
+            <div className="flex items-center justify-between gap-3 border-b border-[color:var(--oda-border)] bg-white px-4 py-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                   Comparación
                 </p>
-                <p className="mt-1 text-sm font-semibold text-[color:var(--oda-ink)]">
+                <p className="mt-1 text-[13px] font-semibold text-[color:var(--oda-ink)]">
                   {items.length} productos
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+                className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
               >
                 Cerrar
               </button>
             </div>
 
-            <div className="max-h-[calc(85vh-5.5rem)] overflow-auto px-5 pb-6 pt-5">
+            <div className="max-h-[calc(85vh-5.25rem)] overflow-auto px-4 pb-5 pt-4">
               {detailsLoading && !details ? (
                 <div className="grid gap-4 md:grid-cols-3">
                   {items.map((item) => (
@@ -243,7 +243,7 @@ export default function CompareBar() {
               ) : null}
 
               <div className="hidden lg:block">
-                <div className="grid gap-4" style={{ gridTemplateColumns: colsTemplate }}>
+                <div className="grid gap-3" style={{ gridTemplateColumns: colsTemplate }}>
                   <div />
                   {items.map((item) => {
                     const info = detailsById.get(item.id);
@@ -253,13 +253,13 @@ export default function CompareBar() {
                     });
                     const src = cover ?? info?.imageCoverUrl ?? item.imageCoverUrl;
                     return (
-                      <div key={item.id} className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-4">
+                      <div key={item.id} className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-3">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-[10px] uppercase tracking-[0.25em] text-[color:var(--oda-taupe)]">
                               {info?.brandName ?? item.brandName}
                             </p>
-                            <p className="mt-2 text-sm font-semibold text-[color:var(--oda-ink)]">
+                            <p className="mt-2 text-[13px] font-semibold text-[color:var(--oda-ink)]">
                               {formatPriceRange(
                                 info?.minPrice ?? item.minPrice,
                                 info?.maxPrice ?? item.maxPrice,
@@ -270,7 +270,7 @@ export default function CompareBar() {
                           <button
                             type="button"
                             onClick={() => compare.remove(item.id)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white text-[color:var(--oda-taupe)] transition hover:bg-[color:var(--oda-stone)]"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white text-[color:var(--oda-taupe)] transition hover:bg-[color:var(--oda-stone)]"
                             aria-label="Quitar"
                             title="Quitar"
                           >
@@ -313,8 +313,8 @@ export default function CompareBar() {
                   })}
                 </div>
 
-                <div className="mt-5 grid gap-4" style={{ gridTemplateColumns: colsTemplate }}>
-                  <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-4">
+                <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: colsTemplate }}>
+                  <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-3">
                     <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                       Materiales
                     </p>
@@ -322,13 +322,13 @@ export default function CompareBar() {
                   {items.map((item) => {
                     const info = detailsById.get(item.id);
                     return (
-                      <div key={`${item.id}:materials`} className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-4">
+                      <div key={`${item.id}:materials`} className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-3">
                         <ValueChips values={info?.materials ?? []} />
                       </div>
                     );
                   })}
 
-                  <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-4">
+                  <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-3">
                     <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                       Tallas
                     </p>
@@ -336,7 +336,7 @@ export default function CompareBar() {
                   {items.map((item) => {
                     const info = detailsById.get(item.id);
                     return (
-                      <div key={`${item.id}:sizes`} className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-4">
+                      <div key={`${item.id}:sizes`} className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-3">
                         <ValueChips values={info?.sizes ?? []} />
                       </div>
                     );
@@ -356,7 +356,7 @@ export default function CompareBar() {
                     return (
                       <div
                         key={item.id}
-                        className="snap-center shrink-0 w-[84%] rounded-2xl border border-[color:var(--oda-border)] bg-white shadow-[0_16px_40px_rgba(23,21,19,0.10)]"
+                        className="snap-center shrink-0 w-[80%] rounded-2xl border border-[color:var(--oda-border)] bg-white shadow-[0_16px_40px_rgba(23,21,19,0.10)]"
                       >
                         <div className="relative aspect-[3/4] w-full overflow-hidden rounded-t-2xl bg-[color:var(--oda-stone)]">
                           {src ? (
@@ -371,13 +371,13 @@ export default function CompareBar() {
                             />
                           ) : null}
                         </div>
-                        <div className="p-4">
+                        <div className="p-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-[10px] uppercase tracking-[0.25em] text-[color:var(--oda-taupe)]">
                                 {info?.brandName ?? item.brandName}
                               </p>
-                              <p className="mt-2 text-sm font-semibold text-[color:var(--oda-ink)]">
+                              <p className="mt-2 text-[13px] font-semibold text-[color:var(--oda-ink)]">
                                 {formatPriceRange(
                                   info?.minPrice ?? item.minPrice,
                                   info?.maxPrice ?? item.maxPrice,
@@ -388,7 +388,7 @@ export default function CompareBar() {
                             <button
                               type="button"
                               onClick={() => compare.remove(item.id)}
-                              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white text-[color:var(--oda-taupe)]"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white text-[color:var(--oda-taupe)]"
                               aria-label="Quitar"
                               title="Quitar"
                             >
@@ -442,7 +442,7 @@ export default function CompareBar() {
                   <button
                     type="button"
                     onClick={() => compare.clear()}
-                    className="rounded-full border border-[color:var(--oda-border)] bg-white px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]"
+                    className="rounded-full border border-[color:var(--oda-border)] bg-white px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]"
                   >
                     Limpiar selección
                   </button>
@@ -455,4 +455,3 @@ export default function CompareBar() {
     </>
   );
 }
-

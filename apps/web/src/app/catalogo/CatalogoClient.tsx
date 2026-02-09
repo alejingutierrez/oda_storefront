@@ -68,6 +68,28 @@ export default function CatalogoClient({
   initialSearchParams: string;
 }) {
   const params = useSearchParams();
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("oda_catalog_filters_collapsed_v1");
+      if (raw === "1") setFiltersCollapsed(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const toggleFiltersCollapsed = () => {
+    setFiltersCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem("oda_catalog_filters_collapsed_v1", next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
   const facetsFetchKey = useMemo(() => {
     const next = new URLSearchParams(params.toString());
@@ -155,14 +177,21 @@ export default function CatalogoClient({
           </div>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-[340px_minmax(0,1fr)]">
-          <div className="hidden lg:block lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-auto lg:pr-1 lg:pb-8">
-            {facets ? (
-              <CatalogoFiltersPanel facets={facets} subcategories={[]} priceBounds={priceBounds} />
-            ) : (
-              <FiltersSkeleton />
-            )}
-          </div>
+        <div
+          className={[
+            "grid gap-8",
+            filtersCollapsed ? "lg:grid-cols-1" : "lg:grid-cols-[340px_minmax(0,1fr)]",
+          ].join(" ")}
+        >
+          {!filtersCollapsed ? (
+            <div className="hidden lg:block lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-auto lg:pr-1 lg:pb-8">
+              {facets ? (
+                <CatalogoFiltersPanel facets={facets} subcategories={[]} priceBounds={priceBounds} />
+              ) : (
+                <FiltersSkeleton />
+              )}
+            </div>
+          ) : null}
 
           <div className="flex flex-col gap-6">
             <div className="hidden lg:block">
@@ -171,6 +200,8 @@ export default function CatalogoClient({
                 activeBrandCount={activeBrandCount}
                 searchKey={uiSearchKey || initialSearchParams}
                 labels={labels}
+                filtersCollapsed={filtersCollapsed}
+                onToggleFiltersCollapsed={toggleFiltersCollapsed}
               />
             </div>
 
@@ -181,6 +212,7 @@ export default function CatalogoClient({
               initialSearchParams={initialSearchParams}
               navigationPending={navigationPending}
               optimisticSearchParams={uiSearchKey}
+              filtersCollapsed={filtersCollapsed}
             />
           </div>
         </div>

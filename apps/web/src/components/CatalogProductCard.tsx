@@ -324,7 +324,7 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
                 fill
                 unoptimized={!!transitionImageUrl && transitionImageUrl.startsWith("/api/image-proxy")}
                 sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
-                className="object-cover object-center oda-fade-in motion-reduce:animate-none"
+                className="object-cover object-center oda-fade-in transition duration-700 group-hover:scale-[1.07] group-hover:-translate-y-1 motion-reduce:animate-none motion-reduce:transition-none"
                 placeholder="blur"
                 blurDataURL={IMAGE_BLUR_DATA_URL}
                 priority={false}

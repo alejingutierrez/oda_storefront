@@ -46,10 +46,12 @@ function writePersisted(key: string, state: PersistedState) {
   }
 }
 
-function ProductsSkeleton({ count = 12 }: { count?: number }) {
+function ProductsSkeleton({ count = 12, className }: { count?: number; className?: string }) {
   return (
     <div
-      className="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 md:grid-cols-3"
+      className={
+        className ?? "grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3"
+      }
       aria-label="Cargando productos"
     >
       {Array.from({ length: count }).map((_, index) => (
@@ -75,12 +77,14 @@ export default function CatalogProductsInfinite({
   initialSearchParams,
   navigationPending = false,
   optimisticSearchParams,
+  filtersCollapsed = false,
 }: {
   initialItems: CatalogProduct[];
   totalCount: number;
   initialSearchParams: string;
   navigationPending?: boolean;
   optimisticSearchParams?: string;
+  filtersCollapsed?: boolean;
 }) {
   const stateKey = useMemo(
     () => `oda_catalog_plp_state_v1:${initialSearchParams}`,
@@ -106,6 +110,11 @@ export default function CatalogProductsInfinite({
     totalCount: number;
   } | null>(null);
   const previewAbortRef = useRef<AbortController | null>(null);
+
+  const gridClassName = useMemo(() => {
+    const base = "grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 md:grid-cols-3";
+    return filtersCollapsed ? `${base} lg:grid-cols-4` : `${base} lg:grid-cols-3`;
+  }, [filtersCollapsed]);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadedIdsRef = useRef(new Set((restored?.items ?? initialItems).map((item) => item.id)));
@@ -360,10 +369,10 @@ export default function CatalogProductsInfinite({
               <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                 Actualizando resultados…
               </p>
-              <ProductsSkeleton count={12} />
+              <ProductsSkeleton count={12} className={gridClassName} />
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 md:grid-cols-3">
+            <div className={gridClassName}>
               {display.items.map((product) => (
                 <CatalogProductCard key={product.id} product={product} />
               ))}

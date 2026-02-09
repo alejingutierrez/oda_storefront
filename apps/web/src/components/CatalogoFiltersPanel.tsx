@@ -79,44 +79,6 @@ function sortFacetItems(items: FacetItem[], selectedValues: string[]) {
   });
 }
 
-const COLOR_FAMILY_LABEL: Record<string, string> = {
-  NEUTRAL: "Neutros",
-  WARM_NEUTRAL: "Neutros cálidos",
-  BROWN: "Cafés",
-  METALLIC: "Metálicos",
-  RED: "Rojos",
-  PINK: "Rosas",
-  ORANGE: "Naranjas",
-  YELLOW: "Amarillos",
-  GREEN: "Verdes",
-  TEAL: "Turquesas",
-  BLUE: "Azules",
-  PURPLE: "Morados",
-  MAGENTA: "Fucsias",
-};
-
-const COLOR_FAMILY_ORDER = [
-  "Neutros",
-  "Neutros cálidos",
-  "Cafés",
-  "Metálicos",
-  "Rojos",
-  "Rosas",
-  "Naranjas",
-  "Amarillos",
-  "Verdes",
-  "Turquesas",
-  "Azules",
-  "Morados",
-  "Fucsias",
-];
-
-function getFamilyRank(value: string) {
-  const normalized = value.trim().toLowerCase();
-  const index = COLOR_FAMILY_ORDER.findIndex((item) => item.toLowerCase() === normalized);
-  return index === -1 ? 999 : index;
-}
-
 function getStep(max: number) {
   if (!Number.isFinite(max) || max <= 0) return 1000;
   if (max <= 200_000) return 1000;
@@ -320,43 +282,10 @@ export default function CatalogoFiltersPanel({
 
   const isChecked = (list: string[], value: string) => list.includes(value);
 
-  const colorGroups = useMemo(() => {
-    const selectedSet = new Set(selected.colors);
-    const selectedFamilies = new Set<string>();
-    for (const item of facets.colors) {
-      if (!selectedSet.has(item.value)) continue;
-      const rawFamily = item.group?.trim() ?? "";
-      const family = COLOR_FAMILY_LABEL[rawFamily] ?? (rawFamily || "Otros");
-      selectedFamilies.add(family);
-    }
-
-    const selectedItems = sortFacetItems(
-      facets.colors.filter((item) => selectedSet.has(item.value)),
-      selected.colors,
-    );
-
-    const familyMap = new Map<string, FacetItem[]>();
-    for (const item of facets.colors) {
-      const checked = selectedSet.has(item.value);
-      if (checked) continue;
-      if (item.count === 0) continue;
-      const rawFamily = item.group?.trim() ?? "";
-      const family = COLOR_FAMILY_LABEL[rawFamily] ?? (rawFamily || "Otros");
-      if (!familyMap.has(family)) familyMap.set(family, []);
-      familyMap.get(family)!.push(item);
-    }
-
-    const families = Array.from(familyMap.entries())
-      .sort(([a], [b]) => getFamilyRank(a) - getFamilyRank(b) || a.localeCompare(b, "es"))
-      .map(([family, items], index) => ({
-        family,
-        // Abrimos por defecto la familia seleccionada; si no hay seleccion, abrimos la primera.
-        open: selectedFamilies.size > 0 ? selectedFamilies.has(family) : index === 0,
-        items: sortFacetItems(items, selected.colors),
-      }));
-
-    return { selectedItems, families };
-  }, [facets.colors, selected.colors]);
+  const sortedColors = useMemo(
+    () => sortFacetItems(facets.colors, selected.colors),
+    [facets.colors, selected.colors],
+  );
 
   return (
     <aside className="flex flex-col gap-6">
@@ -614,88 +543,37 @@ export default function CatalogoFiltersPanel({
             {buildSelectedLabel(selected.colors.length)}
           </span>
         </summary>
-        <div className="mt-4 grid gap-4">
-          {colorGroups.selectedItems.length > 0 ? (
-            <div className="grid gap-2">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                Seleccionados
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {colorGroups.selectedItems.map((item) => {
-                  const checked = true;
-                  const disabled = isPending;
-                  return (
-                    <label
-                      key={item.value}
-                      className={[
-                        "relative",
-                        disabled ? "cursor-not-allowed opacity-35" : "cursor-pointer",
-                      ].join(" ")}
-                      title={`${item.label} (${item.count})`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleMulti("color", item.value)}
-                        className="peer sr-only"
-                        disabled={disabled}
-                      />
-                      <span
-                        className={[
-                          "block h-8 w-8 rounded-[12px] border border-[color:var(--oda-ink)] shadow-[0_16px_30px_rgba(23,21,19,0.16)] transition",
-                        ].join(" ")}
-                        style={{ backgroundColor: item.swatch ?? "#fff" }}
-                      >
-                        <span className="sr-only">{item.label}</span>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
-          {colorGroups.families.map((group) => (
-            <details key={group.family} open={group.open} className="rounded-xl border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-3">
-              <summary className="flex cursor-pointer items-center justify-between gap-3 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                <span>{group.family}</span>
-                <span>{group.items.length}</span>
-              </summary>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {group.items.map((item) => {
-                  const checked = isChecked(selected.colors, item.value);
-                  const disabled = (item.count === 0 && !checked) || isPending;
-                  return (
-                    <label
-                      key={item.value}
-                      className={[
-                        "relative",
-                        disabled ? "cursor-not-allowed opacity-35" : "cursor-pointer",
-                      ].join(" ")}
-                      title={`${item.label} (${item.count})`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleMulti("color", item.value)}
-                        className="peer sr-only"
-                        disabled={disabled}
-                      />
-                      <span
-                        className={[
-                          "block h-7 w-7 rounded-[10px] border border-[color:var(--oda-border)] shadow-[0_10px_22px_rgba(23,21,19,0.10)] transition",
-                          "peer-checked:border-[color:var(--oda-ink)] peer-checked:shadow-[0_16px_30px_rgba(23,21,19,0.16)]",
-                        ].join(" ")}
-                        style={{ backgroundColor: item.swatch ?? "#fff" }}
-                      >
-                        <span className="sr-only">{item.label}</span>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </details>
-          ))}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {sortedColors.map((item) => {
+            const checked = isChecked(selected.colors, item.value);
+            const disabled = (item.count === 0 && !checked) || isPending;
+            return (
+              <label
+                key={item.value}
+                className={["relative", disabled ? "cursor-not-allowed opacity-35" : "cursor-pointer"].join(
+                  " ",
+                )}
+                title={item.label}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleMulti("color", item.value)}
+                  className="peer sr-only"
+                  disabled={disabled}
+                />
+                <span
+                  className={[
+                    "block h-8 w-8 rounded-[12px] border border-[color:var(--oda-border)] shadow-[0_10px_22px_rgba(23,21,19,0.10)] transition",
+                    "peer-checked:border-[color:var(--oda-ink)] peer-checked:shadow-[0_16px_30px_rgba(23,21,19,0.16)]",
+                  ].join(" ")}
+                  style={{ backgroundColor: item.swatch ?? "#fff" }}
+                >
+                  <span className="sr-only">{item.label}</span>
+                </span>
+              </label>
+            );
+          })}
         </div>
       </details>
 
