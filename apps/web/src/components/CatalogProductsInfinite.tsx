@@ -49,7 +49,7 @@ function writePersisted(key: string, state: PersistedState) {
 function ProductsSkeleton({ count = 12 }: { count?: number }) {
   return (
     <div
-      className="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2 sm:gap-6 md:grid-cols-3"
+      className="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 md:grid-cols-3"
       aria-label="Cargando productos"
     >
       {Array.from({ length: count }).map((_, index) => (
@@ -363,7 +363,7 @@ export default function CatalogProductsInfinite({
               <ProductsSkeleton count={12} />
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2 sm:gap-6 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 md:grid-cols-3">
               {display.items.map((product) => (
                 <CatalogProductCard key={product.id} product={product} />
               ))}
