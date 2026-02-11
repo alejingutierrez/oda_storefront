@@ -265,6 +265,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: `processing` runs de `catalog_refresh` con `auto_start=false` debe tender a 0.
 - Estado: **done (2026-02-11)**.
 
+### MC-121 Product-enrichment: switch Bedrock Haiku 4.5 + control operativo de lotes
+- Historia: Como operador IA, quiero conmutar enrichment entre OpenAI y Bedrock sin tocar otros servicios, dejando activo Bedrock Haiku 4.5 para enrichment, y ver claramente en admin qué proveedor/modelo/cantidad de items se lanzó, para evitar incertidumbre operativa y errores por cuota.
+- Alcance: `src/lib/product-enrichment/openai.ts` deja de forzar OpenAI y respeta `PRODUCT_ENRICHMENT_PROVIDER`; Bedrock se ejecuta por `Converse` + tool-use con inference profile Haiku 4.5 (`BEDROCK_INFERENCE_PROFILE_ID`) y parámetros (`top_k`, `latency`, `stopSequences`). Se endurece validación de URLs de imagen antes de enviarlas. En API `POST /api/admin/product-enrichment/run` se reporta `requestedItems/selectedItems/insufficientPending` y `GET /api/admin/product-enrichment/state` expone `provider/model/prompt/schema/created_by` + datos de selección. UI `/admin/product-enrichment` muestra esos campos y agrega foto en tabla de revisión manual.
+- CA: Con `PRODUCT_ENRICHMENT_PROVIDER=bedrock`, el enrichment usa Bedrock Haiku 4.5 en runtime y persiste metadata de proveedor/modelo; `batch` muestra solicitados vs creados cuando no hay suficientes pendientes; el panel deja visible dónde revisar productos manuales y con baja confianza.
+- Datos: `product_enrichment_runs.metadata` (`provider`, `model`, `requested_items`, `selected_items`, `insufficient_pending`), `products.metadata.enrichment`, vars `PRODUCT_ENRICHMENT_PROVIDER`, `BEDROCK_INFERENCE_PROFILE_ID`, `PRODUCT_ENRICHMENT_BEDROCK_*`.
+- NF: Sin incremento de llamadas por producto; compatibilidad backward con runs previos.
+- Riesgos: Tipado SDK Converse más estricto; mitigación con tipos explícitos en `ConverseCommandInput` y validación build.
+- Métricas: 0 corridas forzadas a proveedor incorrecto, menor confusión de tamaño de batch, reducción de errores por URL de imagen inválida.
+- Estado: **done (2026-02-11)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

@@ -41,22 +41,46 @@ import {
   type EnrichmentConfidence,
 } from "@/lib/product-enrichment/consistency-validator";
 
-const RAW_PROVIDER = (process.env.PRODUCT_ENRICHMENT_PROVIDER ?? "openai").toLowerCase();
-const PRODUCT_ENRICHMENT_PROVIDER: "openai" | "bedrock" = "openai";
-if (RAW_PROVIDER !== PRODUCT_ENRICHMENT_PROVIDER) {
-  console.warn("[product-enrichment] provider override", {
+const RAW_PROVIDER = (process.env.PRODUCT_ENRICHMENT_PROVIDER ?? "openai")
+  .toLowerCase()
+  .trim();
+const PRODUCT_ENRICHMENT_PROVIDER: "openai" | "bedrock" =
+  RAW_PROVIDER === "bedrock" ? "bedrock" : "openai";
+if (RAW_PROVIDER !== "openai" && RAW_PROVIDER !== "bedrock") {
+  console.warn("[product-enrichment] unknown provider, fallback to openai", {
     requested: RAW_PROVIDER,
     effective: PRODUCT_ENRICHMENT_PROVIDER,
   });
 }
 const OPENAI_MODEL = process.env.PRODUCT_ENRICHMENT_MODEL ?? "gpt-5-mini";
+const BEDROCK_DEFAULT_MODEL_ID =
+  "arn:aws:bedrock:us-east-1:741448945431:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0";
 const BEDROCK_MODEL_ID =
-  process.env.BEDROCK_INFERENCE_PROFILE_ID ?? process.env.BEDROCK_MODEL_ID ?? "";
+  process.env.BEDROCK_INFERENCE_PROFILE_ID
+  ?? process.env.BEDROCK_MODEL_ID
+  ?? BEDROCK_DEFAULT_MODEL_ID;
 const BEDROCK_REGION = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "";
 const BEDROCK_ACCESS_KEY =
   process.env.AWS_ACCESS_KEY_ID ?? process.env.BEDROCK_ACCESS_KEY ?? "";
 const BEDROCK_SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY ?? "";
 const BEDROCK_SESSION_TOKEN = process.env.AWS_SESSION_TOKEN ?? "";
+const BEDROCK_TOP_K = Math.max(
+  1,
+  Number(process.env.PRODUCT_ENRICHMENT_BEDROCK_TOP_K ?? 250),
+);
+const BEDROCK_TEMPERATURE_RAW = Number(
+  process.env.PRODUCT_ENRICHMENT_BEDROCK_TEMPERATURE ?? 1,
+);
+const BEDROCK_TEMPERATURE = Number.isFinite(BEDROCK_TEMPERATURE_RAW)
+  ? BEDROCK_TEMPERATURE_RAW
+  : 1;
+const BEDROCK_STOP_SEQUENCES = (process.env.PRODUCT_ENRICHMENT_BEDROCK_STOP_SEQUENCES
+  ?? "\n\nHuman:")
+  .split("||")
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+const BEDROCK_LATENCY =
+  process.env.PRODUCT_ENRICHMENT_BEDROCK_LATENCY === "optimized" ? "optimized" : "standard";
 const MAX_RETRIES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_RETRIES ?? 3));
 const MAX_IMAGES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_IMAGES ?? 8));
 const MAX_TOKENS = Math.max(256, Number(process.env.PRODUCT_ENRICHMENT_MAX_TOKENS ?? 1200));
@@ -68,7 +92,7 @@ const VARIANT_CHUNK_SIZE = Math.max(
   1,
   Number(process.env.PRODUCT_ENRICHMENT_VARIANT_CHUNK_SIZE ?? 8),
 );
-const INCLUDE_IMAGES = process.env.PRODUCT_ENRICHMENT_BEDROCK_INCLUDE_IMAGES === "true";
+const INCLUDE_IMAGES = process.env.PRODUCT_ENRICHMENT_BEDROCK_INCLUDE_IMAGES !== "false";
 const IMAGE_TIMEOUT_MS = Math.max(
   500,
   Number(process.env.PRODUCT_ENRICHMENT_BEDROCK_IMAGE_TIMEOUT_MS ?? 5000),
@@ -201,7 +225,10 @@ const enrichmentResponseSchema = z.object({
 });
 
 export const productEnrichmentProvider = PRODUCT_ENRICHMENT_PROVIDER;
-export const productEnrichmentModel = OPENAI_MODEL;
+export const productEnrichmentModel =
+  PRODUCT_ENRICHMENT_PROVIDER === "bedrock"
+    ? BEDROCK_MODEL_ID || "bedrock:unknown"
+    : OPENAI_MODEL;
 
 export type RawEnrichedVariant = {
   variantId: string;
@@ -280,16 +307,27 @@ type OpenAIResponsesClient = {
   };
 };
 
-type BedrockResponse = {
-  content?: Array<{ type?: string; text?: string }>;
-  completion?: string;
-  output_text?: string;
-};
-
 type BedrockToolUse = {
   type?: string;
   name?: string;
   input?: unknown;
+};
+
+type BedrockConverseResponse = {
+  output?: {
+    message?: {
+      content?: Array<
+        | { text?: string }
+        | {
+            toolUse?: {
+              name?: string;
+              input?: unknown;
+            };
+          }
+      >;
+    };
+  };
+  usage?: unknown;
 };
 
 const BEDROCK_TOOL_NAME = "enrich_product";
@@ -368,6 +406,12 @@ const openAiResponseSchema = bedrockToolSchema.input_schema;
 
 type BedrockModule = typeof import("@aws-sdk/client-bedrock-runtime");
 type BedrockClientLike = InstanceType<BedrockModule["BedrockRuntimeClient"]>;
+type BedrockConverseCommandInput = ConstructorParameters<BedrockModule["ConverseCommand"]>[0];
+type BedrockToolInputSchema = NonNullable<
+  NonNullable<
+    NonNullable<BedrockConverseCommandInput["toolConfig"]>["tools"]
+  >[number]["toolSpec"]
+>["inputSchema"];
 let bedrockModulePromise: Promise<BedrockModule> | null = null;
 let bedrockClient: BedrockClientLike | null = null;
 
@@ -423,14 +467,13 @@ const extractOutputText = (response: OpenAIResponse | null | undefined) => {
   return content?.text ?? "";
 };
 
-const extractBedrockText = (payload: BedrockResponse | null | undefined) => {
-  if (typeof payload?.output_text === "string") return payload.output_text;
-  if (typeof payload?.completion === "string") return payload.completion;
-  if (Array.isArray(payload?.content)) {
-    const text = payload.content.map((entry) => entry?.text).find(Boolean);
-    if (text) return text;
-  }
-  return "";
+const extractBedrockText = (payload: BedrockConverseResponse | null | undefined) => {
+  const content = payload?.output?.message?.content;
+  if (!Array.isArray(content)) return "";
+  const textParts = content
+    .map((entry) => ("text" in entry && typeof entry.text === "string" ? entry.text : ""))
+    .filter(Boolean);
+  return textParts.join("\n").trim();
 };
 
 const findBedrockToolUse = (payload: unknown, toolName: string) => {
@@ -477,27 +520,6 @@ const extractBedrockToolInput = (payload: unknown, toolName: string) => {
     }
   }
   return input ?? null;
-};
-
-const readBedrockBody = async (body: unknown) => {
-  if (!body) return "";
-  const maybe = body as { transformToString?: () => Promise<string> };
-  if (typeof maybe.transformToString === "function") {
-    return maybe.transformToString();
-  }
-  if (body instanceof Uint8Array) {
-    return Buffer.from(body).toString("utf8");
-  }
-  if (typeof body === "string") return body;
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of body as AsyncIterable<Uint8Array>) {
-    if (typeof chunk === "string") {
-      chunks.push(Buffer.from(chunk));
-    } else {
-      chunks.push(chunk);
-    }
-  }
-  return Buffer.concat(chunks).toString("utf8");
 };
 
 const sanitizeJsonText = (raw: string) =>
@@ -618,6 +640,13 @@ const fetchImageAsBase64 = async (url: string) => {
   } finally {
     clearTimeout(timeout);
   }
+};
+
+const toBedrockImageFormat = (mediaType: string): "jpeg" | "png" | "webp" | null => {
+  if (mediaType === "image/jpeg") return "jpeg";
+  if (mediaType === "image/png") return "png";
+  if (mediaType === "image/webp") return "webp";
+  return null;
 };
 
 type EnrichmentTaxonomy = {
@@ -788,13 +817,24 @@ const normalizeImageUrl = (
     }
   }
 
-  normalized = normalized.replace(/\s/g, "%20");
+  normalized = encodeURI(normalized.replace(/\s/g, " ").trim());
   try {
     const parsed = new URL(normalized);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
     return parsed.toString();
   } catch {
     return null;
+  }
+};
+
+const isSafeRemoteImageUrl = (value: string) => {
+  if (!value) return false;
+  if (/[<>"'`\\\u0000-\u001F]/.test(value)) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
   }
 };
 
@@ -1034,9 +1074,7 @@ export async function enrichProductWithOpenAI(params: {
     origin: params.product.origin ?? null,
     status: params.product.status ?? null,
     sourceUrl: params.product.sourceUrl ?? null,
-    imageCoverUrl: normalizeImageUrl(params.product.imageCoverUrl ?? null, sourceUrl)
-      ?? params.product.imageCoverUrl
-      ?? null,
+    imageCoverUrl: normalizeImageUrl(params.product.imageCoverUrl ?? null, sourceUrl) ?? null,
     metadata_compact: {
       platform: signals.vendorPlatform,
       vendor_category: signals.vendorCategory,
@@ -1094,7 +1132,7 @@ export async function enrichProductWithOpenAI(params: {
   const tryAddImage = (url: string | null | undefined, variantId?: string | null) => {
     if (!url || imageCandidates.length >= imageLimits.maxImages) return;
     const normalized = normalizeImageUrl(url, sourceUrl);
-    if (!normalized || seen.has(normalized)) return;
+    if (!normalized || !isSafeRemoteImageUrl(normalized) || seen.has(normalized)) return;
     seen.add(normalized);
     imageCandidates.push({ url: normalized, variantId: variantId ?? null });
   };
@@ -1259,53 +1297,79 @@ export async function enrichProductWithOpenAI(params: {
     systemPrompt: string;
     userText: string;
     imageInputs: Array<{
-      type: "image";
-      source: { type: "base64"; media_type: string; data: string };
+      image: {
+        format: "jpeg" | "png" | "webp";
+        source: { bytes: Uint8Array };
+      };
     }>;
     usageLabel?: string;
     useTool?: boolean;
   }) => {
-    const payload: Record<string, unknown> = {
-      anthropic_version: "bedrock-2023-05-31",
-      max_tokens: MAX_TOKENS,
-      temperature: 0,
-      system: options.systemPrompt,
+    const payload: BedrockConverseCommandInput = {
+      modelId: BEDROCK_MODEL_ID,
+      system: [{ text: options.systemPrompt }],
       messages: [
         {
           role: "user",
           content: [
-            { type: "text", text: options.userText },
+            { text: options.userText },
             ...options.imageInputs,
           ],
         },
       ],
+      inferenceConfig: {
+        maxTokens: MAX_TOKENS,
+        temperature: BEDROCK_TEMPERATURE,
+        ...(BEDROCK_STOP_SEQUENCES.length ? { stopSequences: BEDROCK_STOP_SEQUENCES } : {}),
+      },
+      additionalModelRequestFields: {
+        top_k: BEDROCK_TOP_K,
+      },
+      performanceConfig: {
+        latency: BEDROCK_LATENCY,
+      },
     };
     if (options.useTool) {
-      payload.tools = [bedrockToolSchema];
-      payload.tool_choice = { type: "tool", name: BEDROCK_TOOL_NAME };
+      payload.toolConfig = {
+        tools: [
+          {
+            toolSpec: {
+              name: BEDROCK_TOOL_NAME,
+              description: bedrockToolSchema.description,
+              inputSchema: {
+                json: bedrockToolSchema.input_schema as unknown,
+              } as BedrockToolInputSchema,
+            },
+          },
+        ],
+        toolChoice: {
+          tool: {
+            name: BEDROCK_TOOL_NAME,
+          },
+        },
+      };
     }
 
-    const { InvokeModelCommand } = await loadBedrockModule();
-    const command = new InvokeModelCommand({
-      modelId: BEDROCK_MODEL_ID,
-      contentType: "application/json",
-      accept: "application/json",
-      body: JSON.stringify(payload),
-    });
+    const { ConverseCommand } = await loadBedrockModule();
+    const command = new ConverseCommand(payload);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), BEDROCK_TIMEOUT_MS);
     try {
       await jitterDelay();
       const client = await getBedrockClient();
-      const response = await client.send(command, { abortSignal: controller.signal });
-      const rawBody = await readBedrockBody(response.body);
-      const parsed = JSON.parse(rawBody);
-      const toolInput = options.useTool ? extractBedrockToolInput(parsed, BEDROCK_TOOL_NAME) : null;
+      const response = (await client.send(
+        command,
+        { abortSignal: controller.signal },
+      )) as unknown as BedrockConverseResponse;
+      const toolInput = options.useTool
+        ? extractBedrockToolInput(response.output?.message?.content ?? [], BEDROCK_TOOL_NAME)
+        : null;
+      const parsed = response;
       const rawText = extractBedrockText(parsed);
       if (!toolInput && !rawText) throw new Error("Respuesta vacia de Bedrock");
       if (options.usageLabel) {
-        console.info(options.usageLabel, parsed?.usage ?? {});
+        console.info(options.usageLabel, parsed.usage ?? {});
       }
       return { rawText, toolInput };
     } finally {
@@ -1319,7 +1383,7 @@ export async function enrichProductWithOpenAI(params: {
     const tryAddBedrockImage = (url: string | null | undefined, variantId?: string | null) => {
       if (!url || imageUrls.length >= imageLimits.maxImages) return;
       const normalized = normalizeImageUrl(url, sourceUrl);
-      if (!normalized || seenBedrock.has(normalized)) return;
+      if (!normalized || !isSafeRemoteImageUrl(normalized) || seenBedrock.has(normalized)) return;
       seenBedrock.add(normalized);
       imageUrls.push({ url: normalized, variantId: variantId ?? null });
     };
@@ -1346,8 +1410,10 @@ export async function enrichProductWithOpenAI(params: {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
       try {
         const imageBlocks: Array<{
-          type: "image";
-          source: { type: "base64"; media_type: string; data: string };
+          image: {
+            format: "jpeg" | "png" | "webp";
+            source: { bytes: Uint8Array };
+          };
         }> = [];
         const bedrockManifest: Array<{ index: number; url: string; variant_id?: string | null }> =
           [];
@@ -1357,9 +1423,13 @@ export async function enrichProductWithOpenAI(params: {
             if (imageBlocks.length >= BEDROCK_MAX_IMAGES) break;
             const loaded = await fetchImageAsBase64(entry.url);
             if (!loaded) continue;
+            const format = toBedrockImageFormat(loaded.mediaType);
+            if (!format) continue;
             imageBlocks.push({
-              type: "image",
-              source: { type: "base64", media_type: loaded.mediaType, data: loaded.base64 },
+              image: {
+                format,
+                source: { bytes: Buffer.from(loaded.base64, "base64") },
+              },
             });
             bedrockManifest.push({
               index: imageBlocks.length,

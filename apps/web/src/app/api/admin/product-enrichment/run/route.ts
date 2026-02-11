@@ -265,6 +265,10 @@ export async function POST(req: Request) {
     : await getAllProductIds({ brandId, includeEnriched });
 
   const productIds = productRows.map((row) => row.id);
+  const requestedItems =
+    mode === "batch" ? Math.max(1, effectiveLimit || enqueueLimit) : productIds.length;
+  const selectedItems = productIds.length;
+  const insufficientPending = mode === "batch" && selectedItems < requestedItems;
   if (!productIds.length) {
     return NextResponse.json(
       { error: includeEnriched ? "no_products" : "no_pending_products" },
@@ -280,6 +284,9 @@ export async function POST(req: Request) {
     metadata: {
       mode,
       limit: effectiveLimit || null,
+      requested_items: requestedItems,
+      selected_items: selectedItems,
+      insufficient_pending: insufficientPending,
       include_enriched_requested: includeEnrichedRequested,
       include_enriched_effective: includeEnriched,
       force_reenrich_requested: forceReenrichRequested,
@@ -312,5 +319,11 @@ export async function POST(req: Request) {
   }
 
   const summary = await summarizeRun(run.id);
-  return NextResponse.json({ summary, totalItems: productIds.length });
+  return NextResponse.json({
+    summary,
+    totalItems: selectedItems,
+    requestedItems,
+    selectedItems,
+    insufficientPending,
+  });
 }

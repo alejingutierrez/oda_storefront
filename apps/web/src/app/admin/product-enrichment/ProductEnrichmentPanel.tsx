@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 const BATCH_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
@@ -32,6 +33,15 @@ type RunMeta = {
   startedAt?: string | null;
   updatedAt?: string | null;
   finishedAt?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  promptVersion?: string | null;
+  schemaVersion?: string | null;
+  createdBy?: string | null;
+  autoStart?: boolean;
+  requestedItems?: number | null;
+  selectedItems?: number | null;
+  insufficientPending?: boolean;
 };
 
 type ItemCounts = {
@@ -285,6 +295,8 @@ export default function ProductEnrichmentPanel() {
       }
       const responsePayload = await res.json();
       setSummary(responsePayload.summary ?? null);
+      await fetchSummary();
+      await fetchReviewItems();
     } catch (err) {
       console.warn(err);
       setError(err instanceof Error ? err.message : "Error desconocido");
@@ -320,6 +332,8 @@ export default function ProductEnrichmentPanel() {
       }
       const responsePayload = await res.json();
       setSummary(responsePayload.summary ?? null);
+      await fetchSummary();
+      await fetchReviewItems();
     } catch (err) {
       console.warn(err);
       setError(err instanceof Error ? err.message : "Error desconocido");
@@ -406,9 +420,10 @@ export default function ProductEnrichmentPanel() {
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Enriquecimiento de características</h2>
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Ejecuta GPT-5 mini sobre productos y variantes para reemplazar categoría, tags, género,
-            temporada y colores (HEX + Pantone). Se puede correr por marca, por batch o global; el
-            procesamiento continúa en background vía cron aunque no haya un navegador abierto.
+            Ejecuta enriquecimiento IA sobre productos y variantes para actualizar categoría, tags,
+            género, temporada, colores (HEX + Pantone), fit y SEO. Se puede correr por marca, por
+            batch o global; el procesamiento continúa en background vía cron aunque no haya un
+            navegador abierto.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -506,10 +521,35 @@ export default function ProductEnrichmentPanel() {
               Estado: <span className="font-semibold text-slate-900">{summary?.status ?? "—"}</span>
             </p>
             <p>
+              Proveedor:{" "}
+              <span className="font-semibold text-slate-900">{runMeta?.provider ?? "—"}</span>{" "}
+              · Modelo:{" "}
+              <span className="font-semibold text-slate-900">{runMeta?.model ?? "—"}</span>
+            </p>
+            <p>
+              Prompt/Schema:{" "}
+              <span className="font-semibold text-slate-900">
+                {runMeta?.promptVersion ?? "—"} / {runMeta?.schemaVersion ?? "—"}
+              </span>
+            </p>
+            <p>
+              Corrida creada por:{" "}
+              <span className="font-semibold text-slate-900">{runMeta?.createdBy ?? "admin"}</span>
+            </p>
+            <p>
               Total: <span className="font-semibold text-slate-900">{progress.total}</span> ·
               Completados: <span className="font-semibold text-slate-900">{progress.completed}</span> ·
               Fallidos: <span className="font-semibold text-slate-900">{progress.failed}</span>
             </p>
+            {typeof runMeta?.requestedItems === "number" && typeof runMeta?.selectedItems === "number" ? (
+              <p>
+                Selección:{" "}
+                <span className="font-semibold text-slate-900">{runMeta.requestedItems}</span>{" "}
+                solicitados ·{" "}
+                <span className="font-semibold text-slate-900">{runMeta.selectedItems}</span>{" "}
+                creados
+              </p>
+            ) : null}
             <p>
               Pendientes: <span className="font-semibold text-slate-900">{progress.pending}</span> ·
               Procesados: <span className="font-semibold text-slate-900">{processedCount}</span>
@@ -528,6 +568,11 @@ export default function ProductEnrichmentPanel() {
             {summary?.blockReason && (
               <p className="text-xs text-amber-600">Bloqueado: {summary.blockReason}</p>
             )}
+            {runMeta?.insufficientPending ? (
+              <p className="text-xs text-amber-600">
+                No había suficientes productos pendientes para completar el tamaño solicitado del batch.
+              </p>
+            ) : null}
           </div>
           <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
             <div
@@ -687,6 +732,7 @@ export default function ProductEnrichmentPanel() {
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
                   <tr>
+                    <th className="px-3 py-2 text-left">Foto</th>
                     <th className="px-3 py-2 text-left">Producto</th>
                     <th className="px-3 py-2 text-left">Calidad</th>
                     <th className="px-3 py-2 text-left">Razones</th>
@@ -697,6 +743,20 @@ export default function ProductEnrichmentPanel() {
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {reviewItems.map((item) => (
                     <tr key={item.id}>
+                      <td className="px-3 py-3 align-top">
+                        {item.imageCoverUrl ? (
+                          <Image
+                            src={item.imageCoverUrl}
+                            alt={item.name}
+                            width={56}
+                            height={56}
+                            unoptimized
+                            className="h-14 w-14 rounded-md border border-slate-200 object-cover"
+                          />
+                        ) : (
+                          <div className="h-14 w-14 rounded-md border border-dashed border-slate-200 bg-slate-50" />
+                        )}
+                      </td>
                       <td className="px-3 py-3 align-top">
                         <p className="font-medium text-slate-900">{item.name}</p>
                         <p className="mt-1 text-xs text-slate-500">

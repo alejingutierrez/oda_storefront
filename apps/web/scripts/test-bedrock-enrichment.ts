@@ -38,7 +38,7 @@ const INFERENCE_PROFILE_ID = getArgValue("--profile-id") ?? process.env.BEDROCK_
 const MODEL_ID =
   INFERENCE_PROFILE_ID ??
   process.env.BEDROCK_MODEL_ID ??
-  "anthropic.claude-sonnet-4-5-20250929-v1:0";
+  "arn:aws:bedrock:us-east-1:741448945431:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0";
 const AWS_REGION = process.env.AWS_REGION ?? "us-east-1";
 const AWS_ACCESS_KEY_ID =
   process.env.AWS_ACCESS_KEY_ID ?? process.env.BEDROCK_ACCESS_KEY ?? "";

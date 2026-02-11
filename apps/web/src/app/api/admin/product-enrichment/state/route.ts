@@ -7,6 +7,11 @@ import { finalizeRunIfDone } from "@/lib/product-enrichment/processor";
 
 export const runtime = "nodejs";
 
+const readJsonRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+};
+
 export async function GET(req: Request) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
@@ -74,15 +79,47 @@ export async function GET(req: Request) {
   return NextResponse.json({
     summary,
     run: run
-      ? {
-          id: run.id,
-          status: run.status,
-          scope: run.scope,
-          brandId: run.brandId,
-          startedAt: run.startedAt,
-          updatedAt: run.updatedAt,
-          finishedAt: run.finishedAt,
-        }
+      ? (() => {
+          const metadata = readJsonRecord(run.metadata);
+          const provider = typeof metadata.provider === "string" ? metadata.provider : null;
+          const model = typeof metadata.model === "string" ? metadata.model : null;
+          const promptVersion =
+            typeof metadata.prompt_version === "string" ? metadata.prompt_version : null;
+          const schemaVersion =
+            typeof metadata.schema_version === "string" ? metadata.schema_version : null;
+          const createdBy = typeof metadata.created_by === "string" ? metadata.created_by : null;
+          const autoStart = metadata.auto_start;
+          const requestedItems =
+            typeof metadata.requested_items === "number"
+              ? metadata.requested_items
+              : Number(metadata.requested_items ?? 0) || null;
+          const selectedItems =
+            typeof metadata.selected_items === "number"
+              ? metadata.selected_items
+              : Number(metadata.selected_items ?? 0) || null;
+          const insufficientPending =
+            typeof metadata.insufficient_pending === "boolean"
+              ? metadata.insufficient_pending
+              : metadata.insufficient_pending === "true";
+          return {
+            id: run.id,
+            status: run.status,
+            scope: run.scope,
+            brandId: run.brandId,
+            startedAt: run.startedAt,
+            updatedAt: run.updatedAt,
+            finishedAt: run.finishedAt,
+            provider,
+            model,
+            promptVersion,
+            schemaVersion,
+            createdBy,
+            autoStart: typeof autoStart === "boolean" ? autoStart : autoStart === "true",
+            requestedItems,
+            selectedItems,
+            insufficientPending,
+          };
+        })()
       : null,
     itemCounts,
     counts: {
