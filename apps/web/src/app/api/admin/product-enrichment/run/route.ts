@@ -74,6 +74,7 @@ export async function POST(req: Request) {
   const mode = body?.mode === "all" || body?.mode === "batch" ? body.mode : body?.limit ? "batch" : "all";
   const limit = Number(body?.limit ?? body?.batchSize ?? body?.count ?? 0);
   const resumeRequested = Boolean(body?.resume);
+  const startFreshRequested = body?.startFresh === true;
   const includeEnrichedRequested = Boolean(body?.includeEnriched);
   const forceReenrichRequested = Boolean(body?.forceReenrich);
   const includeEnriched = includeEnrichedRequested && ALLOW_REENRICH && forceReenrichRequested;
@@ -156,65 +157,86 @@ export async function POST(req: Request) {
 
   const existing = await findActiveRun({ scope, brandId });
   if (existing) {
-    if (existing.status === "processing" && !resumeRequested) {
-      const summary = await summarizeRun(existing.id);
-      return NextResponse.json({ summary });
-    }
-
-    await prisma.productEnrichmentRun.update({
-      where: { id: existing.id },
-      data: {
-        status: "processing",
-        consecutiveErrors: 0,
-        lastError: null,
-        blockReason: null,
-        updatedAt: new Date(),
-      },
-    });
-
-    if (resumeRequested) {
-      await prisma.productEnrichmentItem.updateMany({
-        where: {
-          runId: existing.id,
-          status: "failed",
-          attempts: { gte: MAX_ATTEMPTS },
+    if (!resumeRequested && startFreshRequested) {
+      const now = new Date();
+      await prisma.productEnrichmentRun.update({
+        where: { id: existing.id },
+        data: {
+          status: "stopped",
+          finishedAt: now,
+          updatedAt: now,
+          lastError: existing.lastError ?? "superseded_by_new_run",
         },
+      });
+      await prisma.productEnrichmentItem.updateMany({
+        where: { runId: existing.id, status: { in: ["queued", "in_progress"] } },
         data: {
           status: "pending",
-          attempts: 0,
-          lastError: null,
-          lastStage: null,
           startedAt: null,
+          updatedAt: now,
+        },
+      });
+    } else {
+      if (existing.status === "processing" && !resumeRequested) {
+        const summary = await summarizeRun(existing.id);
+        return NextResponse.json({ summary });
+      }
+
+      await prisma.productEnrichmentRun.update({
+        where: { id: existing.id },
+        data: {
+          status: "processing",
+          consecutiveErrors: 0,
+          lastError: null,
+          blockReason: null,
           updatedAt: new Date(),
         },
       });
+
+      if (resumeRequested) {
+        await prisma.productEnrichmentItem.updateMany({
+          where: {
+            runId: existing.id,
+            status: "failed",
+            attempts: { gte: MAX_ATTEMPTS },
+          },
+          data: {
+            status: "pending",
+            attempts: 0,
+            lastError: null,
+            lastStage: null,
+            startedAt: null,
+            updatedAt: new Date(),
+          },
+        });
+      }
+
+      const effectiveQueuedStaleMs = resumeRequested ? 0 : queuedStaleMs;
+      const effectiveStuckMs = resumeRequested ? Math.min(stuckMs, resumeStuckMs || 0) : stuckMs;
+      await resetQueuedItems(existing.id, effectiveQueuedStaleMs);
+      await resetStuckItems(existing.id, effectiveStuckMs);
+
+      const pendingItems = await listPendingItems(
+        existing.id,
+        Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : enqueueLimit,
+      );
+      await markItemsQueued(pendingItems.map((item) => item.id));
+      await enqueueEnrichmentItems(pendingItems);
+
+      if (drainOnRun) {
+        await drainEnrichmentRun({
+          runId: existing.id,
+          batch: drainBatchFloor <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, drainBatchFloor),
+          concurrency: Math.max(1, drainConcurrency),
+          maxMs: Math.max(1000, drainMaxMs),
+          queuedStaleMs: effectiveQueuedStaleMs,
+          stuckMs: effectiveStuckMs,
+        });
+      }
+
+      const summary = await summarizeRun(existing.id);
+      return NextResponse.json({ summary });
     }
-
-    const effectiveQueuedStaleMs = resumeRequested ? 0 : queuedStaleMs;
-    const effectiveStuckMs = resumeRequested ? Math.min(stuckMs, resumeStuckMs || 0) : stuckMs;
-    await resetQueuedItems(existing.id, effectiveQueuedStaleMs);
-    await resetStuckItems(existing.id, effectiveStuckMs);
-
-    const pendingItems = await listPendingItems(
-      existing.id,
-      Number.isFinite(limit) && limit > 0 ? Math.max(limit, enqueueLimit) : enqueueLimit,
-    );
-    await markItemsQueued(pendingItems.map((item) => item.id));
-    await enqueueEnrichmentItems(pendingItems);
-
-    if (drainOnRun) {
-      await drainEnrichmentRun({
-        runId: existing.id,
-        batch: drainBatchFloor <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, drainBatchFloor),
-        concurrency: Math.max(1, drainConcurrency),
-        maxMs: Math.max(1000, drainMaxMs),
-        queuedStaleMs: effectiveQueuedStaleMs,
-        stuckMs: effectiveStuckMs,
-      });
-    }
-
-    const summary = await summarizeRun(existing.id);
-    return NextResponse.json({ summary });
   }
 
   const effectiveLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0;
@@ -242,6 +264,7 @@ export async function POST(req: Request) {
       include_enriched_effective: includeEnriched,
       force_reenrich_requested: forceReenrichRequested,
       allow_reenrich: ALLOW_REENRICH,
+      start_fresh_requested: startFreshRequested,
       created_at: new Date().toISOString(),
       provider: productEnrichmentProvider,
       model: productEnrichmentModel,

@@ -268,6 +268,7 @@ export default function ProductEnrichmentPanel() {
         mode,
         limit: mode === "batch" ? batchSize : null,
         resume: shouldResume,
+        startFresh: !shouldResume,
         includeEnriched,
         forceReenrich: false,
         drainOnRun: false,
