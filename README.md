@@ -35,7 +35,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Dry-run LLM: `UNKNOWN_LLM_DRY_RUN_LIMIT`, `UNKNOWN_LLM_DRY_RUN_CANDIDATES`.
 
 Nota: el refresh de catálogo puede detectar productos nuevos sin `metadata.enrichment` y crear un `product_enrichment_run` en `paused` (mode `new_products`). No se procesa automáticamente para evitar cuota de OpenAI; se reanuda manualmente con el Admin o con `POST /api/admin/product-enrichment/run` (brandId).
-Tip operativo: `GET /api/admin/catalog-refresh/cron` acepta overrides opcionales `maxBrands`, `brandConcurrency` y `maxRuntimeMs` para pruebas controladas de throughput (por ejemplo: `/api/admin/catalog-refresh/cron?force=true&maxBrands=12&brandConcurrency=4&maxRuntimeMs=90000`).
+Tip operativo: `GET /api/admin/catalog-refresh/cron` acepta overrides opcionales `maxBrands`, `brandConcurrency` y `maxRuntimeMs` para pruebas controladas de throughput (por ejemplo: `/api/admin/catalog-refresh/cron?force=true&maxBrands=12&brandConcurrency=4&maxRuntimeMs=90000`). Si no envías esos query params, el endpoint usa los valores de entorno (`CATALOG_REFRESH_*`) sin aplicar overrides.
 No commitees credenciales reales.
 
 ## Comandos locales
@@ -247,7 +247,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - `/api/admin/brands/scrape/cron` cada 5 minutos.
 - `/api/admin/catalog-extractor/drain` cada 1 minuto.
 - `/api/admin/product-enrichment/drain` cada 1 minuto.
-- `/api/admin/catalog-refresh/cron` cada 30 minutos.
+- `/api/admin/catalog-refresh/cron` cada 5 minutos.
 - El endpoint acepta invocaciones de cron (User-Agent `vercel-cron`) o `ADMIN_TOKEN` en `Authorization`.
 
 ## CI/CD y Git

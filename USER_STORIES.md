@@ -153,7 +153,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: Proceso gradual con aleatoriedad, timeouts y backoff; reintentos controlados por env; el cron no debe interrumpir runs activos ni disparar enriquecimiento automático; normalización con LLM debe tener fallback determinista ante errores de cuota/billing.
 - Riesgos: Catálogos grandes pueden saturar recursos si no se limitan; mitigación con `CATALOG_REFRESH_MAX_BRANDS`, `CATALOG_REFRESH_MAX_RUNTIME_MS` y `CATALOG_VTEX_MAX_PRODUCTS`.
 - Métricas: % marcas frescas vs total, nuevos productos por semana, cambios de precio/stock, tiempo promedio de refresh por marca.
-- Estado: **done (2026-02-04) · hardening (2026-02-08, 2026-02-11)**.
+- Estado: **done (2026-02-04) · hardening (2026-02-08, 2026-02-11: perfil agresivo + fix parse query params opcionales en `/api/admin/catalog-refresh/cron`)**.
 
 ### MC-111 Paleta 200 + matching estandarizado de combinaciones de color
 - Historia: Como admin de catálogo, quiero reducir las combinaciones a una paleta de 200 colores y hacer el matching contra 60 colores estándar, para aumentar cobertura por combinación y mantener consistencia en el admin.

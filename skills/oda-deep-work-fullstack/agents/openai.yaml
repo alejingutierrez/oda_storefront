@@ -1,0 +1,4 @@
+interface:
+  display_name: "ODA Deep Work Fullstack"
+  short_description: "Ejecución profunda full-stack con contexto ODA"
+  default_prompt: "Implementar una historia de usuario end-to-end en ODA leyendo AGENTS.md, BACKLOG.md, USER_STORIES.md, STATUS.md y README.md antes de modificar frontend y backend."

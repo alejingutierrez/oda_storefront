@@ -18,6 +18,14 @@ const hasAdminToken = (req: Request) => {
   return false;
 };
 
+const parseOptionalPositiveInt = (value: string | null) => {
+  if (value === null || value.trim() === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  const normalized = Math.floor(parsed);
+  return normalized > 0 ? normalized : undefined;
+};
+
 export async function GET(req: Request) {
   const isCron = isCronRequest(req);
   const hasToken = hasAdminToken(req);
@@ -31,14 +39,11 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const brandId = url.searchParams.get("brandId");
   const force = url.searchParams.get("force") === "true";
-  const maxBrandsRaw = Number(url.searchParams.get("maxBrands"));
-  const brandConcurrencyRaw = Number(url.searchParams.get("brandConcurrency"));
-  const maxRuntimeMsRaw = Number(url.searchParams.get("maxRuntimeMs"));
-  const maxBrands = Number.isFinite(maxBrandsRaw) ? maxBrandsRaw : undefined;
-  const brandConcurrency = Number.isFinite(brandConcurrencyRaw)
-    ? brandConcurrencyRaw
-    : undefined;
-  const maxRuntimeMs = Number.isFinite(maxRuntimeMsRaw) ? maxRuntimeMsRaw : undefined;
+  const maxBrands = parseOptionalPositiveInt(url.searchParams.get("maxBrands"));
+  const brandConcurrency = parseOptionalPositiveInt(
+    url.searchParams.get("brandConcurrency"),
+  );
+  const maxRuntimeMs = parseOptionalPositiveInt(url.searchParams.get("maxRuntimeMs"));
 
   const result = await runCatalogRefreshBatch({
     brandId: brandId ?? undefined,
