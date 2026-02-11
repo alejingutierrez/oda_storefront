@@ -44,7 +44,7 @@
 - MC-111 | done | P1 | Paleta 200 + matching estandarizado de combinaciones | `color_combinations.colorsJson` + paleta 200 en `color_combination_colors`; matching 200→60 con standard colors y rebuild de relaciones.
 - MC-108 | done | P1 | Fix cola de scraping de marcas | Encolar solo marcas sin job completed y drenar cola existente desde UI.
 - MC-109 | done | P1 | Onboarding de marca en modal | Crear marca inicia pipeline (enrich → tech → catálogo → productos) con barra de progreso y endpoints onboarding.
-- MC-110 | done | P1 | Refresh semanal de catálogo + monitor admin | Cron semanal con jitter, refresco completo, métricas de cambios y panel `/admin/catalog-refresh`; VTEX discovery sin cap fijo (capping opcional por env); hardening: normalización LLM con fallback y runs de enrichment en `paused` (sin auto-ejecución).
+- MC-110 | done | P1 | Refresh semanal de catálogo + monitor admin | Cron semanal con jitter, refresco completo, métricas de cambios y panel `/admin/catalog-refresh`; VTEX discovery sin cap fijo (capping opcional por env); hardening: normalización LLM con fallback, runs de enrichment en `paused` (sin auto-ejecución) y concurrencia por marca configurable (`CATALOG_REFRESH_BRAND_CONCURRENCY`) con overrides operativos (`maxBrands`, `brandConcurrency`, `maxRuntimeMs`).
 
 ## Done (2026-01)
 - MC-107 | done | P1 | Enrichment: esquema estricto + repair/chunking Bedrock | 1 imagen por variante, repair pass y chunking por variantes; smoke test Bedrock; concurrencia 40 en envs prod.
