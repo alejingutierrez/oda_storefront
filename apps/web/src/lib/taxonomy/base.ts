@@ -13,6 +13,10 @@ import {
   STYLE_TAG_FRIENDLY,
   SUBCATEGORY_DESCRIPTIONS,
 } from "@/lib/product-enrichment/constants";
+import {
+  resolveCategoryPromptDescription,
+  resolveSubcategoryPromptDescription,
+} from "@/lib/product-enrichment/taxonomy-prompt-fallbacks";
 import type { TaxonomyDataV1, TaxonomyTerm } from "./types";
 
 const toTerm = (key: string, label: string, description?: string | null, sortOrder?: number): TaxonomyTerm => ({
@@ -30,7 +34,11 @@ export function buildBaseTaxonomyDataV1(): TaxonomyDataV1 {
     categories: CATEGORY_OPTIONS.map((category, categoryIndex) => ({
       key: category.value,
       label: category.label,
-      description: CATEGORY_DESCRIPTIONS[category.value] ?? null,
+      description: resolveCategoryPromptDescription({
+        categoryKey: category.value,
+        categoryLabel: category.label,
+        currentDescription: CATEGORY_DESCRIPTIONS[category.value] ?? null,
+      }),
       synonyms: [],
       isActive: true,
       sortOrder: categoryIndex,
@@ -38,7 +46,13 @@ export function buildBaseTaxonomyDataV1(): TaxonomyDataV1 {
         toTerm(
           subcategory.value,
           subcategory.label,
-          SUBCATEGORY_DESCRIPTIONS[subcategory.value] ?? null,
+          resolveSubcategoryPromptDescription({
+            categoryKey: category.value,
+            categoryLabel: category.label,
+            subcategoryKey: subcategory.value,
+            subcategoryLabel: subcategory.label,
+            currentDescription: SUBCATEGORY_DESCRIPTIONS[subcategory.value] ?? null,
+          }),
           subIndex,
         ),
       ),

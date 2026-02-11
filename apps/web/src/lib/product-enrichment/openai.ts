@@ -35,6 +35,10 @@ import {
   type PromptTaxonomy,
 } from "@/lib/product-enrichment/prompt-templates";
 import {
+  resolveCategoryPromptDescription,
+  resolveSubcategoryPromptDescription,
+} from "@/lib/product-enrichment/taxonomy-prompt-fallbacks";
+import {
   validateAndAutofixEnrichment,
   type ConsistencyIssue,
   type ConsistencyAutoFix,
@@ -678,13 +682,23 @@ const getEnrichmentTaxonomy = async (): Promise<EnrichmentTaxonomy> => {
     .map((category) => ({
       key: category.key,
       label: category.label ?? category.key,
-      description: category.description ?? null,
+      description: resolveCategoryPromptDescription({
+        categoryKey: category.key,
+        categoryLabel: category.label ?? category.key,
+        currentDescription: category.description ?? null,
+      }),
       subcategories: (category.subcategories ?? [])
         .filter((sub) => sub.isActive !== false)
         .map((sub) => ({
           key: sub.key,
           label: sub.label ?? sub.key,
-          description: sub.description ?? null,
+          description: resolveSubcategoryPromptDescription({
+            categoryKey: category.key,
+            categoryLabel: category.label ?? category.key,
+            subcategoryKey: sub.key,
+            subcategoryLabel: sub.label ?? sub.key,
+            currentDescription: sub.description ?? null,
+          }),
         })),
     }))
     .filter((category) => category.subcategories.length > 0);

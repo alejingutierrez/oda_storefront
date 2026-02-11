@@ -6,6 +6,10 @@ import { prisma } from "@/lib/prisma";
 import { buildBaseTaxonomyDataV1 } from "./base";
 import type { StyleProfileRow, TaxonomyDataV1, TaxonomyOptions, TaxonomyStage, TaxonomyTerm } from "./types";
 import { parseTaxonomyDataV1 } from "./validate";
+import {
+  resolveCategoryPromptDescription,
+  resolveSubcategoryPromptDescription,
+} from "@/lib/product-enrichment/taxonomy-prompt-fallbacks";
 
 type SnapshotMeta = {
   source: "db" | "base";
@@ -93,12 +97,31 @@ function normalizeTerms<T extends TaxonomyTerm>(terms: T[]): T[] {
 }
 
 function normalizeData(data: TaxonomyDataV1): TaxonomyDataV1 {
+  const categories = normalizeTerms(data.categories).map((cat) => {
+    const categoryLabel = cat.label ?? cat.key;
+    return {
+      ...cat,
+      description: resolveCategoryPromptDescription({
+        categoryKey: cat.key,
+        categoryLabel,
+        currentDescription: cat.description ?? null,
+      }),
+      subcategories: normalizeTerms(cat.subcategories ?? []).map((sub) => ({
+        ...sub,
+        description: resolveSubcategoryPromptDescription({
+          categoryKey: cat.key,
+          categoryLabel,
+          subcategoryKey: sub.key,
+          subcategoryLabel: sub.label ?? sub.key,
+          currentDescription: sub.description ?? null,
+        }),
+      })),
+    };
+  });
+
   return {
     ...data,
-    categories: normalizeTerms(data.categories).map((cat) => ({
-      ...cat,
-      subcategories: normalizeTerms(cat.subcategories ?? []),
-    })),
+    categories,
     materials: normalizeTerms(data.materials ?? []),
     patterns: normalizeTerms(data.patterns ?? []),
     occasions: normalizeTerms(data.occasions ?? []),
