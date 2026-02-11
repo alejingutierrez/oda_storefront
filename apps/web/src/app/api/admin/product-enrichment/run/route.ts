@@ -26,6 +26,11 @@ export const maxDuration = 60;
 const MAX_ATTEMPTS = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 5));
 const ALLOW_REENRICH = process.env.PRODUCT_ENRICHMENT_ALLOW_REENRICH === "true";
 
+const readJsonRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+};
+
 const buildProductFilters = (params: { brandId?: string | null; includeEnriched?: boolean }) => {
   const filters: Prisma.Sql[] = [];
   if (params.brandId) {
@@ -190,6 +195,20 @@ export async function POST(req: Request) {
           consecutiveErrors: 0,
           lastError: null,
           blockReason: null,
+          ...(resumeRequested
+            ? (() => {
+                const metadata = readJsonRecord(existing.metadata);
+                if (metadata.created_by !== "catalog_refresh") return {};
+                return {
+                  metadata: {
+                    ...metadata,
+                    auto_start: true,
+                    manual_resume_at: new Date().toISOString(),
+                    resume_requested_by: "admin_run_api",
+                  } as Prisma.InputJsonValue,
+                };
+              })()
+            : {}),
           updatedAt: new Date(),
         },
       });

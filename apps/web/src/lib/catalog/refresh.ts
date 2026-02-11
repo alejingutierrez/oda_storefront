@@ -463,6 +463,39 @@ const recoverCatalogRuns = async (config: ReturnType<typeof getRefreshConfig>) =
   }
 };
 
+const pauseCatalogRefreshAutoStartDisabledRuns = async () => {
+  const runs = await prisma.$queryRaw<{ id: string }[]>(
+    Prisma.sql`
+      SELECT id
+      FROM "product_enrichment_runs"
+      WHERE status = 'processing'
+        AND COALESCE(metadata->>'created_by', '') = 'catalog_refresh'
+        AND COALESCE(metadata->>'auto_start', 'false') = 'false'
+      LIMIT 500
+    `,
+  );
+
+  if (!runs.length) return { paused: 0 };
+  const ids = runs.map((run) => run.id);
+  const now = new Date();
+
+  await prisma.productEnrichmentItem.updateMany({
+    where: { runId: { in: ids }, status: { in: ["queued", "in_progress"] } },
+    data: { status: "pending", startedAt: null, updatedAt: now },
+  });
+  await prisma.productEnrichmentRun.updateMany({
+    where: { id: { in: ids } },
+    data: {
+      status: "paused",
+      blockReason: "auto_start_disabled",
+      lastError: "catalog_refresh_auto_start_disabled",
+      updatedAt: now,
+    },
+  });
+
+  return { paused: ids.length };
+};
+
 const recoverEnrichmentRuns = async (config: ReturnType<typeof getRefreshConfig>) => {
   if (!config.autoRecover) return;
   if (!isEnrichmentQueueEnabled()) return;
@@ -755,6 +788,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   }
 
   await recoverCatalogRuns(config);
+  await pauseCatalogRefreshAutoStartDisabledRuns();
   await recoverEnrichmentRuns(config);
   await reconcileStaleRefreshStates();
 

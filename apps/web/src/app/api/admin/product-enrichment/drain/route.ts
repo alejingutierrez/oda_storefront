@@ -7,6 +7,23 @@ import { drainEnrichmentRun } from "@/lib/product-enrichment/processor";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const readJsonRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+};
+
+const isCatalogRefreshAutoStartDisabledRun = (metadata: unknown) => {
+  const meta = readJsonRecord(metadata);
+  const createdBy = typeof meta.created_by === "string" ? meta.created_by : null;
+  const autoStart = meta.auto_start;
+  const autoStartDisabled =
+    autoStart === false ||
+    autoStart === "false" ||
+    autoStart === null ||
+    autoStart === undefined;
+  return createdBy === "catalog_refresh" && autoStartDisabled;
+};
+
 const allowCronRequest = (req: Request) => {
   const cronHeader = req.headers.get("x-vercel-cron");
   const userAgent = req.headers.get("user-agent") ?? "";
@@ -86,9 +103,25 @@ export async function POST(req: Request) {
       },
       orderBy: { updatedAt: "asc" },
     });
-    runId = run?.id ?? null;
-
-    if (!runId) break;
+    if (!run) break;
+    runId = run.id;
+    if (isCatalogRefreshAutoStartDisabledRun(run.metadata)) {
+      const now = new Date();
+      await prisma.productEnrichmentItem.updateMany({
+        where: { runId, status: { in: ["queued", "in_progress"] } },
+        data: { status: "pending", startedAt: null, updatedAt: now },
+      });
+      await prisma.productEnrichmentRun.update({
+        where: { id: runId },
+        data: {
+          status: "paused",
+          blockReason: "auto_start_disabled",
+          lastError: run.lastError ?? "catalog_refresh_auto_start_disabled",
+          updatedAt: now,
+        },
+      });
+      continue;
+    }
     seenRunIds.add(runId);
     runsProcessed += 1;
 
