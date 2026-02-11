@@ -76,6 +76,7 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : null;
+  const requestedRunId = typeof body?.runId === "string" ? body.runId : null;
 
   const { batch, concurrency, maxMs, maxRuns, queuedStaleMs, stuckMs } = resolveDrainConfig(body);
   const safeBatch = batch <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, batch);
@@ -95,14 +96,22 @@ export async function POST(req: Request) {
     runsProcessed < safeMaxRuns &&
     Date.now() < deadline
   ) {
-    const run = await prisma.productEnrichmentRun.findFirst({
-      where: {
-        status: "processing",
-        ...(brandId ? { brandId } : {}),
-        ...(seenRunIds.size ? { id: { notIn: Array.from(seenRunIds) } } : {}),
-      },
-      orderBy: { updatedAt: "asc" },
-    });
+    const run = requestedRunId && !seenRunIds.has(requestedRunId)
+      ? await prisma.productEnrichmentRun.findFirst({
+          where: {
+            id: requestedRunId,
+            status: "processing",
+            ...(brandId ? { brandId } : {}),
+          },
+        })
+      : await prisma.productEnrichmentRun.findFirst({
+          where: {
+            status: "processing",
+            ...(brandId ? { brandId } : {}),
+            ...(seenRunIds.size ? { id: { notIn: Array.from(seenRunIds) } } : {}),
+          },
+          orderBy: { updatedAt: "desc" },
+        });
     if (!run) break;
     runId = run.id;
     if (isCatalogRefreshAutoStartDisabledRun(run.metadata)) {

@@ -281,7 +281,6 @@ export default function ProductEnrichmentPanel() {
         startFresh: true,
         includeEnriched,
         forceReenrich: false,
-        drainOnRun: false,
       };
       if (scope === "brand") payload.brandId = selectedBrand;
       const res = await fetch("/api/admin/product-enrichment/run", {
@@ -318,7 +317,6 @@ export default function ProductEnrichmentPanel() {
         startFresh: false,
         includeEnriched,
         forceReenrich: false,
-        drainOnRun: false,
       };
       if (scope === "brand") payload.brandId = selectedBrand;
       const res = await fetch("/api/admin/product-enrichment/run", {
