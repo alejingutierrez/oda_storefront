@@ -86,11 +86,31 @@ const parseDate = (value?: string | null) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-export const getRefreshConfig = () => {
+type RefreshConfigOverrides = {
+  maxBrands?: number;
+  maxRuntimeMs?: number;
+  brandConcurrency?: number;
+};
+
+export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
   const intervalDays = Math.max(1, Number(process.env.CATALOG_REFRESH_INTERVAL_DAYS ?? 7));
   const jitterHours = Math.max(0, Number(process.env.CATALOG_REFRESH_JITTER_HOURS ?? 12));
-  const maxBrands = Math.max(1, Number(process.env.CATALOG_REFRESH_MAX_BRANDS ?? 4));
-  const maxRuntimeMs = Math.max(5000, Number(process.env.CATALOG_REFRESH_MAX_RUNTIME_MS ?? 25000));
+  const envMaxBrands = Math.max(1, Number(process.env.CATALOG_REFRESH_MAX_BRANDS ?? 4));
+  const envMaxRuntimeMs = Math.max(5000, Number(process.env.CATALOG_REFRESH_MAX_RUNTIME_MS ?? 25000));
+  const envBrandConcurrency = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_BRAND_CONCURRENCY ?? 1),
+  );
+  const maxBrands = Number.isFinite(overrides?.maxBrands)
+    ? Math.max(1, Math.floor(Number(overrides?.maxBrands)))
+    : envMaxBrands;
+  const maxRuntimeMs = Number.isFinite(overrides?.maxRuntimeMs)
+    ? Math.max(5000, Math.floor(Number(overrides?.maxRuntimeMs)))
+    : envMaxRuntimeMs;
+  const brandConcurrencyRaw = Number.isFinite(overrides?.brandConcurrency)
+    ? Math.floor(Number(overrides?.brandConcurrency))
+    : envBrandConcurrency;
+  const brandConcurrency = Math.max(1, Math.min(maxBrands, brandConcurrencyRaw));
   const minGapHours = Math.max(1, Number(process.env.CATALOG_REFRESH_MIN_GAP_HOURS ?? 3));
   const maxFailedItems = Math.max(0, Number(process.env.CATALOG_REFRESH_MAX_FAILED_ITEMS ?? 5));
   const maxFailedRateRaw = Number(process.env.CATALOG_REFRESH_MAX_FAILED_RATE ?? 0.01);
@@ -132,6 +152,7 @@ export const getRefreshConfig = () => {
     jitterHours,
     maxBrands,
     maxRuntimeMs,
+    brandConcurrency,
     minGapHours,
     maxFailedItems,
     maxFailedRate,
@@ -704,11 +725,30 @@ export const finalizeRefreshForRun = async (params: {
   });
 };
 
-export const runCatalogRefreshBatch = async (options?: { brandId?: string | null; force?: boolean }) => {
-  const config = getRefreshConfig();
+type CatalogRefreshBatchResult = {
+  brandId: string;
+  status: string;
+  runId?: string;
+  reason?: string;
+};
+
+type RunCatalogRefreshBatchOptions = {
+  brandId?: string | null;
+  force?: boolean;
+  maxBrands?: number;
+  brandConcurrency?: number;
+  maxRuntimeMs?: number;
+};
+
+export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOptions) => {
+  const config = getRefreshConfig({
+    maxBrands: options?.maxBrands,
+    brandConcurrency: options?.brandConcurrency,
+    maxRuntimeMs: options?.maxRuntimeMs,
+  });
   const startedAt = Date.now();
   const now = new Date();
-  const results: Array<{ brandId: string; status: string; runId?: string; reason?: string }> = [];
+  const results: CatalogRefreshBatchResult[] = [];
 
   if (!isCatalogQueueEnabled()) {
     return { status: "queue_disabled", processed: 0, results };
@@ -749,21 +789,39 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
   }
 
   const selected = shuffled.slice(0, config.maxBrands);
+  if (!selected.length) {
+    return {
+      status: "ok",
+      processed: 0,
+      selected: 0,
+      brandConcurrency: 0,
+      results,
+    };
+  }
 
-  for (const brand of selected) {
-    if (Date.now() - startedAt > config.maxRuntimeMs) break;
+  const refreshLimitRaw = Number(process.env.CATALOG_REFRESH_DISCOVERY_LIMIT ?? 5000);
+  const refreshLimit = Number.isFinite(refreshLimitRaw) ? refreshLimitRaw : 5000;
+  const discoveryLimit = refreshLimit <= 0 ? 0 : Math.max(10, refreshLimit);
+  const lookbackStart = new Date(Date.now() - config.failedLookbackDays * 24 * 60 * 60 * 1000);
+  const enqueueLimit = Math.max(
+    1,
+    Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
+  );
+  const coverageEnabled = process.env.CATALOG_REFRESH_COVERAGE_ENABLED !== "false";
+
+  const processBrand = async (
+    brand: (typeof selected)[number],
+  ): Promise<CatalogRefreshBatchResult> => {
+    if (Date.now() - startedAt > config.maxRuntimeMs) {
+      return { brandId: brand.id, status: "skipped", reason: "runtime_budget" };
+    }
     const existingRun = await prisma.catalogRun.findFirst({
       where: { brandId: brand.id, status: { in: ["processing", "paused", "blocked"] } },
       orderBy: { updatedAt: "desc" },
     });
     if (existingRun) {
-      results.push({ brandId: brand.id, status: "skipped", reason: "active_run" });
-      continue;
+      return { brandId: brand.id, status: "skipped", reason: "active_run" };
     }
-
-    const refreshLimitRaw = Number(process.env.CATALOG_REFRESH_DISCOVERY_LIMIT ?? 5000);
-    const refreshLimit = Number.isFinite(refreshLimitRaw) ? refreshLimitRaw : 5000;
-    const discoveryLimit = refreshLimit <= 0 ? 0 : Math.max(10, refreshLimit);
 
     const forceSitemap =
       options?.force || (brand.ecommercePlatform ?? "").toLowerCase() !== "vtex";
@@ -783,7 +841,6 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
       new Map([...(sitemapRefs ?? []), ...(adapterRefs ?? [])].map((ref) => [ref.url, ref])).values(),
     );
 
-    const lookbackStart = new Date(Date.now() - config.failedLookbackDays * 24 * 60 * 60 * 1000);
     const failedRows = await prisma.$queryRaw<{ url: string }[]>(
       Prisma.sql`
         SELECT DISTINCT ci.url
@@ -802,8 +859,7 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
     );
 
     if (!deduped.length) {
-      results.push({ brandId: brand.id, status: "skipped", reason: "no_refs" });
-      continue;
+      return { brandId: brand.id, status: "skipped", reason: "no_refs" };
     }
 
     const run = await createRunWithItems({
@@ -813,20 +869,20 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
       status: "processing",
     });
 
-    const coverage = await computeCoverageMetrics({
-      brandId: brand.id,
-      sitemapRefs: sitemapRefs ?? [],
-      adapterRefs: adapterRefs ?? [],
-      combinedRefs: combinedDiscoveryRefs,
-    });
-    await markRefreshStarted(brand.id, run.id, coverage);
+    if (coverageEnabled) {
+      const coverage = await computeCoverageMetrics({
+        brandId: brand.id,
+        sitemapRefs: sitemapRefs ?? [],
+        adapterRefs: adapterRefs ?? [],
+        combinedRefs: combinedDiscoveryRefs,
+      });
+      await markRefreshStarted(brand.id, run.id, coverage);
+    } else {
+      await markRefreshStarted(brand.id, run.id);
+    }
 
     // Avoid dumping thousands of jobs into Redis at once. The worker refills the queue
     // as items are completed/failed (allowQueueRefill=true).
-    const enqueueLimit = Math.max(
-      1,
-      Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
-    );
     const pending = await listPendingItems(run.id, Math.max(10, enqueueLimit));
     await markItemsQueued(pending.map((item) => item.id));
     await enqueueCatalogItems(pending);
@@ -842,8 +898,48 @@ export const runCatalogRefreshBatch = async (options?: { brandId?: string | null
       });
     }
 
-    results.push({ brandId: brand.id, status: "started", runId: run.id });
+    return { brandId: brand.id, status: "started", runId: run.id };
+  };
+
+  const brandConcurrency = Math.max(
+    1,
+    Math.min(
+      options?.brandId ? 1 : config.brandConcurrency,
+      selected.length,
+    ),
+  );
+  const pendingBrands = [...selected];
+
+  const worker = async () => {
+    while (pendingBrands.length) {
+      if (Date.now() - startedAt > config.maxRuntimeMs) return;
+      const brand = pendingBrands.shift();
+      if (!brand) return;
+      try {
+        const result = await processBrand(brand);
+        results.push(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        results.push({ brandId: brand.id, status: "failed", reason: message.slice(0, 240) });
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: brandConcurrency }, () => worker()),
+  );
+
+  if (pendingBrands.length && Date.now() - startedAt > config.maxRuntimeMs) {
+    for (const brand of pendingBrands) {
+      results.push({ brandId: brand.id, status: "skipped", reason: "runtime_budget" });
+    }
   }
 
-  return { status: "ok", processed: results.length, results };
+  return {
+    status: "ok",
+    processed: results.length,
+    selected: selected.length,
+    brandConcurrency,
+    results,
+  };
 };

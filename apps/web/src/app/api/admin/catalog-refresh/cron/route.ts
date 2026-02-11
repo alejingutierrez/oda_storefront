@@ -30,10 +30,21 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const brandId = url.searchParams.get("brandId");
   const force = url.searchParams.get("force") === "true";
+  const maxBrandsRaw = Number(url.searchParams.get("maxBrands"));
+  const brandConcurrencyRaw = Number(url.searchParams.get("brandConcurrency"));
+  const maxRuntimeMsRaw = Number(url.searchParams.get("maxRuntimeMs"));
+  const maxBrands = Number.isFinite(maxBrandsRaw) ? maxBrandsRaw : undefined;
+  const brandConcurrency = Number.isFinite(brandConcurrencyRaw)
+    ? brandConcurrencyRaw
+    : undefined;
+  const maxRuntimeMs = Number.isFinite(maxRuntimeMsRaw) ? maxRuntimeMsRaw : undefined;
 
   const result = await runCatalogRefreshBatch({
     brandId: brandId ?? undefined,
     force,
+    maxBrands,
+    brandConcurrency,
+    maxRuntimeMs,
   });
 
   return NextResponse.json({ ok: true, ...result });
