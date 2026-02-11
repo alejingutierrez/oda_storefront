@@ -29,7 +29,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Catalog VTEX: `CATALOG_VTEX_MAX_PRODUCTS`, `CATALOG_VTEX_PAGE_SIZE`.
 - Catalog refresh semanal: `CATALOG_REFRESH_INTERVAL_DAYS`, `CATALOG_REFRESH_JITTER_HOURS`, `CATALOG_REFRESH_MAX_BRANDS`, `CATALOG_REFRESH_BRAND_CONCURRENCY`, `CATALOG_REFRESH_MAX_RUNTIME_MS`, `CATALOG_REFRESH_MIN_GAP_HOURS`, `CATALOG_REFRESH_MAX_FAILED_ITEMS`, `CATALOG_REFRESH_MAX_FAILED_RATE`, `CATALOG_REFRESH_DISCOVERY_LIMIT` (0 = sin límite), `CATALOG_REFRESH_COVERAGE_ENABLED`, `CATALOG_REFRESH_AUTO_RECOVER`, `CATALOG_REFRESH_RECOVER_MAX_RUNS`, `CATALOG_REFRESH_RECOVER_STUCK_MINUTES`, `CATALOG_REFRESH_ENRICH_RECOVER_STUCK_MINUTES`, `CATALOG_REFRESH_FAILED_LOOKBACK_DAYS`, `CATALOG_REFRESH_FAILED_URL_LIMIT`, `CATALOG_REFRESH_ENRICH_LOOKBACK_DAYS`, `CATALOG_REFRESH_ENRICH_MAX_PRODUCTS`, `CATALOG_REFRESH_DRAIN_ON_RUN`, `CATALOG_ALERT_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_ALERT_STUCK_MINUTES`.
 - Catalog extractor (PDP LLM): `CATALOG_OPENAI_MODEL`, `CATALOG_OPENAI_TEMPERATURE`, `CATALOG_OPENAI_DISABLE_TEMPERATURE`, `CATALOG_PDP_LLM_ENABLED`, `CATALOG_PDP_LLM_CONFIDENCE_MIN`, `CATALOG_PDP_LLM_MAX_HTML_CHARS`, `CATALOG_PDP_LLM_MAX_TEXT_CHARS`, `CATALOG_PDP_LLM_MAX_IMAGES`.
-- Product enrichment (OpenAI): `PRODUCT_ENRICHMENT_MODEL`, `PRODUCT_ENRICHMENT_TEMPERATURE`, `PRODUCT_ENRICHMENT_MAX_TOKENS`, `PRODUCT_ENRICHMENT_MAX_RETRIES`, `PRODUCT_ENRICHMENT_MAX_ATTEMPTS`, `PRODUCT_ENRICHMENT_MAX_IMAGES`, `PRODUCT_ENRICHMENT_VARIANT_CHUNK_SIZE`, `PRODUCT_ENRICHMENT_REPAIR_MAX_CHARS`, `PRODUCT_ENRICHMENT_QUEUE_NAME`, `PRODUCT_ENRICHMENT_QUEUE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_QUEUE_DISABLED`, `PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT`, `PRODUCT_ENRICHMENT_QUEUE_STALE_MINUTES`, `PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_RESUME_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_AUTO_PAUSE_ON_ERRORS`, `PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT`, `PRODUCT_ENRICHMENT_DRAIN_ON_RUN`, `PRODUCT_ENRICHMENT_DRAIN_BATCH`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS`, `PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNS`, `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`, `PRODUCT_ENRICHMENT_WORKER_API_URL`.
+- Product enrichment (OpenAI): `PRODUCT_ENRICHMENT_MODEL`, `PRODUCT_ENRICHMENT_TEMPERATURE`, `PRODUCT_ENRICHMENT_MAX_TOKENS`, `PRODUCT_ENRICHMENT_MAX_RETRIES`, `PRODUCT_ENRICHMENT_MAX_ATTEMPTS`, `PRODUCT_ENRICHMENT_MAX_IMAGES`, `PRODUCT_ENRICHMENT_VARIANT_CHUNK_SIZE`, `PRODUCT_ENRICHMENT_REPAIR_MAX_CHARS`, `PRODUCT_ENRICHMENT_QUEUE_NAME`, `PRODUCT_ENRICHMENT_QUEUE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_QUEUE_DISABLED`, `PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT`, `PRODUCT_ENRICHMENT_QUEUE_STALE_MINUTES`, `PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_RESUME_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_AUTO_PAUSE_ON_ERRORS`, `PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT`, `PRODUCT_ENRICHMENT_DRAIN_ON_RUN`, `PRODUCT_ENRICHMENT_DRAIN_BATCH`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS`, `PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNS`, `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`, `PRODUCT_ENRICHMENT_WORKER_API_URL`, `PRODUCT_ENRICHMENT_ALLOW_REENRICH`.
 - Bedrock (legacy, deshabilitado): `PRODUCT_ENRICHMENT_PROVIDER`, `BEDROCK_INFERENCE_PROFILE_ID`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `PRODUCT_ENRICHMENT_BEDROCK_MAX_IMAGES`, `PRODUCT_ENRICHMENT_BEDROCK_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_BEDROCK_INCLUDE_IMAGES`, `PRODUCT_ENRICHMENT_BEDROCK_IMAGE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_BEDROCK_IMAGE_MAX_BYTES`.
 - Sweep tech profiler: `TECH_PROFILE_SWEEP_LIMIT`, `TECH_PROFILE_SWEEP_PLATFORM` (all|unknown|null|shopify|...).
 - Dry-run LLM: `UNKNOWN_LLM_DRY_RUN_LIMIT`, `UNKNOWN_LLM_DRY_RUN_CANDIDATES`.
@@ -155,11 +155,15 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Panel `/admin/product-enrichment` (enriquecimiento):
   - Enriquecimiento de atributos por OpenAI para categoría, subcategoría, tags, género, temporada, color hex, Pantone, fit, descripción (texto plano) y campos SEO (meta title/description + seoTags). Taxonomía incluye ropa + accesorios (joyería, calzado, bolsos, gafas).
   - El proveedor de enriquecimiento se fuerza a OpenAI; `PRODUCT_ENRICHMENT_PROVIDER` se ignora en runtime.
+  - Prompt `v12.5`: una sola llamada principal por producto, con harvesting de señales pre-LLM (nombre, descripción original, metadata vendor, og tags), routing determinístico a prompts por grupo de categoría y estrategia de imágenes por grupo.
+  - La descripción original se preserva en `products.metadata.enrichment.original_description` y se reutiliza en reintentos/reprocesos.
   - Materiales incluyen metales (oro/plata/bronce/cobre) **solo para joyería o accesorios**.
   - Style tags: **exactamente 10** por producto.
   - Colores: admite hasta 3 hex/pantone por variante; el color principal se guarda en `variants.color`/`variants.colorPantone` y el resto en `variants.metadata.enrichment.colors`.
+  - Post-procesamiento determinístico: validador de consistencia + auto-fixes seguros; si persiste inconsistencia, se marca `review_required` con razones para curación humana.
+  - Se guarda `confidence` local (`category/subcategory/overall`) y el panel expone conteos de baja confianza y revisión manual.
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
-  - Por defecto omite productos ya enriquecidos (se puede incluirlos manualmente).
+  - Por defecto omite productos ya enriquecidos por IA; el re-enrichment IA queda deshabilitado salvo override explícito (`PRODUCT_ENRICHMENT_ALLOW_REENRICH=true` + `forceReenrich`).
   - Controles de **pausa** y **detener**, y botón para **limpiar batches activos**; muestra progreso, errores, estado y cobertura (enriquecidos vs pendientes) con conteo de cola/en‑progreso. Auto‑refresco cada 5s cuando hay run activo.
   - Al finalizar, el progreso se calcula con conteos reales de items para evitar pendientes fantasma si cambió el catálogo.
   - En el panel, el run no se drena en la misma petición (respuesta rápida); el progreso se ve por polling y por el cron `/api/admin/product-enrichment/drain`.
@@ -167,7 +171,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - El drenado aplica concurrencia mínima 20 (clamp) vía `PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY`.
   - El worker BullMQ aplica concurrencia mínima 20 vía `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`.
   - El batch de drenado y el enqueue limit se elevan automáticamente al nivel de concurrencia para evitar cuellos por configuración baja.
-  - Persistencia de estado: `scope`, `brandId`, `batch` e `includeEnriched` viven en la URL para mantener el contexto tras recarga.
+  - Persistencia de estado: `scope`, `brandId` y `batch` viven en la URL para mantener el contexto tras recarga.
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).
@@ -233,7 +237,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 
 ## API interna (product enrichment)
 - `GET /api/admin/product-enrichment/state`: estado de corrida (query: `scope=brand|all`, `brandId?`).
-- `POST /api/admin/product-enrichment/run`: inicia corrida (body: `{ scope, brandId?, mode: \"batch\"|\"all\", limit?, resume? }`).
+- `POST /api/admin/product-enrichment/run`: inicia corrida (body: `{ scope, brandId?, mode: \"batch\"|\"all\", limit?, resume?, includeEnriched?, forceReenrich? }`).
 - `POST /api/admin/product-enrichment/pause`: pausa corrida (body: `{ runId }`).
 - `POST /api/admin/product-enrichment/stop`: detiene corrida (body: `{ runId }`).
 - `POST /api/admin/product-enrichment/process-item`: procesa item (body: `{ itemId }`).

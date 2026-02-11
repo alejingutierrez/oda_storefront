@@ -24,6 +24,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const MAX_ATTEMPTS = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 5));
+const ALLOW_REENRICH = process.env.PRODUCT_ENRICHMENT_ALLOW_REENRICH === "true";
 
 const buildProductFilters = (params: { brandId?: string | null; includeEnriched?: boolean }) => {
   const filters: Prisma.Sql[] = [];
@@ -31,7 +32,13 @@ const buildProductFilters = (params: { brandId?: string | null; includeEnriched?
     filters.push(Prisma.sql`"brandId" = ${params.brandId}`);
   }
   if (!params.includeEnriched) {
-    filters.push(Prisma.sql`("metadata" -> 'enrichment') IS NULL`);
+    filters.push(
+      Prisma.sql`
+        COALESCE("metadata" -> 'enrichment' ->> 'completed_at', '') = ''
+        AND COALESCE("metadata" -> 'enrichment' ->> 'provider', '') = ''
+        AND COALESCE("metadata" -> 'enrichment' ->> 'model', '') = ''
+      `,
+    );
   }
   if (!filters.length) return Prisma.sql``;
   return Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}`;
@@ -67,7 +74,9 @@ export async function POST(req: Request) {
   const mode = body?.mode === "all" || body?.mode === "batch" ? body.mode : body?.limit ? "batch" : "all";
   const limit = Number(body?.limit ?? body?.batchSize ?? body?.count ?? 0);
   const resumeRequested = Boolean(body?.resume);
-  const includeEnriched = Boolean(body?.includeEnriched);
+  const includeEnrichedRequested = Boolean(body?.includeEnriched);
+  const forceReenrichRequested = Boolean(body?.forceReenrich);
+  const includeEnriched = includeEnrichedRequested && ALLOW_REENRICH && forceReenrichRequested;
   const requestDrainOnRun = body?.drainOnRun;
   const requestedDrainBatch = Number(body?.drainBatch ?? body?.drainLimit ?? body?.drainSize);
   const requestedDrainConcurrency = Number(body?.drainConcurrency ?? body?.concurrency ?? body?.drainWorkers);
@@ -229,6 +238,10 @@ export async function POST(req: Request) {
     metadata: {
       mode,
       limit: effectiveLimit || null,
+      include_enriched_requested: includeEnrichedRequested,
+      include_enriched_effective: includeEnriched,
+      force_reenrich_requested: forceReenrichRequested,
+      allow_reenrich: ALLOW_REENRICH,
       created_at: new Date().toISOString(),
       provider: productEnrichmentProvider,
       model: productEnrichmentModel,

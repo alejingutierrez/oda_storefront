@@ -224,6 +224,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Latencia mayor en productos con muchas variantes; mitigación: chunk size configurable.
 - Métricas: % de validación JSON y tasa de fallos por esquema.
 - Estado: **done (2026-01-29)**.
+
+### MC-117 Reingenieria enrichment v12.5 (calidad sin aumentar costo por producto)
+- Historia: Como operador IA, quiero mejorar sustancialmente categoría/subcategoría/materiales/patrones/descripcion sin aumentar llamadas por producto, para sostener calidad y consistencia del portafolio enriquecido.
+- Alcance: Se agrega harvesting de señales pre-LLM (nombre, descripción original, metadata vendor/og), routing determinístico a prompts especializados por grupo de categoría, estrategia de imágenes por grupo, validador post-LLM con auto-fixes seguros y score local de confianza; se preserva `original_description` y señales originales de vendor en metadata; se deshabilita por defecto el re-enrichment IA de productos ya enriquecidos.
+- CA: Se mantiene una llamada principal al modelo por producto; prompt version `v12.5` y schema `v5`; los resultados guardan `confidence` + `review_required` + razones; productos ya enriquecidos por IA no se vuelven a encolar salvo override explícito de entorno/endpoint.
+- Datos: `products.metadata.enrichment` (original_description, original_vendor_signals, signals, route, confidence, consistency), `product_enrichment_runs/items`.
+- NF: Compatibilidad retroactiva con enriquecimientos existentes; sin cambios de schema de respuesta LLM.
+- Riesgos: Mayor complejidad de pipeline; mitigación con validación determinística, flags de override y fallback a prompt genérico cuando señal es débil.
+- Métricas: accuracy categoría/subcategoría, low-confidence count, review_required count, retries por run, costo/tokens por producto.
+- Estado: **done (2026-02-11)**.
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

@@ -47,6 +47,8 @@ type CoverageCounts = {
   total: number;
   enriched: number;
   remaining: number;
+  lowConfidence?: number;
+  reviewRequired?: number;
 };
 
 const buildProgress = (summary: RunSummary | null) => {
@@ -84,7 +86,7 @@ export default function ProductEnrichmentPanel() {
   const initialBatch = normalizeBatchSize(
     parsePositiveInt(searchParams.get("batch"), BATCH_OPTIONS[0] ?? 10),
   );
-  const initialInclude = searchParams.get("includeEnriched") === "1";
+  const initialInclude = false;
   const [brands, setBrands] = useState<BrandOption[]>([]);
   const [selectedBrand, setSelectedBrand] = useState<string>(initialBrand);
   const [scope, setScope] = useState<"brand" | "all">(initialScope);
@@ -177,7 +179,7 @@ export default function ProductEnrichmentPanel() {
     const nextBatch = normalizeBatchSize(
       parsePositiveInt(searchParams.get("batch"), BATCH_OPTIONS[0] ?? 10),
     );
-    const nextInclude = searchParams.get("includeEnriched") === "1";
+    const nextInclude = false;
     setScope((prev) => (prev === nextScope ? prev : nextScope));
     setSelectedBrand((prev) => (prev === nextBrand ? prev : nextBrand));
     setBatchSize((prev) => (prev === nextBatch ? prev : nextBatch));
@@ -191,14 +193,13 @@ export default function ProductEnrichmentPanel() {
     if (scope === "brand" && selectedBrand) params.set("brandId", selectedBrand);
     else params.delete("brandId");
     params.set("batch", String(batchSize));
-    if (includeEnriched) params.set("includeEnriched", "1");
-    else params.delete("includeEnriched");
+    params.delete("includeEnriched");
     const next = params.toString();
     const current = searchParams.toString();
     if (next !== current) {
       router.replace(`/admin/product-enrichment?${next}`, { scroll: false });
     }
-  }, [batchSize, includeEnriched, router, scope, searchParams, selectedBrand]);
+  }, [batchSize, router, scope, searchParams, selectedBrand]);
 
   useEffect(() => {
     replaceUrl();
@@ -214,6 +215,7 @@ export default function ProductEnrichmentPanel() {
         limit: mode === "batch" ? batchSize : null,
         resume: shouldResume,
         includeEnriched,
+        forceReenrich: false,
         drainOnRun: false,
       };
       if (scope === "brand") payload.brandId = selectedBrand;
@@ -400,6 +402,17 @@ export default function ProductEnrichmentPanel() {
               total
             </p>
             <p>
+              Calidad:{" "}
+              <span className="font-semibold text-slate-900">
+                {counts?.lowConfidence ?? 0}
+              </span>{" "}
+              baja confianza ·{" "}
+              <span className="font-semibold text-slate-900">
+                {counts?.reviewRequired ?? 0}
+              </span>{" "}
+              para revision manual
+            </p>
+            <p>
               Estado: <span className="font-semibold text-slate-900">{summary?.status ?? "—"}</span>
             </p>
             <p>
@@ -488,10 +501,13 @@ export default function ProductEnrichmentPanel() {
           id="includeEnriched"
           type="checkbox"
           checked={includeEnriched}
+          disabled
           onChange={(event) => setIncludeEnriched(event.target.checked)}
           className="h-4 w-4 rounded border-slate-300"
         />
-        <label htmlFor="includeEnriched">Incluir productos ya enriquecidos</label>
+        <label htmlFor="includeEnriched">
+          Re-enrichment IA de productos ya enriquecidos deshabilitado por politica
+        </label>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">

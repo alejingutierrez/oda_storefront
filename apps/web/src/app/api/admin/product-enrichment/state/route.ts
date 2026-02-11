@@ -46,11 +46,21 @@ export async function GET(req: Request) {
     filters.push(Prisma.sql`"brandId" = ${brandId}`);
   }
   const where = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}` : Prisma.sql``;
-  const [counts] = await prisma.$queryRaw<{ total: number; enriched: number }[]>(
+  const [counts] = await prisma.$queryRaw<
+    Array<{ total: number; enriched: number; low_confidence: number; review_required: number }>
+  >(
     Prisma.sql`
       SELECT
         COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE ("metadata" -> 'enrichment') IS NOT NULL)::int AS enriched
+        COUNT(*) FILTER (WHERE ("metadata" -> 'enrichment') IS NOT NULL)::int AS enriched,
+        COUNT(*) FILTER (
+          WHERE ("metadata" -> 'enrichment' ->> 'review_required') = 'true'
+        )::int AS review_required,
+        COUNT(*) FILTER (
+          WHERE
+            ("metadata" -> 'enrichment' -> 'confidence' ->> 'overall') ~ '^[0-9]+(\\.[0-9]+)?$'
+            AND (("metadata" -> 'enrichment' -> 'confidence' ->> 'overall')::double precision) < 0.70
+        )::int AS low_confidence
       FROM "products"
       ${where}
     `,
@@ -58,6 +68,8 @@ export async function GET(req: Request) {
   const total = counts?.total ?? 0;
   const enriched = counts?.enriched ?? 0;
   const remaining = Math.max(0, total - enriched);
+  const lowConfidence = counts?.low_confidence ?? 0;
+  const reviewRequired = counts?.review_required ?? 0;
 
   return NextResponse.json({
     summary,
@@ -77,6 +89,8 @@ export async function GET(req: Request) {
       total,
       enriched,
       remaining,
+      lowConfidence,
+      reviewRequired,
     },
   });
 }

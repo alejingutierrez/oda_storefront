@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   enrichProductWithOpenAI,
@@ -21,6 +22,40 @@ const CONSECUTIVE_ERROR_LIMIT = Math.max(
   2,
   Number(process.env.PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT ?? 5),
 );
+const ALLOW_REENRICH = process.env.PRODUCT_ENRICHMENT_ALLOW_REENRICH === "true";
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+};
+
+const isAlreadyEnrichedByAI = (metadata: Record<string, unknown> | null | undefined) => {
+  const enrichment = asRecord(metadata?.enrichment);
+  if (!enrichment) return false;
+  return Boolean(
+    enrichment.completed_at ||
+      enrichment.provider ||
+      enrichment.model ||
+      enrichment.prompt_version,
+  );
+};
+
+const buildOriginalVendorSignals = (metadata: Record<string, unknown> | null | undefined) => {
+  const source = metadata ?? {};
+  const output: Record<string, unknown> = {};
+  if (typeof source.platform === "string") output.platform = source.platform;
+  if (typeof source.product_type === "string") output.product_type = source.product_type;
+  if (Array.isArray(source.tags) || typeof source.tags === "string") output.tags = source.tags;
+  const meta = asRecord(source.meta);
+  if (meta) {
+    output.meta = {
+      "og:title": typeof meta["og:title"] === "string" ? meta["og:title"] : null,
+      "og:description": typeof meta["og:description"] === "string" ? meta["og:description"] : null,
+      description: typeof meta.description === "string" ? meta.description : null,
+    };
+  }
+  return output;
+};
 
 export const finalizeRunIfDone = async (runId: string) => {
   const remaining = await prisma.productEnrichmentItem.count({
@@ -151,6 +186,45 @@ export const processEnrichmentItemById = async (
 
   if (!claimed.count) return { status: "skipped", error: "already_claimed" };
 
+  const productMetadata =
+    item.product.metadata && typeof item.product.metadata === "object"
+      ? (item.product.metadata as Record<string, unknown>)
+      : {};
+  const existingEnrichment = asRecord(productMetadata.enrichment);
+
+  if (!ALLOW_REENRICH && isAlreadyEnrichedByAI(productMetadata)) {
+    await prisma.$transaction(async (tx) => {
+      await tx.productEnrichmentItem.update({
+        where: { id: item.id },
+        data: {
+          status: "completed",
+          attempts: item.attempts,
+          lastError: null,
+          lastStage: "skipped_already_enriched",
+          completedAt: new Date(),
+        },
+      });
+      await tx.productEnrichmentRun.update({
+        where: { id: run.id },
+        data: {
+          lastProductId: item.productId,
+          lastStage: "skipped_already_enriched",
+          lastError: null,
+          consecutiveErrors: 0,
+          updatedAt: new Date(),
+        },
+      });
+    });
+
+    const finalized = await finalizeRunIfDone(run.id);
+    if (!finalized && options.allowQueueRefill) {
+      const pendingItems = await listPendingItems(run.id, enqueueLimit);
+      await markItemsQueued(pendingItems.map((candidate) => candidate.id));
+      await enqueueEnrichmentItems(pendingItems);
+    }
+    return { status: "already_enriched" };
+  }
+
   let lastStage: string | null = null;
   try {
     lastStage = productEnrichmentProvider;
@@ -173,7 +247,7 @@ export const processEnrichmentItemById = async (
         status: item.product.status,
         sourceUrl: item.product.sourceUrl,
         imageCoverUrl: item.product.imageCoverUrl,
-        metadata: item.product.metadata as Record<string, unknown> | null,
+        metadata: productMetadata,
       },
       variants: item.product.variants.map((variant) => ({
         id: variant.id,
@@ -192,7 +266,46 @@ export const processEnrichmentItemById = async (
     });
 
     lastStage = "persist";
+    const completedAtIso = new Date().toISOString();
+    const diagnostics = enriched.diagnostics ?? null;
+    const originalDescription =
+      typeof existingEnrichment?.original_description === "string"
+        ? existingEnrichment.original_description
+        : item.product.description ?? null;
+    const originalVendorSignals =
+      asRecord(existingEnrichment?.original_vendor_signals) ??
+      buildOriginalVendorSignals(productMetadata);
     const enrichedVariantMap = new Map(enriched.variants.map((variant) => [variant.variantId, variant]));
+    const nextProductMetadata = JSON.parse(
+      JSON.stringify({
+        ...productMetadata,
+        enrichment: {
+          ...(existingEnrichment ?? {}),
+          model: productEnrichmentModel,
+          provider: productEnrichmentProvider,
+          prompt_version: productEnrichmentPromptVersion,
+          schema_version: productEnrichmentSchemaVersion,
+          completed_at: completedAtIso,
+          run_id: run.id,
+          original_description: originalDescription,
+          original_vendor_signals: originalVendorSignals,
+          signals: diagnostics?.signals ?? existingEnrichment?.signals ?? null,
+          signal_strength:
+            diagnostics?.signals?.signalStrength ?? existingEnrichment?.signal_strength ?? null,
+          prompt_group: diagnostics?.promptGroup ?? existingEnrichment?.prompt_group ?? "generic",
+          route: diagnostics?.route ?? existingEnrichment?.route ?? null,
+          confidence: enriched.confidence ?? existingEnrichment?.confidence ?? null,
+          consistency: {
+            issues: diagnostics?.consistencyIssues ?? [],
+            auto_fixes: diagnostics?.autoFixes ?? [],
+            review_required: Boolean(enriched.reviewRequired),
+            review_reasons: enriched.reviewReasons ?? [],
+          },
+          review_required: Boolean(enriched.reviewRequired),
+          review_reasons: enriched.reviewReasons ?? [],
+        },
+      }),
+    ) as Prisma.InputJsonValue;
 
     await prisma.$transaction(async (tx) => {
       await tx.product.update({
@@ -210,17 +323,7 @@ export const processEnrichmentItemById = async (
           seoTitle: enriched.seoTitle,
           seoDescription: enriched.seoDescription,
           seoTags: enriched.seoTags,
-          metadata: {
-            ...(item.product.metadata && typeof item.product.metadata === "object" ? item.product.metadata : {}),
-            enrichment: {
-              model: productEnrichmentModel,
-              provider: productEnrichmentProvider,
-              prompt_version: productEnrichmentPromptVersion,
-              schema_version: productEnrichmentSchemaVersion,
-              completed_at: new Date().toISOString(),
-              run_id: run.id,
-            },
-          },
+          metadata: nextProductMetadata,
         },
       });
 
@@ -235,22 +338,25 @@ export const processEnrichmentItemById = async (
           baseMetadata.enrichment && typeof baseMetadata.enrichment === "object"
             ? (baseMetadata.enrichment as Record<string, unknown>)
             : {};
+        const nextVariantMetadata = JSON.parse(
+          JSON.stringify({
+            ...baseMetadata,
+            enrichment: {
+              ...existingEnrichment,
+              colors: {
+                hex: enrichedVariant.colorHexes,
+                pantone: enrichedVariant.colorPantones,
+              },
+            },
+          }),
+        ) as Prisma.InputJsonValue;
         await tx.variant.update({
           where: { id: variant.id },
           data: {
             color: enrichedVariant.colorHex,
             colorPantone: enrichedVariant.colorPantone,
             fit: enrichedVariant.fit,
-            metadata: {
-              ...baseMetadata,
-              enrichment: {
-                ...existingEnrichment,
-                colors: {
-                  hex: enrichedVariant.colorHexes,
-                  pantone: enrichedVariant.colorPantones,
-                },
-              },
-            },
+            metadata: nextVariantMetadata,
           },
         });
       }

@@ -16,6 +16,30 @@ import {
   chunkArray,
   slugify,
 } from "@/lib/product-enrichment/utils";
+import {
+  harvestProductSignals,
+  buildSignalPayloadForPrompt,
+  type HarvestedSignals,
+} from "@/lib/product-enrichment/signal-harvester";
+import {
+  routeToPromptGroup,
+  type PromptRouteResult,
+} from "@/lib/product-enrichment/pre-classifier";
+import {
+  getCategoriesForPromptGroup,
+  type PromptGroup,
+} from "@/lib/product-enrichment/category-groups";
+import { resolveImageLimitsForGroup } from "@/lib/product-enrichment/image-strategy";
+import {
+  buildProductEnrichmentPrompt,
+  type PromptTaxonomy,
+} from "@/lib/product-enrichment/prompt-templates";
+import {
+  validateAndAutofixEnrichment,
+  type ConsistencyIssue,
+  type ConsistencyAutoFix,
+  type EnrichmentConfidence,
+} from "@/lib/product-enrichment/consistency-validator";
 
 const RAW_PROVIDER = (process.env.PRODUCT_ENRICHMENT_PROVIDER ?? "openai").toLowerCase();
 const PRODUCT_ENRICHMENT_PROVIDER: "openai" | "bedrock" = "openai";
@@ -227,6 +251,16 @@ export type EnrichedProduct = {
   seoDescription: string;
   seoTags: string[];
   variants: EnrichedVariant[];
+  confidence?: EnrichmentConfidence;
+  reviewRequired?: boolean;
+  reviewReasons?: string[];
+  diagnostics?: {
+    signals: HarvestedSignals;
+    promptGroup: PromptGroup | "generic";
+    route: PromptRouteResult;
+    consistencyIssues: ConsistencyIssue[];
+    autoFixes: ConsistencyAutoFix[];
+  };
 };
 
 type OpenAIResponse = {
@@ -332,9 +366,10 @@ const bedrockToolSchema = {
 
 const openAiResponseSchema = bedrockToolSchema.input_schema;
 
-type BedrockModule = any;
+type BedrockModule = typeof import("@aws-sdk/client-bedrock-runtime");
+type BedrockClientLike = InstanceType<BedrockModule["BedrockRuntimeClient"]>;
 let bedrockModulePromise: Promise<BedrockModule> | null = null;
-let bedrockClient: any = null;
+let bedrockClient: BedrockClientLike | null = null;
 
 const loadBedrockModule = async () => {
   if (!bedrockModulePromise) {
@@ -596,9 +631,13 @@ type EnrichmentTaxonomy = {
   subcategoryValues: string[];
   subcategoryByCategory: Record<string, string[]>;
   styleTags: string[];
+  styleTagDetails: Array<{ key: string; label: string; description: string | null }>;
   materialTags: string[];
   patternTags: string[];
   occasionTags: string[];
+  genderValues: string[];
+  seasonValues: string[];
+  fitValues: string[];
 };
 
 const getEnrichmentTaxonomy = async (): Promise<EnrichmentTaxonomy> => {
@@ -630,6 +669,13 @@ const getEnrichmentTaxonomy = async (): Promise<EnrichmentTaxonomy> => {
   const styleTags = (data.styleTags ?? [])
     .filter((tag) => tag.isActive !== false)
     .map((tag) => tag.key);
+  const styleTagDetails = (data.styleTags ?? [])
+    .filter((tag) => tag.isActive !== false)
+    .map((tag) => ({
+      key: tag.key,
+      label: tag.label ?? tag.key,
+      description: tag.description ?? null,
+    }));
   const materialTags = (data.materials ?? [])
     .filter((tag) => tag.isActive !== false)
     .map((tag) => tag.key);
@@ -653,126 +699,26 @@ const getEnrichmentTaxonomy = async (): Promise<EnrichmentTaxonomy> => {
     subcategoryValues,
     subcategoryByCategory,
     styleTags,
+    styleTagDetails,
     materialTags,
     patternTags,
     occasionTags,
+    genderValues: GENDER_OPTIONS.map((entry) => entry.value),
+    seasonValues: SEASON_OPTIONS.map((entry) => entry.value),
+    fitValues: FIT_OPTIONS.map((entry) => entry.value),
   };
 };
 
-const buildCategoryPrompt = (taxonomy: EnrichmentTaxonomy) =>
-  taxonomy.categories
-    .map((category) => {
-      const header = category.description
-        ? `- ${category.key}: ${category.label}. ${category.description}`
-        : `- ${category.key}: ${category.label}.`;
-      const subs = category.subcategories
-        .map((sub) =>
-          sub.description ? `  - ${sub.key}: ${sub.label}. ${sub.description}` : `  - ${sub.key}: ${sub.label}.`,
-        )
-        .join("\n");
-      return `${header}\n${subs}`;
-    })
-    .join("\n");
-
-const buildPrompt = (taxonomy: EnrichmentTaxonomy) => {
-  const categories = buildCategoryPrompt(taxonomy);
-  return `Eres un clasificador de enriquecimiento de producto de moda colombiana.
-Debes devolver SOLO JSON válido con el siguiente esquema:
-{
-  "product": {
-    "description": "string",
-    "category": "string",
-    "subcategory": "string",
-    "style_tags": ["string"],
-    "material_tags": ["string"],
-    "pattern_tags": ["string"],
-    "occasion_tags": ["string"],
-    "gender": "string",
-    "season": "string",
-    "seo_title": "string",
-    "seo_description": "string",
-    "seo_tags": ["string"],
-    "variants": [
-      {
-        "variant_id": "string",
-        "sku": "string|null",
-        "color_hex": "#RRGGBB | [\"#RRGGBB\", \"#RRGGBB\"]",
-        "color_pantone": "NN-NNNN | [\"NN-NNNN\", \"NN-NNNN\"]",
-        "fit": "string"
-      }
-    ]
-  }
-}
-Reglas estrictas:
-- description debe ser SOLO texto plano (sin HTML, sin etiquetas).
-- category, subcategory, gender, season y fit deben tener UN SOLO valor.
-- subcategory debe ser una de las subcategorías listadas para la categoría seleccionada; nunca uses "otro".
-- style_tags deben ser EXACTAMENTE 10 elementos.
-- material_tags máximo 3 elementos.
-- pattern_tags máximo 2 elementos.
-- occasion_tags máximo 2 elementos.
-- seo_title debe ser conciso (<= 70 caracteres) y combinar nombre del producto + marca si existe.
-- seo_description debe tener entre 120-160 caracteres, sin emojis, en español neutro.
-- seo_tags debe tener entre 6-12 etiquetas, en español, sin duplicados.
-- Usa SOLO los valores permitidos (en formato slug sin tildes ni espacios) para category/subcategory/style/material/pattern/occasion/gender/season/fit.
-- seo_title, seo_description y seo_tags son libres (texto natural).
-- No inventes variantes: devuelve un objeto por cada variant_id recibido.
-- color_hex debe ser hexadecimal #RRGGBB. Puede ser string o array (1-3). Si hay varios colores, devuelve array con máximo 3 en orden de predominancia.
-- color_pantone debe ser un código Pantone TCX NN-NNNN. Puede ser string o array (1-3). Si hay varios colores, devuelve array con máximo 3 en orden de predominancia.
-- Si hay dudas sobre el género o es mixto, usa "no_binario_unisex".
-- No uses comillas tipográficas ni comentarios. El JSON debe ser válido, sin comas colgantes y con comas entre elementos.
-- No uses markdown ni bloques de código. No envuelvas el JSON en etiquetas.
-Reglas de evidencia y consistencia:
-- Prioriza la señal de texto en este orden: product.name, product.description, metadata (og:title, og:description, jsonld, etc.).
-- Si viene product.brand_name úsalo para enriquecer seo_title y seo_description.
-- Si el texto es claro sobre el tipo de prenda (ej: "top", "camisa", "blusa", "camiseta", "falda", "vestido", "pantalón", "jean", "short", "bikini"), ESA familia manda.
-- Si llega category/subcategory en el input, asúmelas como NO confiables y no las uses como señal principal.
-- Si el texto indica joyería (aretes/pendientes, anillos, collares, pulseras/brazaletes, tobilleras, dijes/charms, broches, piercings, reloj), usa category "joyeria_y_bisuteria".
-- "Accesorios textiles y medias" es solo textil (bandanas, pañuelos, bufandas, gorras, medias). Nunca usarlo para joyería.
-- Si el texto indica calzado (botas, botines, tenis, sandalias, tacones, mocasines, balerinas, zapatos), usa category "calzado".
-- Si el texto indica bolsos o marroquinería (bolso, cartera, bandolera, mochila, morral, riñonera, clutch, billetera), usa category "bolsos_y_marroquineria".
-- Si el texto indica estuches/cases (cartuchera, cosmetiquera, neceser, estuche, pouch), usa category "bolsos_y_marroquineria" y subcategory "estuches_cartucheras_neceseres".
-- Si el texto indica lonchera/lunchbox (lonchera, loncheras, lunchbox, lunch bag), usa category "bolsos_y_marroquineria" y subcategory "loncheras".
-- Si el texto indica maletas/equipaje (maleta, trolley, suitcase, luggage), usa category "bolsos_y_marroquineria" y subcategory "maletas_y_equipaje".
-- Si el texto indica llavero (llavero, keychain), usa category "bolsos_y_marroquineria" y subcategory "llaveros".
-- Si el texto indica papelería/libros (agenda, cuaderno, libro, stickers, tarot/oráculo, marcapáginas/separalibros), usa category "hogar_y_lifestyle" y subcategory "papeleria_y_libros".
-- Si el texto indica cocina/vajilla/mesa (plato/plates, vasos, copas, tumblers, vajilla, utensilios, cucharas, tablas para servir), usa category "hogar_y_lifestyle" y subcategory "cocina_y_vajilla".
-- Si el texto indica botilitos/termos/botellas o portacomidas (botilito, termo, botella de agua, portacomidas), usa category "hogar_y_lifestyle" y subcategory "hogar_otros".
-- Si el texto indica ropa de cama u hogar no textil (sábanas, fitted sheet, edredón, alfombra, tapete, florero, canasta), usa category "hogar_y_lifestyle" y subcategory "hogar_otros".
-- Si el texto indica cuidado personal/belleza (perfume, colonia, body splash, eau de parfum/toilette, crema hidratante, gel corporal, loción), usa category "hogar_y_lifestyle" y subcategory "cuidado_personal_y_belleza". Si dice "fragancia de hogar/ambientador/difusor/vela/mikado", usa "velas_y_aromas".
-- Si el texto indica pareo/sarong, usa category "trajes_de_bano_y_playa" y subcategory "pareo".
-- Si el texto indica gafas/lentes/óptica, usa category "gafas_y_optica".
-- Las imágenes solo ayudan a desambiguar detalles (fit, color, pattern), nunca para contradecir el texto.
-- Si hay conflicto entre imagen y texto, gana el texto.
-- No clasifiques como falda/pantalón/vestido si el texto indica explícitamente que es un top/camiseta/blusa (y viceversa).
-
-Valores permitidos:
-category -> subcategory
-${categories}
-
-style_tags:
-${taxonomy.styleTags.join(", ")}
-
-material_tags:
-${taxonomy.materialTags.join(", ")}
-Nota: oro/plata/bronce/cobre solo deben usarse en joyería o accesorios.
-
-pattern_tags:
-${taxonomy.patternTags.join(", ")}
-
-occasion_tags:
-${taxonomy.occasionTags.join(", ")}
-
-gender:
-${GENDER_OPTIONS.map((entry) => entry.value).join(", ")}
-
-season:
-${SEASON_OPTIONS.map((entry) => entry.value).join(", ")}
-
-fit:
-${FIT_OPTIONS.map((entry) => entry.value).join(", ")}
-
-Si no hay suficiente evidencia para material/pattern/occasion, usa "otro" cuando esté disponible.`;
+const buildPrompt = (
+  taxonomy: EnrichmentTaxonomy,
+  routing: PromptRouteResult,
+) => {
+  const routedCategories = getCategoriesForPromptGroup(routing.group);
+  return buildProductEnrichmentPrompt({
+    taxonomy: taxonomy as PromptTaxonomy,
+    group: routing.group,
+    routedCategories,
+  });
 };
 
 const clampText = (value: string, maxLength: number) => {
@@ -815,6 +761,22 @@ const stripHtml = (value: string) => {
     .replace(/&gt;/gi, ">")
     .replace(/\s+/g, " ")
     .trim();
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+};
+
+const resolveOriginalDescription = (
+  description: string | null | undefined,
+  metadata: Record<string, unknown> | null | undefined,
+) => {
+  const enrichment = asRecord(metadata?.enrichment);
+  const savedOriginal = typeof enrichment?.original_description === "string"
+    ? enrichment.original_description
+    : null;
+  return savedOriginal ?? description ?? null;
 };
 
 const normalizeEnrichment = (
@@ -993,13 +955,32 @@ export async function enrichProductWithOpenAI(params: {
   }>;
 }): Promise<EnrichedProduct> {
   const taxonomy = await getEnrichmentTaxonomy();
-  const systemPrompt = buildPrompt(taxonomy);
   const provider = PRODUCT_ENRICHMENT_PROVIDER;
   let lastError: unknown = null;
 
   if (!params.variants.length) {
     throw new Error("Missing variants for product enrichment.");
   }
+
+  const originalDescription = resolveOriginalDescription(
+    params.product.description,
+    params.product.metadata ?? null,
+  );
+  const signals = harvestProductSignals({
+    name: params.product.name,
+    description: originalDescription ?? params.product.description ?? null,
+    brandName: params.product.brandName ?? null,
+    metadata: params.product.metadata ?? null,
+    sourceUrl: params.product.sourceUrl ?? null,
+    allowedCategoryValues: taxonomy.categoryValues,
+    subcategoryByCategory: taxonomy.subcategoryByCategory,
+    allowedMaterialTags: taxonomy.materialTags,
+    allowedPatternTags: taxonomy.patternTags,
+  });
+  const promptRoute = routeToPromptGroup(signals);
+  const systemPrompt = buildPrompt(taxonomy, promptRoute);
+  const signalPayload = buildSignalPayloadForPrompt(signals);
+  const imageLimits = resolveImageLimitsForGroup(promptRoute.group, MAX_IMAGES);
 
   const selectedVariants = selectVariantsForEnrichment(params.variants, VARIANT_LIMIT);
   const variantIdList = selectedVariants.map((variant) => variant.id);
@@ -1009,7 +990,9 @@ export async function enrichProductWithOpenAI(params: {
     id: params.product.id,
     brand_name: params.product.brandName ?? null,
     name: params.product.name,
-    description: params.product.description ?? null,
+    name_original: params.product.name,
+    description_original: originalDescription ?? null,
+    description: signals.descriptionCleanText || originalDescription || null,
     styleTags: params.product.styleTags ?? [],
     materialTags: params.product.materialTags ?? [],
     patternTags: params.product.patternTags ?? [],
@@ -1021,12 +1004,18 @@ export async function enrichProductWithOpenAI(params: {
     status: params.product.status ?? null,
     sourceUrl: params.product.sourceUrl ?? null,
     imageCoverUrl: params.product.imageCoverUrl ?? null,
-    metadata: params.product.metadata ?? null,
+    metadata_compact: {
+      platform: signals.vendorPlatform,
+      vendor_category: signals.vendorCategory,
+      vendor_tags: signals.vendorTags,
+      og_title: signals.ogTitle,
+      og_description: signals.ogDescription,
+    },
   };
 
   const buildVariantPayload = (
     variantsSubset: typeof params.variants,
-    imageLimit = 5,
+    imageLimit = imageLimits.perVariantImages,
   ) =>
     variantsSubset.map((variant) => ({
       id: variant.id,
@@ -1040,23 +1029,34 @@ export async function enrichProductWithOpenAI(params: {
       stock: variant.stock ?? null,
       stockStatus: variant.stockStatus ?? null,
       images: (variant.images ?? []).slice(0, imageLimit),
-      metadata: variant.metadata ?? null,
+      metadata_compact: variant.metadata && typeof variant.metadata === "object"
+        ? {
+            standardColorId: (variant.metadata as Record<string, unknown>).standardColorId ?? null,
+            enrichment: (variant.metadata as Record<string, unknown>).enrichment ?? null,
+          }
+        : null,
     }));
 
   const buildUserPayload = (
     variantsSubset: typeof params.variants,
     imageManifestEntries: Array<{ index: number; url: string; variant_id?: string | null }>,
-    imageLimit = 5,
+    imageLimit = imageLimits.perVariantImages,
   ) => ({
     product: productPayload,
     variants: buildVariantPayload(variantsSubset, imageLimit),
+    signals: signalPayload,
+    route: {
+      group: promptRoute.group,
+      confidence: promptRoute.confidence,
+      reason: promptRoute.reason,
+    },
     image_manifest: imageManifestEntries,
   });
   const imageCandidates: Array<{ url: string; variantId?: string | null }> = [];
   const seen = new Set<string>();
 
   const tryAddImage = (url: string | null | undefined, variantId?: string | null) => {
-    if (!url || imageCandidates.length >= MAX_IMAGES) return;
+    if (!url || imageCandidates.length >= imageLimits.maxImages) return;
     const trimmed = url.trim();
     if (!trimmed || seen.has(trimmed)) return;
     seen.add(trimmed);
@@ -1064,9 +1064,9 @@ export async function enrichProductWithOpenAI(params: {
   };
 
   selectedVariants.forEach((variant) => {
-    (variant.images ?? []).slice(0, 2).forEach((img) => tryAddImage(img, variant.id));
+    (variant.images ?? []).slice(0, imageLimits.perVariantImages).forEach((img) => tryAddImage(img, variant.id));
   });
-  if (imageCandidates.length < MAX_IMAGES && params.product.imageCoverUrl) {
+  if (imageCandidates.length < imageLimits.maxImages && params.product.imageCoverUrl) {
     tryAddImage(params.product.imageCoverUrl, null);
   }
 
@@ -1080,7 +1080,11 @@ export async function enrichProductWithOpenAI(params: {
     variant_id: entry.variantId ?? null,
   }));
 
-  const openAiPayload = buildUserPayload(selectedVariants, imageManifest, 5);
+  const openAiPayload = buildUserPayload(
+    selectedVariants,
+    imageManifest,
+    imageLimits.perVariantImages,
+  );
 
   const parseRawProduct = (raw: string): RawEnrichedProduct => {
     const parsed = safeJsonParse(raw);
@@ -1121,10 +1125,37 @@ export async function enrichProductWithOpenAI(params: {
     normalizeEnrichment(taxonomy, normalized, variantIds, {
       productName: params.product.name,
       brandName: params.product.brandName ?? null,
-      description: params.product.description ?? null,
+      description: originalDescription ?? params.product.description ?? null,
       category: params.product.category ?? null,
       subcategory: params.product.subcategory ?? null,
     });
+
+  const finalizeNormalized = (normalized: EnrichedProduct): EnrichedProduct => {
+    const validation = validateAndAutofixEnrichment({
+      signals,
+      enriched: normalized,
+      taxonomy: {
+        categoryValues: taxonomy.categoryValues,
+        subcategoryByCategory: taxonomy.subcategoryByCategory,
+        materialTags: taxonomy.materialTags,
+      },
+      routeConfidence: promptRoute.confidence,
+      routeReason: promptRoute.reason,
+    });
+    return {
+      ...validation.enriched,
+      confidence: validation.confidence,
+      reviewRequired: validation.reviewRequired,
+      reviewReasons: validation.reviewReasons,
+      diagnostics: {
+        signals,
+        promptGroup: promptRoute.group ?? "generic",
+        route: promptRoute,
+        consistencyIssues: validation.issues,
+        autoFixes: validation.autoFixes,
+      },
+    };
+  };
 
   const callOpenAI = async () => {
     const client = getOpenAIClient() as OpenAIResponsesClient;
@@ -1250,7 +1281,7 @@ export async function enrichProductWithOpenAI(params: {
     const imageUrls: Array<{ url: string; variantId?: string | null }> = [];
     const seenBedrock = new Set<string>();
     const tryAddBedrockImage = (url: string | null | undefined, variantId?: string | null) => {
-      if (!url || imageUrls.length >= MAX_IMAGES) return;
+      if (!url || imageUrls.length >= imageLimits.maxImages) return;
       const trimmed = url.trim();
       if (!trimmed || seenBedrock.has(trimmed)) return;
       seenBedrock.add(trimmed);
@@ -1258,23 +1289,22 @@ export async function enrichProductWithOpenAI(params: {
     };
 
     variantsSubset.forEach((variant) => {
-      (variant.images ?? []).slice(0, 1).forEach((img) => tryAddBedrockImage(img, variant.id));
+      (variant.images ?? []).slice(0, imageLimits.perVariantImages).forEach((img) => tryAddBedrockImage(img, variant.id));
     });
-    if (imageUrls.length < MAX_IMAGES && params.product.imageCoverUrl) {
+    if (imageUrls.length < imageLimits.maxImages && params.product.imageCoverUrl) {
       tryAddBedrockImage(params.product.imageCoverUrl, null);
     }
 
     return {
-      userPayload: buildUserPayload(variantsSubset, [], 1),
+      userPayload: buildUserPayload(variantsSubset, [], imageLimits.perVariantImages),
       imageUrls,
-      requiredVariantIds: variantsSubset.map((variant) => variant.id),
     };
   };
 
   const callBedrockForChunk = async (
     variantsSubset: typeof params.variants,
   ): Promise<RawEnrichedProduct> => {
-    const { userPayload, imageUrls, requiredVariantIds } = buildBedrockPayload(variantsSubset);
+    const { userPayload, imageUrls } = buildBedrockPayload(variantsSubset);
     let chunkError: unknown = null;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
@@ -1357,7 +1387,7 @@ export async function enrichProductWithOpenAI(params: {
       variants: aggregatedVariants,
     };
 
-    return normalizeParsed(merged);
+    return finalizeNormalized(normalizeParsed(merged));
   };
 
   const runOpenAI = async () => {
@@ -1365,11 +1395,11 @@ export async function enrichProductWithOpenAI(params: {
       try {
         const raw = await callOpenAI();
         try {
-          return normalizeParsed(parseRawProduct(raw));
+          return finalizeNormalized(normalizeParsed(parseRawProduct(raw)));
         } catch (error) {
           const note = error instanceof Error ? error.message : String(error);
           const repaired = await callOpenAIRepair(raw, note);
-          return normalizeParsed(parseRawProduct(repaired));
+          return finalizeNormalized(normalizeParsed(parseRawProduct(repaired)));
         }
       } catch (error) {
         lastError = error;
@@ -1389,7 +1419,7 @@ export async function enrichProductWithOpenAI(params: {
   return runOpenAI();
 }
 
-export const productEnrichmentPromptVersion = "v11";
+export const productEnrichmentPromptVersion = "v12.5";
 export const productEnrichmentSchemaVersion = "v5";
 
 export const toSlugLabel = (value: string) => slugify(value);
