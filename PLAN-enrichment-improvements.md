@@ -61,6 +61,31 @@ El `product.metadata` contiene senales extremadamente valiosas que el enrichment
 
 **Problema clave**: Toda esta metadata SE ENVIA al LLM en el payload (linea 1024: `metadata: params.product.metadata ?? null`), pero el prompt solo dice vagamente "metadata (og:title, og:description, jsonld, etc.)" sin instrucciones especificas de como usar `product_type`, `tags`, o los meta tags.
 
+### Output completo del LLM de enrichment (por que siempre es necesario)
+El LLM genera 13+ campos que requieren capacidades que no se pueden replicar con regex:
+
+**Campos generativos** (requieren generacion de texto):
+- `description` - Descripcion nueva en espanol neutro, sin HTML, incorporando detalles del producto
+- `seo_title` - Titulo SEO <= 70 chars, combina nombre + marca (`openai.ts:714`)
+- `seo_description` - 120-160 chars, espanol neutro, sin emojis (`openai.ts:715`)
+- `seo_tags` - 6-12 tags SEO en espanol, sin duplicados (`openai.ts:716`)
+
+**Campos de clasificacion** (requieren comprension contextual):
+- `category` + `subcategory` - De la taxonomia de ~28 categorias y ~200 subcategorias
+- `style_tags` - EXACTAMENTE 10 de la taxonomia (10 de ~40+ opciones) (`openai.ts:710`)
+- `material_tags` - Hasta 3 (`openai.ts:711`)
+- `pattern_tags` - Hasta 2 (`openai.ts:712`)
+- `occasion_tags` - Hasta 2 (`openai.ts:713`)
+- `gender` - De las opciones permitidas
+- `season` - De las opciones permitidas
+
+**Campos que requieren vision** (imagenes):
+- `color_hex` - 1-3 colores #RRGGBB por variante, en orden de predominancia (`openai.ts:720`)
+- `color_pantone` - 1-3 codigos Pantone TCX por variante (`openai.ts:721`)
+- `fit` - Clasificacion de fit por variante (necesita ver la imagen para slim/oversize/etc.)
+
+**Implicacion para el plan**: La llamada principal al LLM es SIEMPRE necesaria. Las mejoras del plan buscan que el LLM reciba MEJOR informacion (senales pre-procesadas, prompt mas enfocado, descripcion limpia) para que TODOS estos outputs mejoren, no solo la clasificacion.
+
 ### Normalizer ya tiene keyword matching - pero no se comunica al enrichment
 El archivo `normalizer.ts` tiene un sistema sofisticado de keyword matching (lineas 246-507) con diccionarios de categorias, materiales, patrones, colores y generos. Estas mismas senales NO se pasan al enrichment porque el normalizer solo se ejecuta en el paso de scraping.
 
@@ -224,25 +249,45 @@ El archivo `normalizer.ts` tiene un sistema sofisticado de keyword matching (lin
 - Modificar: `processor.ts` - invocar signal harvester antes de enrichment
 - Modificar: `normalizer.ts` - importar diccionarios del archivo compartido
 
-**Impacto**: Cero costo extra de LLM. Mejora inmediata porque el modelo recibe informacion estructurada en vez de tener que descubrirla solo.
+**Impacto**: Cero costo extra de LLM. Mejora inmediata porque el modelo recibe informacion estructurada en vez de tener que descubrirla solo. La llamada principal al LLM sigue siendo necesaria (genera descripcion, SEO, colores, fit, etc.), pero ahora recibe senales pre-procesadas que mejoran TODOS los outputs, no solo la clasificacion.
 
 ---
 
-### Fase 1: Pre-clasificacion ligera (Two-Stage Enrichment)
+### Fase 1: Pre-clasificacion para seleccion de prompt (Route-to-Prompt)
 
-**Objetivo**: Antes de enriquecer, determinar la categoria probable del producto usando las senales harvested + imagen.
+**Objetivo**: Determinar la categoria probable del producto ANTES de la llamada principal al LLM, para poder seleccionar el prompt especializado (Fase 2). La llamada principal al LLM es SIEMPRE necesaria porque genera 13+ campos que no se pueden producir sin LLM.
+
+**IMPORTANTE - Por que NO se puede saltar el LLM**:
+El enrichment produce mucho mas que solo clasificacion. El LLM genera:
+1. `description` - Descripcion nueva, limpia, en espanol neutro (texto generativo)
+2. `category` + `subcategory` - Clasificacion
+3. `style_tags` - EXACTAMENTE 10 tags de la taxonomia (seleccion inteligente)
+4. `material_tags` (hasta 3), `pattern_tags` (hasta 2), `occasion_tags` (hasta 2)
+5. `gender`, `season` - Clasificacion
+6. `seo_title` - Max 70 chars, combina nombre + marca (texto generativo)
+7. `seo_description` - 120-160 chars, espanol neutro, sin emojis (texto generativo)
+8. `seo_tags` - 6-12 tags SEO en espanol (texto generativo)
+9. Por cada variante: `color_hex` (1-3 #RRGGBB), `color_pantone` (1-3 TCX), `fit`
+
+Estos campos requieren vision multimodal (colores de imagenes), generacion de texto (SEO), y comprension contextual (style tags). No se pueden producir con regex/keywords.
 
 **Cambios**:
-1. Crear funcion `preClassifyProduct()` en `pre-classifier.ts`.
-2. **Primer intento: clasificacion deterministica** (sin LLM):
-   - Si `signals.signalStrength === "strong"` y `signals.inferredCategory` no es null, usar directamente.
-   - Si `signals.vendorCategory` matchea una categoria de taxonomia, usar directamente.
-   - Esto cubre ~60-70% de productos Shopify sin costo de LLM.
+1. Crear funcion `routeToPromptGroup()` en `pre-classifier.ts`.
+2. **Clasificacion deterministica** (sin LLM, solo para elegir prompt group):
+   - Usa las senales de Fase 0 (signal harvester) para determinar el grupo de prompt.
+   - Si `signals.signalStrength === "strong"` y `signals.inferredCategory` no es null:
+     - Mapear categoria a prompt group directamente.
+   - Si `signals.vendorCategory` (Shopify `product_type`) matchea la taxonomia:
+     - Mapear a prompt group con alta confianza.
+   - Si `signals.nameCategory` es clara (ej: "aretes" → joyeria):
+     - Mapear a prompt group.
+   - Si multiples senales coinciden (nombre + vendor + descripcion apuntan al mismo grupo):
+     - `confidence = "high"`, usar prompt group directamente.
 
-3. **Segundo intento: clasificacion con LLM** (solo si deterministica falla o es ambigua):
-   - Prompt minimalista (~30 lineas) con nombre + descripcion limpia + imagen cover.
+3. **Solo si deterministica es ambigua** (`signalStrength === "weak"` o conflictos):
+   - Llamada LLM ligera (~100 tokens output) para clasificar.
+   - Prompt minimalista con nombre + descripcion limpia + imagen cover.
    - Solo las 28 categorias con key y descripcion de 1 linea.
-   - max_tokens ~150, modelo rapido.
    ```
    Dado:
    - Nombre: "{name}"
@@ -250,27 +295,24 @@ El archivo `normalizer.ts` tiene un sistema sofisticado de keyword matching (lin
    - Vendor category: "{vendor_category}" (si existe)
    - Vendor tags: {vendor_tags}
 
-   Clasifica en UNA categoria y devuelve JSON:
-   { "category": "key", "confidence": 0.0-1.0, "candidates": ["key1", "key2"], "reasoning": "..." }
+   Clasifica en UNA categoria:
+   { "category": "key", "confidence": 0.0-1.0, "candidates": ["key1", "key2"] }
    ```
 
-4. La respuesta incluye:
-   - `category`: categoria principal predicha
-   - `confidence`: score 0-1
-   - `candidates`: top 2-3 categorias alternativas
-   - `reasoning`: justificacion breve (para debugging)
+4. **Logica de routing**:
+   - `signalStrength === "strong"` → deterministic routing, sin LLM extra
+   - `signalStrength === "moderate"` → deterministic routing, validar en post-procesamiento
+   - `signalStrength === "weak"` → LLM pre-clasificacion, luego routing
+   - Sin senales → fallback al prompt generico (como funciona hoy)
 
-5. **Logica de decision**:
-   - Si deterministica da resultado con `signalStrength === "strong"` → usar sin LLM
-   - Si deterministica da resultado con `signalStrength === "moderate"` → confirmar con LLM (pasar como hint)
-   - Si deterministica falla (`weak` o sin resultado) → LLM completo con imagen
+5. El resultado es SOLO el prompt group a usar. La llamada principal al LLM es siempre necesaria.
 
 **Archivos a crear/modificar**:
 - Crear: `apps/web/src/lib/product-enrichment/pre-classifier.ts`
-- Modificar: `openai.ts` - invocar pre-clasificador antes del enriquecimiento principal
-- Modificar: `processor.ts` - pasar resultado de pre-clasificacion al enrichment
+- Modificar: `openai.ts` - usar prompt group para seleccionar prompt especializado
+- Modificar: `processor.ts` - invocar routing antes de la llamada principal
 
-**Impacto en costos**: Muchos productos se clasifican sin LLM. Solo los ambiguos hacen llamada extra.
+**Impacto en costos**: La mayoria de productos se rutean sin LLM extra (deterministic routing). Solo los ambiguos (~20-30%) necesitan la llamada ligera de clasificacion (+~100 tokens). La llamada principal siempre ocurre pero con un prompt ~75% mas corto (menos tokens input = menos costo).
 
 ---
 
@@ -580,8 +622,8 @@ Fase 7 (Preservar desc.)       ← Protege datos para re-enrichment futuro
 Fase 3 (Name Signals)          ← Integrado en Fase 0, detalla logica de nombre
   |                               Reusar keyword dicts del normalizer
   v
-Fase 1 (Pre-clasificacion)     ← Clasificacion deterministica + LLM ligero
-  |                               ~60-70% sin costo LLM extra
+Fase 1 (Route-to-Prompt)       ← Routing deterministico + LLM ligero solo si ambiguo
+  |                               Elige prompt group; LLM principal SIEMPRE se ejecuta
   v
 Fase 2 (Prompts por grupo)     ← El cambio core, requiere Fases 0-1
   |                               Prompts 75% mas cortos y especificos
@@ -599,7 +641,7 @@ Fase 6 (Validacion cruzada)    ← Polish final con autofix
 - **Fase 0 primero**: Es el fundamento. Parsear descripcion + metadata + nombre sin costo LLM extra. Da el mayor ROI inmediato porque convierte datos "sueltos" en senales estructuradas. El modelo ya no tiene que "adivinar" materiales que estan escritos en la descripcion.
 - **Fase 7 temprano**: Minimo esfuerzo, maxima proteccion. Sin esto, cada re-enrichment pierde informacion.
 - **Fase 3 integrada con 0**: La logica de nombre es parte del signal harvester.
-- **Fase 1 despues**: Con senales harvested, muchos productos se clasifican sin LLM.
+- **Fase 1 despues**: Con senales harvested, la mayoria de productos se rutean al prompt group correcto sin LLM extra. La llamada principal al LLM siempre ocurre (genera descripcion, SEO, colores, fit, style_tags, etc.), pero recibe un prompt 75% mas corto.
 - **Fase 2 es el core**: Prompts especializados son el cambio estructural, pero necesitan las fases anteriores.
 - **Fases 4-6 son refinamiento**: Cada una mejora incrementalmente la calidad.
 
@@ -625,7 +667,7 @@ Fase 6 (Validacion cruzada)    ← Polish final con autofix
 | Descripcion original contiene HTML basura | `cleanDescriptionForLLM()` filtra agresivamente. Regex probados contra 1000+ descripciones reales |
 | Shopify product_type es inconsistente entre marcas | Mapeo fuzzy con `normalizeEnumValue()`, nunca confiar ciegamente |
 | Signal harvester tiene falsos positivos | El signal_strength field indica confianza. "weak" signals solo se usan como hint, no como verdad |
-| Pre-clasificacion deterministica es incorrecta | Si confidence < 0.7, el LLM siempre valida. Peor caso: igual que hoy |
+| Routing deterministico elige prompt group incorrecto | El LLM principal siempre valida/corrige. Peor caso: misma calidad que hoy (prompt generico como fallback). Fase 6 detecta inconsistencias post-LLM |
 | Prompts especializados son mas prompts que mantener | Template base + overrides. Un solo `buildSpecializedPrompt()` con parametros por grupo |
 | "collar" de camisa vs "collar" de joyeria | Desambiguacion por contexto: si el nombre tiene "camisa" o "blusa", no es joyeria |
 | Re-enrichment pierde descripcion original | Fase 7 preserva en metadata.enrichment.original_description |
@@ -639,7 +681,7 @@ Fase 6 (Validacion cruzada)    ← Polish final con autofix
 2. **Accuracy de subcategoria**: >90% (actualmente estimado ~75-80%)
 3. **Tasa de retry por errores de clasificacion**: <3% (actualmente ~8-10%)
 4. **Confidence score promedio**: >0.88 para >85% de productos
-5. **Costo LLM por producto**: No aumentar >15% (muchos productos se pre-clasifican sin LLM)
+5. **Costo LLM por producto**: Debe REDUCIRSE ~20-30% porque prompts especializados son ~75% mas cortos (menos tokens input). Solo ~20-30% de productos ambiguos necesitan la llamada extra de pre-clasificacion (~100 tokens)
 6. **Material accuracy**: >95% cuando la descripcion tiene composicion (actualmente no medido)
 7. **Vendor signal utilization**: >90% de productos Shopify usan product_type en la clasificacion
 
@@ -673,25 +715,49 @@ Fase 6 (Validacion cruzada)    ← Polish final con autofix
 }
 ```
 
-**Fase 1 - Pre-clasificacion**:
-- `signalStrength === "strong"` + `inferredCategory === "joyeria_y_bisuteria"` → Clasificacion deterministica, sin LLM.
-- `category = "joyeria_y_bisuteria"`, `confidence = 0.98`
+**Fase 1 - Route-to-Prompt (deterministic, sin LLM extra)**:
+- `signalStrength === "strong"` + `inferredCategory === "joyeria_y_bisuteria"` → Routing deterministico al grupo `joyeria`.
+- No se necesita LLM de pre-clasificacion. Todas las senales apuntan a joyeria.
 
-**Fase 2 - Prompt Especializado (grupo: joyeria)**:
+**Fase 2 - Prompt Especializado (grupo: joyeria) + llamada principal al LLM**:
 - Prompt recortado: solo subcategorias de joyeria (10 vs 200+)
 - Instrucciones especificas: "Busca quilates, tipo de bano, piedra en la descripcion"
 - Solo materials relevantes: oro, plata, bronce, cobre, acero
 - Solo 4 imagenes
+- El LLM recibe las senales harvested y genera TODOS los campos:
 
-**Resultado final**:
+**Resultado final del LLM (todos los campos, no solo clasificacion)**:
 ```json
 {
-  "category": "joyeria_y_bisuteria",
-  "subcategory": "aretes_pendientes",
-  "materialTags": ["oro"],
-  "description": "Aretes de luna en oro 18K con piedra de circonia cubica...",
-  "confidence": { "category": 0.99, "subcategory": 0.98, "overall": 0.98 }
+  "product": {
+    "description": "Aretes de luna en oro 18K con piedra de circonia cubica. Cierre push back. Peso 2.1g por par. Ideales como regalo.",
+    "category": "joyeria_y_bisuteria",
+    "subcategory": "aretes_pendientes",
+    "style_tags": ["elegante", "minimalista", "femenino", "delicado", "romantico", "moderno", "sofisticado", "versatil", "clasico", "chic"],
+    "material_tags": ["oro", "circonia"],
+    "pattern_tags": ["liso"],
+    "occasion_tags": ["regalo", "diario"],
+    "gender": "femenino",
+    "season": "todo_el_ano",
+    "seo_title": "Aretes Luna Oro 18K con Circonia | MarcaXYZ",
+    "seo_description": "Aretes de luna en oro 18 kilates con piedra de circonia cubica. Cierre push back, peso 2.1g. Envio gratis a toda Colombia.",
+    "seo_tags": ["aretes oro 18k", "aretes luna", "joyeria colombiana", "aretes circonia", "regalo mujer", "aretes elegantes"],
+    "variants": [
+      {
+        "variant_id": "abc123",
+        "color_hex": "#FFD700",
+        "color_pantone": "16-0836",
+        "fit": "no_aplica"
+      }
+    ],
+    "confidence": { "category": 0.99, "subcategory": 0.98, "overall": 0.97 }
+  }
 }
 ```
 
-vs. hoy con prompt generico, el modelo podria confundirse con subcategorias, poner material "otro", o generar una descripcion que pierda los detalles de quilates y piedra.
+**Mejora vs. hoy**: Con el prompt generico actual, el modelo:
+- Podria clasificar material como "otro" en vez de "oro" (no sabe que buscar en la descripcion)
+- Genera seo_description generico sin los detalles de quilates y piedra
+- Los style_tags serian genericos en vez de enfocados en joyeria
+- La descripcion enriquecida podria perder "cierre push back" y "peso 2.1g" (datos que estaban en la descripcion original HTML)
+- Ahora, con senales harvested, el LLM recibe `detected_materials: ["oro 18 kilates", "circonia cubica"]` y los refleja correctamente en TODOS los outputs.
