@@ -849,6 +849,36 @@ const resolveOriginalDescription = (
   return savedOriginal ?? description ?? null;
 };
 
+const tokenizeSlug = (value: string) =>
+  value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+const pickClosestSubcategory = (rawValue: string, allowedSubcategories: string[]) => {
+  if (!rawValue || !allowedSubcategories.length) return null;
+  const rawSlug = toSlugLabel(rawValue);
+  if (!rawSlug) return null;
+  if (allowedSubcategories.includes(rawSlug)) return rawSlug;
+  const rawTokens = new Set(tokenizeSlug(rawSlug));
+  if (!rawTokens.size) return null;
+
+  let bestMatch: { key: string; score: number } | null = null;
+  for (const key of allowedSubcategories) {
+    const tokens = tokenizeSlug(key);
+    if (!tokens.length) continue;
+    const overlap = tokens.filter((token) => rawTokens.has(token)).length;
+    const containsBonus = rawSlug.includes(key) || key.includes(rawSlug) ? 2 : 0;
+    const score = overlap + containsBonus;
+    if (score <= 0) continue;
+    if (!bestMatch || score > bestMatch.score) {
+      bestMatch = { key, score };
+    }
+  }
+  return bestMatch?.key ?? null;
+};
+
 const normalizeEnrichment = (
   taxonomy: EnrichmentTaxonomy,
   input: RawEnrichedProduct,
@@ -871,10 +901,17 @@ const normalizeEnrichment = (
   const category = normalizeEnumValue(input.category, taxonomy.categoryValues);
   if (!category) throw new Error(`Invalid category: ${input.category}`);
 
-  const subcategory = normalizeEnumValue(input.subcategory, taxonomy.subcategoryValues);
-  if (!subcategory) throw new Error(`Invalid subcategory: ${input.subcategory}`);
-
   const allowedSubs = taxonomy.subcategoryByCategory[category] ?? [];
+  let subcategory = normalizeEnumValue(input.subcategory, allowedSubs);
+  if (!subcategory) {
+    subcategory = pickClosestSubcategory(input.subcategory, allowedSubs);
+  }
+  if (!subcategory && allowedSubs.length) {
+    subcategory = allowedSubs[0] ?? null;
+  }
+  if (!subcategory) {
+    throw new Error(`Invalid subcategory: ${input.subcategory}`);
+  }
   if (!allowedSubs.includes(subcategory)) {
     throw new Error(`Subcategory ${subcategory} does not belong to ${category}`);
   }
