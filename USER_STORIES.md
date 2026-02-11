@@ -255,6 +255,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: reducción de reportes por “batch no respetado”, menor ambigüedad entre `total` del run y selección de lote.
 - Estado: **done (2026-02-11)**.
 
+### MC-120 Catalog-refresh: bloquear auto-ejecución de enrichment `new_products`
+- Historia: Como operador IA, quiero que los runs de enrichment creados por el refresh semanal queden en cola manual y no se ejecuten solos, para controlar costo/cuota de OpenAI.
+- Alcance: Endurecer drenado y reconciliación: `/api/admin/product-enrichment/drain` detecta runs `created_by=catalog_refresh` con `auto_start=false` y los pasa a `paused` (con `blockReason=auto_start_disabled`), y `runCatalogRefreshBatch` aplica la misma normalización para corridas heredadas en `processing`. Además, al reanudar manualmente por `POST /api/admin/product-enrichment/run` (`resume=true`), la metadata del run se actualiza a `auto_start=true`.
+- CA: Un run `catalog_refresh` con `auto_start=false` no permanece en `processing` por cron; queda/permanece en `paused` hasta reanudación explícita. Al reanudar manualmente, el mismo run cambia a `processing` con `auto_start=true` y sí puede drenarse.
+- Datos: `product_enrichment_runs.metadata` (`created_by`, `auto_start`, `manual_resume_at`), `product_enrichment_items`.
+- NF: Sin llamadas adicionales al LLM y sin cambio de schema de respuesta del enrichment.
+- Riesgos: Pausar corridas `processing` heredadas de versiones previas; mitigación: reanudación manual explícita por marca cuando aplique.
+- Métricas: `processing` runs de `catalog_refresh` con `auto_start=false` debe tender a 0.
+- Estado: **done (2026-02-11)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

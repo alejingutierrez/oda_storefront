@@ -34,7 +34,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Sweep tech profiler: `TECH_PROFILE_SWEEP_LIMIT`, `TECH_PROFILE_SWEEP_PLATFORM` (all|unknown|null|shopify|...).
 - Dry-run LLM: `UNKNOWN_LLM_DRY_RUN_LIMIT`, `UNKNOWN_LLM_DRY_RUN_CANDIDATES`.
 
-Nota: el refresh de catálogo puede detectar productos nuevos sin `metadata.enrichment` y crear un `product_enrichment_run` en `paused` (mode `new_products`). No se procesa automáticamente para evitar cuota de OpenAI; se reanuda manualmente con el Admin o con `POST /api/admin/product-enrichment/run` (brandId).
+Nota: el refresh de catálogo puede detectar productos nuevos sin `metadata.enrichment` y crear un `product_enrichment_run` en `paused` (mode `new_products`). No se procesa automáticamente para evitar cuota de OpenAI; se reanuda manualmente con el Admin o con `POST /api/admin/product-enrichment/run` (brandId). Hardening adicional: si existe una corrida heredada `catalog_refresh` con `auto_start=false` en `processing`, el sistema la normaliza a `paused` (`auto_start_disabled`) para impedir ejecución automática.
 Tip operativo: `GET /api/admin/catalog-refresh/cron` acepta overrides opcionales `maxBrands`, `brandConcurrency` y `maxRuntimeMs` para pruebas controladas de throughput (por ejemplo: `/api/admin/catalog-refresh/cron?force=true&maxBrands=12&brandConcurrency=4&maxRuntimeMs=90000`). Si no envías esos query params, el endpoint usa los valores de entorno (`CATALOG_REFRESH_*`) sin aplicar overrides.
 No commitees credenciales reales.
 
@@ -167,6 +167,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
   - UX de ejecución: `Ejecutar batch` y `Ejecutar todos` siempre crean un run nuevo (fresh). La reanudación es explícita con botón `Reanudar corrida actual`.
   - Compatibilidad API: si `resume=false` y no se envía `startFresh`, el endpoint asume `startFresh=true` para evitar reutilizar runs activos por accidente.
+  - Reanudación explícita de runs `catalog_refresh`: al reanudar manualmente (`resume=true`), el run se marca `auto_start=true` en metadata para habilitar drenado deliberado.
   - Por defecto omite productos ya enriquecidos por IA; el re-enrichment IA queda deshabilitado salvo override explícito (`PRODUCT_ENRICHMENT_ALLOW_REENRICH=true` + `forceReenrich`).
   - Controles de **pausa** y **detener**, y botón para **limpiar batches activos**; muestra progreso, errores, estado y cobertura (enriquecidos vs pendientes) con conteo de cola/en‑progreso. Auto‑refresco cada 5s cuando hay run activo.
   - Al finalizar, el progreso se calcula con conteos reales de items para evitar pendientes fantasma si cambió el catálogo.
