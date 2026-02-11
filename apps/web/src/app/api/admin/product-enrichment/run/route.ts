@@ -74,7 +74,8 @@ export async function POST(req: Request) {
   const mode = body?.mode === "all" || body?.mode === "batch" ? body.mode : body?.limit ? "batch" : "all";
   const limit = Number(body?.limit ?? body?.batchSize ?? body?.count ?? 0);
   const resumeRequested = Boolean(body?.resume);
-  const startFreshRequested = body?.startFresh === true;
+  const hasStartFreshFlag = typeof body?.startFresh === "boolean";
+  const startFreshRequested = hasStartFreshFlag ? body.startFresh === true : !resumeRequested;
   const includeEnrichedRequested = Boolean(body?.includeEnriched);
   const forceReenrichRequested = Boolean(body?.forceReenrich);
   const includeEnriched = includeEnrichedRequested && ALLOW_REENRICH && forceReenrichRequested;

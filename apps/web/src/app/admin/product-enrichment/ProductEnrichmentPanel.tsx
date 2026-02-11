@@ -222,9 +222,9 @@ export default function ProductEnrichmentPanel() {
   const queuedCount = itemCounts?.queued ?? 0;
   const inProgressCount = itemCounts?.in_progress ?? 0;
 
-  const shouldResume = useMemo(() => {
+  const canResume = useMemo(() => {
     if (!summary) return false;
-    return summary.status === "paused" || summary.status === "stopped";
+    return summary.status === "paused" || summary.status === "stopped" || summary.status === "blocked";
   }, [summary]);
 
   useEffect(() => {
@@ -267,8 +267,8 @@ export default function ProductEnrichmentPanel() {
         scope,
         mode,
         limit: mode === "batch" ? batchSize : null,
-        resume: shouldResume,
-        startFresh: !shouldResume,
+        resume: false,
+        startFresh: true,
         includeEnriched,
         forceReenrich: false,
         drainOnRun: false,
@@ -282,6 +282,41 @@ export default function ProductEnrichmentPanel() {
       if (!res.ok) {
         const errorPayload = await res.json().catch(() => ({}));
         throw new Error(errorPayload.error || "No se pudo iniciar el enriquecimiento");
+      }
+      const responsePayload = await res.json();
+      setSummary(responsePayload.summary ?? null);
+    } catch (err) {
+      console.warn(err);
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResumeRun = async () => {
+    if (!canResume) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const payload: Record<string, unknown> = {
+        scope,
+        mode: "all",
+        limit: null,
+        resume: true,
+        startFresh: false,
+        includeEnriched,
+        forceReenrich: false,
+        drainOnRun: false,
+      };
+      if (scope === "brand") payload.brandId = selectedBrand;
+      const res = await fetch("/api/admin/product-enrichment/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => ({}));
+        throw new Error(errorPayload.error || "No se pudo reanudar el enriquecimiento");
       }
       const responsePayload = await res.json();
       setSummary(responsePayload.summary ?? null);
@@ -524,7 +559,7 @@ export default function ProductEnrichmentPanel() {
               disabled={loading || (scope === "brand" && !selectedBrand)}
               className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
             >
-              {shouldResume ? "Resume batch" : "Ejecutar batch"}
+              Ejecutar batch
             </button>
           </div>
           <p className="mt-3 text-xs text-slate-500">
@@ -542,11 +577,12 @@ export default function ProductEnrichmentPanel() {
               disabled={loading || (scope === "brand" && !selectedBrand)}
               className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"
             >
-              {scope === "brand" ? "Todos los productos de la marca" : "Todos los productos"}
+              {scope === "brand" ? "Ejecutar todos de la marca" : "Ejecutar todos los productos"}
             </button>
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            Procesa todo el catálogo del alcance seleccionado.
+            Procesa todo el catálogo del alcance seleccionado. El encolado es progresivo: el total del
+            run refleja todos los items creados, aunque &quot;En cola&quot; muestre una ventana activa.
           </p>
         </div>
       </div>
@@ -566,6 +602,14 @@ export default function ProductEnrichmentPanel() {
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={handleResumeRun}
+          disabled={loading || !canResume}
+          className="rounded-full border border-emerald-200 px-4 py-2 text-xs font-semibold text-emerald-700 disabled:opacity-60"
+        >
+          Reanudar corrida actual
+        </button>
         <button
           type="button"
           onClick={handlePause}

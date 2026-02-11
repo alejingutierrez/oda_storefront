@@ -245,6 +245,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: caída de errores `Invalid image_url`, menor tasa de `max_attempts` por run, mayor visibilidad operativa de revisión manual.
 - Estado: **done (2026-02-11)**.
 
+### MC-119 Product-enrichment: ejecutar nuevo vs reanudar explícito + lote consistente
+- Historia: Como operador IA, quiero que al escoger `batch` (10/25/50/100/250/500/1000) o `all` en `/admin/product-enrichment` se creen items en el tamaño esperado, y que reanudar una corrida existente sea una acción explícita, para evitar confusión operativa.
+- Alcance: El panel separa acciones: `Ejecutar batch` y `Ejecutar todos` siempre crean corrida nueva (`startFresh`), y `Reanudar corrida actual` se maneja con botón dedicado. En API, `POST /api/admin/product-enrichment/run` asume `startFresh=true` cuando `resume=false` y no se envía flag, para compatibilidad con clientes previos.
+- CA: Si se ejecuta batch=10, el run nuevo reporta `total=10` (o menor si no hay suficientes pendientes). Si se ejecuta batch=1000 o `all`, `total` coincide con disponibles del alcance. Reanudar sólo ocurre al usar la acción explícita de reanudar.
+- Datos: `product_enrichment_runs`, `product_enrichment_items`, payload `resume/startFresh`.
+- NF: Sin costo extra de OpenAI; sin llamadas adicionales al LLM; backward-compatible para clientes que no envían `startFresh`.
+- Riesgos: Reiniciar corridas activas por defecto en clientes legacy; mitigación: mantener `resume=true` como override explícito y mostrar acción dedicada en UI.
+- Métricas: reducción de reportes por “batch no respetado”, menor ambigüedad entre `total` del run y selección de lote.
+- Estado: **done (2026-02-11)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

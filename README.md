@@ -165,6 +165,8 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Se guarda `confidence` local (`category/subcategory/overall`) y el panel expone conteos de baja confianza y revisión manual.
   - El panel incluye tabla operativa de revisión manual (manual + baja confianza), con razones y acceso directo al detalle de producto en admin.
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
+  - UX de ejecución: `Ejecutar batch` y `Ejecutar todos` siempre crean un run nuevo (fresh). La reanudación es explícita con botón `Reanudar corrida actual`.
+  - Compatibilidad API: si `resume=false` y no se envía `startFresh`, el endpoint asume `startFresh=true` para evitar reutilizar runs activos por accidente.
   - Por defecto omite productos ya enriquecidos por IA; el re-enrichment IA queda deshabilitado salvo override explícito (`PRODUCT_ENRICHMENT_ALLOW_REENRICH=true` + `forceReenrich`).
   - Controles de **pausa** y **detener**, y botón para **limpiar batches activos**; muestra progreso, errores, estado y cobertura (enriquecidos vs pendientes) con conteo de cola/en‑progreso. Auto‑refresco cada 5s cuando hay run activo.
   - Al finalizar, el progreso se calcula con conteos reales de items para evitar pendientes fantasma si cambió el catálogo.
