@@ -234,6 +234,17 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Mayor complejidad de pipeline; mitigación con validación determinística, flags de override y fallback a prompt genérico cuando señal es débil.
 - Métricas: accuracy categoría/subcategoría, low-confidence count, review_required count, retries por run, costo/tokens por producto.
 - Estado: **done (2026-02-11)**.
+
+### MC-118 Hardening image URLs + revisión manual visible en product-enrichment
+- Historia: Como operador IA, quiero que el enriquecimiento no falle por URLs de imagen mal formadas y que el admin muestre claramente qué productos quedaron para revisión manual, para reducir bloqueos de runs y mejorar operación diaria.
+- Alcance: Normalizar URLs antes de enviar imágenes a OpenAI (`//cdn...` → `https://...`, relativas a absolutas usando `sourceUrl`) y descartar URLs inválidas; exponer endpoint admin `GET /api/admin/product-enrichment/review-items`; mejorar `/admin/product-enrichment` con tabla de revisión (manual + baja confianza) con razones y accesos directos a detalle de producto.
+- CA: `process-item` no vuelve a fallar por formato de URL (`Invalid image_url`) en casos con imágenes protocol-relative; la UI muestra una lista accionable de productos `review_required`/baja confianza por alcance (marca/global), con razones y timestamps.
+- Datos: `products.metadata.enrichment.review_required`, `products.metadata.enrichment.review_reasons`, `products.metadata.enrichment.confidence`, `products.sourceUrl`, `variants.images`, `products.imageCoverUrl`.
+- NF: Sin llamadas adicionales al LLM; cambios backward-compatible con enriquecimientos previos.
+- Riesgos: Aún pueden existir imágenes inválidas en origen (contenido corrupto/no imagen); mitigación: descarte defensivo de URLs no válidas y fallback a prompt sin ese set de imágenes.
+- Métricas: caída de errores `Invalid image_url`, menor tasa de `max_attempts` por run, mayor visibilidad operativa de revisión manual.
+- Estado: **done (2026-02-11)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

@@ -51,6 +51,21 @@ type CoverageCounts = {
   reviewRequired?: number;
 };
 
+type ReviewItem = {
+  id: string;
+  name: string;
+  brandId: string;
+  brandName?: string | null;
+  category?: string | null;
+  subcategory?: string | null;
+  imageCoverUrl?: string | null;
+  sourceUrl?: string | null;
+  updatedAt?: string | null;
+  confidenceOverall?: number | null;
+  reviewRequired: boolean;
+  reviewReasons: string[];
+};
+
 const buildProgress = (summary: RunSummary | null) => {
   if (!summary) return { total: 0, completed: 0, failed: 0, pending: 0, percent: 0 };
   const total = summary.total ?? 0;
@@ -95,6 +110,10 @@ export default function ProductEnrichmentPanel() {
   const [runMeta, setRunMeta] = useState<RunMeta | null>(null);
   const [counts, setCounts] = useState<CoverageCounts | null>(null);
   const [itemCounts, setItemCounts] = useState<ItemCounts | null>(null);
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [includeLowConfidenceReview, setIncludeLowConfidenceReview] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [includeEnriched, setIncludeEnriched] = useState(initialInclude);
@@ -139,6 +158,36 @@ export default function ProductEnrichmentPanel() {
     }
   }, [scope, selectedBrand]);
 
+  const fetchReviewItems = useCallback(async () => {
+    setReviewLoading(true);
+    setReviewError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("scope", scope);
+      params.set("limit", "40");
+      params.set("onlyReviewRequired", includeLowConfidenceReview ? "false" : "true");
+      params.set("includeLowConfidence", includeLowConfidenceReview ? "true" : "false");
+      if (scope === "brand" && selectedBrand) params.set("brandId", selectedBrand);
+      const res = await fetch(`/api/admin/product-enrichment/review-items?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.error || "No se pudieron cargar productos para revisión");
+      }
+      const payload = await res.json();
+      setReviewItems(payload.items ?? []);
+    } catch (err) {
+      console.warn(err);
+      setReviewItems([]);
+      setReviewError(
+        err instanceof Error ? err.message : "No se pudieron cargar productos para revisión",
+      );
+    } finally {
+      setReviewLoading(false);
+    }
+  }, [scope, selectedBrand, includeLowConfidenceReview]);
+
   useEffect(() => {
     fetchBrands();
   }, [fetchBrands]);
@@ -154,14 +203,19 @@ export default function ProductEnrichmentPanel() {
   }, [fetchSummary]);
 
   useEffect(() => {
+    fetchReviewItems();
+  }, [fetchReviewItems]);
+
+  useEffect(() => {
     const queued = itemCounts?.queued ?? 0;
     const inProgress = itemCounts?.in_progress ?? 0;
     if (summary?.status !== "processing" && queued + inProgress === 0) return;
     const interval = setInterval(() => {
       fetchSummary();
+      fetchReviewItems();
     }, 5000);
     return () => clearInterval(interval);
-  }, [fetchSummary, summary?.status, itemCounts]);
+  }, [fetchSummary, fetchReviewItems, summary?.status, itemCounts]);
 
   const progress = useMemo(() => buildProgress(summary), [summary]);
   const processedCount = progress.completed + progress.failed;
@@ -528,6 +582,135 @@ export default function ProductEnrichmentPanel() {
           Detener
         </button>
         {error && <span className="text-xs text-rose-600">{error}</span>}
+      </div>
+
+      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Revisión manual</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Productos marcados para revisión y/o baja confianza. Úsalo para pasar al ajuste humano.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIncludeLowConfidenceReview(true)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                includeLowConfidenceReview
+                  ? "bg-slate-900 text-white"
+                  : "border border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              Manual + baja confianza
+            </button>
+            <button
+              type="button"
+              onClick={() => setIncludeLowConfidenceReview(false)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                !includeLowConfidenceReview
+                  ? "bg-slate-900 text-white"
+                  : "border border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              Solo manual
+            </button>
+            <button
+              type="button"
+              onClick={fetchReviewItems}
+              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+              disabled={reviewLoading}
+            >
+              {reviewLoading ? "Actualizando..." : "Refrescar lista"}
+            </button>
+          </div>
+        </div>
+
+        {reviewError ? (
+          <p className="mt-3 text-xs text-rose-600">{reviewError}</p>
+        ) : null}
+
+        {!reviewError && !reviewItems.length ? (
+          <p className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+            No hay productos en revisión para este alcance con el filtro actual.
+          </p>
+        ) : null}
+
+        {reviewItems.length ? (
+          <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Producto</th>
+                    <th className="px-3 py-2 text-left">Calidad</th>
+                    <th className="px-3 py-2 text-left">Razones</th>
+                    <th className="px-3 py-2 text-left">Actualizado</th>
+                    <th className="px-3 py-2 text-left">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {reviewItems.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-3 py-3 align-top">
+                        <p className="font-medium text-slate-900">{item.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.brandName ?? "Sin marca"} · {item.category ?? "sin_categoria"} /{" "}
+                          {item.subcategory ?? "sin_subcategoria"}
+                        </p>
+                      </td>
+                      <td className="px-3 py-3 align-top">
+                        <p className="text-xs text-slate-600">
+                          {item.reviewRequired ? "Revisión manual: sí" : "Revisión manual: no"}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-600">
+                          Confidence overall:{" "}
+                          <span className="font-semibold text-slate-900">
+                            {typeof item.confidenceOverall === "number"
+                              ? item.confidenceOverall.toFixed(2)
+                              : "—"}
+                          </span>
+                        </p>
+                      </td>
+                      <td className="px-3 py-3 align-top">
+                        {item.reviewReasons.length ? (
+                          <p className="max-w-[420px] text-xs text-slate-700">
+                            {item.reviewReasons.join(" · ")}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-slate-500">Sin razones explícitas.</p>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 align-top text-xs text-slate-600">
+                        {formatDateTime(item.updatedAt)}
+                      </td>
+                      <td className="px-3 py-3 align-top">
+                        <div className="flex flex-wrap gap-2">
+                          <a
+                            href={`/admin/products?productId=${item.id}`}
+                            className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700"
+                          >
+                            Abrir producto
+                          </a>
+                          {item.sourceUrl ? (
+                            <a
+                              href={item.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                            >
+                              Fuente original
+                            </a>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );

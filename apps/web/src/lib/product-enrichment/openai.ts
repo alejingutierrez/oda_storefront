@@ -768,6 +768,36 @@ const asRecord = (value: unknown): Record<string, unknown> | null => {
   return value as Record<string, unknown>;
 };
 
+const normalizeImageUrl = (
+  value: string | null | undefined,
+  sourceUrl?: string | null,
+): string | null => {
+  if (!value) return null;
+  const raw = value.trim();
+  if (!raw) return null;
+
+  let normalized = raw;
+  if (normalized.startsWith("//")) {
+    normalized = `https:${normalized}`;
+  } else if (normalized.startsWith("/")) {
+    if (!sourceUrl) return null;
+    try {
+      normalized = new URL(normalized, sourceUrl).toString();
+    } catch {
+      return null;
+    }
+  }
+
+  normalized = normalized.replace(/\s/g, "%20");
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
 const resolveOriginalDescription = (
   description: string | null | undefined,
   metadata: Record<string, unknown> | null | undefined,
@@ -981,6 +1011,7 @@ export async function enrichProductWithOpenAI(params: {
   const systemPrompt = buildPrompt(taxonomy, promptRoute);
   const signalPayload = buildSignalPayloadForPrompt(signals);
   const imageLimits = resolveImageLimitsForGroup(promptRoute.group, MAX_IMAGES);
+  const sourceUrl = params.product.sourceUrl ?? null;
 
   const selectedVariants = selectVariantsForEnrichment(params.variants, VARIANT_LIMIT);
   const variantIdList = selectedVariants.map((variant) => variant.id);
@@ -1003,7 +1034,9 @@ export async function enrichProductWithOpenAI(params: {
     origin: params.product.origin ?? null,
     status: params.product.status ?? null,
     sourceUrl: params.product.sourceUrl ?? null,
-    imageCoverUrl: params.product.imageCoverUrl ?? null,
+    imageCoverUrl: normalizeImageUrl(params.product.imageCoverUrl ?? null, sourceUrl)
+      ?? params.product.imageCoverUrl
+      ?? null,
     metadata_compact: {
       platform: signals.vendorPlatform,
       vendor_category: signals.vendorCategory,
@@ -1028,7 +1061,10 @@ export async function enrichProductWithOpenAI(params: {
       currency: variant.currency ?? null,
       stock: variant.stock ?? null,
       stockStatus: variant.stockStatus ?? null,
-      images: (variant.images ?? []).slice(0, imageLimit),
+      images: (variant.images ?? [])
+        .map((image) => normalizeImageUrl(image, sourceUrl))
+        .filter((image): image is string => Boolean(image))
+        .slice(0, imageLimit),
       metadata_compact: variant.metadata && typeof variant.metadata === "object"
         ? {
             standardColorId: (variant.metadata as Record<string, unknown>).standardColorId ?? null,
@@ -1057,10 +1093,10 @@ export async function enrichProductWithOpenAI(params: {
 
   const tryAddImage = (url: string | null | undefined, variantId?: string | null) => {
     if (!url || imageCandidates.length >= imageLimits.maxImages) return;
-    const trimmed = url.trim();
-    if (!trimmed || seen.has(trimmed)) return;
-    seen.add(trimmed);
-    imageCandidates.push({ url: trimmed, variantId: variantId ?? null });
+    const normalized = normalizeImageUrl(url, sourceUrl);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    imageCandidates.push({ url: normalized, variantId: variantId ?? null });
   };
 
   selectedVariants.forEach((variant) => {
@@ -1282,10 +1318,10 @@ export async function enrichProductWithOpenAI(params: {
     const seenBedrock = new Set<string>();
     const tryAddBedrockImage = (url: string | null | undefined, variantId?: string | null) => {
       if (!url || imageUrls.length >= imageLimits.maxImages) return;
-      const trimmed = url.trim();
-      if (!trimmed || seenBedrock.has(trimmed)) return;
-      seenBedrock.add(trimmed);
-      imageUrls.push({ url: trimmed, variantId: variantId ?? null });
+      const normalized = normalizeImageUrl(url, sourceUrl);
+      if (!normalized || seenBedrock.has(normalized)) return;
+      seenBedrock.add(normalized);
+      imageUrls.push({ url: normalized, variantId: variantId ?? null });
     };
 
     variantsSubset.forEach((variant) => {

@@ -156,12 +156,14 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Enriquecimiento de atributos por OpenAI para categoría, subcategoría, tags, género, temporada, color hex, Pantone, fit, descripción (texto plano) y campos SEO (meta title/description + seoTags). Taxonomía incluye ropa + accesorios (joyería, calzado, bolsos, gafas).
   - El proveedor de enriquecimiento se fuerza a OpenAI; `PRODUCT_ENRICHMENT_PROVIDER` se ignora en runtime.
   - Prompt `v12.5`: una sola llamada principal por producto, con harvesting de señales pre-LLM (nombre, descripción original, metadata vendor, og tags), routing determinístico a prompts por grupo de categoría y estrategia de imágenes por grupo.
+  - URLs de imagen se normalizan antes de llamar a OpenAI (`//cdn...` → `https://...`, relativas a absolutas por `sourceUrl`) y se descartan URLs inválidas para evitar errores `Invalid image_url`.
   - La descripción original se preserva en `products.metadata.enrichment.original_description` y se reutiliza en reintentos/reprocesos.
   - Materiales incluyen metales (oro/plata/bronce/cobre) **solo para joyería o accesorios**.
   - Style tags: **exactamente 10** por producto.
   - Colores: admite hasta 3 hex/pantone por variante; el color principal se guarda en `variants.color`/`variants.colorPantone` y el resto en `variants.metadata.enrichment.colors`.
   - Post-procesamiento determinístico: validador de consistencia + auto-fixes seguros; si persiste inconsistencia, se marca `review_required` con razones para curación humana.
   - Se guarda `confidence` local (`category/subcategory/overall`) y el panel expone conteos de baja confianza y revisión manual.
+  - El panel incluye tabla operativa de revisión manual (manual + baja confianza), con razones y acceso directo al detalle de producto en admin.
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
   - Por defecto omite productos ya enriquecidos por IA; el re-enrichment IA queda deshabilitado salvo override explícito (`PRODUCT_ENRICHMENT_ALLOW_REENRICH=true` + `forceReenrich`).
   - Controles de **pausa** y **detener**, y botón para **limpiar batches activos**; muestra progreso, errores, estado y cobertura (enriquecidos vs pendientes) con conteo de cola/en‑progreso. Auto‑refresco cada 5s cuando hay run activo.
@@ -237,6 +239,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 
 ## API interna (product enrichment)
 - `GET /api/admin/product-enrichment/state`: estado de corrida (query: `scope=brand|all`, `brandId?`).
+- `GET /api/admin/product-enrichment/review-items`: lista de productos para revisión manual y/o baja confianza (query: `scope`, `brandId?`, `limit?`, `onlyReviewRequired?`, `includeLowConfidence?`).
 - `POST /api/admin/product-enrichment/run`: inicia corrida (body: `{ scope, brandId?, mode: \"batch\"|\"all\", limit?, resume?, includeEnriched?, forceReenrich? }`).
 - `POST /api/admin/product-enrichment/pause`: pausa corrida (body: `{ runId }`).
 - `POST /api/admin/product-enrichment/stop`: detiene corrida (body: `{ runId }`).
