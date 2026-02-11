@@ -3,6 +3,7 @@ import { runCatalogRefreshBatch } from "@/lib/catalog/refresh";
 import { validateAdminRequest } from "@/lib/auth";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const isCronRequest = (req: Request) => {
   const cronHeader = req.headers.get("x-vercel-cron");
