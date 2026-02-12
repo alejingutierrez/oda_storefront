@@ -75,6 +75,10 @@ type ReviewsResponse = {
     reviewedProducts: number;
     pendingProducts: number;
     remainingProducts: number;
+    eligibleProducts: number;
+    eligibleReviewedProducts: number;
+    eligiblePendingProducts: number;
+    eligibleRemainingProducts: number;
   };
 };
 
@@ -138,6 +142,10 @@ export default function TaxonomyRemapReviewPanel() {
     reviewedProducts: 0,
     pendingProducts: 0,
     remainingProducts: 0,
+    eligibleProducts: 0,
+    eligibleReviewedProducts: 0,
+    eligiblePendingProducts: 0,
+    eligibleRemainingProducts: 0,
   });
 
   const hasFilters = useMemo(() => {
@@ -297,6 +305,12 @@ export default function TaxonomyRemapReviewPanel() {
           </span>
           <span className="rounded-full bg-teal-100 px-3 py-1 font-semibold text-teal-700">
             Faltan por revisar catálogo: {catalogCounters.remainingProducts}
+          </span>
+          <span className="rounded-full bg-emerald-100 px-3 py-1 font-semibold text-emerald-700">
+            Elegibles (enriquecidos): {catalogCounters.eligibleProducts}
+          </span>
+          <span className="rounded-full bg-lime-100 px-3 py-1 font-semibold text-lime-700">
+            Faltan por revisar elegibles: {catalogCounters.eligibleRemainingProducts}
           </span>
         </div>
       </div>

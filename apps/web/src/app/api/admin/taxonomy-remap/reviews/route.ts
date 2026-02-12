@@ -48,6 +48,9 @@ type CatalogCounters = {
   totalProducts: number;
   reviewedProducts: number;
   pendingProducts: number;
+  eligibleProducts: number;
+  eligibleReviewedProducts: number;
+  eligiblePendingProducts: number;
 };
 
 type ProposalInput = {
@@ -201,11 +204,30 @@ export async function GET(req: Request) {
           BOOL_OR(r."status" IN ('accepted', 'rejected')) AS has_decision
         FROM "taxonomy_remap_reviews" r
         GROUP BY r."productId"
+      ),
+      eligible_products AS (
+        SELECT p.id
+        FROM "products" p
+        WHERE (p.metadata -> 'enrichment') IS NOT NULL
       )
       SELECT
         (SELECT COUNT(*)::int FROM "products") AS "totalProducts",
         COALESCE((SELECT COUNT(*)::int FROM review_by_product WHERE has_decision), 0) AS "reviewedProducts",
         COALESCE((SELECT COUNT(*)::int FROM review_by_product WHERE has_pending), 0) AS "pendingProducts"
+        ,
+        (SELECT COUNT(*)::int FROM eligible_products) AS "eligibleProducts",
+        COALESCE((
+          SELECT COUNT(*)::int
+          FROM review_by_product rb
+          JOIN eligible_products e ON e.id = rb."productId"
+          WHERE rb.has_decision
+        ), 0) AS "eligibleReviewedProducts",
+        COALESCE((
+          SELECT COUNT(*)::int
+          FROM review_by_product rb
+          JOIN eligible_products e ON e.id = rb."productId"
+          WHERE rb.has_pending
+        ), 0) AS "eligiblePendingProducts"
     `),
   ]);
 
@@ -225,10 +247,17 @@ export async function GET(req: Request) {
     totalProducts: 0,
     reviewedProducts: 0,
     pendingProducts: 0,
+    eligibleProducts: 0,
+    eligibleReviewedProducts: 0,
+    eligiblePendingProducts: 0,
   };
   const catalogRemaining = Math.max(
     0,
     Number(catalogCounters.totalProducts || 0) - Number(catalogCounters.reviewedProducts || 0),
+  );
+  const eligibleRemaining = Math.max(
+    0,
+    Number(catalogCounters.eligibleProducts || 0) - Number(catalogCounters.eligibleReviewedProducts || 0),
   );
 
   return NextResponse.json({
@@ -279,6 +308,10 @@ export async function GET(req: Request) {
       reviewedProducts: Number(catalogCounters.reviewedProducts || 0),
       pendingProducts: Number(catalogCounters.pendingProducts || 0),
       remainingProducts: catalogRemaining,
+      eligibleProducts: Number(catalogCounters.eligibleProducts || 0),
+      eligibleReviewedProducts: Number(catalogCounters.eligibleReviewedProducts || 0),
+      eligiblePendingProducts: Number(catalogCounters.eligiblePendingProducts || 0),
+      eligibleRemainingProducts: eligibleRemaining,
     },
   });
 }
