@@ -103,7 +103,6 @@ export type TaxonomyAutoReseedResult = {
 };
 
 const AUTO_SOURCE_PREFIX = "auto_reseed_learning";
-const AUTO_LOCK_KEY = 89546231;
 const STOP_WORDS = new Set([
   "de",
   "del",
@@ -432,85 +431,70 @@ const signalStrengthToConfidence = (strength: "strong" | "moderate" | "weak") =>
   return 0.53;
 };
 
-const withAutoLock = async <T>(fn: () => Promise<T>): Promise<T | null> => {
-  const [row] = await prisma.$queryRaw<Array<{ locked: boolean }>>(Prisma.sql`
-    SELECT pg_try_advisory_lock(${AUTO_LOCK_KEY}) AS locked
-  `);
-  if (!row?.locked) return null;
-  try {
-    return await fn();
-  } finally {
-    await prisma.$queryRaw(Prisma.sql`
-      SELECT pg_advisory_unlock(${AUTO_LOCK_KEY})
-    `);
-  }
-};
-
 export const runTaxonomyAutoReseedBatch = async (params: {
   trigger: "decision" | "cron" | "manual";
   force?: boolean;
   limit?: number;
 }): Promise<TaxonomyAutoReseedResult> => {
-  const lockedResult = await withAutoLock(async () => {
-    const phase = await getTaxonomyAutoReseedPhaseState();
-    if (!phase.enabled) {
+  const phase = await getTaxonomyAutoReseedPhaseState();
+  if (!phase.enabled) {
+    return {
+      triggered: false,
+      reason: "disabled",
+      pendingCount: phase.pendingCount,
+      pendingThreshold: phase.pendingThreshold,
+      scanned: 0,
+      proposed: 0,
+      enqueued: 0,
+      source: null,
+      runKey: null,
+      learningAcceptedSamples: 0,
+      learningRejectedSamples: 0,
+    };
+  }
+  if (!params.force && phase.pendingCount > phase.pendingThreshold) {
+    return {
+      triggered: false,
+      reason: "pending_above_threshold",
+      pendingCount: phase.pendingCount,
+      pendingThreshold: phase.pendingThreshold,
+      scanned: 0,
+      proposed: 0,
+      enqueued: 0,
+      source: null,
+      runKey: null,
+      learningAcceptedSamples: 0,
+      learningRejectedSamples: 0,
+    };
+  }
+
+  const lastAuto = await getLastAutoReseedMeta();
+  if (!params.force && lastAuto?.createdAt) {
+    const cooldownMs = AUTO_COOLDOWN_MINUTES * 60_000;
+    const ageMs = Date.now() - lastAuto.createdAt.getTime();
+    if (ageMs < cooldownMs) {
       return {
         triggered: false,
-        reason: "disabled" as const,
+        reason: "cooldown_active",
         pendingCount: phase.pendingCount,
         pendingThreshold: phase.pendingThreshold,
         scanned: 0,
         proposed: 0,
         enqueued: 0,
-        source: null,
-        runKey: null,
+        source: lastAuto.source,
+        runKey: lastAuto.runKey ?? null,
         learningAcceptedSamples: 0,
         learningRejectedSamples: 0,
       };
     }
-    if (!params.force && phase.pendingCount > phase.pendingThreshold) {
-      return {
-        triggered: false,
-        reason: "pending_above_threshold" as const,
-        pendingCount: phase.pendingCount,
-        pendingThreshold: phase.pendingThreshold,
-        scanned: 0,
-        proposed: 0,
-        enqueued: 0,
-        source: null,
-        runKey: null,
-        learningAcceptedSamples: 0,
-        learningRejectedSamples: 0,
-      };
-    }
+  }
 
-    const lastAuto = await getLastAutoReseedMeta();
-    if (!params.force && lastAuto?.createdAt) {
-      const cooldownMs = AUTO_COOLDOWN_MINUTES * 60_000;
-      const ageMs = Date.now() - lastAuto.createdAt.getTime();
-      if (ageMs < cooldownMs) {
-        return {
-          triggered: false,
-          reason: "cooldown_active" as const,
-          pendingCount: phase.pendingCount,
-          pendingThreshold: phase.pendingThreshold,
-          scanned: 0,
-          proposed: 0,
-          enqueued: 0,
-          source: lastAuto.source,
-          runKey: lastAuto.runKey ?? null,
-          learningAcceptedSamples: 0,
-          learningRejectedSamples: 0,
-        };
-      }
-    }
+  const runKey = buildRunKey();
+  const source = createSourceLabel(params.trigger, runKey);
+  const limit = Math.max(100, params.limit ?? AUTO_LIMIT);
+  const learning = await buildLearningIndex();
 
-    const runKey = buildRunKey();
-    const source = createSourceLabel(params.trigger, runKey);
-    const limit = Math.max(100, params.limit ?? AUTO_LIMIT);
-    const learning = await buildLearningIndex();
-
-    const candidates = await prisma.$queryRaw<CandidateRow[]>(Prisma.sql`
+  const candidates = await prisma.$queryRaw<CandidateRow[]>(Prisma.sql`
       SELECT
         p.id,
         p.name,
@@ -729,36 +713,36 @@ export const runTaxonomyAutoReseedBatch = async (params: {
       });
     }
 
-    if (!proposals.length) {
-      return {
-        triggered: false,
-        reason: "no_candidates" as const,
-        pendingCount: phase.pendingCount,
-        pendingThreshold: phase.pendingThreshold,
-        scanned: candidates.length,
-        proposed: 0,
-        enqueued: 0,
-        source,
-        runKey,
-        learningAcceptedSamples: learning.acceptedSamples,
-        learningRejectedSamples: learning.rejectedSamples,
-      };
-    }
+  if (!proposals.length) {
+    return {
+      triggered: false,
+      reason: "no_candidates",
+      pendingCount: phase.pendingCount,
+      pendingThreshold: phase.pendingThreshold,
+      scanned: candidates.length,
+      proposed: 0,
+      enqueued: 0,
+      source,
+      runKey,
+      learningAcceptedSamples: learning.acceptedSamples,
+      learningRejectedSamples: learning.rejectedSamples,
+    };
+  }
 
-    const chunkSize = 400;
-    for (let i = 0; i < proposals.length; i += chunkSize) {
-      const chunk = proposals.slice(i, i + chunkSize);
-      await prisma.$transaction(async (tx) => {
-        for (const proposal of chunk) {
-          await tx.$executeRaw(
-            Prisma.sql`
+  const chunkSize = 400;
+  for (let i = 0; i < proposals.length; i += chunkSize) {
+    const chunk = proposals.slice(i, i + chunkSize);
+    await prisma.$transaction(async (tx) => {
+      for (const proposal of chunk) {
+        await tx.$executeRaw(
+          Prisma.sql`
               DELETE FROM "taxonomy_remap_reviews"
               WHERE "productId" = ${proposal.productId}
                 AND "status" = 'pending'
-            `,
-          );
-          await tx.$executeRaw(
-            Prisma.sql`
+          `,
+        );
+        await tx.$executeRaw(
+          Prisma.sql`
               INSERT INTO "taxonomy_remap_reviews" (
                 "id",
                 "status",
@@ -805,41 +789,23 @@ export const runTaxonomyAutoReseedBatch = async (params: {
                 NOW(),
                 NOW()
               )
-            `,
-          );
-        }
-      });
-    }
-
-    return {
-      triggered: true,
-      reason: "triggered" as const,
-      pendingCount: phase.pendingCount,
-      pendingThreshold: phase.pendingThreshold,
-      scanned: candidates.length,
-      proposed: proposals.length,
-      enqueued: proposals.length,
-      source,
-      runKey,
-      learningAcceptedSamples: learning.acceptedSamples,
-      learningRejectedSamples: learning.rejectedSamples,
-    };
-  });
-
-  if (!lockedResult) {
-    return {
-      triggered: false,
-      reason: "already_running",
-      pendingCount: await getPendingCount(),
-      pendingThreshold: AUTO_THRESHOLD,
-      scanned: 0,
-      proposed: 0,
-      enqueued: 0,
-      source: null,
-      runKey: null,
-      learningAcceptedSamples: 0,
-      learningRejectedSamples: 0,
-    };
+          `,
+        );
+      }
+    });
   }
-  return lockedResult;
+
+  return {
+    triggered: true,
+    reason: "triggered",
+    pendingCount: phase.pendingCount,
+    pendingThreshold: phase.pendingThreshold,
+    scanned: candidates.length,
+    proposed: proposals.length,
+    enqueued: proposals.length,
+    source,
+    runKey,
+    learningAcceptedSamples: learning.acceptedSamples,
+    learningRejectedSamples: learning.rejectedSamples,
+  };
 };
