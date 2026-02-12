@@ -134,6 +134,54 @@ const randomSampleSize = Math.max(
   0,
   Number(getArgValue("--sample-random") || process.env.TAXON_SAMPLE_RANDOM || 0),
 );
+const onlyFile =
+  getArgValue("--only-file") ||
+  process.env.TAXON_ONLY_FILE ||
+  null;
+
+type OnlyCase = {
+  brand: string;
+  name: string;
+  expected?: {
+    category?: string;
+    subcategory?: string;
+    gender?: string;
+  };
+};
+
+const loadOnlyCases = (filePath: string): OnlyCase[] => {
+  const resolved = path.isAbsolute(filePath) ? filePath : path.join(repoRoot, filePath);
+  const raw = fs.readFileSync(resolved, "utf8");
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error(`--only-file must be a JSON array. Got: ${typeof parsed}`);
+  }
+  return parsed
+    .map((entry) => {
+      const obj = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+      const brand = String(obj.brand ?? obj.brand_name ?? "").trim();
+      const name = String(obj.name ?? obj.product_name ?? "").trim();
+      if (!brand || !name) return null;
+      const expected = obj.expected && typeof obj.expected === "object"
+        ? (obj.expected as Record<string, unknown>)
+        : null;
+      return {
+        brand,
+        name,
+        expected: expected
+          ? {
+              category: typeof expected.category === "string" ? expected.category : undefined,
+              subcategory: typeof expected.subcategory === "string" ? expected.subcategory : undefined,
+              gender: typeof expected.gender === "string" ? expected.gender : undefined,
+            }
+          : undefined,
+      } satisfies OnlyCase;
+    })
+    .filter((entry): entry is OnlyCase => Boolean(entry));
+};
+
+const onlyCases: OnlyCase[] = onlyFile ? loadOnlyCases(onlyFile) : [];
+const onlyMode = onlyCases.length > 0;
 
 if (scope !== "enriched" && scope !== "all") {
   throw new Error(`Invalid --scope=${scope}. Expected enriched|all.`);
@@ -331,6 +379,27 @@ const JEWELRY_STRONG_CONTEXT_PATTERNS = [
 const detectBeauty = (text: string): Suggestion | null => {
   if (includesAny(text, HOME_AROMA_PATTERNS)) return null;
 
+  // Leather/shoe care is not "beauty" in our taxonomy; route to home/lifestyle instead.
+  // Important: do not treat "cuero cabelludo" (scalp) as leather.
+  const hasLeatherMaterial =
+    includesAny(text, [wordRe("cuero"), wordRe("leather")]) &&
+    !phraseRe("cuero cabelludo").test(text);
+  if (hasLeatherMaterial) {
+    const leatherCareOnlyActions = [
+      wordRe("grasa"),
+      wordRe("betun"),
+      wordRe("betún"),
+      wordRe("limpiador"),
+      phraseRe("leather cleaner"),
+      phraseRe("leather conditioner"),
+      phraseRe("shoe polish"),
+      phraseRe("shoe cream"),
+      phraseRe("acondicionador de cuero"),
+      phraseRe("acondicionador para cuero"),
+    ];
+    if (includesAny(text, leatherCareOnlyActions)) return null;
+  }
+
   const hasStrong = includesAny(text, BEAUTY_STRONG_PATTERNS);
   const hasColonia = includesAny(text, BEAUTY_COLONIA_PATTERNS);
   const hasFragancia = includesAny(text, BEAUTY_FRAGANCIA_PATTERNS);
@@ -422,6 +491,71 @@ const hasHairContext = (text: string) =>
     wordRe("scrunchies"),
   ]);
 
+const detectCharmKeychain = (text: string): Suggestion | null => {
+  // User/business decision: treat keychains as "dijes/charms" (jewelry), not as bags accessories.
+  //
+  // Important: descriptions for bags often contain "incluye llavero" which should NOT
+  // flip the category. So we only accept keychain as a primary intent when the text
+  // looks like a product title/slug, not like a bundle mention.
+  const keychainPatterns = [
+    wordRe("llavero"),
+    wordRe("llaveros"),
+    wordRe("keychain"),
+    wordRe("keychains"),
+  ];
+  if (!includesAny(text, keychainPatterns)) return null;
+
+  const looksTitleLikeKeychain =
+    /^llaveros?\b/i.test(text) ||
+    /^keychains?\b/i.test(text) ||
+    phraseRe("ref llavero").test(text);
+
+  const bundleMentions = [
+    phraseRe("incluye llavero"),
+    phraseRe("incluye llaveros"),
+    phraseRe("incluye un llavero"),
+    phraseRe("con llavero"),
+    phraseRe("con llaveros"),
+  ];
+  const hasBundleMention = includesAny(text, bundleMentions);
+
+  const bagContext = includesAny(text, [
+    wordRe("bolso"),
+    wordRe("bolsos"),
+    wordRe("cartera"),
+    wordRe("carteras"),
+    wordRe("mochila"),
+    wordRe("mochilas"),
+    wordRe("morral"),
+    wordRe("morrales"),
+    wordRe("rinonera"),
+    wordRe("rinoneras"),
+    wordRe("canguro"),
+    wordRe("billetera"),
+    wordRe("billeteras"),
+    wordRe("maleta"),
+    wordRe("maletas"),
+    wordRe("equipaje"),
+    wordRe("cartuchera"),
+    wordRe("cartucheras"),
+    wordRe("neceser"),
+    wordRe("neceseres"),
+    wordRe("lonchera"),
+    wordRe("loncheras"),
+  ]);
+
+  if (!looksTitleLikeKeychain && hasBundleMention) return null;
+  if (!looksTitleLikeKeychain && bagContext) return null;
+
+  return {
+    category: "joyeria_y_bisuteria",
+    subcategory: "dijes_charms",
+    confidence: looksTitleLikeKeychain ? 0.99 : 0.96,
+    reasons: ["kw:keychain"],
+    kind: "primary",
+  };
+};
+
 const detectJewelry = (text: string): Suggestion | null => {
   // NOTE: some jewelry words are ambiguous in product copy for apparel/accessories:
   // - "anillo/ring" can describe hardware on swimwear ("ring bottom") or clothing.
@@ -456,10 +590,6 @@ const detectJewelry = (text: string): Suggestion | null => {
     wordRe("earcuff"),
     wordRe("dije"),
     wordRe("dijes"),
-    wordRe("llavero"),
-    wordRe("llaveros"),
-    wordRe("keychain"),
-    wordRe("keychains"),
     wordRe("reloj"),
     wordRe("relojes"),
   ];
@@ -682,6 +812,35 @@ const detectMalaiSwimPiece = (text: string): Suggestion | null => {
   };
 };
 
+const detectWalletLike = (text: string): Suggestion | null => {
+  // Wallet/cardholder type products can be mis-tagged as lifestyle/paper goods.
+  // Treat them as bags category, but keep a specific reason so category moves can override SEO contradictions safely.
+  const patterns = [
+    wordRe("billetera"),
+    wordRe("billeteras"),
+    wordRe("monedero"),
+    wordRe("monederos"),
+    wordRe("tarjetero"),
+    wordRe("tarjeteros"),
+    wordRe("wallet"),
+    wordRe("wallets"),
+    wordRe("cardholder"),
+    wordRe("cardholders"),
+    phraseRe("card holder"),
+    phraseRe("card holders"),
+    phraseRe("money clip"),
+    wordRe("moneyclip"),
+  ];
+  if (!includesAny(text, patterns)) return null;
+  return {
+    category: "bolsos_y_marroquineria",
+    subcategory: "billetera",
+    confidence: 0.985,
+    reasons: ["kw:wallet_like"],
+    kind: "primary",
+  };
+};
+
 const detectBags = (text: string): Suggestion | null => {
   // Brand-specific: Mercedes Salazar "Lupita" are small bags/pouches, and titles don't include "bolso".
   if (text.includes("mercedessalazar") && includesAny(text, [wordRe("lupita"), wordRe("lupitas")])) {
@@ -760,6 +919,37 @@ const detectBags = (text: string): Suggestion | null => {
 };
 
 const detectHomeLifestyle = (text: string): Suggestion | null => {
+  const leatherCareActions = [
+    wordRe("grasa"),
+    wordRe("betun"),
+    wordRe("betún"),
+    wordRe("limpiador"),
+    wordRe("limpiadores"),
+    wordRe("crema"),
+    wordRe("balsamo"),
+    wordRe("bálsamo"),
+    wordRe("polish"),
+    phraseRe("shoe polish"),
+    phraseRe("shoe cream"),
+    phraseRe("leather cleaner"),
+    phraseRe("leather conditioner"),
+    phraseRe("acondicionador de cuero"),
+    phraseRe("acondicionador para cuero"),
+  ];
+  const hasLeatherMaterial =
+    includesAny(text, [wordRe("cuero"), wordRe("leather")]) &&
+    !phraseRe("cuero cabelludo").test(text);
+  const hasLeatherCare = hasLeatherMaterial && includesAny(text, leatherCareActions);
+  if (hasLeatherCare) {
+    return {
+      category: "hogar_y_lifestyle",
+      subcategory: "hogar_otros",
+      confidence: 0.95,
+      reasons: ["kw:home_other", "kw:leather_care"],
+      kind: "primary",
+    };
+  }
+
   const kitchen = [
     wordRe("plato"),
     wordRe("platos"),
@@ -872,6 +1062,14 @@ const detectHomeLifestyle = (text: string): Suggestion | null => {
     wordRe("stationery"),
     wordRe("notebook"),
     wordRe("notebooks"),
+    wordRe("portalapicero"),
+    phraseRe("porta lapicero"),
+    phraseRe("porta lapiceros"),
+    wordRe("lapicero"),
+    wordRe("lapiceros"),
+    wordRe("organizador"),
+    phraseRe("desk organizer"),
+    phraseRe("office organizer"),
   ];
   if (includesAny(text, paper)) {
     return { category: "hogar_y_lifestyle", subcategory: "papeleria_y_libros", confidence: 0.9, reasons: ["kw:home_paper"], kind: "primary" };
@@ -880,6 +1078,8 @@ const detectHomeLifestyle = (text: string): Suggestion | null => {
   const other = [
     wordRe("termo"),
     wordRe("termos"),
+    wordRe("botilito"),
+    wordRe("botilitos"),
     wordRe("botella"),
     wordRe("botellas"),
     phraseRe("water bottle"),
@@ -897,6 +1097,19 @@ const detectHomeLifestyle = (text: string): Suggestion | null => {
     phraseRe("mat escritorio"),
     wordRe("mousepad"),
     phraseRe("mouse pad"),
+    wordRe("mascota"),
+    wordRe("mascotas"),
+    wordRe("pet"),
+    wordRe("pets"),
+    wordRe("perro"),
+    wordRe("perros"),
+    wordRe("gato"),
+    wordRe("gatos"),
+    phraseRe("pet toy"),
+    phraseRe("dog toy"),
+    phraseRe("cat toy"),
+    wordRe("juguete"),
+    wordRe("juguetes"),
   ];
   if (includesAny(text, other)) {
     return { category: "hogar_y_lifestyle", subcategory: "hogar_otros", confidence: 0.9, reasons: ["kw:home_other"], kind: "primary" };
@@ -1058,8 +1271,10 @@ const inferCanonicalCategory = (text: string): Suggestion | null => {
     detectGiftCard(text) ||
     detectBeauty(text) ||
     detectHomeLifestyle(text) ||
+    detectCharmKeychain(text) ||
     detectJewelry(text) ||
     detectGlasses(text) ||
+    detectWalletLike(text) ||
     detectBags(text) ||
     detectFootwear(text) ||
     detectMalaiSwimPiece(text) ||
@@ -1505,24 +1720,6 @@ const inferCategoryFromSources = (
   seoTags: string[],
 ): CategoryInferenceResult => {
   const seoCategoryHints = extractCanonicalCategoryHintsFromSeoTags(seoTags);
-  if (seoCategoryHints.length === 1) {
-    return {
-      suggestion: {
-        category: seoCategoryHints[0],
-        subcategory: null,
-        confidence: 0.995,
-        reasons: ["seo:canonical_category", "src:seo_tags"],
-        kind: "primary",
-      },
-      sourceCount: 1,
-      scoreSupport: 1,
-      marginRatio: 99,
-      seoCategoryHints,
-      topSources: ["seo_tags"],
-      hasNonSeoSupport: false,
-    };
-  }
-
   const buckets = new Map<
     string,
     {
@@ -1551,7 +1748,6 @@ const inferCategoryFromSources = (
 
   const sources: SourceName[] = [
     "name",
-    "seo_tags",
     "seo_title",
     "seo_description",
     "url",
@@ -1565,6 +1761,44 @@ const inferCategoryFromSources = (
     if (!suggestion) return;
     addSuggestion(source, suggestion);
   });
+
+  const seoTagText = sourceTexts.seo_tags;
+  if (seoTagText) {
+    const seoLexicalSuggestion = inferCanonicalCategory(seoTagText);
+    if (seoLexicalSuggestion) {
+      const shouldSkipLexicalBecauseCanonicalAlreadyMatches =
+        seoCategoryHints.length === 1 && seoCategoryHints[0] === seoLexicalSuggestion.category;
+      if (shouldSkipLexicalBecauseCanonicalAlreadyMatches) {
+        // Avoid double-counting SEO when it already contains a canonical category key.
+        // Canonical hints are the strongest SEO signal; lexical matching is redundant here and
+        // makes it harder to override wrong anchored SEO tags for misclassified products.
+      } else {
+      addSuggestion(
+        "seo_tags",
+        {
+          ...seoLexicalSuggestion,
+          confidence: Math.min(seoLexicalSuggestion.confidence, 0.9),
+          reasons: ["seo:lexical", ...seoLexicalSuggestion.reasons],
+        },
+        "seo:lexical",
+      );
+      }
+    }
+  }
+
+  if (seoCategoryHints.length === 1) {
+    addSuggestion(
+      "seo_tags",
+      {
+        category: seoCategoryHints[0],
+        subcategory: null,
+        confidence: 0.9,
+        reasons: ["seo:canonical_category"],
+        kind: "primary",
+      },
+      "seo:canonical_category",
+    );
+  }
 
   if (seoCategoryHints.length > 1) {
     seoCategoryHints.forEach((category) => {
@@ -1642,11 +1876,20 @@ const shouldAllowCategoryMove = (
   if (suggestion.confidence < minConfidence) return false;
 
   const seoHints = inference.seoCategoryHints;
+  const hasStrongCrossSourceEvidence =
+    inference.hasNonSeoSupport &&
+    inference.sourceCount >= 3 &&
+    inference.scoreSupport >= 0.73 &&
+    inference.marginRatio >= 1.45;
+  const hasSeoContradictionOverrideReason = suggestion.reasons.some((reason) =>
+    SEO_CONTRADICTION_OVERRIDE_REASONS.has(reason),
+  );
   if (
     seoHints.includes(fromCategory) &&
     !seoHints.includes(suggestion.category)
   ) {
-    return false;
+    if (!hasStrongCrossSourceEvidence) return false;
+    if (!hasSeoContradictionOverrideReason) return false;
   }
 
   const hasDirectSeoSupport = seoHints.length === 1 && seoHints[0] === suggestion.category;
@@ -1663,11 +1906,11 @@ const shouldAllowCategoryMove = (
   );
 
   if (!hasDirectSeoSupport) {
-    if (!hasExceptionalNoSeoReason) return false;
+    if (!hasExceptionalNoSeoReason && !hasStrongCrossSourceEvidence) return false;
     if (suggestion.confidence < Math.max(minConfidence, 0.95)) return false;
     if (inference.sourceCount < 3) return false;
     if (inference.scoreSupport < 0.72) return false;
-    if (inference.marginRatio < 1.5) return false;
+    if (inference.marginRatio < 1.45) return false;
   }
 
   return true;
@@ -1693,6 +1936,12 @@ const shouldAutoApplyCategoryMove = (
     inference.seoCategoryHints[0] !== fromCategory &&
     inference.seoCategoryHints[0] !== toCategory;
   if (hasConflictingSingleSeoHint) return false;
+  const hasSingleSeoHintAgainstTarget =
+    inference.seoCategoryHints.length === 1 &&
+    fromCategory &&
+    inference.seoCategoryHints[0] === fromCategory &&
+    inference.seoCategoryHints[0] !== toCategory;
+  if (hasSingleSeoHintAgainstTarget) return false;
 
   const hasNonSeoSupport = inference.hasNonSeoSupport;
   const reasons = new Set<string>(categoryRule?.reasons ?? []);
@@ -1729,8 +1978,11 @@ const SAFE_MOVE_REASONS = new Set([
   "kw:home_art",
   "kw:home_paper",
   "kw:home_other",
+  "kw:leather_care",
+  "kw:keychain",
   "kw:jewelry",
   "kw:glasses",
+  "kw:wallet_like",
   "kw:bags",
   "kw:footwear",
   "kw:footwear_domain",
@@ -1764,6 +2016,26 @@ const SAFE_MOVE_REASONS = new Set([
   "kw:body",
   "seo:canonical_category",
   "seo:canonical_category_multi",
+]);
+
+const SEO_CONTRADICTION_OVERRIDE_REASONS = new Set([
+  "kw:gift_card",
+  "kw:beauty_strong",
+  "kw:beauty_fragancia",
+  "kw:beauty_care",
+  "kw:home_kitchen",
+  "kw:home_table",
+  "kw:home_pillow",
+  "kw:home_aroma",
+  "kw:home_towel",
+  "kw:home_blanket",
+  "kw:home_art",
+  "kw:home_paper",
+  "kw:home_other",
+  "kw:leather_care",
+  "kw:keychain",
+  "kw:wallet_like",
+  "kw:underwear",
 ]);
 
 function isSafeCategoryMoveSuggestion(suggestion: Suggestion) {
@@ -1909,7 +2181,7 @@ const SUBRULES: Record<string, SubRule[]> = {
     { key: "maletas_y_equipaje", confidence: 0.95, reasons: ["kw:maleta"], patterns: [wordRe("maleta"), wordRe("maletas"), wordRe("equipaje"), wordRe("trolley"), wordRe("luggage"), wordRe("suitcase"), wordRe("golf"), phraseRe("bolsa de golf")] },
     { key: "estuches_cartucheras_neceseres", confidence: 0.95, reasons: ["kw:cartuchera"], patterns: [wordRe("cartuchera"), wordRe("cartucheras"), wordRe("estuche"), wordRe("estuches"), wordRe("neceser"), wordRe("neceseres"), wordRe("cosmetiquera"), wordRe("pouch"), wordRe("lapicera")] },
     { key: "portadocumentos_porta_pasaporte", confidence: 0.94, reasons: ["kw:documentos"], patterns: [phraseRe("porta pasaporte"), phraseRe("porta documentos"), phraseRe("portadocumentos"), phraseRe("passport")] },
-    { key: "billetera", confidence: 0.92, reasons: ["kw:billetera"], patterns: [wordRe("billetera"), wordRe("monedero"), wordRe("tarjetero"), wordRe("wallet"), phraseRe("money clip"), wordRe("moneyclip")] },
+    { key: "billetera", confidence: 0.92, reasons: ["kw:billetera"], patterns: [wordRe("billetera"), wordRe("monedero"), wordRe("tarjetero"), wordRe("wallet"), wordRe("cardholder"), phraseRe("card holder"), phraseRe("money clip"), wordRe("moneyclip")] },
     { key: "bolso_tote", confidence: 0.92, reasons: ["kw:canasto"], patterns: [wordRe("canasto"), wordRe("canastos"), wordRe("basket")] },
     { key: "cartera_bolso_de_mano", confidence: 0.92, reasons: ["kw:bolsa_regalo"], patterns: [phraseRe("bolsa regalo"), phraseRe("gift bag")] },
     { key: "cartera_bolso_de_mano", confidence: 0.9, reasons: ["kw:cartera"], patterns: [wordRe("cartera"), phraseRe("bolso de mano"), wordRe("handbag"), wordRe("handbags"), wordRe("baguette"), phraseRe("market bag")] },
@@ -2288,10 +2560,11 @@ async function main() {
           return `$${queryParams.length}`;
         })
         .join(",");
-    const useCategoryCandidates = !genderOnly;
+    // In only-mode, selection is driven by the explicit brand+name filter, so we do not need SQL candidate sets.
+    const useCategoryCandidates = !genderOnly && !onlyMode;
     const needsCanonicalCategorySet = useCategoryCandidates && !allCategoryCandidates;
     const canonPlaceholders = needsCanonicalCategorySet ? buildPlaceholders(canon) : "";
-    const needsGenderCanonicalSet = (includeGender || genderOnly) && !genderAllCandidates;
+    const needsGenderCanonicalSet = (includeGender || genderOnly) && !genderAllCandidates && !onlyMode;
     const genderPlaceholders = needsGenderCanonicalSet
       ? buildPlaceholders(canonGender)
       : "";
@@ -2341,13 +2614,32 @@ async function main() {
         ? `(${whereCategoryCandidate} or ${whereGenderCandidate})`
         : whereCategoryCandidate;
 
+    const whereOnly = onlyMode
+      ? (() => {
+          const clauses: string[] = [];
+          for (const entry of onlyCases) {
+            queryParams.push(entry.brand);
+            const brandPlaceholder = `$${queryParams.length}`;
+            queryParams.push(entry.name);
+            const namePlaceholder = `$${queryParams.length}`;
+            clauses.push(
+              `(lower(btrim(b.name)) = lower(${brandPlaceholder}::text) and lower(btrim(p.name)) = lower(${namePlaceholder}::text))`,
+            );
+          }
+          return clauses.length ? `and (${clauses.join(" or ")})` : "";
+        })()
+      : "";
+
+    const effectiveWhereCandidates = onlyMode ? `(true)` : whereCandidates;
+
     const appliedLimit = randomSampleSize > 0
       ? randomSampleSize
       : limit
         ? Math.max(1, Math.floor(limit))
         : 0;
-    const limitClause = appliedLimit ? `limit ${appliedLimit}` : "";
-    const orderClause = randomSampleSize > 0 ? `order by random()` : `order by p."updatedAt" desc`;
+    const limitClause = onlyMode ? "" : appliedLimit ? `limit ${appliedLimit}` : "";
+    const orderClause =
+      onlyMode ? `order by p."updatedAt" desc` : randomSampleSize > 0 ? `order by random()` : `order by p."updatedAt" desc`;
 
     const query = `
       select
@@ -2368,8 +2660,9 @@ async function main() {
         (p.metadata -> 'enrichment') is not null as is_enriched
       from products p
       join brands b on b.id = p."brandId"
-      where ${whereCandidates}
+      where ${effectiveWhereCandidates}
       ${whereScope}
+      ${whereOnly}
       ${orderClause}
       ${limitClause}
     `;
@@ -2378,6 +2671,7 @@ async function main() {
     const rows = res.rows;
 
     const changes: ChangeRow[] = [];
+    const onlyResults: Array<Record<string, unknown>> = [];
     for (const row of rows) {
       const rawCategory = row.category ? String(row.category).trim() : "";
       const rawSubcategory = row.subcategory ? String(row.subcategory).trim() : "";
@@ -2494,6 +2788,31 @@ async function main() {
               reasons: ["fill_sub:source_mix", ...primaryBySource.suggestion.reasons],
               kind: "subcategory",
             };
+          } else if (toSubcategory !== primaryBySource.suggestion.subcategory) {
+            const hasDirectSeoSubcategoryHint = primaryBySource.suggestion.reasons.includes(
+              "seo:canonical_subcategory",
+            );
+            const hasStrongSourceSupport =
+              primaryBySource.sourceCount >= 2 &&
+              primaryBySource.scoreSupport >= 0.72 &&
+              primaryBySource.marginRatio >= 1.25;
+            if (hasDirectSeoSubcategoryHint || hasStrongSourceSupport) {
+              toSubcategory = primaryBySource.suggestion.subcategory;
+              subcategoryRule = {
+                ...primaryBySource.suggestion,
+                confidence: Math.max(
+                  primaryBySource.suggestion.confidence,
+                  hasDirectSeoSubcategoryHint ? 0.95 : 0.9,
+                ),
+                reasons: [
+                  hasDirectSeoSubcategoryHint
+                    ? "move_sub:seo_canonical"
+                    : "move_sub:source_mix",
+                  ...primaryBySource.suggestion.reasons,
+                ],
+                kind: "subcategory",
+              };
+            }
           }
         } else if (primaryFull && primaryFull.category === fromCategory && primaryFull.subcategory) {
           // When the model inferred an in-category subcategory, use it to backfill.
@@ -2516,22 +2835,81 @@ async function main() {
           if (!isAllowedSubcategory(toCategory, toSubcategory)) {
             toSubcategory = null;
           }
-          if (!toSubcategory) {
-            let inferred = inferSubcategoryFromSources(toCategory, sourceTexts, seoTags);
-            if (!inferred) {
-              // Keep deterministic fallback for edge cases where the source mix returns null.
-              inferred = inferSubcategory(toCategory, textLite);
-              if (!inferred && SUBCATEGORY_ALLOW_TEXT_FULL.has(toCategory)) {
-                inferred = inferSubcategory(toCategory, textFull);
-                if (inferred) {
-                  inferred = { ...inferred, reasons: ["src:text_full", ...inferred.reasons] };
-                }
+          let inferred = inferSubcategoryFromSources(toCategory, sourceTexts, seoTags);
+          // Targeted correction: many catalogs use "blusa_*" as a default bucket in enrichment,
+          // but the product name is explicit "camisa ...". Prefer "camisa_casual" when the *name*
+          // says "camisa" and current subcategory is a blusa bucket.
+          if (
+            toCategory === "camisas_y_blusas" &&
+            toSubcategory &&
+            toSubcategory.startsWith("blusa_") &&
+            includesAny(sourceTexts.name, [wordRe("camisa")]) &&
+            !includesAny(sourceTexts.name, [wordRe("blusa")])
+          ) {
+            const inferredSub = inferred?.subcategory ?? null;
+            const inferredIsCamisaFamily = inferredSub
+              ? inferredSub === "guayabera" || inferredSub.startsWith("camisa_")
+              : false;
+            const shouldOverrideToCamisaCasual =
+              !inferred || !inferredIsCamisaFamily || inferredSub === "camisa_casual";
+            if (shouldOverrideToCamisaCasual) {
+              inferred = {
+                category: toCategory,
+                subcategory: "camisa_casual",
+                confidence: Math.max(inferred?.confidence ?? 0, 0.96),
+                reasons: ["name:camisa_override", "src:name", ...(inferred?.reasons ?? [])],
+                kind: "subcategory",
+              };
+            }
+          }
+          if (!inferred && !toSubcategory) {
+            // Keep deterministic fallback for edge cases where the source mix returns null.
+            inferred = inferSubcategory(toCategory, textLite);
+            if (!inferred && SUBCATEGORY_ALLOW_TEXT_FULL.has(toCategory)) {
+              inferred = inferSubcategory(toCategory, textFull);
+              if (inferred) {
+                inferred = { ...inferred, reasons: ["src:text_full", ...inferred.reasons] };
               }
             }
-            if (inferred && inferred.subcategory && inferred.confidence >= minSubcategoryConfidence) {
-              if (isAllowedSubcategory(toCategory, inferred.subcategory)) {
+          }
+          if (inferred && inferred.subcategory && inferred.confidence >= minSubcategoryConfidence) {
+            if (isAllowedSubcategory(toCategory, inferred.subcategory)) {
+              if (!toSubcategory) {
                 toSubcategory = inferred.subcategory;
                 subcategoryRule = inferred;
+              } else if (toSubcategory !== inferred.subcategory) {
+                const hasDirectSeoSubcategoryHint = inferred.reasons.includes(
+                  "seo:canonical_subcategory",
+                );
+                const hasVeryHighConfidenceMove =
+                  inferred.confidence >= Math.max(minSubcategoryConfidence, 0.95);
+                const allowCamisaOverBlusaNameOverride =
+                  toCategory === "camisas_y_blusas" &&
+                  inferred.subcategory === "camisa_casual" &&
+                  toSubcategory.startsWith("blusa_") &&
+                  includesAny(sourceTexts.name, [wordRe("camisa")]) &&
+                  !includesAny(sourceTexts.name, [wordRe("blusa")]);
+                const hasNameOverrideMove =
+                  allowCamisaOverBlusaNameOverride &&
+                  inferred.confidence >= minSubcategoryConfidence;
+                if (hasDirectSeoSubcategoryHint || hasVeryHighConfidenceMove || hasNameOverrideMove) {
+                  toSubcategory = inferred.subcategory;
+                  subcategoryRule = {
+                    ...inferred,
+                    confidence: Math.max(
+                      inferred.confidence,
+                      hasDirectSeoSubcategoryHint || hasNameOverrideMove ? 0.95 : inferred.confidence,
+                    ),
+                    reasons: [
+                      hasDirectSeoSubcategoryHint
+                        ? "move_sub:seo_canonical"
+                        : hasNameOverrideMove
+                          ? "move_sub:name_override"
+                        : "move_sub:high_confidence",
+                      ...inferred.reasons,
+                    ],
+                  };
+                }
               }
             }
           }
@@ -2565,6 +2943,15 @@ async function main() {
         ) {
           categoryDecision = "auto_apply";
         } else {
+          categoryDecision = "review_required";
+        }
+      }
+
+      const isSubcategoryOnlyTaxonomyMove =
+        fromCategory === toCategory && fromSubcategory !== toSubcategory;
+      if (isSubcategoryOnlyTaxonomyMove && categoryDecision === "none") {
+        const subConfidence = subcategoryRule?.confidence ?? 0;
+        if (subConfidence >= minSubcategoryConfidence) {
           categoryDecision = "review_required";
         }
       }
@@ -2625,9 +3012,8 @@ async function main() {
         fromCategory !== toCategory || fromSubcategory !== toSubcategory;
       const changedGender = (includeGender || genderOnly) && (fromGenderRaw ?? null) !== (toGender ?? null);
       const changed = changedCategoryOrSub || changedGender;
-      if (!changed) continue;
 
-      const reasons = Array.from(
+      const combinedReasons = Array.from(
         new Set(
           [
             ...(categoryRule?.reasons ?? []),
@@ -2654,10 +3040,52 @@ async function main() {
             category: toCategory,
             subcategory: toSubcategory,
             confidence: combinedConfidence,
-            reasons,
+            reasons: combinedReasons,
             kind: combinedKind,
           }
         : null;
+      if (onlyMode) {
+        onlyResults.push({
+          product_id: row.product_id,
+          brand_name: row.brand_name,
+          product_name: row.product_name,
+          is_enriched: row.is_enriched,
+          from_category: fromCategory,
+          from_subcategory: fromSubcategory,
+          from_gender: fromGenderRaw,
+          inference: primaryBySource.suggestion
+            ? {
+                category: primaryBySource.suggestion.category,
+                subcategory: primaryBySource.suggestion.subcategory,
+                confidence: primaryBySource.suggestion.confidence,
+                reasons: primaryBySource.suggestion.reasons,
+              }
+            : null,
+          inference_metrics: {
+            source_count: primaryBySource.sourceCount,
+            score_support: Number(primaryBySource.scoreSupport.toFixed(3)),
+            margin_ratio:
+              primaryBySource.marginRatio > 98
+                ? 99
+                : Number(primaryBySource.marginRatio.toFixed(3)),
+            top_sources: primaryBySource.topSources,
+            seo_category_hints: primaryBySource.seoCategoryHints,
+            has_non_seo_support: primaryBySource.hasNonSeoSupport,
+          },
+          to_category: toCategory,
+          to_subcategory: toSubcategory,
+          to_gender: toGender,
+          taxonomy_changed: changedCategoryOrSub,
+          gender_changed: changedGender,
+          category_decision: categoryDecision,
+          gender_decision: genderMoveDecision,
+          combined_confidence: combinedConfidence,
+          reasons: combinedReasons,
+          would_enqueue_review: changed && (changedGender || categoryDecision === "review_required"),
+          would_auto_apply: changed && categoryDecision === "auto_apply",
+        });
+      }
+      if (!changed) continue;
 
       changes.push({
         product_id: row.product_id,
@@ -2675,7 +3103,7 @@ async function main() {
         to_gender: toGender,
         confidence: combined?.confidence ?? combinedConfidence,
         kind: combined?.kind ?? combinedKind,
-        reasons: reasons.join("|"),
+        reasons: combinedReasons.join("|"),
         seo_category_hints: primaryBySource.seoCategoryHints.join("|"),
         source_count: primaryBySource.sourceCount,
         score_support: Number(primaryBySource.scoreSupport.toFixed(3)),
@@ -2691,6 +3119,37 @@ async function main() {
         _rule: combined,
         _genderRule: genderRule,
       });
+    }
+
+    if (onlyMode) {
+      const expectedKeys = onlyCases.map((entry) => `${normalizeText(entry.brand)}|${normalizeText(entry.name)}`);
+      const foundKeys = new Set(
+        rows.map((row) => `${normalizeText(row.brand_name)}|${normalizeText(row.product_name)}`),
+      );
+      const missing = expectedKeys
+        .filter((key) => !foundKeys.has(key))
+        .map((key) => {
+          const [brand, name] = key.split("|");
+          return { brand, name };
+        });
+
+      console.log(
+        JSON.stringify(
+          {
+            ok: true,
+            onlyMode: true,
+            scope,
+            includeGender: includeGender || genderOnly,
+            totalRequested: onlyCases.length,
+            totalFound: rows.length,
+            missing,
+            results: onlyResults,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
     }
 
     const byFromTo = new Map<string, number>();
