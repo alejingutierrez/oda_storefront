@@ -47,7 +47,12 @@ export const enqueueEnrichmentItems = async (items: Array<{ id: string }>) => {
   const jobs = items.map((item) => ({
     name: "product-enrichment",
     data: { itemId: item.id },
-    jobId: item.id,
+    opts: {
+      // Ensure idempotency: re-enqueueing the same item should not create duplicates.
+      jobId: item.id,
+      removeOnComplete: true,
+      removeOnFail: true,
+    },
   }));
 
   const withTimeout = async <T>(promise: Promise<T>, label: string) => {
@@ -69,7 +74,7 @@ export const enqueueEnrichmentItems = async (items: Array<{ id: string }>) => {
       Promise.allSettled(
         jobs.map((job) =>
           queue.add(job.name, job.data, {
-            jobId: job.jobId,
+            jobId: job.opts.jobId,
             removeOnComplete: true,
             removeOnFail: true,
           }),
