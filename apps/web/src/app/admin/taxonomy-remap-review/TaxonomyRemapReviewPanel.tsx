@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 
 type BrandOption = {
@@ -102,6 +102,8 @@ const CHANGE_TYPE_OPTIONS: Array<{ value: ChangeTypeFilter; label: string }> = [
   { value: "gender_only", label: "Solo género" },
 ];
 
+const PAGE_LIMIT = 40;
+
 const formatDateTime = (value: string | null | undefined) => {
   if (!value) return "—";
   return new Date(value).toLocaleString("es-CO");
@@ -133,6 +135,8 @@ export default function TaxonomyRemapReviewPanel() {
   const [loading, setLoading] = useState(false);
   const [actionById, setActionById] = useState<Record<string, "accept" | "reject">>({});
   const [autoReseedBusy, setAutoReseedBusy] = useState(false);
+  const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inflightDecisionRef = useRef<Set<string>>(new Set());
   const [phase, setPhase] = useState<NonNullable<ReviewsResponse["phase"]>>({
     enabled: true,
     pendingThreshold: 100,
@@ -179,14 +183,17 @@ export default function TaxonomyRemapReviewPanel() {
   }, []);
 
   const fetchItems = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    const silent = false;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const params = new URLSearchParams();
       params.set("status", status);
       params.set("changeType", changeType);
       params.set("page", String(page));
-      params.set("limit", "40");
+      params.set("limit", String(PAGE_LIMIT));
       if (search.trim()) params.set("search", search.trim());
       if (brandId) params.set("brandId", brandId);
       const res = await fetch(`/api/admin/taxonomy-remap/reviews?${params.toString()}`, {
@@ -205,10 +212,12 @@ export default function TaxonomyRemapReviewPanel() {
       setTotal(payload.pagination?.total ?? 0);
       setTotalPages(Math.max(1, payload.pagination?.totalPages ?? 1));
     } catch (err) {
-      setItems([]);
-      setError(err instanceof Error ? err.message : "No se pudo cargar la cola de revisión");
+      if (!silent) {
+        setItems([]);
+        setError(err instanceof Error ? err.message : "No se pudo cargar la cola de revisión");
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [status, changeType, page, search, brandId]);
 
@@ -219,6 +228,121 @@ export default function TaxonomyRemapReviewPanel() {
   useEffect(() => {
     fetchItems();
   }, [fetchItems]);
+
+  const fetchItemsSilent = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      params.set("status", status);
+      params.set("changeType", changeType);
+      params.set("page", String(page));
+      params.set("limit", String(PAGE_LIMIT));
+      if (search.trim()) params.set("search", search.trim());
+      if (brandId) params.set("brandId", brandId);
+      const res = await fetch(`/api/admin/taxonomy-remap/reviews?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const payload = (await res.json().catch(() => null)) as ReviewsResponse | null;
+      if (!payload) return;
+      if (Array.isArray(payload.items)) setItems(payload.items);
+      if (payload.summary) setSummary(payload.summary);
+      if (payload.changeSummary) setChangeSummary(payload.changeSummary);
+      if (payload.phase) setPhase(payload.phase);
+      if (payload.catalog) setCatalogCounters(payload.catalog);
+      if (payload.pagination) {
+        setTotal(payload.pagination.total ?? 0);
+        setTotalPages(Math.max(1, payload.pagination.totalPages ?? 1));
+      }
+    } catch {
+      // silent refresh should not disrupt review flow
+    }
+  }, [status, changeType, page, search, brandId]);
+
+  const scheduleSilentRefresh = useCallback(() => {
+    if (silentRefreshTimerRef.current) {
+      clearTimeout(silentRefreshTimerRef.current);
+      silentRefreshTimerRef.current = null;
+    }
+    silentRefreshTimerRef.current = setTimeout(() => {
+      silentRefreshTimerRef.current = null;
+      void fetchItemsSilent();
+    }, 900);
+  }, [fetchItemsSilent]);
+
+  useEffect(() => {
+    return () => {
+      if (silentRefreshTimerRef.current) clearTimeout(silentRefreshTimerRef.current);
+    };
+  }, []);
+
+  const applyOptimisticDecision = useCallback(
+    (item: ReviewItem, nextStatus: "accepted" | "rejected") => {
+      // Update list first so the UI feels instant.
+      setItems((prev) => {
+        if (status === "all") {
+          const decidedAt = new Date().toISOString();
+          return prev.map((entry) =>
+            entry.id === item.id
+              ? {
+                  ...entry,
+                  status: nextStatus,
+                  decidedAt,
+                  decisionError: null,
+                }
+              : entry,
+          );
+        }
+        // In pending view, removing the row is the fastest UX.
+        return prev.filter((entry) => entry.id !== item.id);
+      });
+
+      setSummary((prev) => ({
+        pending: Math.max(0, prev.pending - 1),
+        accepted: prev.accepted + (nextStatus === "accepted" ? 1 : 0),
+        rejected: prev.rejected + (nextStatus === "rejected" ? 1 : 0),
+      }));
+
+      setCatalogCounters((prev) => ({
+        ...prev,
+        reviewedProducts: prev.reviewedProducts + 1,
+        pendingProducts: Math.max(0, prev.pendingProducts - 1),
+        remainingProducts: Math.max(0, prev.remainingProducts - 1),
+        eligibleReviewedProducts: prev.eligibleReviewedProducts + 1,
+        eligiblePendingProducts: Math.max(0, prev.eligiblePendingProducts - 1),
+        eligibleRemainingProducts: Math.max(0, prev.eligibleRemainingProducts - 1),
+      }));
+
+      setPhase((prev) => {
+        const pendingCount = Math.max(0, prev.pendingCount - 1);
+        const remainingToTrigger = Math.max(0, pendingCount - prev.pendingThreshold);
+        return {
+          ...prev,
+          pendingCount,
+          remainingForPhase: pendingCount,
+          remainingToTrigger,
+          readyToTrigger: pendingCount <= prev.pendingThreshold,
+          reviewedSinceLastAuto: prev.reviewedSinceLastAuto + 1,
+        };
+      });
+
+      // These are derived from the current filter. For pending-only view, the item leaves the view.
+      if (status === "pending") {
+        const bucket = item.changeType === "taxonomy" ? "taxonomy" : item.changeType === "none" ? "none" : "gender_only";
+        setChangeSummary((prev) => ({
+          ...prev,
+          [bucket]: Math.max(0, (prev as Record<string, number>)[bucket] - 1),
+        }));
+        setTotal((prevTotal) => {
+          const nextTotal = Math.max(0, prevTotal - 1);
+          const nextTotalPages = Math.max(1, Math.ceil(nextTotal / PAGE_LIMIT));
+          setTotalPages(nextTotalPages);
+          setPage((prevPage) => Math.min(prevPage, nextTotalPages));
+          return nextTotal;
+        });
+      }
+    },
+    [status],
+  );
 
   const runAutoReseed = useCallback(async (force = false) => {
     setAutoReseedBusy(true);
@@ -242,8 +366,11 @@ export default function TaxonomyRemapReviewPanel() {
   }, [fetchItems]);
 
   const handleAccept = useCallback(async (item: ReviewItem) => {
+    if (inflightDecisionRef.current.has(item.id)) return;
+    inflightDecisionRef.current.add(item.id);
     setActionById((prev) => ({ ...prev, [item.id]: "accept" }));
     setError(null);
+    applyOptimisticDecision(item, "accepted");
     try {
       const res = await fetch(`/api/admin/taxonomy-remap/reviews/${item.id}/accept`, {
         method: "POST",
@@ -254,21 +381,26 @@ export default function TaxonomyRemapReviewPanel() {
         const payload = await res.json().catch(() => ({}));
         throw new Error(payload.error || "No se pudo aceptar la propuesta");
       }
-      await fetchItems();
+      scheduleSilentRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo aceptar la propuesta");
+      scheduleSilentRefresh();
     } finally {
       setActionById((prev) => {
         const next = { ...prev };
         delete next[item.id];
         return next;
       });
+      inflightDecisionRef.current.delete(item.id);
     }
-  }, [fetchItems]);
+  }, [applyOptimisticDecision, scheduleSilentRefresh]);
 
   const handleReject = useCallback(async (item: ReviewItem) => {
+    if (inflightDecisionRef.current.has(item.id)) return;
+    inflightDecisionRef.current.add(item.id);
     setActionById((prev) => ({ ...prev, [item.id]: "reject" }));
     setError(null);
+    applyOptimisticDecision(item, "rejected");
     try {
       const res = await fetch(`/api/admin/taxonomy-remap/reviews/${item.id}/reject`, {
         method: "POST",
@@ -279,17 +411,19 @@ export default function TaxonomyRemapReviewPanel() {
         const payload = await res.json().catch(() => ({}));
         throw new Error(payload.error || "No se pudo rechazar la propuesta");
       }
-      await fetchItems();
+      scheduleSilentRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo rechazar la propuesta");
+      scheduleSilentRefresh();
     } finally {
       setActionById((prev) => {
         const next = { ...prev };
         delete next[item.id];
         return next;
       });
+      inflightDecisionRef.current.delete(item.id);
     }
-  }, [fetchItems]);
+  }, [applyOptimisticDecision, scheduleSilentRefresh]);
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
