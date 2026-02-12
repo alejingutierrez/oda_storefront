@@ -658,6 +658,27 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % covers en Blob para productos enriched; tasa de fallos del proxy/backfill; 4xx de `_next/image` (objetivo: 0 para URLs proxy).
 - Estado: **done (2026-02-08)**.
 
+### MC-123 Revisión manual de remapeo taxonómico (categoría/subcategoría/género)
+- Historia: Como curador/admin, quiero revisar propuestas de reclasificación antes de aplicarlas, para evitar cambios erróneos de taxonomía y mantener consistencia del catálogo.
+- Alcance:
+  - Nueva tabla `taxonomy_remap_reviews` para propuestas (`pending`, `accepted`, `rejected`) con trazabilidad de origen, razones, score y nota de decisión.
+  - Endpoints admin:
+    - `GET /api/admin/taxonomy-remap/reviews` (listado + summary).
+    - `POST /api/admin/taxonomy-remap/reviews` (encolar propuestas sin aplicar).
+    - `POST /api/admin/taxonomy-remap/reviews/:reviewId/accept` (aplica propuesta en `products` y registra decisión).
+    - `POST /api/admin/taxonomy-remap/reviews/:reviewId/reject` (rechaza con nota opcional).
+  - Front admin `/admin/taxonomy-remap-review` con filtros, foto del producto, valores actuales/propuestos y acciones aceptar/rechazar.
+  - Política operativa: propuestas basadas únicamente en SEO (`seoTags`) no se auto-aplican; quedan en revisión manual.
+- CA:
+  - Se puede revisar y decidir propuesta por propuesta desde UI sin tocar scripts SQL manuales.
+  - Al aceptar, se actualizan `category`, `subcategory` y `gender` del producto y queda auditoría en metadata.
+  - Al rechazar, la propuesta conserva trazabilidad (`decision_note`, usuario y fecha).
+- Datos: `taxonomy_remap_reviews`, `products.metadata.taxonomy_remap.last_review`.
+- NF: Una sola propuesta `pending` por producto (índice parcial) para evitar duplicados activos.
+- Riesgos: Aceptación masiva sin criterio humano; mitigación con cola manual + detalle visual por producto.
+- Métricas: pendientes/aceptadas/rechazadas por corrida, tasa de aceptación, tiempo medio de revisión.
+- Estado: **done (2026-02-12)**.
+
 ### MC-009 Taxonomía fija y catálogos
 - Historia: Como curador de datos, quiero editar y publicar catálogos cerrados (categorías, subcategorías, materiales, patrones, ocasiones y style tags), para que enrichment y UIs compartan una fuente de verdad.
 - Alcance:

@@ -136,6 +136,12 @@ function AdminPanel() {
           >
             Refresh semanal
           </a>
+          <a
+            href="/admin/taxonomy-remap-review"
+            className="inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+          >
+            Remap review
+          </a>
         </div>
       </aside>
     </div>

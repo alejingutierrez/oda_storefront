@@ -180,6 +180,7 @@ model Product {
   favorites         UserFavorite[]
   listItems         UserListItem[]
   enrichmentItems   ProductEnrichmentItem[]
+  taxonomyRemapReviews TaxonomyRemapReview[]
 
   @@index([brandId])
   @@index([externalId])
@@ -278,6 +279,42 @@ model ProductEnrichmentItem {
   @@index([runId, status])
   @@index([productId])
   @@map("product_enrichment_items")
+}
+
+model TaxonomyRemapReview {
+  id               String   @id @default(uuid())
+  status           String   @default("pending") // pending | accepted | rejected
+  source           String?
+  runKey           String?
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  fromCategory     String?
+  fromSubcategory  String?
+  fromGender       String?
+  toCategory       String?
+  toSubcategory    String?
+  toGender         String?
+  confidence       Float?
+  reasons          String[]
+  seoCategoryHints String[]
+  sourceCount      Int?
+  scoreSupport     Float?
+  marginRatio      Float?
+  imageCoverUrl    String?
+  sourceUrl        String?
+  decisionNote     String?
+  decidedAt        DateTime?
+  decidedByUserId  String?
+  decidedByUser    User?    @relation("TaxonomyRemapDecisionUser", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+  decisionError    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([productId, status])
+  @@index([runKey, status])
+  @@index([decidedByUserId])
+  @@map("taxonomy_remap_reviews")
 }
 
 model PriceHistory {
@@ -507,6 +544,7 @@ model User {
   lists       UserList[]
   auditEvents UserAuditEvent[]
   experienceEvents ExperienceEvent[]
+  taxonomyRemapReviewDecisions TaxonomyRemapReview[] @relation("TaxonomyRemapDecisionUser")
 
   @@map("users")
 }

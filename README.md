@@ -164,6 +164,8 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Post-procesamiento determinístico: validador de consistencia + auto-fixes seguros; si persiste inconsistencia, se marca `review_required` con razones para curación humana.
   - Se guarda `confidence` local (`category/subcategory/overall`) y el panel expone conteos de baja confianza y revisión manual.
   - El panel incluye tabla operativa de revisión manual (manual + baja confianza), con razones y acceso directo al detalle de producto en admin.
+  - Clasificación/remapeo de taxonomía con revisión humana: existe un panel dedicado `/admin/taxonomy-remap-review` para aprobar/rechazar propuestas de cambio de categoría/subcategoría/género con foto del producto, razones y nivel de confianza.
+  - Regla operativa del remapeo: propuestas **SEO-only** (basadas solo en `seoTags`) no se auto-aplican; se encolan para aprobación manual.
   - Modos: batch (10/25/50/100/250/500/1000), todos por marca o global.
   - UX de ejecución: `Ejecutar batch` y `Ejecutar todos` siempre crean un run nuevo (fresh). La reanudación es explícita con botón `Reanudar corrida actual`.
   - Compatibilidad API: si `resume=false` y no se envía `startFresh`, el endpoint asume `startFresh=true` para evitar reutilizar runs activos por accidente.
@@ -247,6 +249,12 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - `POST /api/admin/product-enrichment/pause`: pausa corrida (body: `{ runId }`).
 - `POST /api/admin/product-enrichment/stop`: detiene corrida (body: `{ runId }`).
 - `POST /api/admin/product-enrichment/process-item`: procesa item (body: `{ itemId }`).
+
+## API interna (taxonomy remap review)
+- `GET /api/admin/taxonomy-remap/reviews`: lista propuestas de remapeo (filtros: `status`, `brandId`, `search`, `page`, `limit`) y devuelve summary de conteos.
+- `POST /api/admin/taxonomy-remap/reviews`: encola propuestas para revisión manual (estado `pending`) sin aplicar cambios al producto.
+- `POST /api/admin/taxonomy-remap/reviews/:reviewId/accept`: aplica propuesta (`category`, `subcategory`, `gender`) al producto y marca la revisión como `accepted`.
+- `POST /api/admin/taxonomy-remap/reviews/:reviewId/reject`: rechaza propuesta y la marca como `rejected` (nota opcional).
 
 ## Cron en Vercel
 - Configurado en `vercel.json`.
