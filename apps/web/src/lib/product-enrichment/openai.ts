@@ -1053,11 +1053,37 @@ const normalizeEnrichment = (
   const patternTags = normalizeEnumArray(input.patternTags ?? [], taxonomy.patternTags).slice(0, 2);
   const occasionTags = normalizeEnumArray(input.occasionTags ?? [], taxonomy.occasionTags).slice(0, 2);
 
-  const gender = normalizeEnumValue(input.gender, GENDER_OPTIONS.map((entry) => entry.value));
-  if (!gender) throw new Error(`Invalid gender: ${input.gender}`);
+  const genderAllowed = GENDER_OPTIONS.map((entry) => entry.value);
+  const defaultGender =
+    normalizeEnumValue(context.signals.inferredGender, genderAllowed) ??
+    (genderAllowed.includes("no_binario_unisex") ? "no_binario_unisex" : (genderAllowed[0] ?? "no_binario_unisex"));
+  let gender = normalizeEnumValue(input.gender, genderAllowed);
+  if (!gender) {
+    const slug = slugify(input.gender);
+    if (slug.includes("unisex")) gender = "no_binario_unisex";
+    else if (slug.includes("masc") || slug.includes("hombre") || slug.includes("men")) gender = "masculino";
+    else if (slug.includes("fem") || slug.includes("mujer") || slug.includes("women")) gender = "femenino";
+    else if (slug.includes("infan") || slug.includes("nino") || slug.includes("bebe") || slug.includes("kid")) gender = "infantil";
+    else gender = defaultGender;
+  }
+  if (!genderAllowed.includes(gender)) gender = defaultGender;
 
-  const season = normalizeEnumValue(input.season, SEASON_OPTIONS.map((entry) => entry.value));
-  if (!season) throw new Error(`Invalid season: ${input.season}`);
+  const seasonAllowed = SEASON_OPTIONS.map((entry) => entry.value);
+  const defaultSeason = seasonAllowed.includes("primavera_verano")
+    ? "primavera_verano"
+    : (seasonAllowed[0] ?? "primavera_verano");
+  let season = normalizeEnumValue(input.season, seasonAllowed);
+  if (!season) {
+    const slug = slugify(input.season);
+    if (slug.includes("invierno") || slug.includes("otono") || slug.includes("winter") || slug.includes("fall")) {
+      season = "otono_invierno";
+    } else if (slug.includes("primavera") || slug.includes("verano") || slug.includes("spring") || slug.includes("summer")) {
+      season = "primavera_verano";
+    } else {
+      season = defaultSeason;
+    }
+  }
+  if (!seasonAllowed.includes(season)) season = defaultSeason;
 
   const fitAllowed = FIT_OPTIONS.map((entry) => entry.value);
   const defaultFit = fitAllowed.includes("normal") ? "normal" : (fitAllowed[0] ?? "normal");
