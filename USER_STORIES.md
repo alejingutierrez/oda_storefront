@@ -679,6 +679,27 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: pendientes/aceptadas/rechazadas por corrida, tasa de aceptación, tiempo medio de revisión.
 - Estado: **done (2026-02-12)**.
 
+### MC-124 Aprendizaje de remapeo + auto-reseed por umbral
+- Historia: Como admin, quiero que el sistema aprenda de mis decisiones manuales y relance automáticamente un nuevo lote cuando la cola baje, para acelerar la reclasificación sin intervención continua.
+- Alcance:
+  - Motor de aprendizaje sobre histórico de `taxonomy_remap_reviews` (`accepted` y `rejected`) usando señales de nombre, descripción, descripción original y SEO.
+  - Generador de propuestas automático para productos enriquecidos (hasta 10.000 por corrida), excluyendo productos con review `pending`.
+  - Disparo automático cuando `pending <= 100` (configurable por env) con cooldown para evitar loops.
+  - Endpoints:
+    - `GET /api/admin/taxonomy-remap/auto-reseed`
+    - `POST /api/admin/taxonomy-remap/auto-reseed`
+    - `GET/POST /api/admin/taxonomy-remap/auto-reseed/cron`
+  - `/api/admin/taxonomy-remap/reviews` expone estado de fase (faltantes, umbral, último auto-reseed) y el panel admin lo muestra.
+- CA:
+  - El auto-reseed no usa productos no enriquecidos.
+  - Al alcanzar umbral, se generan nuevas propuestas automáticamente con señales aprendidas.
+  - El panel muestra contador de faltantes de fase y faltantes para disparar auto-reseed.
+- Datos: `taxonomy_remap_reviews` + `products.metadata.enrichment`.
+- NF: ejecución protegida con lock DB (advisory lock) y cooldown.
+- Riesgos: sobre-ajuste de reglas aprendidas; mitigación con umbrales de confianza/margen y revisión manual final.
+- Métricas: propuestas creadas por auto-reseed, % aceptadas, tiempo de vaciado de cola por fase.
+- Estado: **done (2026-02-12)**.
+
 ### MC-009 Taxonomía fija y catálogos
 - Historia: Como curador de datos, quiero editar y publicar catálogos cerrados (categorías, subcategorías, materiales, patrones, ocasiones y style tags), para que enrichment y UIs compartan una fuente de verdad.
 - Alcance:

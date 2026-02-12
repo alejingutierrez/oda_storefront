@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getTaxonomyAutoReseedPhaseState } from "@/lib/taxonomy-remap/auto-reseed";
 
 export const runtime = "nodejs";
 
@@ -133,7 +134,7 @@ export async function GET(req: Request) {
 
   const whereSql = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}` : Prisma.empty;
 
-  const [rows, totalRows, groupedCounts] = await Promise.all([
+  const [rows, totalRows, groupedCounts, phaseState] = await Promise.all([
     prisma.$queryRaw<ReviewRow[]>(Prisma.sql`
       SELECT
         r.id,
@@ -185,6 +186,7 @@ export async function GET(req: Request) {
       FROM "taxonomy_remap_reviews" r
       GROUP BY r."status"
     `),
+    getTaxonomyAutoReseedPhaseState(),
   ]);
 
   const total = totalRows[0]?.total ?? 0;
@@ -241,6 +243,7 @@ export async function GET(req: Request) {
       brandId,
       search,
     },
+    phase: phaseState,
   });
 }
 

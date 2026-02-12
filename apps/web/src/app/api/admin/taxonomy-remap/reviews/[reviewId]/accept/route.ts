@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { runTaxonomyAutoReseedBatch } from "@/lib/taxonomy-remap/auto-reseed";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 type ReviewRow = {
   id: string;
@@ -149,10 +151,22 @@ export async function POST(
     `),
   ]);
 
+  let autoReseed = null;
+  try {
+    autoReseed = await runTaxonomyAutoReseedBatch({ trigger: "decision" });
+  } catch (error) {
+    autoReseed = {
+      triggered: false,
+      reason: "error",
+      error: error instanceof Error ? error.message : "unknown_error",
+    };
+  }
+
   return NextResponse.json({
     ok: true,
     reviewId: row.id,
     productId: row.productId,
     status: "accepted",
+    autoReseed,
   });
 }

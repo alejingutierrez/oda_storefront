@@ -54,6 +54,22 @@ type ReviewsResponse = {
     total: number;
     totalPages: number;
   };
+  phase?: {
+    enabled: boolean;
+    pendingThreshold: number;
+    autoLimit: number;
+    cooldownMinutes: number;
+    pendingCount: number;
+    remainingForPhase: number;
+    remainingToTrigger: number;
+    readyToTrigger: boolean;
+    lastAutoReseedAt: string | null;
+    lastAutoReseedSource: string | null;
+    lastAutoReseedRunKey: string | null;
+    lastAutoReseedCreated: number;
+    lastAutoReseedPendingNow: number;
+    reviewedSinceLastAuto: number;
+  };
 };
 
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
@@ -91,6 +107,23 @@ export default function TaxonomyRemapReviewPanel() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [actionById, setActionById] = useState<Record<string, "accept" | "reject">>({});
+  const [autoReseedBusy, setAutoReseedBusy] = useState(false);
+  const [phase, setPhase] = useState<NonNullable<ReviewsResponse["phase"]>>({
+    enabled: true,
+    pendingThreshold: 100,
+    autoLimit: 10_000,
+    cooldownMinutes: 120,
+    pendingCount: 0,
+    remainingForPhase: 0,
+    remainingToTrigger: 0,
+    readyToTrigger: false,
+    lastAutoReseedAt: null,
+    lastAutoReseedSource: null,
+    lastAutoReseedRunKey: null,
+    lastAutoReseedCreated: 0,
+    lastAutoReseedPendingNow: 0,
+    reviewedSinceLastAuto: 0,
+  });
   const [error, setError] = useState<string | null>(null);
 
   const hasFilters = useMemo(() => {
@@ -128,6 +161,7 @@ export default function TaxonomyRemapReviewPanel() {
       const payload = (await res.json()) as ReviewsResponse;
       setItems(Array.isArray(payload.items) ? payload.items : []);
       setSummary(payload.summary ?? { pending: 0, accepted: 0, rejected: 0 });
+      if (payload.phase) setPhase(payload.phase);
       setTotal(payload.pagination?.total ?? 0);
       setTotalPages(Math.max(1, payload.pagination?.totalPages ?? 1));
     } catch (err) {
@@ -144,6 +178,27 @@ export default function TaxonomyRemapReviewPanel() {
 
   useEffect(() => {
     fetchItems();
+  }, [fetchItems]);
+
+  const runAutoReseed = useCallback(async (force = false) => {
+    setAutoReseedBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/taxonomy-remap/auto-reseed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force, limit: 10000 }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.error || "No se pudo ejecutar auto-reseed");
+      }
+      await fetchItems();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo ejecutar auto-reseed");
+    } finally {
+      setAutoReseedBusy(false);
+    }
   }, [fetchItems]);
 
   const handleAccept = useCallback(async (item: ReviewItem) => {
@@ -225,6 +280,44 @@ export default function TaxonomyRemapReviewPanel() {
           <span className="rounded-full bg-rose-100 px-3 py-1 font-semibold text-rose-700">
             Rechazadas: {summary.rejected}
           </span>
+          <span className="rounded-full bg-sky-100 px-3 py-1 font-semibold text-sky-700">
+            Faltantes fase: {phase.remainingForPhase}
+          </span>
+          <span className="rounded-full bg-indigo-100 px-3 py-1 font-semibold text-indigo-700">
+            Faltan para auto-reseed: {phase.remainingToTrigger}
+          </span>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-1">
+          <p>
+            Auto-reseed: <span className="font-semibold">{phase.enabled ? "Activo" : "Inactivo"}</span> ·
+            Umbral: <span className="font-semibold">≤ {phase.pendingThreshold}</span> pendientes ·
+            Batch: <span className="font-semibold">{phase.autoLimit}</span>
+          </p>
+          <p>
+            {phase.lastAutoReseedAt
+              ? `Último auto-reseed: ${formatDateTime(phase.lastAutoReseedAt)} · creados ${phase.lastAutoReseedCreated} · pendientes de ese batch ${phase.lastAutoReseedPendingNow}`
+              : "Sin ejecuciones automáticas registradas"}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => runAutoReseed(false)}
+            disabled={autoReseedBusy}
+          >
+            {autoReseedBusy ? "Ejecutando..." : "Intentar auto-reseed"}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => runAutoReseed(true)}
+            disabled={autoReseedBusy}
+          >
+            {autoReseedBusy ? "Forzando..." : "Forzar batch 10.000"}
+          </button>
         </div>
       </div>
 

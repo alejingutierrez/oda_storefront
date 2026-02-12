@@ -1,0 +1,40 @@
+import { NextResponse } from "next/server";
+import { validateAdminRequest } from "@/lib/auth";
+import {
+  getTaxonomyAutoReseedPhaseState,
+  runTaxonomyAutoReseedBatch,
+} from "@/lib/taxonomy-remap/auto-reseed";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+export async function GET(req: Request) {
+  const admin = await validateAdminRequest(req);
+  if (!admin) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const phase = await getTaxonomyAutoReseedPhaseState();
+  return NextResponse.json({ ok: true, phase });
+}
+
+export async function POST(req: Request) {
+  const admin = await validateAdminRequest(req);
+  if (!admin) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const body = (await req.json().catch(() => null)) as
+    | { force?: boolean; limit?: number }
+    | null;
+  const force = body?.force === true;
+  const limit = typeof body?.limit === "number" ? Math.max(100, Math.floor(body.limit)) : undefined;
+
+  const result = await runTaxonomyAutoReseedBatch({
+    trigger: "manual",
+    force,
+    limit,
+  });
+
+  return NextResponse.json({ ok: true, result });
+}

@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { runTaxonomyAutoReseedBatch } from "@/lib/taxonomy-remap/auto-reseed";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const toNullableText = (value: unknown) => {
   if (typeof value !== "string") return null;
@@ -72,9 +74,21 @@ export async function POST(
     WHERE id = ${reviewId}
   `);
 
+  let autoReseed = null;
+  try {
+    autoReseed = await runTaxonomyAutoReseedBatch({ trigger: "decision" });
+  } catch (error) {
+    autoReseed = {
+      triggered: false,
+      reason: "error",
+      error: error instanceof Error ? error.message : "unknown_error",
+    };
+  }
+
   return NextResponse.json({
     ok: true,
     reviewId,
     status: "rejected",
+    autoReseed,
   });
 }

@@ -115,6 +115,11 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Editor de categorías/subcategorías/materiales/patrones/ocasiones/style tags con workflow **draft → publish**.
   - Editor de perfiles de estilo (tabla `style_profiles`) + acción de backfill para recalcular `stylePrimary/styleSecondary`.
   - La taxonomía publicada alimenta: prompt/validación de enrichment, dropdowns de curación y labels de facets.
+- Panel `/admin/taxonomy-remap-review` (revisión de remapeo):
+  - Cola manual de propuestas para categoría/subcategoría/género con foto, razones y confianza.
+  - El sistema aprende de decisiones humanas (`accepted/rejected`) y reutiliza esas señales en auto-reseed.
+  - Cuando pendientes ≤ umbral (default 100), dispara auto-reseed de hasta 10.000 productos enriquecidos (nunca no-enriquecidos), sujeto a cooldown.
+  - El panel muestra contador de faltantes de fase y faltantes para disparar auto-reseed.
 - El modal muestra estilo principal/secundario (derivado de `styleTags`) con labels humanos.
 - Las imágenes de cards pasan por `/api/image-proxy` (cache a Blob) y se renderizan con `next/image`.
 - `next.config.ts` incluye allowlist para dominios `*.public.blob.vercel-storage.com` usados por Vercel Blob.
@@ -255,6 +260,9 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - `POST /api/admin/taxonomy-remap/reviews`: encola propuestas para revisión manual (estado `pending`) sin aplicar cambios al producto.
 - `POST /api/admin/taxonomy-remap/reviews/:reviewId/accept`: aplica propuesta (`category`, `subcategory`, `gender`) al producto y marca la revisión como `accepted`.
 - `POST /api/admin/taxonomy-remap/reviews/:reviewId/reject`: rechaza propuesta y la marca como `rejected` (nota opcional).
+- `GET /api/admin/taxonomy-remap/auto-reseed`: estado del auto-reseed (umbral, pendientes, faltantes, último run).
+- `POST /api/admin/taxonomy-remap/auto-reseed`: dispara auto-reseed manual (opcional `force`, `limit`).
+- `GET /api/admin/taxonomy-remap/auto-reseed/cron`: ejecución automática (cron) del auto-reseed.
 
 ## Cron en Vercel
 - Configurado en `vercel.json`.
