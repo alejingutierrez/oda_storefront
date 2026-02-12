@@ -193,7 +193,14 @@ const coerceString = z.preprocess((value) => {
 
 const colorField = z.preprocess((value) => {
   if (Array.isArray(value)) {
-    return value.map((entry) => (typeof entry === "string" ? entry : String(entry)));
+    // Bedrock/OpenAI can occasionally return more than 3 entries even when instructed otherwise.
+    // Truncate early so schema validation doesn't fail on benign overlong lists.
+    const items = value
+      .map((entry) => (typeof entry === "string" ? entry : String(entry)))
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    return items.length ? items : "";
   }
   if (typeof value === "string") return value;
   if (value == null) return "";
@@ -903,6 +910,9 @@ const normalizeEnrichment = (
     description?: string | null;
     category?: string | null;
     subcategory?: string | null;
+    signals: HarvestedSignals;
+    promptGroup: PromptGroup | null;
+    routedCategories: string[];
   },
 ) => {
   const plainDescription =
@@ -912,11 +922,99 @@ const normalizeEnrichment = (
       `Variant count mismatch: expected ${variantIds.size}, got ${input.variants.length}`,
     );
   }
-  const category = normalizeEnumValue(input.category, taxonomy.categoryValues);
-  if (!category) throw new Error(`Invalid category: ${input.category}`);
+  const resolveCanonicalCategory = (value: string | null | undefined) =>
+    normalizeEnumValue(value ?? "", taxonomy.categoryValues);
+
+  const resolveCategoryFromSubcategoryKey = (raw: string) => {
+    const key = toSlugLabel(raw);
+    if (!key) return null;
+    for (const [categoryKey, subKeys] of Object.entries(taxonomy.subcategoryByCategory)) {
+      if (subKeys.includes(key)) {
+        return { category: categoryKey, impliedSubcategory: key };
+      }
+    }
+    return null;
+  };
+
+  const guessCategoryFromLegacySlug = (raw: string) => {
+    const slug = toSlugLabel(raw);
+    if (!slug) return null;
+    if (slug === context.promptGroup) {
+      const first = context.routedCategories[0];
+      return first ? resolveCanonicalCategory(first) : null;
+    }
+
+    if (slug.includes("joyer") || slug.includes("bisuter") || slug.includes("joya")) {
+      return resolveCanonicalCategory("joyeria_y_bisuteria");
+    }
+    if (slug.includes("bolso") || slug.includes("marroquin") || slug.includes("cartera") || slug.includes("bag")) {
+      return resolveCanonicalCategory("bolsos_y_marroquineria");
+    }
+    if (slug.includes("gafa") || slug.includes("optic") || slug.includes("lente")) {
+      return resolveCanonicalCategory("gafas_y_optica");
+    }
+    if (slug.includes("hogar") || slug.includes("lifestyle") || slug.includes("papeler") || slug.includes("poster") || slug.includes("arte")) {
+      return resolveCanonicalCategory("hogar_y_lifestyle");
+    }
+    if (slug.includes("accesor")) {
+      return resolveCanonicalCategory("accesorios_textiles_y_medias");
+    }
+    if (slug.includes("calzad") || slug.includes("zapato") || slug.includes("tenis") || slug.includes("bota") || slug.includes("sandalia")) {
+      return resolveCanonicalCategory("calzado");
+    }
+    if (slug.includes("vestid")) return resolveCanonicalCategory("vestidos");
+    if (slug.includes("enteriz") || slug.includes("overol")) return resolveCanonicalCategory("enterizos_y_overoles");
+    if (slug.includes("conjunt") || slug.includes("set")) return resolveCanonicalCategory("conjuntos_y_sets_2_piezas");
+    if (slug.includes("chaqueta") || slug.includes("abrigo") || slug.includes("trench") || slug.includes("puffer")) {
+      return resolveCanonicalCategory("chaquetas_y_abrigos");
+    }
+    if (slug.includes("blazer") || slug.includes("sastrer") || slug.includes("tuxedo") || slug.includes("smoking")) {
+      return resolveCanonicalCategory("blazers_y_sastreria");
+    }
+    if (slug.includes("camisa") || slug.includes("blusa") || slug.includes("guayabera")) {
+      return resolveCanonicalCategory("camisas_y_blusas");
+    }
+    if (slug.includes("buzo") || slug.includes("hoodie") || slug.includes("sueter") || slug.includes("sweater") || slug.includes("cardigan") || slug.includes("chaleco")) {
+      return resolveCanonicalCategory("buzos_hoodies_y_sueteres");
+    }
+    if (slug.includes("camiset") || slug.includes("top") || slug.includes("tank") || slug.includes("crop")) {
+      return resolveCanonicalCategory("camisetas_y_tops");
+    }
+    if (slug.includes("pantalon")) return resolveCanonicalCategory("pantalones_no_denim");
+    if (slug.includes("jean") || slug.includes("denim")) return resolveCanonicalCategory("jeans_y_denim");
+    if (slug.includes("short") || slug.includes("bermuda")) return resolveCanonicalCategory("shorts_y_bermudas");
+    if (slug.includes("falda")) return resolveCanonicalCategory("faldas");
+
+    return null;
+  };
+
+  const rawCategory = input.category;
+  const canonicalFromModel = resolveCanonicalCategory(rawCategory);
+  const fromSubKey = canonicalFromModel ? null : resolveCategoryFromSubcategoryKey(rawCategory);
+  const canonicalFromContext = canonicalFromModel ? null : resolveCanonicalCategory(context.category);
+  const canonicalFromSignals = canonicalFromModel ? null : resolveCanonicalCategory(context.signals.inferredCategory);
+  const canonicalFromGuess = canonicalFromModel ? null : guessCategoryFromLegacySlug(rawCategory);
+  const canonicalFromGroup =
+    canonicalFromModel ? null : (context.routedCategories[0] ? resolveCanonicalCategory(context.routedCategories[0]) : null);
+
+  const category =
+    canonicalFromModel ??
+    fromSubKey?.category ??
+    canonicalFromSignals ??
+    canonicalFromContext ??
+    canonicalFromGuess ??
+    canonicalFromGroup ??
+    taxonomy.categoryValues[0];
+  if (!category) throw new Error("taxonomy.categoryValues cannot be empty.");
 
   const allowedSubs = taxonomy.subcategoryByCategory[category] ?? [];
   let subcategory = normalizeEnumValue(input.subcategory, allowedSubs);
+  if (!subcategory && fromSubKey?.impliedSubcategory) {
+    subcategory = normalizeEnumValue(fromSubKey.impliedSubcategory, allowedSubs);
+  }
+  if (!subcategory) {
+    subcategory = normalizeEnumValue(context.signals.inferredSubcategory, allowedSubs);
+  }
   if (!subcategory) {
     subcategory = pickClosestSubcategory(input.subcategory, allowedSubs);
   }
@@ -962,6 +1060,21 @@ const normalizeEnrichment = (
   if (!season) throw new Error(`Invalid season: ${input.season}`);
 
   const fitAllowed = FIT_OPTIONS.map((entry) => entry.value);
+  const defaultFit = fitAllowed.includes("normal") ? "normal" : (fitAllowed[0] ?? "normal");
+  const normalizeFit = (raw: string) => {
+    const normalized = normalizeEnumValue(raw, fitAllowed);
+    if (normalized) return normalized;
+    const slug = slugify(raw);
+    if (!slug) return null;
+    if (slug.includes("over")) return "oversize";
+    if (slug === "slim" || slug.includes("entallad") || slug.includes("ajustad")) return "ajustado";
+    if (slug === "skinny" || slug === "tight" || slug.includes("muy_ajust")) return "muy_ajustado";
+    if (slug.includes("suelt") || slug.includes("holgad") || slug === "loose" || slug === "relaxed") return "suelto";
+    if (slug === "regular" || slug === "classic" || slug === "clasico") return "normal";
+    if (slug.includes("crop")) return "normal";
+    if (slug.includes("ajustable")) return "normal";
+    return null;
+  };
   const toArray = (value: string | string[]) => (Array.isArray(value) ? value : [value]);
   const normalizeColorList = (value: string | string[]) =>
     toArray(value)
@@ -989,8 +1102,7 @@ const normalizeEnrichment = (
     const colorPantones = normalizePantoneList(variant.colorPantone);
     const colorHex = colorHexes[0];
     const colorPantone = colorPantones[0] ?? "19-4042";
-    const fit = normalizeEnumValue(variant.fit, fitAllowed);
-    if (!fit) throw new Error(`Invalid fit: ${variant.fit}`);
+    const fit = normalizeFit(variant.fit) ?? defaultFit;
     return {
       ...variant,
       colorHex,
@@ -1253,6 +1365,9 @@ export async function enrichProductWithOpenAI(params: {
       description: originalDescription ?? params.product.description ?? null,
       category: params.product.category ?? null,
       subcategory: params.product.subcategory ?? null,
+      signals,
+      promptGroup: promptRoute.group,
+      routedCategories: getCategoriesForPromptGroup(promptRoute.group),
     });
 
   const finalizeNormalized = (normalized: EnrichedProduct): EnrichedProduct => {
@@ -1457,6 +1572,7 @@ export async function enrichProductWithOpenAI(params: {
   ): Promise<RawEnrichedProduct> => {
     const { userPayload, imageUrls } = buildBedrockPayload(variantsSubset);
     let chunkError: unknown = null;
+    let allowImages = INCLUDE_IMAGES;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
       try {
@@ -1469,7 +1585,7 @@ export async function enrichProductWithOpenAI(params: {
         const bedrockManifest: Array<{ index: number; url: string; variant_id?: string | null }> =
           [];
 
-        if (INCLUDE_IMAGES) {
+        if (allowImages) {
           for (const entry of imageUrls) {
             if (imageBlocks.length >= BEDROCK_MAX_IMAGES) break;
             const loaded = await fetchImageAsBase64(entry.url);
@@ -1511,6 +1627,11 @@ export async function enrichProductWithOpenAI(params: {
         return parseRawProduct(response.rawText);
       } catch (error) {
         chunkError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        // If the provider rejects some images, retry the same chunk without images.
+        if (allowImages && /process image/i.test(message)) {
+          allowImages = false;
+        }
         const backoff = Math.pow(2, attempt) * 200;
         await new Promise((res) => setTimeout(res, backoff));
       }
