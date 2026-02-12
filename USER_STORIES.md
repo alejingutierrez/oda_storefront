@@ -275,6 +275,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: 0 corridas forzadas a proveedor incorrecto, menor confusión de tamaño de batch, reducción de errores por URL de imagen inválida.
 - Estado: **done (2026-02-11)**.
 
+### MC-122 Clasificador manual de categorías/subcategorías: reglas ampliadas + sinónimos
+- Historia: Como operador IA, quiero que el clasificador determinístico por reglas (pre-LLM) tenga mucha mayor cobertura y precisión en categorías/subcategorías, para estabilizar routing y mejorar consistencia con el portafolio ya enriquecido.
+- Alcance: Ampliar `keyword-dictionaries.ts` con anchors por categoría y reglas por subcategoría para toda la taxonomía activa (`CATEGORY_OPTIONS`), expansión de sinónimos ES/EN por tokens y frases, materiales/patrones más completos, y matching por score en `signal-harvester` (suma de hits ponderados) en vez de “primer match”.
+- CA: La inferencia de categoría/subcategoría no depende del orden de reglas; todas las subcategorías publicadas tienen rule-set derivado; se mantienen guardas de desambiguación (`collar`, `bota`, `body`) para evitar regresiones conocidas.
+- Datos: `CATEGORY_OPTIONS`, `CATEGORY_KEYWORD_RULES`, `SUBCATEGORY_KEYWORD_RULES`, `products.metadata.enrichment.signals`.
+- NF: Cero llamadas extra al LLM; retrocompatible con pipeline `v12.5`; ejecución determinística.
+- Riesgos: Mayor superficie de reglas puede introducir colisiones; mitigación con scoring ponderado + desambiguadores y validación TypeScript/lint.
+- Métricas: Mejor acierto de pre-clasificación (category/subcategory), menor tasa de rutas genéricas por señal débil y menor retry por inconsistencia.
+- Estado: **done (2026-02-12)**.
+
 ### MC-087 Mejora modal productos + carrusel en cards
 - Historia: Como admin, quiero ver colores, tallas, stock y precio de variantes de forma visual en el detalle, y poder navegar varias fotos desde la grilla, para revisar catálogo más rápido.
 - Alcance: Resumen de variantes en modal (precio/stock, tallas, colores con swatches, fit/material) y carrusel en cards usando imágenes de variantes; endpoint `/api/admin/products` agrega `imageGallery`.

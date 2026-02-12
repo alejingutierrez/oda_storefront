@@ -155,6 +155,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Enriquecimiento de atributos por OpenAI para categoría, subcategoría, tags, género, temporada, color hex, Pantone, fit, descripción (texto plano) y campos SEO (meta title/description + seoTags). Taxonomía incluye ropa + accesorios (joyería, calzado, bolsos, gafas).
   - Proveedor de enrichment configurable por env (`PRODUCT_ENRICHMENT_PROVIDER=openai|bedrock`). Default operativo recomendado: Bedrock Haiku 4.5 (`BEDROCK_INFERENCE_PROFILE_ID=arn:aws:bedrock:us-east-1:741448945431:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0`).
   - Prompt `v12.5`: una sola llamada principal por producto, con harvesting de señales pre-LLM (nombre, descripción original, metadata vendor, og tags), routing determinístico a prompts por grupo de categoría y estrategia de imágenes por grupo.
+  - Clasificador manual por reglas reforzado: diccionarios ampliados de categoría/subcategoría (cobertura de todas las subcategorías publicadas), sinónimos español/inglés y scoring por coincidencias para reducir falsos positivos por orden de reglas.
   - URLs de imagen se normalizan antes de llamar a OpenAI (`//cdn...` → `https://...`, relativas a absolutas por `sourceUrl`) y se descartan URLs inválidas para evitar errores `Invalid image_url`.
   - La descripción original se preserva en `products.metadata.enrichment.original_description` y se reutiliza en reintentos/reprocesos.
   - Materiales incluyen metales (oro/plata/bronce/cobre) **solo para joyería o accesorios**.
