@@ -9,6 +9,8 @@ type BrandOption = {
   productCount: number;
 };
 
+type ChangeTypeFilter = "all" | "taxonomy" | "gender_only";
+
 type ReviewItem = {
   id: string;
   status: "pending" | "accepted" | "rejected";
@@ -37,6 +39,7 @@ type ReviewItem = {
   productName: string;
   brandId: string;
   brandName: string | null;
+  changeType: ChangeTypeFilter | "none";
 };
 
 type StatusFilter = "pending" | "accepted" | "rejected" | "all";
@@ -47,6 +50,11 @@ type ReviewsResponse = {
     pending: number;
     accepted: number;
     rejected: number;
+  };
+  changeSummary?: {
+    taxonomy: number;
+    gender_only: number;
+    none: number;
   };
   pagination: {
     page: number;
@@ -88,6 +96,11 @@ const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: "rejected", label: "Rechazadas" },
   { value: "all", label: "Todas" },
 ];
+const CHANGE_TYPE_OPTIONS: Array<{ value: ChangeTypeFilter; label: string }> = [
+  { value: "all", label: "Todos" },
+  { value: "taxonomy", label: "Categoría/Subcategoría" },
+  { value: "gender_only", label: "Solo género" },
+];
 
 const formatDateTime = (value: string | null | undefined) => {
   if (!value) return "—";
@@ -107,7 +120,9 @@ const formatScore = (value: number | null | undefined, digits = 3) => {
 export default function TaxonomyRemapReviewPanel() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [summary, setSummary] = useState({ pending: 0, accepted: 0, rejected: 0 });
+  const [changeSummary, setChangeSummary] = useState({ taxonomy: 0, gender_only: 0, none: 0 });
   const [status, setStatus] = useState<StatusFilter>("pending");
+  const [changeType, setChangeType] = useState<ChangeTypeFilter>("all");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [brandId, setBrandId] = useState("");
@@ -149,8 +164,8 @@ export default function TaxonomyRemapReviewPanel() {
   });
 
   const hasFilters = useMemo(() => {
-    return Boolean(search.trim()) || Boolean(brandId) || status !== "pending";
-  }, [search, brandId, status]);
+    return Boolean(search.trim()) || Boolean(brandId) || status !== "pending" || changeType !== "all";
+  }, [search, brandId, status, changeType]);
 
   const fetchBrands = useCallback(async () => {
     try {
@@ -169,6 +184,7 @@ export default function TaxonomyRemapReviewPanel() {
     try {
       const params = new URLSearchParams();
       params.set("status", status);
+      params.set("changeType", changeType);
       params.set("page", String(page));
       params.set("limit", "40");
       if (search.trim()) params.set("search", search.trim());
@@ -183,6 +199,7 @@ export default function TaxonomyRemapReviewPanel() {
       const payload = (await res.json()) as ReviewsResponse;
       setItems(Array.isArray(payload.items) ? payload.items : []);
       setSummary(payload.summary ?? { pending: 0, accepted: 0, rejected: 0 });
+      setChangeSummary(payload.changeSummary ?? { taxonomy: 0, gender_only: 0, none: 0 });
       if (payload.phase) setPhase(payload.phase);
       if (payload.catalog) setCatalogCounters(payload.catalog);
       setTotal(payload.pagination?.total ?? 0);
@@ -193,7 +210,7 @@ export default function TaxonomyRemapReviewPanel() {
     } finally {
       setLoading(false);
     }
-  }, [status, page, search, brandId]);
+  }, [status, changeType, page, search, brandId]);
 
   useEffect(() => {
     fetchBrands();
@@ -312,6 +329,12 @@ export default function TaxonomyRemapReviewPanel() {
           <span className="rounded-full bg-lime-100 px-3 py-1 font-semibold text-lime-700">
             Faltan por revisar elegibles: {catalogCounters.eligibleRemainingProducts}
           </span>
+          <span className="rounded-full bg-blue-100 px-3 py-1 font-semibold text-blue-700">
+            Cat/Subcat: {changeSummary.taxonomy}
+          </span>
+          <span className="rounded-full bg-fuchsia-100 px-3 py-1 font-semibold text-fuchsia-700">
+            Solo género: {changeSummary.gender_only}
+          </span>
         </div>
       </div>
       <div className="mt-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 lg:flex-row lg:items-center lg:justify-between">
@@ -367,6 +390,25 @@ export default function TaxonomyRemapReviewPanel() {
             ))}
           </select>
         </div>
+        <div className="lg:col-span-2">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Tipo cambio
+          </label>
+          <select
+            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            value={changeType}
+            onChange={(event) => {
+              setChangeType(event.target.value as ChangeTypeFilter);
+              setPage(1);
+            }}
+          >
+            {CHANGE_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="lg:col-span-3">
           <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
             Marca
@@ -387,7 +429,7 @@ export default function TaxonomyRemapReviewPanel() {
             ))}
           </select>
         </div>
-        <div className="lg:col-span-5">
+        <div className="lg:col-span-3">
           <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
             Buscar
           </label>
@@ -419,6 +461,7 @@ export default function TaxonomyRemapReviewPanel() {
             className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
             onClick={() => {
               setStatus("pending");
+              setChangeType("all");
               setBrandId("");
               setSearchInput("");
               setSearch("");
@@ -520,6 +563,14 @@ export default function TaxonomyRemapReviewPanel() {
                     </td>
                     <td className="px-3 py-3 text-xs text-slate-700">
                       <p><span className="font-semibold">Confianza:</span> {formatScore(item.confidence)}</p>
+                      <p>
+                        <span className="font-semibold">Tipo cambio:</span>{" "}
+                        {item.changeType === "gender_only"
+                          ? "Solo género"
+                          : item.changeType === "taxonomy"
+                            ? "Categoría/Subcategoría"
+                            : "Sin cambio"}
+                      </p>
                       <p><span className="font-semibold">Sources:</span> {formatNullable(String(item.sourceCount ?? ""))}</p>
                       <p><span className="font-semibold">Support:</span> {formatScore(item.scoreSupport, 4)}</p>
                       <p><span className="font-semibold">Margin:</span> {formatScore(item.marginRatio, 4)}</p>

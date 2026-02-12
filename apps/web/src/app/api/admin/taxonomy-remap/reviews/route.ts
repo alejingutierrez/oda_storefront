@@ -8,6 +8,7 @@ import { getTaxonomyAutoReseedPhaseState } from "@/lib/taxonomy-remap/auto-resee
 export const runtime = "nodejs";
 
 type StatusFilter = "pending" | "accepted" | "rejected" | "all";
+type ChangeTypeFilter = "all" | "taxonomy" | "gender_only";
 
 type ReviewRow = {
   id: string;
@@ -37,10 +38,16 @@ type ReviewRow = {
   productName: string;
   brandId: string;
   brandName: string | null;
+  changeType: string;
 };
 
 type CountRow = {
   status: string;
+  total: number;
+};
+
+type ChangeCountRow = {
+  changeType: string;
   total: number;
 };
 
@@ -82,6 +89,15 @@ const parseStatus = (raw: string | null): StatusFilter => {
   return "pending";
 };
 
+const parseChangeType = (raw: string | null): ChangeTypeFilter => {
+  if (!raw) return "all";
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "all" || normalized === "taxonomy" || normalized === "gender_only") {
+    return normalized;
+  }
+  return "all";
+};
+
 const parseIntParam = (raw: string | null, fallback: number, max: number) => {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 1) return fallback;
@@ -115,15 +131,29 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const status = parseStatus(url.searchParams.get("status"));
+  const changeType = parseChangeType(url.searchParams.get("changeType"));
   const brandId = toNullableText(url.searchParams.get("brandId"));
   const search = toNullableText(url.searchParams.get("search"));
   const page = parseIntParam(url.searchParams.get("page"), 1, 100000);
   const limit = parseIntParam(url.searchParams.get("limit"), 40, 200);
   const offset = (page - 1) * limit;
 
+  const taxonomyChangedSql = Prisma.sql`(
+    COALESCE(r."toCategory", '') <> COALESCE(r."fromCategory", '')
+    OR COALESCE(r."toSubcategory", '') <> COALESCE(r."fromSubcategory", '')
+  )`;
+  const genderChangedSql = Prisma.sql`(
+    COALESCE(r."toGender", '') <> COALESCE(r."fromGender", '')
+  )`;
+
   const filters: Prisma.Sql[] = [];
   if (status !== "all") {
     filters.push(Prisma.sql`r."status" = ${status}`);
+  }
+  if (changeType === "taxonomy") {
+    filters.push(taxonomyChangedSql);
+  } else if (changeType === "gender_only") {
+    filters.push(Prisma.sql`(${genderChangedSql}) AND NOT (${taxonomyChangedSql})`);
   }
   if (brandId) {
     filters.push(Prisma.sql`b.id = ${brandId}`);
@@ -143,7 +173,7 @@ export async function GET(req: Request) {
 
   const whereSql = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}` : Prisma.empty;
 
-  const [rows, totalRows, groupedCounts, phaseState, catalogCountersRow] = await Promise.all([
+  const [rows, totalRows, groupedCounts, groupedByChangeType, phaseState, catalogCountersRow] = await Promise.all([
     prisma.$queryRaw<ReviewRow[]>(Prisma.sql`
       SELECT
         r.id,
@@ -172,7 +202,12 @@ export async function GET(req: Request) {
         p.id AS "productId",
         p.name AS "productName",
         b.id AS "brandId",
-        b.name AS "brandName"
+        b.name AS "brandName",
+        CASE
+          WHEN ${taxonomyChangedSql} THEN 'taxonomy'
+          WHEN ${genderChangedSql} THEN 'gender_only'
+          ELSE 'none'
+        END AS "changeType"
       FROM "taxonomy_remap_reviews" r
       JOIN "products" p ON p.id = r."productId"
       JOIN "brands" b ON b.id = p."brandId"
@@ -194,6 +229,20 @@ export async function GET(req: Request) {
       SELECT r."status", COUNT(*)::int AS total
       FROM "taxonomy_remap_reviews" r
       GROUP BY r."status"
+    `),
+    prisma.$queryRaw<ChangeCountRow[]>(Prisma.sql`
+      SELECT
+        CASE
+          WHEN ${taxonomyChangedSql} THEN 'taxonomy'
+          WHEN ${genderChangedSql} THEN 'gender_only'
+          ELSE 'none'
+        END AS "changeType",
+        COUNT(*)::int AS total
+      FROM "taxonomy_remap_reviews" r
+      JOIN "products" p ON p.id = r."productId"
+      JOIN "brands" b ON b.id = p."brandId"
+      ${whereSql}
+      GROUP BY 1
     `),
     getTaxonomyAutoReseedPhaseState(),
     prisma.$queryRaw<CatalogCounters[]>(Prisma.sql`
@@ -240,6 +289,16 @@ export async function GET(req: Request) {
   for (const row of groupedCounts) {
     if (row.status === "pending" || row.status === "accepted" || row.status === "rejected") {
       statusCounts[row.status] = Number(row.total || 0);
+    }
+  }
+  const changeSummary = {
+    taxonomy: 0,
+    gender_only: 0,
+    none: 0,
+  };
+  for (const row of groupedByChangeType) {
+    if (row.changeType === "taxonomy" || row.changeType === "gender_only" || row.changeType === "none") {
+      changeSummary[row.changeType] = Number(row.total || 0);
     }
   }
 
@@ -289,6 +348,7 @@ export async function GET(req: Request) {
       productName: row.productName,
       brandId: row.brandId,
       brandName: row.brandName,
+      changeType: row.changeType,
     })),
     summary: statusCounts,
     pagination: {
@@ -299,9 +359,11 @@ export async function GET(req: Request) {
     },
     filters: {
       status,
+      changeType,
       brandId,
       search,
     },
+    changeSummary,
     phase: phaseState,
     catalog: {
       totalProducts: Number(catalogCounters.totalProducts || 0),
