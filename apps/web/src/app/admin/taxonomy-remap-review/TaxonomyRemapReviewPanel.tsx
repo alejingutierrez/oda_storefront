@@ -70,6 +70,12 @@ type ReviewsResponse = {
     lastAutoReseedPendingNow: number;
     reviewedSinceLastAuto: number;
   };
+  catalog?: {
+    totalProducts: number;
+    reviewedProducts: number;
+    pendingProducts: number;
+    remainingProducts: number;
+  };
 };
 
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
@@ -125,6 +131,14 @@ export default function TaxonomyRemapReviewPanel() {
     reviewedSinceLastAuto: 0,
   });
   const [error, setError] = useState<string | null>(null);
+  const [catalogCounters, setCatalogCounters] = useState<
+    NonNullable<ReviewsResponse["catalog"]>
+  >({
+    totalProducts: 0,
+    reviewedProducts: 0,
+    pendingProducts: 0,
+    remainingProducts: 0,
+  });
 
   const hasFilters = useMemo(() => {
     return Boolean(search.trim()) || Boolean(brandId) || status !== "pending";
@@ -162,6 +176,7 @@ export default function TaxonomyRemapReviewPanel() {
       setItems(Array.isArray(payload.items) ? payload.items : []);
       setSummary(payload.summary ?? { pending: 0, accepted: 0, rejected: 0 });
       if (payload.phase) setPhase(payload.phase);
+      if (payload.catalog) setCatalogCounters(payload.catalog);
       setTotal(payload.pagination?.total ?? 0);
       setTotalPages(Math.max(1, payload.pagination?.totalPages ?? 1));
     } catch (err) {
@@ -202,11 +217,6 @@ export default function TaxonomyRemapReviewPanel() {
   }, [fetchItems]);
 
   const handleAccept = useCallback(async (item: ReviewItem) => {
-    const ok = window.confirm(
-      `¿Aceptar remapeo para \"${item.productName}\"?\n\nSe aplicará categoría/subcategoría y género propuestos.`,
-    );
-    if (!ok) return;
-
     setActionById((prev) => ({ ...prev, [item.id]: "accept" }));
     setError(null);
     try {
@@ -232,17 +242,13 @@ export default function TaxonomyRemapReviewPanel() {
   }, [fetchItems]);
 
   const handleReject = useCallback(async (item: ReviewItem) => {
-    const note = window.prompt("Motivo del rechazo (opcional):", "") ?? "";
-    const ok = window.confirm(`¿Rechazar propuesta para \"${item.productName}\"?`);
-    if (!ok) return;
-
     setActionById((prev) => ({ ...prev, [item.id]: "reject" }));
     setError(null);
     try {
       const res = await fetch(`/api/admin/taxonomy-remap/reviews/${item.id}/reject`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note }),
+        body: JSON.stringify({}),
       });
       if (!res.ok) {
         const payload = await res.json().catch(() => ({}));
@@ -285,6 +291,12 @@ export default function TaxonomyRemapReviewPanel() {
           </span>
           <span className="rounded-full bg-indigo-100 px-3 py-1 font-semibold text-indigo-700">
             Faltan para auto-reseed: {phase.remainingToTrigger}
+          </span>
+          <span className="rounded-full bg-cyan-100 px-3 py-1 font-semibold text-cyan-700">
+            Catálogo total: {catalogCounters.totalProducts}
+          </span>
+          <span className="rounded-full bg-teal-100 px-3 py-1 font-semibold text-teal-700">
+            Faltan por revisar catálogo: {catalogCounters.remainingProducts}
           </span>
         </div>
       </div>

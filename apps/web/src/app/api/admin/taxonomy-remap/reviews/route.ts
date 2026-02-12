@@ -44,6 +44,12 @@ type CountRow = {
   total: number;
 };
 
+type CatalogCounters = {
+  totalProducts: number;
+  reviewedProducts: number;
+  pendingProducts: number;
+};
+
 type ProposalInput = {
   productId: string;
   fromCategory?: string | null;
@@ -134,7 +140,7 @@ export async function GET(req: Request) {
 
   const whereSql = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}` : Prisma.empty;
 
-  const [rows, totalRows, groupedCounts, phaseState] = await Promise.all([
+  const [rows, totalRows, groupedCounts, phaseState, catalogCountersRow] = await Promise.all([
     prisma.$queryRaw<ReviewRow[]>(Prisma.sql`
       SELECT
         r.id,
@@ -187,6 +193,20 @@ export async function GET(req: Request) {
       GROUP BY r."status"
     `),
     getTaxonomyAutoReseedPhaseState(),
+    prisma.$queryRaw<CatalogCounters[]>(Prisma.sql`
+      WITH review_by_product AS (
+        SELECT
+          r."productId",
+          BOOL_OR(r."status" = 'pending') AS has_pending,
+          BOOL_OR(r."status" IN ('accepted', 'rejected')) AS has_decision
+        FROM "taxonomy_remap_reviews" r
+        GROUP BY r."productId"
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM "products") AS "totalProducts",
+        COALESCE((SELECT COUNT(*)::int FROM review_by_product WHERE has_decision), 0) AS "reviewedProducts",
+        COALESCE((SELECT COUNT(*)::int FROM review_by_product WHERE has_pending), 0) AS "pendingProducts"
+    `),
   ]);
 
   const total = totalRows[0]?.total ?? 0;
@@ -200,6 +220,16 @@ export async function GET(req: Request) {
       statusCounts[row.status] = Number(row.total || 0);
     }
   }
+
+  const catalogCounters = catalogCountersRow[0] ?? {
+    totalProducts: 0,
+    reviewedProducts: 0,
+    pendingProducts: 0,
+  };
+  const catalogRemaining = Math.max(
+    0,
+    Number(catalogCounters.totalProducts || 0) - Number(catalogCounters.reviewedProducts || 0),
+  );
 
   return NextResponse.json({
     items: rows.map((row) => ({
@@ -244,6 +274,12 @@ export async function GET(req: Request) {
       search,
     },
     phase: phaseState,
+    catalog: {
+      totalProducts: Number(catalogCounters.totalProducts || 0),
+      reviewedProducts: Number(catalogCounters.reviewedProducts || 0),
+      pendingProducts: Number(catalogCounters.pendingProducts || 0),
+      remainingProducts: catalogRemaining,
+    },
   });
 }
 
