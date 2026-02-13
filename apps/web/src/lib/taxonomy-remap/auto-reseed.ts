@@ -8,6 +8,10 @@ import {
   SUBCATEGORY_BY_CATEGORY,
 } from "@/lib/product-enrichment/constants";
 import { normalizeEnumValue } from "@/lib/product-enrichment/utils";
+import {
+  SUBCATEGORY_KEYWORD_RULES,
+  hasAnyKeyword,
+} from "@/lib/product-enrichment/keyword-dictionaries";
 
 type CandidateRow = {
   id: string;
@@ -106,6 +110,234 @@ const CHILD_UNLIKELY_CATEGORY_SET = new Set([
   "joyeria_y_bisuteria",
   "bolsos_y_marroquineria",
 ]);
+
+const normalizeKeywordKey = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+// Category remap is intentionally conservative: we only move into certain categories when
+// we have explicit evidence in name/description/SEO, not just ambiguous modifiers (e.g. "cargo", "top").
+const CATEGORY_MOVE_REQUIRED_EVIDENCE: Partial<Record<string, string[]>> = {
+  camisetas_y_tops: [
+    "camiseta",
+    "tshirt",
+    "t shirt",
+    "tee",
+    "polo",
+    "henley",
+    "camisilla",
+    "esqueleto",
+    "bodysuit",
+    "body",
+    "tank top",
+    "crop top",
+    "croptop",
+  ],
+  camisas_y_blusas: [
+    "camisa",
+    "shirt",
+    "blusa",
+    "blouse",
+    "guayabera",
+    "button down",
+  ],
+  pantalones_no_denim: [
+    "pantalon",
+    "pants",
+    "trouser",
+    "trousers",
+    "jogger",
+    "palazzo",
+    "culotte",
+    "legging",
+    "leggings",
+    "chino",
+    "dril",
+    "sarga",
+    "twill",
+  ],
+  shorts_y_bermudas: ["short", "shorts", "bermuda", "bermudas", "jort", "jorts"],
+  faldas: ["falda", "skirt", "skort"],
+  trajes_de_bano_y_playa: [
+    "bikini",
+    "trikini",
+    "tankini",
+    "traje de bano",
+    "traje de baño",
+    "vestido de bano",
+    "vestido de baño",
+    "swimwear",
+    "beachwear",
+    "banador",
+    "bañador",
+    "rashguard",
+    "pareo",
+    "salida de bano",
+    "salida de baño",
+    "kaftan",
+    "kaftán",
+    "pantaloneta",
+    "pantaloneta de bano",
+    "pantaloneta de baño",
+    "short de bano",
+    "short de baño",
+    "boardshort",
+    "boardshorts",
+    "swim trunk",
+    "swim trunks",
+  ],
+  calzado: [
+    "tenis",
+    "sneaker",
+    "sneakers",
+    "zapato",
+    "zapatos",
+    "shoe",
+    "shoes",
+    "sandalia",
+    "sandalias",
+    "tacon",
+    "tacones",
+    "bota",
+    "botas",
+    "botin",
+    "botines",
+    "loafer",
+    "loafers",
+    "mocasin",
+    "mocasines",
+    "glider",
+    "gliders",
+  ],
+  bolsos_y_marroquineria: [
+    "bolso",
+    "bolsos",
+    "bag",
+    "bags",
+    "cartera",
+    "mochila",
+    "morral",
+    "bandolera",
+    "crossbody",
+    "clutch",
+    "billetera",
+    "wallet",
+    "cartuchera",
+    "neceser",
+    "cosmetiquera",
+    "portalapicero",
+    "porta lapicero",
+    "porta lapices",
+    "porta lapiz",
+  ],
+  joyeria_y_bisuteria: [
+    "arete",
+    "aretes",
+    "earring",
+    "earrings",
+    "collar",
+    "collares",
+    "necklace",
+    "pulsera",
+    "pulseras",
+    "bracelet",
+    "anillo",
+    "ring",
+    "dije",
+    "charm",
+    "llavero",
+    "llaveros",
+    "keychain",
+    "keychains",
+    "piercing",
+    "broche",
+    "prendedor",
+    "reloj",
+    "watch",
+    "choker",
+  ],
+  hogar_y_lifestyle: [
+    "poster",
+    "arte",
+    "papeleria",
+    "papelería",
+    "agenda",
+    "cuaderno",
+    "perfume",
+    "fragancia",
+    "vela",
+    "difusor",
+    "botella",
+    "botilito",
+    "termo",
+    "cantimplora",
+    "mascota",
+    "perro",
+    "gato",
+    "pet",
+    "pets",
+  ],
+};
+
+const canMoveToCategory = (category: string | null, evidenceText: string) => {
+  if (!category) return false;
+  const required = CATEGORY_MOVE_REQUIRED_EVIDENCE[category];
+  if (!required || required.length === 0) return true;
+  return hasAnyKeyword(evidenceText, required);
+};
+
+// For subcategory moves, require evidence beyond generic type words (e.g. "pantalón", "falda", "top").
+// This avoids order-based false positives like "Palazzo" -> "Pantalón chino" or "Falda midi" -> "Mini falda".
+const GENERIC_SUBCATEGORY_KEYWORDS_BY_CATEGORY: Record<string, string[]> = {
+  camisetas_y_tops: ["camiseta", "tshirt", "t shirt", "tee", "top"],
+  camisas_y_blusas: ["camisa", "shirt", "blusa", "blouse"],
+  pantalones_no_denim: ["pantalon", "pants", "trouser", "trousers"],
+  shorts_y_bermudas: ["short", "shorts", "bermuda", "bermudas"],
+  faldas: ["falda", "skirt"],
+  vestidos: ["vestido", "dress"],
+  jeans_y_denim: ["jean", "jeans", "denim"],
+};
+
+const GENERIC_SUBCATEGORY_SET_BY_CATEGORY = new Map<string, Set<string>>(
+  Object.entries(GENERIC_SUBCATEGORY_KEYWORDS_BY_CATEGORY).map(([category, keywords]) => [
+    category,
+    new Set(keywords.map((keyword) => normalizeKeywordKey(keyword))),
+  ]),
+);
+
+const SUBCATEGORY_SPECIFIC_KEYWORDS_BY_KEY = new Map<string, string[]>();
+SUBCATEGORY_KEYWORD_RULES.forEach((rule) => {
+  const generic = GENERIC_SUBCATEGORY_SET_BY_CATEGORY.get(rule.category) ?? new Set<string>();
+  const specific = rule.keywords.filter((keyword) => !generic.has(normalizeKeywordKey(keyword)));
+  SUBCATEGORY_SPECIFIC_KEYWORDS_BY_KEY.set(`${rule.category}:${rule.subcategory}`, specific);
+});
+
+const canMoveToSubcategory = (params: {
+  category: string | null;
+  subcategory: string | null;
+  evidenceText: string;
+}) => {
+  if (!params.category || !params.subcategory) return false;
+  const key = `${params.category}:${params.subcategory}`;
+  const specificKeywords = SUBCATEGORY_SPECIFIC_KEYWORDS_BY_KEY.get(key) ?? [];
+  if (!specificKeywords.length) return false;
+
+  // Disambiguate camisa vs blusa: don't propose blusa_* unless the text explicitly says "blusa".
+  if (
+    params.category === "camisas_y_blusas" &&
+    params.subcategory.startsWith("blusa_") &&
+    !hasAnyKeyword(params.evidenceText, ["blusa", "blouse"])
+  ) {
+    return false;
+  }
+
+  return hasAnyKeyword(params.evidenceText, specificKeywords);
+};
 
 const asBool = (value: string | undefined, fallback: boolean) => {
   if (value === undefined) return fallback;
@@ -610,6 +842,16 @@ export const runTaxonomyAutoReseedBatch = async (params: {
           ? enrichment.original_description
           : row.description;
       const seoTags = toStringArray(row.seoTags);
+      const evidenceText = [
+        row.name,
+        originalDescription ?? "",
+        row.seoTitle ?? "",
+        row.seoDescription ?? "",
+        seoTags.join(" "),
+        row.sourceUrl ?? "",
+      ]
+        .filter(Boolean)
+        .join(" ");
       const { sourceCount } = getProductSourceCount({
         name: row.name,
         description: row.description,
@@ -649,6 +891,9 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         signals.inferredCategory !== currentCategory &&
         (signals.signalStrength !== "weak" || !currentCategory)
       ) {
+        if (currentCategory && !canMoveToCategory(signals.inferredCategory, evidenceText)) {
+          reasons.push(`blocked:category_missing_evidence:${signals.inferredCategory}`);
+        } else {
         nextCategory = signals.inferredCategory;
         categoryConfidence = signalStrengthToConfidence(signals.signalStrength);
         categorySupport =
@@ -664,6 +909,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
               ? 1.22
               : 1.05;
         reasons.push(`signals:${signals.signalStrength}:category`);
+        }
       }
 
       const categoryChanged = nextCategory !== currentCategory;
@@ -685,6 +931,15 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         (signals.signalStrength !== "weak" || !currentSubcategory) &&
         isNameBackedSubcategory
       ) {
+        if (
+          !canMoveToSubcategory({
+            category: nextCategory,
+            subcategory: signals.inferredSubcategory,
+            evidenceText,
+          })
+        ) {
+          reasons.push(`blocked:subcategory_missing_evidence:${signals.inferredSubcategory}`);
+        } else {
         nextSubcategory = signals.inferredSubcategory;
         subConfidence = signalStrengthToConfidence(signals.signalStrength) - 0.04;
         subSupport =
@@ -700,6 +955,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
               ? 1.16
               : 1.02;
         reasons.push(`signals:${signals.signalStrength}:subcategory`);
+        }
       } else if (categoryChanged && nextSubcategory && !allowedSub.includes(nextSubcategory)) {
         nextSubcategory = null;
         subConfidence = 0.58;
