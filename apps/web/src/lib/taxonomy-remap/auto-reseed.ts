@@ -286,6 +286,13 @@ const CATEGORY_MOVE_REQUIRED_EVIDENCE: Partial<Record<string, string[]>> = {
 
 const canMoveToCategory = (category: string | null, evidenceText: string) => {
   if (!category) return false;
+  // Avoid moving into "no denim" when the product clearly says "denim/jean".
+  if (
+    category === "pantalones_no_denim" &&
+    hasAnyKeyword(evidenceText, ["denim", "jean", "jeans", "indigo"])
+  ) {
+    return false;
+  }
   const required = CATEGORY_MOVE_REQUIRED_EVIDENCE[category];
   if (!required || required.length === 0) return true;
   return hasAnyKeyword(evidenceText, required);
@@ -294,13 +301,36 @@ const canMoveToCategory = (category: string | null, evidenceText: string) => {
 // For subcategory moves, require evidence beyond generic type words (e.g. "pantalón", "falda", "top").
 // This avoids order-based false positives like "Palazzo" -> "Pantalón chino" or "Falda midi" -> "Mini falda".
 const GENERIC_SUBCATEGORY_KEYWORDS_BY_CATEGORY: Record<string, string[]> = {
-  camisetas_y_tops: ["camiseta", "tshirt", "t shirt", "tee", "top"],
+  camisetas_y_tops: [
+    "camiseta",
+    "tshirt",
+    "t shirt",
+    "tee",
+    "top",
+    // Prevent cross-contamination caused by broad "top" synonyms in keyword dictionaries.
+    "croptop",
+    "crop top",
+    "tank top",
+  ],
   camisas_y_blusas: ["camisa", "shirt", "blusa", "blouse"],
   pantalones_no_denim: ["pantalon", "pants", "trouser", "trousers"],
   shorts_y_bermudas: ["short", "shorts", "bermuda", "bermudas"],
   faldas: ["falda", "skirt"],
   vestidos: ["vestido", "dress"],
   jeans_y_denim: ["jean", "jeans", "denim"],
+  trajes_de_bano_y_playa: [
+    "bano",
+    "baño",
+    "traje de bano",
+    "traje de baño",
+    "vestido de bano",
+    "vestido de baño",
+    "swimwear",
+    "beachwear",
+    "playa",
+    "pool",
+    "piscina",
+  ],
 };
 
 const GENERIC_SUBCATEGORY_SET_BY_CATEGORY = new Map<string, Set<string>>(
@@ -940,23 +970,27 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         ) {
           reasons.push(`blocked:subcategory_missing_evidence:${signals.inferredSubcategory}`);
         } else {
-        nextSubcategory = signals.inferredSubcategory;
-        subConfidence = signalStrengthToConfidence(signals.signalStrength) - 0.04;
-        subSupport =
-          signals.signalStrength === "strong"
-            ? 3
-            : signals.signalStrength === "moderate"
-              ? 2
-              : 1;
-        subMargin =
-          signals.signalStrength === "strong"
-            ? 1.4
-            : signals.signalStrength === "moderate"
-              ? 1.16
-              : 1.02;
-        reasons.push(`signals:${signals.signalStrength}:subcategory`);
+          nextSubcategory = signals.inferredSubcategory;
+          subConfidence = signalStrengthToConfidence(signals.signalStrength) - 0.04;
+          subSupport =
+            signals.signalStrength === "strong"
+              ? 3
+              : signals.signalStrength === "moderate"
+                ? 2
+                : 1;
+          subMargin =
+            signals.signalStrength === "strong"
+              ? 1.4
+              : signals.signalStrength === "moderate"
+                ? 1.16
+                : 1.02;
+          reasons.push(`signals:${signals.signalStrength}:subcategory`);
         }
-      } else if (categoryChanged && nextSubcategory && !allowedSub.includes(nextSubcategory)) {
+      }
+
+      // Always enforce category↔subcategory validity when category changes (even if the suggested
+      // subcategory move was blocked and we kept the current subcategory).
+      if (categoryChanged && nextSubcategory && !allowedSub.includes(nextSubcategory)) {
         nextSubcategory = null;
         subConfidence = 0.58;
         subSupport = 1;
