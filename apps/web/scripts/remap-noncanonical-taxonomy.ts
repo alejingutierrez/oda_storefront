@@ -722,6 +722,17 @@ const detectFootwear = (text: string): Suggestion | null => {
     return { category: "calzado", subcategory: null, confidence: 0.96, reasons: ["kw:footwear_domain"], kind: "primary" };
   }
 
+  // Catalog-specific naming used by some shoe brands.
+  if (includesAny(text, [wordRe("glider"), wordRe("gliders")])) {
+    return {
+      category: "calzado",
+      subcategory: "tenis_sneakers",
+      confidence: 0.96,
+      reasons: ["kw:gliders", "kw:footwear"],
+      kind: "primary",
+    };
+  }
+
   const strongPatterns = [
     wordRe("zapato"),
     wordRe("zapatos"),
@@ -1259,6 +1270,7 @@ const detectApparelCategory = (text: string): Suggestion | null => {
     { category: "enterizos_y_overoles", confidence: 0.92, reasons: ["kw:enterizo"], patterns: [wordRe("enterizo"), wordRe("jumpsuit"), wordRe("jumpsit"), wordRe("romper"), wordRe("overol"), wordRe("jardinera")] },
     { category: "conjuntos_y_sets_2_piezas", confidence: 0.9, reasons: ["kw:set"], patterns: [wordRe("set"), wordRe("sets"), wordRe("conjunto"), wordRe("conjuntos"), phraseRe("2 piezas"), phraseRe("2pzs"), phraseRe("matching set")] },
     { category: "faldas", confidence: 0.92, reasons: ["kw:falda"], patterns: [wordRe("falda"), wordRe("skort")] },
+    { category: "shorts_y_bermudas", confidence: 0.95, reasons: ["kw:jorts"], patterns: [wordRe("jort"), wordRe("jorts")] },
     { category: "shorts_y_bermudas", confidence: 0.92, reasons: ["kw:short"], patterns: [wordRe("short"), wordRe("shorts"), wordRe("bermuda"), wordRe("bermudas")] },
     { category: "jeans_y_denim", confidence: 0.92, reasons: ["kw:jean"], patterns: [wordRe("jean"), wordRe("jeans"), wordRe("denim")] },
     { category: "pantalones_no_denim", confidence: 0.92, reasons: ["kw:jogger"], patterns: [wordRe("jogger")] },
@@ -1332,6 +1344,13 @@ type GenderInferenceResult = {
   marginRatio: number;
   hasExplicitUnisex: boolean;
   hasMixedBinary: boolean;
+};
+
+type BrandGenderPrior = {
+  gender: string;
+  ratio: number;
+  total: number;
+  reasons: string[];
 };
 
 type ChangeRow = {
@@ -1433,6 +1452,48 @@ const normalizeGenderValue = (value: string | null | undefined) => {
   if (!compact) return null;
   if (canonicalGenderSet.has(compact)) return compact;
   return GENDER_ALIAS_MAP[compact] ?? null;
+};
+
+const buildBrandGenderPriors = (
+  rows: Array<{ brand_name: string }>,
+  statsRows: Array<{ brand_name: string; gender: string; count: number }>,
+) => {
+  const requestedBrands = new Set(rows.map((row) => normalizeText(row.brand_name)).filter(Boolean));
+  const byBrand = new Map<string, Map<string, number>>();
+  for (const stat of statsRows) {
+    const brandKey = normalizeText(stat.brand_name);
+    if (!brandKey || !requestedBrands.has(brandKey)) continue;
+    const canonicalGender = normalizeGenderValue(stat.gender);
+    if (!canonicalGender || !canonicalGenderSet.has(canonicalGender)) continue;
+    const bucket = byBrand.get(brandKey) ?? new Map<string, number>();
+    bucket.set(canonicalGender, (bucket.get(canonicalGender) ?? 0) + Number(stat.count || 0));
+    byBrand.set(brandKey, bucket);
+  }
+
+  const priors = new Map<string, BrandGenderPrior>();
+  for (const [brandKey, counts] of byBrand.entries()) {
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    if (!ranked.length) continue;
+    const total = ranked.reduce((acc, [, value]) => acc + value, 0);
+    if (total < 18) continue;
+    const [topGender, topCount] = ranked[0];
+    const secondCount = ranked[1]?.[1] ?? 0;
+    const ratio = topCount / Math.max(total, 1);
+    const marginRatio = secondCount > 0 ? topCount / secondCount : 99;
+    const isStrongPrior =
+      ratio >= 0.82 &&
+      marginRatio >= 1.35 &&
+      topGender === "femenino";
+    if (!isStrongPrior) continue;
+    priors.set(brandKey, {
+      gender: topGender,
+      ratio,
+      total,
+      reasons: [`brand:gender_prior_${topGender}`],
+    });
+  }
+
+  return priors;
 };
 
 const GENDER_FEMALE_PATTERNS = [
@@ -1542,7 +1603,11 @@ const GENDER_MALE_PRODUCT_PATTERNS = [
 
 const inferGenderFromSources = (
   sourceTexts: Record<SourceName, string>,
-  context: { category: string | null; subcategory: string | null },
+  context: {
+    category: string | null;
+    subcategory: string | null;
+    brandPrior: BrandGenderPrior | null;
+  },
 ): GenderInferenceResult => {
   const buckets = new Map<
     string,
@@ -1584,6 +1649,7 @@ const inferGenderFromSources = (
     const text = sourceTexts[source];
     if (!text) continue;
     const w = GENDER_SOURCE_WEIGHTS[source];
+    const lexicalGenderWeight = source === "seo_tags" ? 0.3 : 1.0;
     const hasFemale = includesAny(text, GENDER_FEMALE_PATTERNS);
     const hasMale = includesAny(text, GENDER_MALE_PATTERNS);
     const hasFemaleProductType = includesAny(text, GENDER_FEMALE_PRODUCT_PATTERNS);
@@ -1600,8 +1666,8 @@ const inferGenderFromSources = (
     const hasChildAdultFalsePositive = includesAny(text, GENDER_CHILD_ADULT_FALSE_POSITIVE_PATTERNS);
     const allowBabyAsChildSignal = hasChildBaby && !hasChildColorOnly && !hasChildAdultFalsePositive;
 
-    if (hasFemale) addScore("femenino", source, w * 1.0, "kw:gender_female");
-    if (hasMale) addScore("masculino", source, w * 1.0, "kw:gender_male");
+    if (hasFemale) addScore("femenino", source, w * lexicalGenderWeight, "kw:gender_female");
+    if (hasMale) addScore("masculino", source, w * lexicalGenderWeight, "kw:gender_male");
     if (hasFemaleProductType) addScore("femenino", source, w * 0.55, "kw:gender_female_product");
     if (hasMaleProductType) addScore("masculino", source, w * 0.55, "kw:gender_male_product");
     if (hasChildStrict) addScore("infantil", source, w * 1.25, "kw:gender_child_strict");
@@ -1619,6 +1685,7 @@ const inferGenderFromSources = (
 
   const category = context.category ?? "";
   const subcategory = context.subcategory ?? "";
+  const brandPrior = context.brandPrior;
   if (category === "ropa_de_bebe_0_24_meses" || subcategory.includes("bebe")) {
     addScore("infantil", "name", 2.5, "cat:gender_child");
   }
@@ -1639,6 +1706,13 @@ const inferGenderFromSources = (
     addScore("masculino", "name", 0.7, "cat:gender_masculine_swim");
   }
   if (
+    category === "camisetas_y_tops" &&
+    ["crop_top", "body_bodysuit"].includes(subcategory)
+  ) {
+    addScore("femenino", "name", 1.2, "cat:gender_feminine_tops");
+    addScore("femenino", "seo_title", 0.8, "cat:gender_feminine_tops");
+  }
+  if (
     [
       "joyeria_y_bisuteria",
       "bolsos_y_marroquineria",
@@ -1649,6 +1723,16 @@ const inferGenderFromSources = (
     ].includes(category)
   ) {
     addScore("no_binario_unisex", "name", 0.7, "cat:gender_neutral");
+  }
+
+  if (brandPrior && brandPrior.gender === "femenino") {
+    const priorFactor = clamp((brandPrior.ratio - 0.75) * 1.5, 0.35, 0.95);
+    addScore(
+      brandPrior.gender,
+      "seo_tags",
+      GENDER_SOURCE_WEIGHTS.seo_tags * priorFactor,
+      brandPrior.reasons[0] ?? `brand:gender_prior_${brandPrior.gender}`,
+    );
   }
 
   const femaleScore = buckets.get("femenino")?.score ?? 0;
@@ -1748,6 +1832,52 @@ const shouldAllowGenderMove = (
       inference.marginRatio >= 1.7 &&
       !inference.hasExplicitUnisex
     );
+  }
+
+  const hasBrandFemalePrior = suggestion.reasons.includes("brand:gender_prior_femenino");
+  const hasFeminineSemanticReason = suggestion.reasons.some((reason) =>
+    ["cat:gender_feminine_tops", "cat:gender_feminine_prior", "kw:gender_female_product"].includes(
+      reason,
+    ),
+  );
+  const hasMasculineSemanticReason = suggestion.reasons.some((reason) =>
+    ["cat:gender_masculine_swim", "kw:gender_male_product"].includes(reason),
+  );
+  const hasMaleHardEvidence = suggestion.reasons.some((reason) =>
+    ["kw:gender_male_product", "cat:gender_masculine_swim"].includes(reason),
+  );
+  const hasFemaleHardEvidence = suggestion.reasons.some((reason) =>
+    ["kw:gender_female_product", "cat:gender_feminine_prior", "cat:gender_feminine_swim"].includes(
+      reason,
+    ),
+  );
+
+  if (
+    from === "masculino" &&
+    target === "femenino" &&
+    suggestion.confidence >= Math.max(0.86, minMoveConfidence - 0.07) &&
+    !inference.hasExplicitUnisex &&
+    ((hasBrandFemalePrior &&
+      inference.sourceCount >= 2 &&
+      inference.marginRatio >= 1.3) ||
+      (hasFeminineSemanticReason &&
+        inference.sourceCount >= 1 &&
+        inference.marginRatio >= 1.15)) &&
+    !hasMaleHardEvidence
+  ) {
+    return true;
+  }
+  if (
+    from === "femenino" &&
+    target === "masculino" &&
+    suggestion.confidence >= Math.max(0.9, minMoveConfidence - 0.03) &&
+    inference.sourceCount >= 2 &&
+    inference.marginRatio >= 1.35 &&
+    !inference.hasExplicitUnisex &&
+    hasMasculineSemanticReason &&
+    !hasFemaleHardEvidence
+  ) {
+    return true;
   }
 
   return (
@@ -1937,9 +2067,25 @@ const shouldAllowCategoryMove = (
   if (!suggestion) return false;
   if (suggestion.category === fromCategory) return false;
   if (!isSafeCategoryMoveSuggestion(suggestion)) return false;
-  if (suggestion.confidence < minConfidence) return false;
 
   const seoHints = inference.seoCategoryHints;
+  const hasNameOrSeoTitleSupport = inference.topSources.some(
+    (source) => source === "name" || source === "seo_title",
+  );
+  const hasSemanticContradictionOverrideReason = suggestion.reasons.some((reason) =>
+    SEO_CONTRADICTION_SEMANTIC_OVERRIDE_REASONS.has(reason),
+  );
+  const hasSemanticConfidenceRelaxation =
+    hasSemanticContradictionOverrideReason &&
+    hasNameOrSeoTitleSupport &&
+    inference.hasNonSeoSupport &&
+    inference.sourceCount >= 2 &&
+    inference.marginRatio >= 1.2;
+  const minRequiredConfidence = hasSemanticConfidenceRelaxation
+    ? Math.max(0.88, minConfidence - 0.03)
+    : minConfidence;
+  if (suggestion.confidence < minRequiredConfidence) return false;
+
   const hasStrongCrossSourceEvidence =
     inference.hasNonSeoSupport &&
     inference.sourceCount >= 3 &&
@@ -1948,15 +2094,28 @@ const shouldAllowCategoryMove = (
   const hasSeoContradictionOverrideReason = suggestion.reasons.some((reason) =>
     SEO_CONTRADICTION_OVERRIDE_REASONS.has(reason),
   );
+  const hasSemanticSeoOverrideEvidence =
+    hasNameOrSeoTitleSupport &&
+    inference.hasNonSeoSupport &&
+    inference.sourceCount >= 2 &&
+    inference.scoreSupport >= 0.45 &&
+    inference.marginRatio >= 1.25 &&
+    hasSemanticContradictionOverrideReason;
   if (
     seoHints.includes(fromCategory) &&
     !seoHints.includes(suggestion.category)
   ) {
-    if (!hasStrongCrossSourceEvidence) return false;
-    if (!hasSeoContradictionOverrideReason) return false;
+    const hasStrongOverride =
+      hasStrongCrossSourceEvidence && hasSeoContradictionOverrideReason;
+    if (!hasStrongOverride && !hasSemanticSeoOverrideEvidence) return false;
   }
 
   const hasDirectSeoSupport = seoHints.length === 1 && seoHints[0] === suggestion.category;
+  const hasSemanticNoDirectSeoOverride =
+    hasSemanticSeoOverrideEvidence &&
+    suggestion.confidence >= Math.max(0.88, minConfidence - 0.03) &&
+    inference.scoreSupport >= 0.45 &&
+    inference.marginRatio >= 1.25;
 
   // For canonical -> canonical moves without direct SEO canonical support,
   // keep the remapper intentionally conservative to avoid churn in already-clean catalogs.
@@ -1970,11 +2129,19 @@ const shouldAllowCategoryMove = (
   );
 
   if (!hasDirectSeoSupport) {
-    if (!hasExceptionalNoSeoReason && !hasStrongCrossSourceEvidence) return false;
-    if (suggestion.confidence < Math.max(minConfidence, 0.95)) return false;
-    if (inference.sourceCount < 3) return false;
-    if (inference.scoreSupport < 0.72) return false;
-    if (inference.marginRatio < 1.45) return false;
+    if (
+      !hasExceptionalNoSeoReason &&
+      !hasStrongCrossSourceEvidence &&
+      !hasSemanticNoDirectSeoOverride
+    ) {
+      return false;
+    }
+    if (!hasSemanticNoDirectSeoOverride) {
+      if (suggestion.confidence < Math.max(minConfidence, 0.95)) return false;
+      if (inference.sourceCount < 3) return false;
+      if (inference.scoreSupport < 0.72) return false;
+      if (inference.marginRatio < 1.45) return false;
+    }
   }
 
   return true;
@@ -2067,6 +2234,7 @@ const SAFE_MOVE_REASONS = new Set([
   "kw:enterizo",
   "kw:falda",
   "kw:short",
+  "kw:jorts",
   "kw:jean",
   "kw:jogger",
   "kw:leggings",
@@ -2099,7 +2267,21 @@ const SEO_CONTRADICTION_OVERRIDE_REASONS = new Set([
   "kw:leather_care",
   "kw:keychain",
   "kw:wallet_like",
+  "kw:footwear",
+  "kw:gliders",
   "kw:underwear",
+]);
+
+const SEO_CONTRADICTION_SEMANTIC_OVERRIDE_REASONS = new Set([
+  "kw:jorts",
+  "kw:short",
+  "kw:bermuda",
+  "kw:underwear",
+  "kw:swim",
+  "kw:keychain",
+  "kw:wallet_like",
+  "kw:footwear",
+  "kw:gliders",
 ]);
 
 function isSafeCategoryMoveSuggestion(suggestion: Suggestion) {
@@ -2190,6 +2372,7 @@ const SUBRULES: Record<string, SubRule[]> = {
     { key: "bermuda", confidence: 0.92, reasons: ["kw:bermuda"], patterns: [wordRe("bermuda")] },
     { key: "biker_short", confidence: 0.92, reasons: ["kw:biker"], patterns: [wordRe("biker")] },
     { key: "short_deportivo", confidence: 0.9, reasons: ["kw:deportivo"], patterns: [wordRe("deportivo"), wordRe("sport")] },
+    { key: "short_denim", confidence: 0.95, reasons: ["kw:jorts"], patterns: [wordRe("jort"), wordRe("jorts")] },
     { key: "short_denim", confidence: 0.9, reasons: ["kw:denim"], patterns: [wordRe("denim"), wordRe("jean")] },
     { key: "short_de_lino", confidence: 0.9, reasons: ["kw:lino"], patterns: [wordRe("lino"), wordRe("linen")] },
     { key: "short_cargo", confidence: 0.9, reasons: ["kw:cargo"], patterns: [wordRe("cargo")] },
@@ -2227,6 +2410,7 @@ const SUBRULES: Record<string, SubRule[]> = {
   calzado: [
     { key: "botas", confidence: 0.92, reasons: ["kw:botas"], patterns: [wordRe("botas"), wordRe("bota")] },
     { key: "botines", confidence: 0.92, reasons: ["kw:botines"], patterns: [wordRe("botin"), wordRe("botines")] },
+    { key: "tenis_sneakers", confidence: 0.95, reasons: ["kw:gliders"], patterns: [wordRe("glider"), wordRe("gliders")] },
     { key: "tenis_sneakers", confidence: 0.92, reasons: ["kw:tenis"], patterns: [wordRe("tenis"), wordRe("sneaker"), wordRe("sneakers")] },
     { key: "tenis_sneakers", confidence: 0.9, reasons: ["dom:shoes"], patterns: [wordRe("kannibalshoes")] },
     { key: "zapatos_deportivos", confidence: 0.92, reasons: ["kw:deportivo"], patterns: [wordRe("deportivo"), wordRe("sport"), wordRe("training")] },
@@ -2734,6 +2918,37 @@ async function main() {
     const res = await client.query<Row>(query, queryParams);
     const rows = res.rows;
 
+    const brandGenderPriors = new Map<string, BrandGenderPrior>();
+    if ((includeGender || genderOnly) && rows.length > 0) {
+      const brandNames = dedupe(rows.map((row) => row.brand_name).filter(Boolean));
+      if (brandNames.length > 0) {
+        const brandPlaceholders = brandNames.map((_, index) => `$${index + 1}`).join(",");
+        const genderStatsQuery = `
+          select
+            b.name as brand_name,
+            lower(btrim(p.gender)) as gender,
+            count(*)::int as count
+          from products p
+          join brands b on b.id = p."brandId"
+          where
+            (p.metadata -> 'enrichment') is not null
+            and b.name in (${brandPlaceholders})
+            and p.gender is not null
+            and btrim(p.gender) <> ''
+          group by b.name, lower(btrim(p.gender))
+        `;
+        const genderStatsRes = await client.query<{
+          brand_name: string;
+          gender: string;
+          count: number;
+        }>(genderStatsQuery, brandNames);
+        const priors = buildBrandGenderPriors(rows, genderStatsRes.rows);
+        for (const [key, prior] of priors.entries()) {
+          brandGenderPriors.set(key, prior);
+        }
+      }
+    }
+
     const changes: ChangeRow[] = [];
     const onlyResults: Array<Record<string, unknown>> = [];
     for (const row of rows) {
@@ -3022,6 +3237,7 @@ async function main() {
 
       let toGender: string | null = fromGenderRaw;
       let genderRule: GenderSuggestion | null = null;
+      let genderInferenceDebug: GenderInferenceResult | null = null;
       let genderMoveDecision:
         | "none"
         | "alias_normalize"
@@ -3030,10 +3246,13 @@ async function main() {
         | "move_to_unisex" = "none";
 
       if (includeGender || genderOnly) {
+        const brandPrior = brandGenderPriors.get(normalizeText(row.brand_name)) ?? null;
         const genderInference = inferGenderFromSources(sourceTexts, {
           category: toCategory,
           subcategory: toSubcategory,
+          brandPrior,
         });
+        genderInferenceDebug = genderInference;
 
         // Legacy aliases (e.g. "hombre"/"mujer") are treated as weak priors:
         // if inference has enough confidence, prefer inferred gender over alias normalization.
@@ -3138,6 +3357,19 @@ async function main() {
             seo_category_hints: primaryBySource.seoCategoryHints,
             has_non_seo_support: primaryBySource.hasNonSeoSupport,
           },
+          gender_inference: genderInferenceDebug
+            ? {
+                suggestion: genderInferenceDebug.suggestion,
+                source_count: genderInferenceDebug.sourceCount,
+                score_support: Number(genderInferenceDebug.scoreSupport.toFixed(3)),
+                margin_ratio:
+                  genderInferenceDebug.marginRatio > 98
+                    ? 99
+                    : Number(genderInferenceDebug.marginRatio.toFixed(3)),
+                has_explicit_unisex: genderInferenceDebug.hasExplicitUnisex,
+                has_mixed_binary: genderInferenceDebug.hasMixedBinary,
+              }
+            : null,
           to_category: toCategory,
           to_subcategory: toSubcategory,
           to_gender: toGender,

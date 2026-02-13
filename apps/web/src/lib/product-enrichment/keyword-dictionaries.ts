@@ -343,6 +343,8 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "short",
     "shorts",
     "bermuda",
+    "jort",
+    "jorts",
     "biker short",
     "short cargo",
     "short deportivo",
@@ -452,6 +454,13 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "pareo",
     "salida de bano",
     "beachwear",
+    "pantaloneta",
+    "pantaloneta de bano",
+    "pantaloneta de baño",
+    "swim trunk",
+    "swim trunks",
+    "boardshort",
+    "boardshorts",
   ],
   ropa_de_bebe_0_24_meses: [
     "ropa bebe",
@@ -520,6 +529,8 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "zueco",
     "chancla",
     "flip flop",
+    "glider",
+    "gliders",
   ],
   bolsos_y_marroquineria: [
     "bolso",
@@ -565,6 +576,9 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "cadena",
     "pulsera",
     "brazalete",
+    "bracelet",
+    "bangle",
+    "bangles",
     "anillo",
     "tobillera",
     "dije",
@@ -574,6 +588,9 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "piercing",
     "ear cuff",
     "reloj",
+    "watch",
+    "necklace",
+    "choker",
   ],
   tarjeta_regalo: [
     "gift card",
@@ -690,10 +707,65 @@ const deriveSubcategoryKeywords = (
   if (categoryValue === "joyeria_y_bisuteria") {
     keywords.push("chapado", "banado", "bañado", "gold plated", "silver plated");
     if (subcategoryValue.includes("aretes") || subcategoryValue.includes("pendientes")) {
-      keywords.push("earring", "stud", "hoop earring", "huggie");
+      keywords.push(
+        "arete",
+        "aretes",
+        "pendiente",
+        "pendientes",
+        "earring",
+        "earrings",
+        "stud",
+        "hoop earring",
+        "huggie",
+      );
     }
     if (subcategoryValue.includes("collares")) {
-      keywords.push("necklace", "chain", "choker", "gargantilla");
+      keywords.push(
+        "collar",
+        "collares",
+        "cadena",
+        "cadenas",
+        "necklace",
+        "chain",
+        "choker",
+        "gargantilla",
+      );
+    }
+    if (subcategoryValue.includes("pulseras") || subcategoryValue.includes("brazaletes")) {
+      keywords.push(
+        "pulsera",
+        "pulseras",
+        "brazalete",
+        "brazaletes",
+        "bracelet",
+        "bangle",
+        "bangles",
+      );
+    }
+    if (subcategoryValue.includes("dijes") || subcategoryValue.includes("charms")) {
+      keywords.push(
+        "dije",
+        "dijes",
+        "charm",
+        "charms",
+        "colgante",
+        "pendant",
+        "x1",
+        "x2",
+        "x3",
+      );
+    }
+    if (subcategoryValue.includes("anillos")) {
+      keywords.push("anillo", "anillos", "ring", "rings");
+    }
+    if (subcategoryValue.includes("tobilleras")) {
+      keywords.push("tobillera", "tobilleras", "anklet", "anklets");
+    }
+    if (subcategoryValue.includes("broches") || subcategoryValue.includes("prendedores")) {
+      keywords.push("broche", "broches", "prendedor", "prendedores", "pin");
+    }
+    if (subcategoryValue.includes("relojes")) {
+      keywords.push("reloj", "relojes", "watch", "watches");
     }
     if (subcategoryValue.includes("piercing")) {
       keywords.push("septum", "barbell", "labret", "helix");

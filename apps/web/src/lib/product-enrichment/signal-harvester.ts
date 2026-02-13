@@ -402,6 +402,52 @@ const looksLikePantsBotaFit = (text: string) => {
   return hasBottomWords && hasAnyKeyword(text, ["bota", "botas"]);
 };
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const matchesWordWindow = (text: string, from: string, to: string, maxBetween: number) => {
+  const pattern = new RegExp(
+    `(^|\\s)${escapeRegExp(from)}(?:\\s+[a-z0-9]+){0,${maxBetween}}\\s+${escapeRegExp(to)}(?=\\s|$)`,
+  );
+  return pattern.test(text);
+};
+
+const hasDenimEvidence = (text: string) =>
+  hasAnyKeyword(text, ["denim", "jean", "jeans", "indigo", "jort", "jorts"]);
+
+const countJewelryPieceTypes = (text: string) => {
+  const groups: string[][] = [
+    ["arete", "aretes", "earring", "earrings", "pendiente", "pendientes"],
+    ["collar", "collares", "cadena", "cadenas", "necklace", "choker", "gargantilla"],
+    ["pulsera", "pulseras", "brazalete", "brazaletes", "bracelet", "bangle", "bangles"],
+    ["anillo", "anillos", "ring", "rings"],
+    ["tobillera", "tobilleras", "anklet", "anklets"],
+    ["piercing", "piercings", "septum", "barbell", "labret", "helix"],
+    ["broche", "broches", "prendedor", "prendedores", "pin"],
+    ["reloj", "relojes", "watch", "watches"],
+  ];
+  let count = 0;
+  for (const keywords of groups) {
+    if (hasAnyKeyword(text, keywords)) count += 1;
+  }
+  return count;
+};
+
+const isCharmAccessoryForNeckwear = (text: string) => {
+  const hasCharmLike = hasAnyKeyword(text, ["charm", "charms", "dije", "dijes", "colgante", "pendant"]);
+  if (!hasCharmLike) return false;
+  const targets = ["choker", "necklace", "collar", "cadena", "gargantilla"];
+  for (const target of targets) {
+    if (
+      matchesWordWindow(text, "for", target, 3) ||
+      matchesWordWindow(text, "para", target, 3) ||
+      matchesWordWindow(text, "compatible", target, 3)
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
 const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
   if (
     rule.category === "joyeria_y_bisuteria" &&
@@ -428,6 +474,51 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
     if (!hasOtherShoeSignal) return true;
   }
   if (
+    rule.category === "conjuntos_y_sets_2_piezas" &&
+    hasAnyKeyword(text, ["set", "sets", "conjunto", "conjuntos", "matching set", "co ord", "dos piezas", "2 piezas"])
+  ) {
+    const hasJewelrySignal = hasAnyKeyword(text, [
+      "joyeria",
+      "bisuteria",
+      "charm",
+      "dije",
+      "dijes",
+      "colgante",
+      "collar",
+      "cadena",
+      "pulsera",
+      "brazalete",
+      "bangle",
+      "arete",
+      "anillo",
+      "tobillera",
+      "piercing",
+      "reloj",
+      "watch",
+    ]);
+    const hasApparelSignal = hasAnyKeyword(text, [
+      "camisa",
+      "blusa",
+      "top",
+      "pantalon",
+      "pantalones",
+      "falda",
+      "short",
+      "shorts",
+      "bermuda",
+      "vestido",
+      "jogger",
+      "legging",
+      "hoodie",
+      "buzo",
+      "sueter",
+      "sweater",
+      "cardigan",
+      "pijama",
+    ]);
+    if (hasJewelrySignal && !hasApparelSignal) return true;
+  }
+  if (
     rule.category === "camisetas_y_tops" &&
     rule.productType === "top" &&
     hasAnyKeyword(text, ["body cream", "body splash", "crema corporal", "locion", "locion corporal"])
@@ -441,11 +532,37 @@ const shouldIgnoreSubcategoryRule = (
   rule: { category: string; subcategory: string; keywords: string[] },
   text: string,
 ) => {
+  if (rule.subcategory.includes("denim") && !hasDenimEvidence(text)) {
+    return true;
+  }
   if (
     rule.category === "joyeria_y_bisuteria" &&
     rule.subcategory === "collares" &&
     hasAnyKeyword(text, ["camisa", "blusa"]) &&
     !hasAnyKeyword(text, ["oro", "plata", "anillo", "arete", "joya"])
+  ) {
+    return true;
+  }
+  if (
+    rule.category === "joyeria_y_bisuteria" &&
+    rule.subcategory === "collares" &&
+    isCharmAccessoryForNeckwear(text)
+  ) {
+    return true;
+  }
+  if (
+    rule.category === "joyeria_y_bisuteria" &&
+    rule.subcategory === "dijes_charms" &&
+    hasAnyKeyword(text, ["collar", "collares", "cadena", "cadenas", "necklace", "choker", "gargantilla"]) &&
+    !isCharmAccessoryForNeckwear(text)
+  ) {
+    return true;
+  }
+  if (
+    rule.category === "joyeria_y_bisuteria" &&
+    rule.subcategory === "sets_de_joyeria" &&
+    !hasAnyKeyword(text, ["set de joyas", "jewelry set"]) &&
+    countJewelryPieceTypes(text) < 2
   ) {
     return true;
   }

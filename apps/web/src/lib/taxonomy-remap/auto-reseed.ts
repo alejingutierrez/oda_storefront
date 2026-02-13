@@ -657,12 +657,16 @@ export const runTaxonomyAutoReseedBatch = async (params: {
       let subConfidence = 0;
       let subSupport = 0;
       let subMargin = 0;
+      const isNameBackedSubcategory = Boolean(
+        signals.nameSubcategory && signals.inferredSubcategory === signals.nameSubcategory,
+      );
 
       if (
         signals.inferredSubcategory &&
         allowedSub.includes(signals.inferredSubcategory) &&
         signals.inferredSubcategory !== currentSubcategory &&
-        (signals.signalStrength !== "weak" || !currentSubcategory)
+        (signals.signalStrength !== "weak" || !currentSubcategory) &&
+        isNameBackedSubcategory
       ) {
         nextSubcategory = signals.inferredSubcategory;
         subConfidence = signalStrengthToConfidence(signals.signalStrength) - 0.04;
