@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { proxiedImageUrl } from "@/lib/image-proxy";
 
 type BrandOption = {
   id: string;
@@ -198,6 +199,7 @@ export default function TaxonomyRemapReviewPanel() {
   const [autoReseedBusy, setAutoReseedBusy] = useState(false);
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflightDecisionRef = useRef<Set<string>>(new Set());
+  const [brokenImageById, setBrokenImageById] = useState<Record<string, true>>({});
   const optimisticDecisionsRef = useRef<
     Map<string, { status: "accepted" | "rejected"; decidedAt: string }>
   >(new Map());
@@ -771,7 +773,12 @@ export default function TaxonomyRemapReviewPanel() {
                 const subcategoryChanged = hasChanged(item.fromSubcategory, item.toSubcategory);
                 const genderChanged = hasChanged(item.fromGender, item.toGender);
                 const taxonomyChanged = categoryChanged || subcategoryChanged;
-                const imageCanPreview = Boolean(item.imageCoverUrl);
+                const imageSrc =
+                  proxiedImageUrl(item.imageCoverUrl, {
+                    productId: item.productId,
+                    kind: "cover",
+                  }) ?? null;
+                const imageCanPreview = Boolean(imageSrc) && !brokenImageById[item.id];
                 return (
                   <tr key={item.id}>
                     <td className="px-3 py-3">
@@ -784,19 +791,24 @@ export default function TaxonomyRemapReviewPanel() {
                               : "cursor-default border-slate-200 bg-slate-100"
                           }`}
                           onClick={() => {
-                            if (!item.imageCoverUrl) return;
-                            setPreviewImage({ url: item.imageCoverUrl, alt: item.productName });
+                            if (!imageSrc || brokenImageById[item.id]) return;
+                            setPreviewImage({ url: imageSrc, alt: item.productName });
                           }}
                           disabled={!imageCanPreview}
                           aria-label={imageCanPreview ? "Ampliar imagen del producto" : "Producto sin imagen"}
                         >
-                          {item.imageCoverUrl ? (
+                          {imageSrc && !brokenImageById[item.id] ? (
                             <Image
-                              src={item.imageCoverUrl}
+                              src={imageSrc}
                               alt={item.productName}
                               fill
                               className="object-cover"
-                              unoptimized={item.imageCoverUrl.startsWith("/api/")}
+                              unoptimized={imageSrc.startsWith("/api/")}
+                              onError={() =>
+                                setBrokenImageById((prev) =>
+                                  prev[item.id] ? prev : { ...prev, [item.id]: true },
+                                )
+                              }
                             />
                           ) : (
                             <div className="grid h-full w-full place-items-center text-[10px] text-slate-400">
