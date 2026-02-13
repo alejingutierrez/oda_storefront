@@ -356,13 +356,10 @@ export default function TaxonomyRemapReviewPanel() {
         setTotal(payload.pagination.total ?? 0);
         setTotalPages(Math.max(1, payload.pagination.totalPages ?? 1));
       }
-      if (optimisticDecisionsRef.current.size > 0) {
-        scheduleSilentRefresh();
-      }
     } catch {
       // silent refresh should not disrupt review flow
     }
-  }, [status, changeType, page, search, brandId, mergeIncomingItems, scheduleSilentRefresh]);
+  }, [status, changeType, page, search, brandId, mergeIncomingItems]);
 
   const scheduleSilentRefresh = useCallback(() => {
     if (silentRefreshTimerRef.current) {

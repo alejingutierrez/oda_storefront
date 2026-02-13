@@ -156,28 +156,37 @@ const loadOnlyCases = (filePath: string): OnlyCase[] => {
   if (!Array.isArray(parsed)) {
     throw new Error(`--only-file must be a JSON array. Got: ${typeof parsed}`);
   }
-  return parsed
-    .map((entry) => {
-      const obj = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
-      const brand = String(obj.brand ?? obj.brand_name ?? "").trim();
-      const name = String(obj.name ?? obj.product_name ?? "").trim();
-      if (!brand || !name) return null;
-      const expected = obj.expected && typeof obj.expected === "object"
-        ? (obj.expected as Record<string, unknown>)
-        : null;
-      return {
-        brand,
-        name,
-        expected: expected
-          ? {
-              category: typeof expected.category === "string" ? expected.category : undefined,
-              subcategory: typeof expected.subcategory === "string" ? expected.subcategory : undefined,
-              gender: typeof expected.gender === "string" ? expected.gender : undefined,
-            }
-          : undefined,
-      } satisfies OnlyCase;
-    })
-    .filter((entry): entry is OnlyCase => Boolean(entry));
+  const cases: OnlyCase[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object") continue;
+    const obj = entry as Record<string, unknown>;
+    const brand = String(obj.brand ?? obj.brand_name ?? "").trim();
+    const name = String(obj.name ?? obj.product_name ?? "").trim();
+    if (!brand || !name) continue;
+
+    let expected: OnlyCase["expected"];
+    if (obj.expected && typeof obj.expected === "object") {
+      const expectedObj = obj.expected as Record<string, unknown>;
+      const category =
+        typeof expectedObj.category === "string" && expectedObj.category.trim()
+          ? expectedObj.category.trim()
+          : undefined;
+      const subcategory =
+        typeof expectedObj.subcategory === "string" && expectedObj.subcategory.trim()
+          ? expectedObj.subcategory.trim()
+          : undefined;
+      const gender =
+        typeof expectedObj.gender === "string" && expectedObj.gender.trim()
+          ? expectedObj.gender.trim()
+          : undefined;
+      if (category || subcategory || gender) {
+        expected = { category, subcategory, gender };
+      }
+    }
+
+    cases.push({ brand, name, expected });
+  }
+  return cases;
 };
 
 const onlyCases: OnlyCase[] = onlyFile ? loadOnlyCases(onlyFile) : [];
