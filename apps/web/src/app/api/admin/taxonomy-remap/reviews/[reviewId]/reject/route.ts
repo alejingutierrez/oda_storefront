@@ -23,6 +23,7 @@ const resolveAdminUserId = (admin: unknown): string | null => {
 type ReviewState = {
   id: string;
   status: string;
+  productId: string;
 };
 
 export async function POST(
@@ -43,7 +44,7 @@ export async function POST(
   const note = toNullableText(body?.note);
 
   const existing = await prisma.$queryRaw<ReviewState[]>(Prisma.sql`
-    SELECT id, "status"
+    SELECT id, "status", "productId"
     FROM "taxonomy_remap_reviews"
     WHERE id = ${reviewId}
     LIMIT 1
@@ -62,17 +63,25 @@ export async function POST(
 
   const decidedByUserId = resolveAdminUserId(admin);
 
-  await prisma.$executeRaw(Prisma.sql`
-    UPDATE "taxonomy_remap_reviews"
-    SET
-      "status" = 'rejected',
-      "decisionNote" = ${note},
-      "decisionError" = NULL,
-      "decidedAt" = NOW(),
-      "decidedByUserId" = ${decidedByUserId},
-      "updatedAt" = NOW()
-    WHERE id = ${reviewId}
-  `);
+  await prisma.$transaction([
+    prisma.$executeRaw(Prisma.sql`
+      UPDATE "taxonomy_remap_reviews"
+      SET
+        "status" = 'rejected',
+        "decisionNote" = ${note},
+        "decisionError" = NULL,
+        "decidedAt" = NOW(),
+        "decidedByUserId" = ${decidedByUserId},
+        "updatedAt" = NOW()
+      WHERE id = ${reviewId}
+    `),
+    prisma.$executeRaw(Prisma.sql`
+      DELETE FROM "taxonomy_remap_reviews"
+      WHERE "productId" = ${row.productId}
+        AND "status" = 'pending'
+        AND id <> ${reviewId}
+    `),
+  ]);
 
   let autoReseed = null;
   try {

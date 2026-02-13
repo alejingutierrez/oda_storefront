@@ -149,6 +149,12 @@ export async function POST(
         "updatedAt" = NOW()
       WHERE id = ${row.id}
     `),
+    prisma.$executeRaw(Prisma.sql`
+      DELETE FROM "taxonomy_remap_reviews"
+      WHERE "productId" = ${row.productId}
+        AND "status" = 'pending'
+        AND id <> ${row.id}
+    `),
   ]);
 
   let autoReseed = null;

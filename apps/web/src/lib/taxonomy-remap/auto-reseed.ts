@@ -784,6 +784,19 @@ export const runTaxonomyAutoReseedBatch = async (params: {
       });
     }
 
+    const proposedProductIds = new Set(proposals.map((proposal) => proposal.productId));
+    const stalePendingProductIds = candidates
+      .filter((row) => row.hasPendingReview && !proposedProductIds.has(row.id))
+      .map((row) => row.id);
+    if (stalePendingProductIds.length) {
+      await prisma.taxonomyRemapReview.deleteMany({
+        where: {
+          status: "pending",
+          productId: { in: stalePendingProductIds },
+        },
+      });
+    }
+
     if (!proposals.length) {
       await completeAutoReseedRun(executionId, {
         status: "skipped",
