@@ -30,6 +30,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Catalog refresh semanal: `CATALOG_REFRESH_INTERVAL_DAYS`, `CATALOG_REFRESH_JITTER_HOURS`, `CATALOG_REFRESH_MAX_BRANDS`, `CATALOG_REFRESH_BRAND_CONCURRENCY`, `CATALOG_REFRESH_MAX_RUNTIME_MS`, `CATALOG_REFRESH_MIN_GAP_HOURS`, `CATALOG_REFRESH_MAX_FAILED_ITEMS`, `CATALOG_REFRESH_MAX_FAILED_RATE`, `CATALOG_REFRESH_DISCOVERY_LIMIT` (0 = sin límite), `CATALOG_REFRESH_COVERAGE_ENABLED`, `CATALOG_REFRESH_AUTO_RECOVER`, `CATALOG_REFRESH_RECOVER_MAX_RUNS`, `CATALOG_REFRESH_RECOVER_STUCK_MINUTES`, `CATALOG_REFRESH_ENRICH_RECOVER_STUCK_MINUTES`, `CATALOG_REFRESH_FAILED_LOOKBACK_DAYS`, `CATALOG_REFRESH_FAILED_URL_LIMIT`, `CATALOG_REFRESH_ENRICH_LOOKBACK_DAYS`, `CATALOG_REFRESH_ENRICH_MAX_PRODUCTS`, `CATALOG_REFRESH_DRAIN_ON_RUN`, `CATALOG_ALERT_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_ALERT_STUCK_MINUTES`.
 - Catalog extractor (PDP LLM): `CATALOG_OPENAI_MODEL`, `CATALOG_OPENAI_TEMPERATURE`, `CATALOG_OPENAI_DISABLE_TEMPERATURE`, `CATALOG_PDP_LLM_ENABLED`, `CATALOG_PDP_LLM_CONFIDENCE_MIN`, `CATALOG_PDP_LLM_MAX_HTML_CHARS`, `CATALOG_PDP_LLM_MAX_TEXT_CHARS`, `CATALOG_PDP_LLM_MAX_IMAGES`.
 - Product enrichment (switch OpenAI/Bedrock): `PRODUCT_ENRICHMENT_PROVIDER` (`openai|bedrock`), `PRODUCT_ENRICHMENT_MODEL`, `BEDROCK_INFERENCE_PROFILE_ID`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `PRODUCT_ENRICHMENT_MAX_TOKENS`, `PRODUCT_ENRICHMENT_MAX_RETRIES`, `PRODUCT_ENRICHMENT_MAX_ATTEMPTS`, `PRODUCT_ENRICHMENT_MAX_IMAGES`, `PRODUCT_ENRICHMENT_VARIANT_CHUNK_SIZE`, `PRODUCT_ENRICHMENT_REPAIR_MAX_CHARS`, `PRODUCT_ENRICHMENT_BEDROCK_MAX_IMAGES`, `PRODUCT_ENRICHMENT_BEDROCK_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_BEDROCK_INCLUDE_IMAGES`, `PRODUCT_ENRICHMENT_BEDROCK_IMAGE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_BEDROCK_IMAGE_MAX_BYTES`, `PRODUCT_ENRICHMENT_BEDROCK_TOP_K`, `PRODUCT_ENRICHMENT_BEDROCK_TEMPERATURE`, `PRODUCT_ENRICHMENT_BEDROCK_LATENCY`, `PRODUCT_ENRICHMENT_BEDROCK_STOP_SEQUENCES`, `PRODUCT_ENRICHMENT_QUEUE_NAME`, `PRODUCT_ENRICHMENT_QUEUE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_QUEUE_DISABLED`, `PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT`, `PRODUCT_ENRICHMENT_QUEUE_STALE_MINUTES`, `PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_RESUME_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_AUTO_PAUSE_ON_ERRORS`, `PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT`, `PRODUCT_ENRICHMENT_DRAIN_ON_RUN`, `PRODUCT_ENRICHMENT_DRAIN_BATCH`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS`, `PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNS`, `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`, `PRODUCT_ENRICHMENT_WORKER_API_URL`, `PRODUCT_ENRICHMENT_ALLOW_REENRICH`.
+- Taxonomy remap (aprendizaje/auto-reseed): `TAXONOMY_REMAP_AUTO_RESEED_ENABLED`, `TAXONOMY_REMAP_AUTO_RESEED_THRESHOLD`, `TAXONOMY_REMAP_AUTO_RESEED_LIMIT`, `TAXONOMY_REMAP_AUTO_RESEED_COOLDOWN_MINUTES`, `TAXONOMY_REMAP_AUTO_RESEED_RUNNING_STALE_MINUTES`, `TAXONOMY_REMAP_LEARNING_SAMPLE_LIMIT`.
 - Sweep tech profiler: `TECH_PROFILE_SWEEP_LIMIT`, `TECH_PROFILE_SWEEP_PLATFORM` (all|unknown|null|shopify|...).
 - Dry-run LLM: `UNKNOWN_LLM_DRY_RUN_LIMIT`, `UNKNOWN_LLM_DRY_RUN_CANDIDATES`.
 
@@ -117,9 +118,9 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - La taxonomía publicada alimenta: prompt/validación de enrichment, dropdowns de curación y labels de facets.
 - Panel `/admin/taxonomy-remap-review` (revisión de remapeo):
   - Cola manual de propuestas para categoría/subcategoría/género con foto, razones y confianza.
-  - El sistema aprende de decisiones humanas (`accepted/rejected`) y reutiliza esas señales en auto-reseed.
+  - El sistema aprende de decisiones humanas (`accepted/rejected`) y reutiliza esas señales en auto-reseed. El aprendizaje solo toma campos realmente cambiados (evita ruido cuando la decisión no implicó cambio en categoría/subcategoría/género).
   - Cuando pendientes ≤ umbral (default 100), dispara auto-reseed de hasta 10.000 productos enriquecidos (nunca no-enriquecidos), sujeto a cooldown.
-  - El panel muestra contador de faltantes de fase y faltantes para disparar auto-reseed.
+  - El panel muestra contador de faltantes de fase, faltantes para disparar auto-reseed y estado visual de ejecución en curso (running + última evaluación).
 - El modal muestra estilo principal/secundario (derivado de `styleTags`) con labels humanos.
 - Las imágenes de cards pasan por `/api/image-proxy` (cache a Blob) y se renderizan con `next/image`.
 - `next.config.ts` incluye allowlist para dominios `*.public.blob.vercel-storage.com` usados por Vercel Blob.
@@ -260,7 +261,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - `POST /api/admin/taxonomy-remap/reviews`: encola propuestas para revisión manual (estado `pending`) sin aplicar cambios al producto.
 - `POST /api/admin/taxonomy-remap/reviews/:reviewId/accept`: aplica propuesta (`category`, `subcategory`, `gender`) al producto y marca la revisión como `accepted`.
 - `POST /api/admin/taxonomy-remap/reviews/:reviewId/reject`: rechaza propuesta y la marca como `rejected` (nota opcional).
-- `GET /api/admin/taxonomy-remap/auto-reseed`: estado del auto-reseed (umbral, pendientes, faltantes, último run).
+- `GET /api/admin/taxonomy-remap/auto-reseed`: estado del auto-reseed (umbral, pendientes, faltantes, último run y ejecución activa si existe).
 - `POST /api/admin/taxonomy-remap/auto-reseed`: dispara auto-reseed manual (opcional `force`, `limit`).
 - `GET /api/admin/taxonomy-remap/auto-reseed/cron`: ejecución automática (cron) del auto-reseed.
 

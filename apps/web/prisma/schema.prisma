@@ -317,6 +317,34 @@ model TaxonomyRemapReview {
   @@map("taxonomy_remap_reviews")
 }
 
+model TaxonomyRemapAutoReseedRun {
+  id                     String   @id @default(uuid())
+  trigger                String
+  status                 String   // running | completed | skipped | failed
+  reason                 String?
+  force                  Boolean  @default(false)
+  requestedLimit         Int?
+  pendingCount           Int?
+  pendingThreshold       Int?
+  scanned                Int?
+  proposed               Int?
+  enqueued               Int?
+  source                 String?
+  runKey                 String?
+  learningAcceptedSamples Int?
+  learningRejectedSamples Int?
+  error                  String?
+  startedAt              DateTime @default(now())
+  completedAt            DateTime?
+  metadata               Json?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([status, startedAt])
+  @@index([trigger, startedAt])
+  @@map("taxonomy_remap_auto_reseed_runs")
+}
+
 model PriceHistory {
   id         String   @id @default(uuid())
   variantId  String

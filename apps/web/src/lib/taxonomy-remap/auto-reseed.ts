@@ -13,6 +13,9 @@ type ReviewStatus = "accepted" | "rejected";
 
 type LearningReviewRow = {
   status: ReviewStatus;
+  fromCategory: string | null;
+  fromSubcategory: string | null;
+  fromGender: string | null;
   toCategory: string | null;
   toSubcategory: string | null;
   toGender: string | null;
@@ -63,8 +66,33 @@ type LearningPrediction = {
   sourceCount: number;
 };
 
+type AutoReseedRunStatus = "running" | "completed" | "skipped" | "failed";
+
+type AutoReseedRunRow = {
+  id: string;
+  trigger: string;
+  status: AutoReseedRunStatus;
+  reason: string | null;
+  startedAt: Date;
+  completedAt: Date | null;
+  pendingCount: number | null;
+  pendingThreshold: number | null;
+  scanned: number | null;
+  proposed: number | null;
+  enqueued: number | null;
+  source: string | null;
+  runKey: string | null;
+  learningAcceptedSamples: number | null;
+  learningRejectedSamples: number | null;
+  error: string | null;
+};
+
 export type TaxonomyAutoReseedPhaseState = {
   enabled: boolean;
+  running: boolean;
+  runningExecutionId: string | null;
+  runningTrigger: string | null;
+  runningSince: string | null;
   pendingThreshold: number;
   autoLimit: number;
   cooldownMinutes: number;
@@ -78,6 +106,8 @@ export type TaxonomyAutoReseedPhaseState = {
   lastAutoReseedCreated: number;
   lastAutoReseedPendingNow: number;
   reviewedSinceLastAuto: number;
+  lastRunStatus: string | null;
+  lastRunReason: string | null;
 };
 
 export type TaxonomyAutoReseedResult = {
@@ -95,6 +125,7 @@ export type TaxonomyAutoReseedResult = {
   scanned: number;
   proposed: number;
   enqueued: number;
+  executionId: string | null;
   source: string | null;
   runKey: string | null;
   learningAcceptedSamples: number;
@@ -154,6 +185,10 @@ const AUTO_THRESHOLD = asPositiveInt(process.env.TAXONOMY_REMAP_AUTO_RESEED_THRE
 const AUTO_LIMIT = asPositiveInt(process.env.TAXONOMY_REMAP_AUTO_RESEED_LIMIT, 10_000);
 const AUTO_COOLDOWN_MINUTES = asPositiveInt(process.env.TAXONOMY_REMAP_AUTO_RESEED_COOLDOWN_MINUTES, 120);
 const LEARNING_SAMPLE_LIMIT = asPositiveInt(process.env.TAXONOMY_REMAP_LEARNING_SAMPLE_LIMIT, 12_000);
+const AUTO_RUNNING_STALE_MINUTES = asPositiveInt(
+  process.env.TAXONOMY_REMAP_AUTO_RESEED_RUNNING_STALE_MINUTES,
+  30,
+);
 
 const toRecord = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -239,6 +274,9 @@ const buildLearningIndex = async (): Promise<LearningIndex> => {
   const rows = await prisma.$queryRaw<LearningReviewRow[]>(Prisma.sql`
     SELECT
       r."status"::text AS "status",
+      r."fromCategory",
+      r."fromSubcategory",
+      r."fromGender",
       r."toCategory",
       r."toSubcategory",
       r."toGender",
@@ -267,8 +305,6 @@ const buildLearningIndex = async (): Promise<LearningIndex> => {
 
   for (const row of rows) {
     if (row.status !== "accepted" && row.status !== "rejected") continue;
-    if (row.status === "accepted") acceptedSamples += 1;
-    else rejectedSamples += 1;
 
     const metadata = toRecord(row.metadata);
     const enrichment = toRecord(metadata.enrichment);
@@ -289,16 +325,39 @@ const buildLearningIndex = async (): Promise<LearningIndex> => {
     const tokens = tokenizeLearningText(text);
     if (!tokens.length) continue;
 
-    const category = normalizeEnumValue(row.toCategory, CATEGORY_VALUES);
-    const gender = normalizeEnumValue(row.toGender, GENDER_VALUES);
-    const subcategory = row.toCategory
-      ? normalizeEnumValue(row.toSubcategory, SUBCATEGORY_BY_CATEGORY[row.toCategory] ?? [])
-      : null;
+    const fromCategory = normalizeEnumValue(row.fromCategory, CATEGORY_VALUES);
+    const toCategory = normalizeEnumValue(row.toCategory, CATEGORY_VALUES);
+    const fromCategorySubValues = fromCategory
+      ? SUBCATEGORY_BY_CATEGORY[fromCategory] ?? []
+      : [];
+    const toCategorySubValues = toCategory
+      ? SUBCATEGORY_BY_CATEGORY[toCategory] ?? []
+      : [];
+    const fromSubcategory = normalizeEnumValue(
+      row.fromSubcategory,
+      fromCategorySubValues,
+    );
+    const toSubcategory = normalizeEnumValue(
+      row.toSubcategory,
+      toCategorySubValues.length ? toCategorySubValues : fromCategorySubValues,
+    );
+    const fromGender = normalizeEnumValue(row.fromGender, GENDER_VALUES);
+    const toGender = normalizeEnumValue(row.toGender, GENDER_VALUES);
+
+    const categoryChanged = Boolean(toCategory && toCategory !== fromCategory);
+    const subcategoryChanged = Boolean(toSubcategory && toSubcategory !== fromSubcategory);
+    const genderChanged = Boolean(toGender && toGender !== fromGender);
+
+    if (!categoryChanged && !subcategoryChanged && !genderChanged) continue;
+    if (row.status === "accepted") acceptedSamples += 1;
+    else rejectedSamples += 1;
 
     for (const token of tokens) {
-      if (category) upsertVote(categoryIndex, token, category, row.status);
-      if (subcategory) upsertVote(subcategoryIndex, token, subcategory, row.status);
-      if (gender) upsertVote(genderIndex, token, gender, row.status);
+      if (categoryChanged && toCategory) upsertVote(categoryIndex, token, toCategory, row.status);
+      if (subcategoryChanged && toSubcategory) {
+        upsertVote(subcategoryIndex, token, toSubcategory, row.status);
+      }
+      if (genderChanged && toGender) upsertVote(genderIndex, token, toGender, row.status);
     }
   }
 
@@ -391,8 +450,175 @@ const getLastAutoReseedMeta = async () => {
   return rows[0] ?? null;
 };
 
+const isRunningUniqueViolation = (error: unknown) => {
+  const code =
+    (error as { code?: string })?.code ??
+    (error as { meta?: { code?: string } })?.meta?.code ??
+    null;
+  if (code === "23505" || code === "P2002") return true;
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes("taxonomy_remap_auto_reseed_runs_running_unique_idx") ||
+    error.message.includes("taxonomy_remap_auto_reseed_runs_status_key")
+  );
+};
+
+const markStaleRunningRuns = async () => {
+  await prisma.$executeRaw(Prisma.sql`
+    UPDATE "taxonomy_remap_auto_reseed_runs"
+    SET
+      "status" = 'failed',
+      "reason" = 'stale_running_timeout',
+      "error" = 'Marked stale by watchdog before acquiring a new run.',
+      "completedAt" = NOW(),
+      "updatedAt" = NOW()
+    WHERE "status" = 'running'
+      AND "startedAt" < NOW() - make_interval(mins => ${AUTO_RUNNING_STALE_MINUTES})
+  `);
+};
+
+const getActiveAutoReseedRun = async (): Promise<AutoReseedRunRow | null> => {
+  const rows = await prisma.$queryRaw<AutoReseedRunRow[]>(Prisma.sql`
+    SELECT
+      r.id,
+      r."trigger",
+      r."status"::text AS "status",
+      r."reason",
+      r."startedAt",
+      r."completedAt",
+      r."pendingCount",
+      r."pendingThreshold",
+      r."scanned",
+      r."proposed",
+      r."enqueued",
+      r."source",
+      r."runKey",
+      r."learningAcceptedSamples",
+      r."learningRejectedSamples",
+      r."error"
+    FROM "taxonomy_remap_auto_reseed_runs" r
+    WHERE r."status" = 'running'
+    ORDER BY r."startedAt" DESC
+    LIMIT 1
+  `);
+  return rows[0] ?? null;
+};
+
+const getLastAutoReseedRun = async (): Promise<AutoReseedRunRow | null> => {
+  const rows = await prisma.$queryRaw<AutoReseedRunRow[]>(Prisma.sql`
+    SELECT
+      r.id,
+      r."trigger",
+      r."status"::text AS "status",
+      r."reason",
+      r."startedAt",
+      r."completedAt",
+      r."pendingCount",
+      r."pendingThreshold",
+      r."scanned",
+      r."proposed",
+      r."enqueued",
+      r."source",
+      r."runKey",
+      r."learningAcceptedSamples",
+      r."learningRejectedSamples",
+      r."error"
+    FROM "taxonomy_remap_auto_reseed_runs" r
+    ORDER BY r."startedAt" DESC
+    LIMIT 1
+  `);
+  return rows[0] ?? null;
+};
+
+const createAutoReseedRun = async (params: {
+  trigger: "decision" | "cron" | "manual";
+  force: boolean;
+  requestedLimit: number;
+  pendingCount: number;
+  pendingThreshold: number;
+}): Promise<string | null> => {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      INSERT INTO "taxonomy_remap_auto_reseed_runs" (
+        "id",
+        "trigger",
+        "status",
+        "force",
+        "requestedLimit",
+        "pendingCount",
+        "pendingThreshold",
+        "startedAt",
+        "createdAt",
+        "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()},
+        ${params.trigger},
+        'running',
+        ${params.force},
+        ${params.requestedLimit},
+        ${params.pendingCount},
+        ${params.pendingThreshold},
+        NOW(),
+        NOW(),
+        NOW()
+      )
+      RETURNING id
+    `);
+    return rows[0]?.id ?? null;
+  } catch (error) {
+    if (isRunningUniqueViolation(error)) return null;
+    throw error;
+  }
+};
+
+const completeAutoReseedRun = async (
+  runId: string | null,
+  payload: {
+    status: Exclude<AutoReseedRunStatus, "running">;
+    reason: string;
+    pendingCount: number;
+    pendingThreshold: number;
+    scanned: number;
+    proposed: number;
+    enqueued: number;
+    source: string | null;
+    runKey: string | null;
+    learningAcceptedSamples: number;
+    learningRejectedSamples: number;
+    error?: string;
+  },
+) => {
+  if (!runId) return;
+  await prisma.$executeRaw(Prisma.sql`
+    UPDATE "taxonomy_remap_auto_reseed_runs"
+    SET
+      "status" = ${payload.status},
+      "reason" = ${payload.reason},
+      "pendingCount" = ${payload.pendingCount},
+      "pendingThreshold" = ${payload.pendingThreshold},
+      "scanned" = ${payload.scanned},
+      "proposed" = ${payload.proposed},
+      "enqueued" = ${payload.enqueued},
+      "source" = ${payload.source},
+      "runKey" = ${payload.runKey},
+      "learningAcceptedSamples" = ${payload.learningAcceptedSamples},
+      "learningRejectedSamples" = ${payload.learningRejectedSamples},
+      "error" = ${payload.error ?? null},
+      "completedAt" = NOW(),
+      "updatedAt" = NOW()
+    WHERE "id" = ${runId}
+  `);
+};
+
 export const getTaxonomyAutoReseedPhaseState = async (): Promise<TaxonomyAutoReseedPhaseState> => {
-  const [pendingCount, lastAuto] = await Promise.all([getPendingCount(), getLastAutoReseedMeta()]);
+  await markStaleRunningRuns();
+  const [pendingCount, lastAuto, activeRun, lastRun] = await Promise.all([
+    getPendingCount(),
+    getLastAutoReseedMeta(),
+    getActiveAutoReseedRun(),
+    getLastAutoReseedRun(),
+  ]);
   const remainingToTrigger = Math.max(0, pendingCount - AUTO_THRESHOLD);
   const reviewedSinceLastAuto = lastAuto
     ? (
@@ -407,6 +633,10 @@ export const getTaxonomyAutoReseedPhaseState = async (): Promise<TaxonomyAutoRes
 
   return {
     enabled: AUTO_ENABLED,
+    running: Boolean(activeRun),
+    runningExecutionId: activeRun?.id ?? null,
+    runningTrigger: activeRun?.trigger ?? null,
+    runningSince: activeRun?.startedAt ? activeRun.startedAt.toISOString() : null,
     pendingThreshold: AUTO_THRESHOLD,
     autoLimit: AUTO_LIMIT,
     cooldownMinutes: AUTO_COOLDOWN_MINUTES,
@@ -420,6 +650,8 @@ export const getTaxonomyAutoReseedPhaseState = async (): Promise<TaxonomyAutoRes
     lastAutoReseedCreated: lastAuto?.total ?? 0,
     lastAutoReseedPendingNow: lastAuto?.pendingNow ?? 0,
     reviewedSinceLastAuto,
+    lastRunStatus: lastRun?.status ?? null,
+    lastRunReason: lastRun?.reason ?? null,
   };
 };
 
@@ -437,6 +669,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
   limit?: number;
 }): Promise<TaxonomyAutoReseedResult> => {
   const phase = await getTaxonomyAutoReseedPhaseState();
+  const requestedLimit = Math.max(100, params.limit ?? AUTO_LIMIT);
   if (!phase.enabled) {
     return {
       triggered: false,
@@ -446,6 +679,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
       scanned: 0,
       proposed: 0,
       enqueued: 0,
+      executionId: null,
       source: null,
       runKey: null,
       learningAcceptedSamples: 0,
@@ -461,6 +695,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
       scanned: 0,
       proposed: 0,
       enqueued: 0,
+      executionId: null,
       source: null,
       runKey: null,
       learningAcceptedSamples: 0,
@@ -481,6 +716,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         scanned: 0,
         proposed: 0,
         enqueued: 0,
+        executionId: null,
         source: lastAuto.source,
         runKey: lastAuto.runKey ?? null,
         learningAcceptedSamples: 0,
@@ -489,12 +725,37 @@ export const runTaxonomyAutoReseedBatch = async (params: {
     }
   }
 
+  await markStaleRunningRuns();
+  const executionId = await createAutoReseedRun({
+    trigger: params.trigger,
+    force: params.force === true,
+    requestedLimit,
+    pendingCount: phase.pendingCount,
+    pendingThreshold: phase.pendingThreshold,
+  });
+  if (!executionId) {
+    return {
+      triggered: false,
+      reason: "already_running",
+      pendingCount: phase.pendingCount,
+      pendingThreshold: phase.pendingThreshold,
+      scanned: 0,
+      proposed: 0,
+      enqueued: 0,
+      executionId: null,
+      source: null,
+      runKey: null,
+      learningAcceptedSamples: 0,
+      learningRejectedSamples: 0,
+    };
+  }
+
   const runKey = buildRunKey();
   const source = createSourceLabel(params.trigger, runKey);
-  const limit = Math.max(100, params.limit ?? AUTO_LIMIT);
-  const learning = await buildLearningIndex();
+  try {
+    const learning = await buildLearningIndex();
 
-  const candidates = await prisma.$queryRaw<CandidateRow[]>(Prisma.sql`
+    const candidates = await prisma.$queryRaw<CandidateRow[]>(Prisma.sql`
       SELECT
         p.id,
         p.name,
@@ -514,10 +775,9 @@ export const runTaxonomyAutoReseedBatch = async (params: {
           SELECT 1
           FROM "taxonomy_remap_reviews" r
           WHERE r."productId" = p.id
-            AND r."status" = 'pending'
         )
       ORDER BY p."updatedAt" DESC
-      LIMIT ${limit}
+      LIMIT ${requestedLimit}
     `);
 
     const proposals: Array<{
@@ -713,36 +973,50 @@ export const runTaxonomyAutoReseedBatch = async (params: {
       });
     }
 
-  if (!proposals.length) {
-    return {
-      triggered: false,
-      reason: "no_candidates",
-      pendingCount: phase.pendingCount,
-      pendingThreshold: phase.pendingThreshold,
-      scanned: candidates.length,
-      proposed: 0,
-      enqueued: 0,
-      source,
-      runKey,
-      learningAcceptedSamples: learning.acceptedSamples,
-      learningRejectedSamples: learning.rejectedSamples,
-    };
-  }
+    if (!proposals.length) {
+      await completeAutoReseedRun(executionId, {
+        status: "skipped",
+        reason: "no_candidates",
+        pendingCount: phase.pendingCount,
+        pendingThreshold: phase.pendingThreshold,
+        scanned: candidates.length,
+        proposed: 0,
+        enqueued: 0,
+        source,
+        runKey,
+        learningAcceptedSamples: learning.acceptedSamples,
+        learningRejectedSamples: learning.rejectedSamples,
+      });
+      return {
+        triggered: false,
+        reason: "no_candidates",
+        pendingCount: phase.pendingCount,
+        pendingThreshold: phase.pendingThreshold,
+        scanned: candidates.length,
+        proposed: 0,
+        enqueued: 0,
+        executionId,
+        source,
+        runKey,
+        learningAcceptedSamples: learning.acceptedSamples,
+        learningRejectedSamples: learning.rejectedSamples,
+      };
+    }
 
-  const chunkSize = 400;
-  for (let i = 0; i < proposals.length; i += chunkSize) {
-    const chunk = proposals.slice(i, i + chunkSize);
-    await prisma.$transaction(async (tx) => {
-      for (const proposal of chunk) {
-        await tx.$executeRaw(
-          Prisma.sql`
+    const chunkSize = 400;
+    for (let i = 0; i < proposals.length; i += chunkSize) {
+      const chunk = proposals.slice(i, i + chunkSize);
+      await prisma.$transaction(async (tx) => {
+        for (const proposal of chunk) {
+          await tx.$executeRaw(
+            Prisma.sql`
               DELETE FROM "taxonomy_remap_reviews"
               WHERE "productId" = ${proposal.productId}
                 AND "status" = 'pending'
           `,
-        );
-        await tx.$executeRaw(
-          Prisma.sql`
+          );
+          await tx.$executeRaw(
+            Prisma.sql`
               INSERT INTO "taxonomy_remap_reviews" (
                 "id",
                 "status",
@@ -790,22 +1064,70 @@ export const runTaxonomyAutoReseedBatch = async (params: {
                 NOW()
               )
           `,
-        );
-      }
-    });
-  }
+          );
+        }
+      });
+    }
 
-  return {
-    triggered: true,
-    reason: "triggered",
-    pendingCount: phase.pendingCount,
-    pendingThreshold: phase.pendingThreshold,
-    scanned: candidates.length,
-    proposed: proposals.length,
-    enqueued: proposals.length,
-    source,
-    runKey,
-    learningAcceptedSamples: learning.acceptedSamples,
-    learningRejectedSamples: learning.rejectedSamples,
-  };
+    await completeAutoReseedRun(executionId, {
+      status: "completed",
+      reason: "triggered",
+      pendingCount: phase.pendingCount,
+      pendingThreshold: phase.pendingThreshold,
+      scanned: candidates.length,
+      proposed: proposals.length,
+      enqueued: proposals.length,
+      source,
+      runKey,
+      learningAcceptedSamples: learning.acceptedSamples,
+      learningRejectedSamples: learning.rejectedSamples,
+    });
+
+    return {
+      triggered: true,
+      reason: "triggered",
+      pendingCount: phase.pendingCount,
+      pendingThreshold: phase.pendingThreshold,
+      scanned: candidates.length,
+      proposed: proposals.length,
+      enqueued: proposals.length,
+      executionId,
+      source,
+      runKey,
+      learningAcceptedSamples: learning.acceptedSamples,
+      learningRejectedSamples: learning.rejectedSamples,
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message.slice(0, 1000) : "auto_reseed_unknown_error";
+    await completeAutoReseedRun(executionId, {
+      status: "failed",
+      reason: "error",
+      pendingCount: phase.pendingCount,
+      pendingThreshold: phase.pendingThreshold,
+      scanned: 0,
+      proposed: 0,
+      enqueued: 0,
+      source,
+      runKey,
+      learningAcceptedSamples: 0,
+      learningRejectedSamples: 0,
+      error: message,
+    });
+    return {
+      triggered: false,
+      reason: "error",
+      pendingCount: phase.pendingCount,
+      pendingThreshold: phase.pendingThreshold,
+      scanned: 0,
+      proposed: 0,
+      enqueued: 0,
+      executionId,
+      source,
+      runKey,
+      learningAcceptedSamples: 0,
+      learningRejectedSamples: 0,
+      error: message,
+    };
+  }
 };
