@@ -1059,10 +1059,17 @@ export const runTaxonomyAutoReseedBatch = async (params: {
       }
 
       const finalCategory = categoryConfidence >= categoryMoveThreshold ? nextCategory : currentCategory;
-      const finalSubcategory =
-        subConfidence >= subMoveThreshold && finalCategory
-          ? normalizeEnumValue(nextSubcategory, SUBCATEGORY_BY_CATEGORY[finalCategory] ?? [])
-          : currentSubcategory;
+      const finalCategoryChanged = finalCategory !== currentCategory;
+      const finalSubcategory = (() => {
+        if (!finalCategory) return null;
+        const allowed = SUBCATEGORY_BY_CATEGORY[finalCategory] ?? [];
+        const normalizedNext = normalizeEnumValue(nextSubcategory, allowed);
+        if (subConfidence >= subMoveThreshold) return normalizedNext;
+        // If category changes but we didn't confidently move subcategory, we must drop it
+        // (keeping the old subcategory would create invalid category/subcategory pairs).
+        if (finalCategoryChanged) return null;
+        return currentSubcategory;
+      })();
       const finalGender = genderConfidence >= genderMoveThreshold ? nextGender : currentGender;
 
       const changedCategory = finalCategory !== currentCategory;
