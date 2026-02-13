@@ -76,6 +76,16 @@ const CASES: Case[] = [
     },
   },
   {
+    name: "Camisa beige manga corta para mujer",
+    description:
+      "Camisa beige de manga corta para mujer con estampado de lunares. Diseño casual con cuello clásico y botones.",
+    seoTags: ["camisa manga corta", "camisa casual", "blusa beige", "camisa estampada"],
+    expect: {
+      inferredCategory: "camisas_y_blusas",
+      notNameSubcategory: "blusa_manga_corta",
+    },
+  },
+  {
     name: "Jorts Courage Sogno-Camel",
     expect: {
       inferredCategory: "shorts_y_bermudas",

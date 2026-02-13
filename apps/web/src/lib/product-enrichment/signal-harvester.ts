@@ -732,6 +732,16 @@ const shouldIgnoreSubcategoryRule = (
     return true;
   }
   if (
+    rule.category === "camisas_y_blusas" &&
+    rule.subcategory.startsWith("blusa_") &&
+    hasAnyKeyword(text, ["camisa", "shirt", "button down", "guayabera"]) &&
+    !hasAnyKeyword(text, ["blusa", "blouse"])
+  ) {
+    // If the product is explicitly called a "camisa/shirt", don't pull it into "blusa_*" just
+    // because it mentions sleeve length or other shared attributes.
+    return true;
+  }
+  if (
     rule.category === "chaquetas_y_abrigos" &&
     rule.subcategory === "chaqueta_tipo_cuero_cuero_o_sintetico" &&
     !hasAnyKeyword(text, [
