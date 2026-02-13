@@ -103,6 +103,7 @@ const CHANGE_TYPE_OPTIONS: Array<{ value: ChangeTypeFilter; label: string }> = [
 ];
 
 const PAGE_LIMIT = 40;
+const OPTIMISTIC_TTL_MS = 15_000;
 
 const formatDateTime = (value: string | null | undefined) => {
   if (!value) return "—";
@@ -119,6 +120,65 @@ const formatScore = (value: number | null | undefined, digits = 3) => {
   return value.toFixed(digits);
 };
 
+const normalizeComparable = (value: string | null | undefined) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase();
+
+const hasChanged = (from: string | null | undefined, to: string | null | undefined) =>
+  normalizeComparable(from) !== normalizeComparable(to);
+
+function DiffField({
+  label,
+  from,
+  to,
+  changed,
+}: {
+  label: string;
+  from: string | null | undefined;
+  to: string | null | undefined;
+  changed: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-lg border px-2.5 py-2 ${
+        changed ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"
+      }`}
+    >
+      <p
+        className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${
+          changed ? "text-amber-700" : "text-slate-500"
+        }`}
+      >
+        {label}
+      </p>
+      <div className="mt-1 flex items-center gap-2 text-[12px]">
+        <span
+          className={`rounded-md px-2 py-1 ${
+            changed
+              ? "bg-rose-100 font-medium text-rose-700"
+              : "bg-slate-200 text-slate-600"
+          }`}
+        >
+          {formatNullable(from)}
+        </span>
+        <span className={changed ? "font-semibold text-amber-700" : "text-slate-400"}>
+          {changed ? "→" : "="}
+        </span>
+        <span
+          className={`rounded-md px-2 py-1 ${
+            changed
+              ? "bg-emerald-100 font-semibold text-emerald-700"
+              : "bg-slate-200 text-slate-700"
+          }`}
+        >
+          {formatNullable(to)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function TaxonomyRemapReviewPanel() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [summary, setSummary] = useState({ pending: 0, accepted: 0, rejected: 0 });
@@ -134,9 +194,13 @@ export default function TaxonomyRemapReviewPanel() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [actionById, setActionById] = useState<Record<string, "accept" | "reject">>({});
+  const [previewImage, setPreviewImage] = useState<{ url: string; alt: string } | null>(null);
   const [autoReseedBusy, setAutoReseedBusy] = useState(false);
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflightDecisionRef = useRef<Set<string>>(new Set());
+  const optimisticDecisionsRef = useRef<
+    Map<string, { status: "accepted" | "rejected"; decidedAt: string }>
+  >(new Map());
   const [phase, setPhase] = useState<NonNullable<ReviewsResponse["phase"]>>({
     enabled: true,
     pendingThreshold: 100,
@@ -182,6 +246,45 @@ export default function TaxonomyRemapReviewPanel() {
     }
   }, []);
 
+  const mergeIncomingItems = useCallback(
+    (incoming: ReviewItem[]) => {
+      const optimistic = optimisticDecisionsRef.current;
+      if (optimistic.size) {
+        const now = Date.now();
+        for (const [id, value] of optimistic.entries()) {
+          const decidedAtMs = new Date(value.decidedAt).getTime();
+          if (!Number.isFinite(decidedAtMs) || now - decidedAtMs > OPTIMISTIC_TTL_MS) {
+            optimistic.delete(id);
+          }
+        }
+      }
+      if (!optimistic.size) return incoming;
+      for (const entry of incoming) {
+        if (entry.status !== "pending" && optimistic.has(entry.id)) {
+          optimistic.delete(entry.id);
+        }
+      }
+      if (!optimistic.size) return incoming;
+      return incoming
+        .filter((entry) => !(status === "pending" && optimistic.has(entry.id)))
+        .map((entry) => {
+          const localDecision = optimistic.get(entry.id);
+          if (!localDecision) return entry;
+          if (entry.status !== "pending") return entry;
+          if (status === "all") {
+            return {
+              ...entry,
+              status: localDecision.status,
+              decidedAt: localDecision.decidedAt,
+              decisionError: null,
+            };
+          }
+          return entry;
+        });
+    },
+    [status],
+  );
+
   const fetchItems = useCallback(async () => {
     const silent = false;
     if (!silent) {
@@ -204,7 +307,7 @@ export default function TaxonomyRemapReviewPanel() {
         throw new Error(payload.error || "No se pudo cargar la cola de revisión");
       }
       const payload = (await res.json()) as ReviewsResponse;
-      setItems(Array.isArray(payload.items) ? payload.items : []);
+      setItems(mergeIncomingItems(Array.isArray(payload.items) ? payload.items : []));
       setSummary(payload.summary ?? { pending: 0, accepted: 0, rejected: 0 });
       setChangeSummary(payload.changeSummary ?? { taxonomy: 0, gender_only: 0, none: 0 });
       if (payload.phase) setPhase(payload.phase);
@@ -219,7 +322,7 @@ export default function TaxonomyRemapReviewPanel() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [status, changeType, page, search, brandId]);
+  }, [status, changeType, page, search, brandId, mergeIncomingItems]);
 
   useEffect(() => {
     fetchBrands();
@@ -244,7 +347,7 @@ export default function TaxonomyRemapReviewPanel() {
       if (!res.ok) return;
       const payload = (await res.json().catch(() => null)) as ReviewsResponse | null;
       if (!payload) return;
-      if (Array.isArray(payload.items)) setItems(payload.items);
+      if (Array.isArray(payload.items)) setItems(mergeIncomingItems(payload.items));
       if (payload.summary) setSummary(payload.summary);
       if (payload.changeSummary) setChangeSummary(payload.changeSummary);
       if (payload.phase) setPhase(payload.phase);
@@ -253,10 +356,13 @@ export default function TaxonomyRemapReviewPanel() {
         setTotal(payload.pagination.total ?? 0);
         setTotalPages(Math.max(1, payload.pagination.totalPages ?? 1));
       }
+      if (optimisticDecisionsRef.current.size > 0) {
+        scheduleSilentRefresh();
+      }
     } catch {
       // silent refresh should not disrupt review flow
     }
-  }, [status, changeType, page, search, brandId]);
+  }, [status, changeType, page, search, brandId, mergeIncomingItems, scheduleSilentRefresh]);
 
   const scheduleSilentRefresh = useCallback(() => {
     if (silentRefreshTimerRef.current) {
@@ -265,6 +371,10 @@ export default function TaxonomyRemapReviewPanel() {
     }
     silentRefreshTimerRef.current = setTimeout(() => {
       silentRefreshTimerRef.current = null;
+      if (inflightDecisionRef.current.size > 0) {
+        scheduleSilentRefresh();
+        return;
+      }
       void fetchItemsSilent();
     }, 900);
   }, [fetchItemsSilent]);
@@ -275,12 +385,20 @@ export default function TaxonomyRemapReviewPanel() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!previewImage) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPreviewImage(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [previewImage]);
+
   const applyOptimisticDecision = useCallback(
-    (item: ReviewItem, nextStatus: "accepted" | "rejected") => {
+    (item: ReviewItem, nextStatus: "accepted" | "rejected", decidedAt: string) => {
       // Update list first so the UI feels instant.
       setItems((prev) => {
         if (status === "all") {
-          const decidedAt = new Date().toISOString();
           return prev.map((entry) =>
             entry.id === item.id
               ? {
@@ -367,10 +485,13 @@ export default function TaxonomyRemapReviewPanel() {
 
   const handleAccept = useCallback(async (item: ReviewItem) => {
     if (inflightDecisionRef.current.has(item.id)) return;
+    const decidedAt = new Date().toISOString();
+    let acceptedOnServer = false;
     inflightDecisionRef.current.add(item.id);
+    optimisticDecisionsRef.current.set(item.id, { status: "accepted", decidedAt });
     setActionById((prev) => ({ ...prev, [item.id]: "accept" }));
     setError(null);
-    applyOptimisticDecision(item, "accepted");
+    applyOptimisticDecision(item, "accepted", decidedAt);
     try {
       const res = await fetch(`/api/admin/taxonomy-remap/reviews/${item.id}/accept`, {
         method: "POST",
@@ -381,9 +502,11 @@ export default function TaxonomyRemapReviewPanel() {
         const payload = await res.json().catch(() => ({}));
         throw new Error(payload.error || "No se pudo aceptar la propuesta");
       }
+      acceptedOnServer = true;
       scheduleSilentRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo aceptar la propuesta");
+      optimisticDecisionsRef.current.delete(item.id);
       scheduleSilentRefresh();
     } finally {
       setActionById((prev) => {
@@ -392,15 +515,19 @@ export default function TaxonomyRemapReviewPanel() {
         return next;
       });
       inflightDecisionRef.current.delete(item.id);
+      if (!acceptedOnServer) optimisticDecisionsRef.current.delete(item.id);
     }
   }, [applyOptimisticDecision, scheduleSilentRefresh]);
 
   const handleReject = useCallback(async (item: ReviewItem) => {
     if (inflightDecisionRef.current.has(item.id)) return;
+    const decidedAt = new Date().toISOString();
+    let rejectedOnServer = false;
     inflightDecisionRef.current.add(item.id);
+    optimisticDecisionsRef.current.set(item.id, { status: "rejected", decidedAt });
     setActionById((prev) => ({ ...prev, [item.id]: "reject" }));
     setError(null);
-    applyOptimisticDecision(item, "rejected");
+    applyOptimisticDecision(item, "rejected", decidedAt);
     try {
       const res = await fetch(`/api/admin/taxonomy-remap/reviews/${item.id}/reject`, {
         method: "POST",
@@ -411,9 +538,11 @@ export default function TaxonomyRemapReviewPanel() {
         const payload = await res.json().catch(() => ({}));
         throw new Error(payload.error || "No se pudo rechazar la propuesta");
       }
+      rejectedOnServer = true;
       scheduleSilentRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo rechazar la propuesta");
+      optimisticDecisionsRef.current.delete(item.id);
       scheduleSilentRefresh();
     } finally {
       setActionById((prev) => {
@@ -422,6 +551,7 @@ export default function TaxonomyRemapReviewPanel() {
         return next;
       });
       inflightDecisionRef.current.delete(item.id);
+      if (!rejectedOnServer) optimisticDecisionsRef.current.delete(item.id);
     }
   }, [applyOptimisticDecision, scheduleSilentRefresh]);
 
@@ -627,25 +757,42 @@ export default function TaxonomyRemapReviewPanel() {
 
       {items.length ? (
         <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
-          <table className="min-w-[1280px] divide-y divide-slate-200 text-sm">
+          <table className="min-w-[1380px] table-fixed divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-left">Producto</th>
-                <th className="px-3 py-2 text-left">Actual</th>
-                <th className="px-3 py-2 text-left">Propuesto</th>
-                <th className="px-3 py-2 text-left">Señales</th>
-                <th className="px-3 py-2 text-left">Acciones</th>
+                <th className="w-[32%] px-3 py-2 text-left">Producto</th>
+                <th className="w-[34%] px-3 py-2 text-left">Cambio destacado</th>
+                <th className="w-[24%] px-3 py-2 text-left">Señales</th>
+                <th className="w-[10%] px-3 py-2 text-left">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white align-top">
               {items.map((item) => {
                 const action = actionById[item.id];
                 const busy = Boolean(action);
+                const categoryChanged = hasChanged(item.fromCategory, item.toCategory);
+                const subcategoryChanged = hasChanged(item.fromSubcategory, item.toSubcategory);
+                const genderChanged = hasChanged(item.fromGender, item.toGender);
+                const taxonomyChanged = categoryChanged || subcategoryChanged;
+                const imageCanPreview = Boolean(item.imageCoverUrl);
                 return (
                   <tr key={item.id}>
                     <td className="px-3 py-3">
                       <div className="flex gap-3">
-                        <div className="relative h-20 w-20 overflow-hidden rounded-lg bg-slate-100">
+                        <button
+                          type="button"
+                          className={`relative h-28 w-28 shrink-0 overflow-hidden rounded-lg border ${
+                            imageCanPreview
+                              ? "border-slate-200 bg-slate-100 transition hover:scale-[1.02] hover:shadow-sm"
+                              : "cursor-default border-slate-200 bg-slate-100"
+                          }`}
+                          onClick={() => {
+                            if (!item.imageCoverUrl) return;
+                            setPreviewImage({ url: item.imageCoverUrl, alt: item.productName });
+                          }}
+                          disabled={!imageCanPreview}
+                          aria-label={imageCanPreview ? "Ampliar imagen del producto" : "Producto sin imagen"}
+                        >
                           {item.imageCoverUrl ? (
                             <Image
                               src={item.imageCoverUrl}
@@ -659,9 +806,14 @@ export default function TaxonomyRemapReviewPanel() {
                               Sin imagen
                             </div>
                           )}
-                        </div>
+                          {imageCanPreview ? (
+                            <span className="absolute bottom-1 right-1 rounded bg-black/65 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                              ampliar
+                            </span>
+                          ) : null}
+                        </button>
                         <div className="space-y-1">
-                          <p className="font-semibold text-slate-900">{item.productName}</p>
+                          <p className="line-clamp-2 font-semibold text-slate-900">{item.productName}</p>
                           <p className="text-xs text-slate-500">{item.brandName ?? "Sin marca"}</p>
                           <p className="text-[11px] text-slate-500">{formatDateTime(item.createdAt)}</p>
                           <div className="flex flex-wrap gap-2 text-[11px]">
@@ -686,35 +838,81 @@ export default function TaxonomyRemapReviewPanel() {
                       </div>
                     </td>
                     <td className="px-3 py-3 text-xs text-slate-700">
-                      <p><span className="font-semibold">Cat:</span> {formatNullable(item.fromCategory)}</p>
-                      <p><span className="font-semibold">Sub:</span> {formatNullable(item.fromSubcategory)}</p>
-                      <p><span className="font-semibold">Género:</span> {formatNullable(item.fromGender)}</p>
+                      <div className="mb-2 flex flex-wrap gap-1.5">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            taxonomyChanged
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {taxonomyChanged ? "Cat/Sub cambia" : "Cat/Sub sin cambio"}
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            genderChanged
+                              ? "bg-fuchsia-100 text-fuchsia-800"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {genderChanged ? "Género cambia" : "Género sin cambio"}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        <DiffField
+                          label="Categoría"
+                          from={item.fromCategory}
+                          to={item.toCategory}
+                          changed={categoryChanged}
+                        />
+                        <DiffField
+                          label="Subcategoría"
+                          from={item.fromSubcategory}
+                          to={item.toSubcategory}
+                          changed={subcategoryChanged}
+                        />
+                        <DiffField
+                          label="Género"
+                          from={item.fromGender}
+                          to={item.toGender}
+                          changed={genderChanged}
+                        />
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-xs text-slate-700">
-                      <p><span className="font-semibold">Cat:</span> {formatNullable(item.toCategory)}</p>
-                      <p><span className="font-semibold">Sub:</span> {formatNullable(item.toSubcategory)}</p>
-                      <p><span className="font-semibold">Género:</span> {formatNullable(item.toGender)}</p>
-                    </td>
-                    <td className="px-3 py-3 text-xs text-slate-700">
-                      <p><span className="font-semibold">Confianza:</span> {formatScore(item.confidence)}</p>
-                      <p>
-                        <span className="font-semibold">Tipo cambio:</span>{" "}
-                        {item.changeType === "gender_only"
-                          ? "Solo género"
-                          : item.changeType === "taxonomy"
-                            ? "Categoría/Subcategoría"
-                            : "Sin cambio"}
-                      </p>
-                      <p><span className="font-semibold">Sources:</span> {formatNullable(String(item.sourceCount ?? ""))}</p>
-                      <p><span className="font-semibold">Support:</span> {formatScore(item.scoreSupport, 4)}</p>
-                      <p><span className="font-semibold">Margin:</span> {formatScore(item.marginRatio, 4)}</p>
-                      <p className="mt-1 text-[11px] text-slate-500">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap gap-1.5">
+                          <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-white">
+                            Conf {formatScore(item.confidence)}
+                          </span>
+                          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">
+                            {item.changeType === "gender_only"
+                              ? "Solo género"
+                              : item.changeType === "taxonomy"
+                                ? "Cat/Subcat"
+                                : "Sin cambio"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 text-[11px]">
+                          <div className="rounded-md bg-slate-100 px-2 py-1">
+                            <p className="font-semibold text-slate-500">Sources</p>
+                            <p>{formatNullable(String(item.sourceCount ?? ""))}</p>
+                          </div>
+                          <div className="rounded-md bg-slate-100 px-2 py-1">
+                            <p className="font-semibold text-slate-500">Support</p>
+                            <p>{formatScore(item.scoreSupport, 4)}</p>
+                          </div>
+                          <div className="rounded-md bg-slate-100 px-2 py-1">
+                            <p className="font-semibold text-slate-500">Margin</p>
+                            <p>{formatScore(item.marginRatio, 4)}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2 max-h-20 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
                         {item.reasons.length ? item.reasons.join(" · ") : "Sin razones"}
-                      </p>
+                      </div>
                       {item.seoCategoryHints.length ? (
-                        <p className="mt-1 text-[11px] text-amber-700">
-                          SEO hints: {item.seoCategoryHints.join(", ")}
-                        </p>
+                        <p className="mt-2 text-[11px] text-amber-700">SEO hints: {item.seoCategoryHints.join(", ")}</p>
                       ) : null}
                     </td>
                     <td className="px-3 py-3">
@@ -773,6 +971,41 @@ export default function TaxonomyRemapReviewPanel() {
           Siguiente
         </button>
       </div>
+
+      {previewImage ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-4"
+          onClick={() => setPreviewImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Vista ampliada de imagen de producto"
+        >
+          <div
+            className="relative w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
+              <p className="line-clamp-1 pr-8 text-sm font-semibold text-slate-900">{previewImage.alt}</p>
+              <button
+                type="button"
+                className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                onClick={() => setPreviewImage(null)}
+              >
+                Cerrar
+              </button>
+            </div>
+            <div className="relative h-[70vh] max-h-[760px] min-h-[360px] bg-slate-100">
+              <Image
+                src={previewImage.url}
+                alt={previewImage.alt}
+                fill
+                className="object-contain"
+                unoptimized={previewImage.url.startsWith("/api/")}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
