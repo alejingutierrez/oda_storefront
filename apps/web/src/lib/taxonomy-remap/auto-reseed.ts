@@ -460,7 +460,9 @@ export const runTaxonomyAutoReseedBatch = async (params: {
       learningRejectedSamples: 0,
     };
   }
-  if (!params.force && phase.pendingCount > phase.pendingThreshold) {
+  const bypassPendingThreshold =
+    params.force === true || (mode === "refresh_pending" && params.trigger === "manual");
+  if (!bypassPendingThreshold && phase.pendingCount > phase.pendingThreshold) {
     return {
       triggered: false,
       reason: "pending_above_threshold",
