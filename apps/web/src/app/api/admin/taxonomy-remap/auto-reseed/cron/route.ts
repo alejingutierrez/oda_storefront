@@ -3,7 +3,7 @@ import { validateAdminRequest } from "@/lib/auth";
 import { runTaxonomyAutoReseedBatch } from "@/lib/taxonomy-remap/auto-reseed";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const isCronRequest = (req: Request) => {
   const cronHeader = req.headers.get("x-vercel-cron");

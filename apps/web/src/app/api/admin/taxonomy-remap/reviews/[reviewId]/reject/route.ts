@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { runTaxonomyAutoReseedBatch } from "@/lib/taxonomy-remap/auto-reseed";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const toNullableText = (value: unknown) => {
   if (typeof value !== "string") return null;

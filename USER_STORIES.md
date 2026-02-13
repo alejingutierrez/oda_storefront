@@ -679,10 +679,10 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: pendientes/aceptadas/rechazadas por corrida, tasa de aceptación, tiempo medio de revisión.
 - Estado: **done (2026-02-12)**.
 
-### MC-124 Aprendizaje de remapeo + auto-reseed por umbral
-- Historia: Como admin, quiero que el sistema aprenda de mis decisiones manuales y relance automáticamente un nuevo lote cuando la cola baje, para acelerar la reclasificación sin intervención continua.
+### MC-124 Auto-reseed por umbral (sin aprendizaje histórico)
+- Historia: Como admin, quiero relanzar lotes de reclasificación cuando la cola baje, con ejecución estable y sin bloqueos, para acelerar la reclasificación sin intervención continua.
 - Alcance:
-  - Motor de aprendizaje sobre histórico de `taxonomy_remap_reviews` (`accepted` y `rejected`) usando señales de nombre, descripción, descripción original y SEO.
+  - Motor de propuestas basado en señales directas del producto enriquecido (nombre, descripción original, metadata/SEO), sin fase de aprendizaje histórico.
   - Generador de propuestas automático para productos enriquecidos (hasta 10.000 por corrida), excluyendo productos ya revisados (`pending/accepted/rejected`) para evitar repropuestas repetidas.
   - Disparo automático cuando `pending <= 100` (configurable por env) con cooldown para evitar loops.
   - Endpoints:
@@ -692,11 +692,11 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - `/api/admin/taxonomy-remap/reviews` expone estado de fase (faltantes, umbral, último auto-reseed) y el panel admin lo muestra.
 - CA:
   - El auto-reseed no usa productos no enriquecidos.
-  - Al alcanzar umbral, se generan nuevas propuestas automáticamente con señales aprendidas.
+  - Al alcanzar umbral, se generan nuevas propuestas automáticamente con señales directas.
   - El panel muestra contador de faltantes de fase y faltantes para disparar auto-reseed.
 - Datos: `taxonomy_remap_reviews` + `products.metadata.enrichment`.
 - NF: ejecución protegida con lock DB persistente (`taxonomy_remap_auto_reseed_runs` + índice único parcial para `status='running'`) y cooldown.
-- Riesgos: sobre-ajuste de reglas aprendidas; mitigación con umbrales de confianza/margen y revisión manual final.
+- Riesgos: propuestas con menor personalización por marca al quitar aprendizaje; mitigación con revisión manual final y reglas/sinónimos más completos.
 - Métricas: propuestas creadas por auto-reseed, % aceptadas, tiempo de vaciado de cola por fase.
 - Estado: **done (2026-02-12)**.
 

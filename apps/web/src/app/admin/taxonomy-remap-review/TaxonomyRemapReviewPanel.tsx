@@ -115,8 +115,6 @@ type AutoReseedResult = {
   executionId: string | null;
   source: string | null;
   runKey: string | null;
-  learningAcceptedSamples: number;
-  learningRejectedSamples: number;
   error?: string;
 };
 
@@ -727,8 +725,7 @@ export default function TaxonomyRemapReviewPanel() {
           </p>
           <p className="mt-1">
             {formatDateTime(autoReseedFeedback.at)} · scanned {autoReseedFeedback.result.scanned} · propuestas{" "}
-            {autoReseedFeedback.result.proposed} · encoladas {autoReseedFeedback.result.enqueued} · muestras aprendizaje{" "}
-            {autoReseedFeedback.result.learningAcceptedSamples}/{autoReseedFeedback.result.learningRejectedSamples}
+            {autoReseedFeedback.result.proposed} · encoladas {autoReseedFeedback.result.enqueued}
           </p>
           {autoReseedFeedback.result.error ? (
             <p className="mt-1 text-rose-700">{autoReseedFeedback.result.error}</p>
