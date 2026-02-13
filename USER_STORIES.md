@@ -696,6 +696,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - El panel muestra contador de faltantes de fase y faltantes para disparar auto-reseed.
 - Datos: `taxonomy_remap_reviews` + `products.metadata.enrichment`.
 - NF: ejecución protegida con lock DB persistente (`taxonomy_remap_auto_reseed_runs` + índice único parcial para `status='running'`) y cooldown.
+- NF: cuando se lanza en modo `force`, puede recuperar corridas largas en `running` para evitar bloqueo del botón manual (`TAXONOMY_REMAP_AUTO_RESEED_FORCE_RECOVER_MINUTES`).
 - Riesgos: propuestas con menor personalización por marca al quitar aprendizaje; mitigación con revisión manual final y reglas/sinónimos más completos.
 - Métricas: propuestas creadas por auto-reseed, % aceptadas, tiempo de vaciado de cola por fase.
 - Estado: **done (2026-02-12)**.

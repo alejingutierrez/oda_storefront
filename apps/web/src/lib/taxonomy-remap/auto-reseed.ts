@@ -118,6 +118,10 @@ const AUTO_RUNNING_STALE_MINUTES = asPositiveInt(
   process.env.TAXONOMY_REMAP_AUTO_RESEED_RUNNING_STALE_MINUTES,
   30,
 );
+const AUTO_FORCE_RECOVER_MINUTES = asPositiveInt(
+  process.env.TAXONOMY_REMAP_AUTO_RESEED_FORCE_RECOVER_MINUTES,
+  8,
+);
 
 const toRecord = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -215,6 +219,20 @@ const markStaleRunningRuns = async () => {
       "updatedAt" = NOW()
     WHERE "status" = 'running'
       AND "startedAt" < NOW() - make_interval(mins => ${AUTO_RUNNING_STALE_MINUTES})
+  `);
+};
+
+const markForceRecoverableRunningRuns = async () => {
+  await prisma.$executeRaw(Prisma.sql`
+    UPDATE "taxonomy_remap_auto_reseed_runs"
+    SET
+      "status" = 'failed',
+      "reason" = 'forced_timeout_recovery',
+      "error" = 'Stopped by manual force run to recover a long-running execution.',
+      "completedAt" = NOW(),
+      "updatedAt" = NOW()
+    WHERE "status" = 'running'
+      AND "startedAt" < NOW() - make_interval(mins => ${AUTO_FORCE_RECOVER_MINUTES})
   `);
 };
 
@@ -468,6 +486,9 @@ export const runTaxonomyAutoReseedBatch = async (params: {
   }
 
   await markStaleRunningRuns();
+  if (params.force) {
+    await markForceRecoverableRunningRuns();
+  }
   const executionId = await createAutoReseedRun({
     trigger: params.trigger,
     force: params.force === true,
