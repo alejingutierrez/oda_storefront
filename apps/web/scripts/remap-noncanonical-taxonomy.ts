@@ -971,8 +971,16 @@ const detectHomeLifestyle = (text: string): Suggestion | null => {
     wordRe("mugs"),
     wordRe("bowl"),
     wordRe("bowls"),
-    wordRe("copa"),
-    wordRe("copas"),
+    phraseRe("copa de vino"),
+    phraseRe("copas de vino"),
+    phraseRe("copa vino"),
+    phraseRe("copas vino"),
+    phraseRe("copa de champagne"),
+    phraseRe("copas de champagne"),
+    phraseRe("copa martini"),
+    phraseRe("copas martini"),
+    phraseRe("wine glass"),
+    phraseRe("wine glasses"),
   ];
   if (includesAny(text, kitchen)) {
     return { category: "hogar_y_lifestyle", subcategory: "cocina_y_vajilla", confidence: 0.95, reasons: ["kw:home_kitchen"], kind: "primary" };
@@ -1434,8 +1442,13 @@ const GENDER_FEMALE_PATTERNS = [
   wordRe("dama"),
   wordRe("ladies"),
   wordRe("female"),
+  wordRe("femenina"),
+  wordRe("femenino"),
   phraseRe("para mujer"),
   phraseRe("de mujer"),
+  phraseRe("ropa interior femenina"),
+  phraseRe("lenceria femenina"),
+  phraseRe("swimwear mujer"),
 ];
 
 const GENDER_MALE_PATTERNS = [
@@ -1444,8 +1457,11 @@ const GENDER_MALE_PATTERNS = [
   wordRe("mens"),
   wordRe("caballero"),
   wordRe("male"),
+  wordRe("masculino"),
+  wordRe("masculina"),
   phraseRe("para hombre"),
   phraseRe("de hombre"),
+  phraseRe("ropa interior masculina"),
 ];
 
 const GENDER_UNISEX_PATTERNS = [
@@ -1505,6 +1521,25 @@ const GENDER_SOURCE_WEIGHTS: Record<SourceName, number> = {
   original_description: 1.5,
 };
 
+const GENDER_FEMALE_PRODUCT_PATTERNS = [
+  wordRe("brasier"),
+  wordRe("bralette"),
+  wordRe("panty"),
+  wordRe("cachetero"),
+  wordRe("cachetera"),
+  wordRe("brasilera"),
+  wordRe("bikini"),
+  phraseRe("vestido de bano entero"),
+  phraseRe("traje de bano entero"),
+];
+
+const GENDER_MALE_PRODUCT_PATTERNS = [
+  phraseRe("boxer de hombre"),
+  phraseRe("boxer hombre"),
+  phraseRe("traje de bano hombre"),
+  phraseRe("bermuda de bano hombre"),
+];
+
 const inferGenderFromSources = (
   sourceTexts: Record<SourceName, string>,
   context: { category: string | null; subcategory: string | null },
@@ -1551,6 +1586,8 @@ const inferGenderFromSources = (
     const w = GENDER_SOURCE_WEIGHTS[source];
     const hasFemale = includesAny(text, GENDER_FEMALE_PATTERNS);
     const hasMale = includesAny(text, GENDER_MALE_PATTERNS);
+    const hasFemaleProductType = includesAny(text, GENDER_FEMALE_PRODUCT_PATTERNS);
+    const hasMaleProductType = includesAny(text, GENDER_MALE_PRODUCT_PATTERNS);
     const hasUnisex = includesAny(text, GENDER_UNISEX_PATTERNS);
     const hasChildRaw = includesAny(text, GENDER_CHILD_PATTERNS);
     const hasChildStrict = includesAny(text, GENDER_CHILD_STRICT_PATTERNS);
@@ -1565,6 +1602,8 @@ const inferGenderFromSources = (
 
     if (hasFemale) addScore("femenino", source, w * 1.0, "kw:gender_female");
     if (hasMale) addScore("masculino", source, w * 1.0, "kw:gender_male");
+    if (hasFemaleProductType) addScore("femenino", source, w * 0.55, "kw:gender_female_product");
+    if (hasMaleProductType) addScore("masculino", source, w * 0.55, "kw:gender_male_product");
     if (hasChildStrict) addScore("infantil", source, w * 1.25, "kw:gender_child_strict");
     if (hasChildName) addScore("infantil", source, w * 0.85, "kw:gender_child_name");
     if (allowBabyAsChildSignal) addScore("infantil", source, w * 0.78, "kw:gender_child_baby");
@@ -1582,6 +1621,22 @@ const inferGenderFromSources = (
   const subcategory = context.subcategory ?? "";
   if (category === "ropa_de_bebe_0_24_meses" || subcategory.includes("bebe")) {
     addScore("infantil", "name", 2.5, "cat:gender_child");
+  }
+  if (
+    category === "vestidos" ||
+    category === "lenceria_y_fajas_shapewear" ||
+    (category === "ropa_interior_basica" && subcategory !== "boxer")
+  ) {
+    addScore("femenino", "name", 0.9, "cat:gender_feminine_prior");
+  }
+  if (
+    category === "trajes_de_bano_y_playa" &&
+    ["bikini", "vestido_de_bano_entero"].includes(subcategory)
+  ) {
+    addScore("femenino", "name", 0.9, "cat:gender_feminine_swim");
+  }
+  if (category === "trajes_de_bano_y_playa" && subcategory === "bermuda_boxer_de_bano") {
+    addScore("masculino", "name", 0.7, "cat:gender_masculine_swim");
   }
   if (
     [
@@ -2980,27 +3035,21 @@ async function main() {
           subcategory: toSubcategory,
         });
 
-        if (!fromGenderRawIsCanonical && fromGenderNormalized) {
-          toGender = fromGenderNormalized;
-          genderRule = {
-            gender: fromGenderNormalized,
-            confidence: 1,
-            reasons: ["norm:gender_alias"],
-          };
-          genderMoveDecision = "alias_normalize";
-        }
+        // Legacy aliases (e.g. "hombre"/"mujer") are treated as weak priors:
+        // if inference has enough confidence, prefer inferred gender over alias normalization.
+        const currentCanonicalForMove = fromGenderRawIsCanonical ? fromGenderNormalized : null;
 
         if (
           genderInference.suggestion &&
           shouldAllowGenderMove(
-            fromGenderNormalized,
+            currentCanonicalForMove,
             genderInference,
             minGenderConfidence,
             minMoveGenderConfidence,
           )
         ) {
           const nextGender = genderInference.suggestion.gender;
-          const currentCanonical = fromGenderNormalized;
+          const currentCanonical = currentCanonicalForMove;
           toGender = nextGender;
           genderRule = {
             gender: nextGender,
@@ -3014,6 +3063,14 @@ async function main() {
           } else {
             genderMoveDecision = "move_canonical";
           }
+        } else if (!fromGenderRawIsCanonical && fromGenderNormalized) {
+          toGender = fromGenderNormalized;
+          genderRule = {
+            gender: fromGenderNormalized,
+            confidence: 1,
+            reasons: ["norm:gender_alias"],
+          };
+          genderMoveDecision = "alias_normalize";
         }
       }
 
