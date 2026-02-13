@@ -15,6 +15,7 @@ type CandidateRow = {
   category: string | null;
   subcategory: string | null;
   gender: string | null;
+  hasPendingReview: boolean;
   description: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
@@ -94,6 +95,16 @@ export type TaxonomyAutoReseedResult = {
 const AUTO_SOURCE_PREFIX = "auto_reseed";
 
 const GENDER_VALUES = GENDER_OPTIONS.map((entry) => entry.value);
+const GENDER_NEUTRAL_CATEGORY_SET = new Set([
+  "hogar_y_lifestyle",
+  "gafas_y_optica",
+]);
+const CHILD_UNLIKELY_CATEGORY_SET = new Set([
+  "hogar_y_lifestyle",
+  "gafas_y_optica",
+  "joyeria_y_bisuteria",
+  "bolsos_y_marroquineria",
+]);
 
 const asBool = (value: string | undefined, fallback: boolean) => {
   if (value === undefined) return fallback;
@@ -523,6 +534,12 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         p.category,
         p.subcategory,
         p.gender,
+        EXISTS (
+          SELECT 1
+          FROM "taxonomy_remap_reviews" r_pending
+          WHERE r_pending."productId" = p.id
+            AND r_pending."status" = 'pending'
+        ) AS "hasPendingReview",
         p.description,
         p."seoTitle",
         p."seoDescription",
@@ -536,8 +553,16 @@ export const runTaxonomyAutoReseedBatch = async (params: {
           SELECT 1
           FROM "taxonomy_remap_reviews" r
           WHERE r."productId" = p.id
+            AND r."status" IN ('accepted', 'rejected')
         )
-      ORDER BY p."updatedAt" DESC
+      ORDER BY
+        EXISTS (
+          SELECT 1
+          FROM "taxonomy_remap_reviews" r_pending
+          WHERE r_pending."productId" = p.id
+            AND r_pending."status" = 'pending'
+        ) DESC,
+        p."updatedAt" DESC
       LIMIT ${requestedLimit}
     `);
 
@@ -582,6 +607,11 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         description: originalDescription,
         metadata,
         sourceUrl: row.sourceUrl,
+        seoTitle: row.seoTitle,
+        seoDescription: row.seoDescription,
+        seoTags,
+        currentCategory: row.category,
+        currentGender: row.gender,
         allowedCategoryValues: CATEGORY_VALUES,
         subcategoryByCategory: SUBCATEGORY_BY_CATEGORY,
       });
@@ -666,28 +696,56 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         signals.inferredGender &&
         genderAllowed.includes(signals.inferredGender) &&
         signals.inferredGender !== currentGender &&
-        (signals.signalStrength !== "weak" || !currentGender)
+        ((signals.signalStrength !== "weak" && signals.inferredGenderSupport >= 1) || !currentGender)
       ) {
         nextGender = signals.inferredGender;
-        genderConfidence = signalStrengthToConfidence(signals.signalStrength) - 0.02;
-        genderSupport =
-          signals.signalStrength === "strong"
-            ? 3
-            : signals.signalStrength === "moderate"
-              ? 2
-              : 1;
-        genderMargin =
-          signals.signalStrength === "strong"
-            ? 1.35
-            : signals.signalStrength === "moderate"
-              ? 1.14
-              : 1.01;
+        genderConfidence =
+          signals.inferredGenderConfidence > 0
+            ? signals.inferredGenderConfidence
+            : signalStrengthToConfidence(signals.signalStrength) - 0.05;
+        genderSupport = Math.max(
+          1,
+          signals.inferredGenderSupport ||
+            (signals.signalStrength === "strong" ? 3 : signals.signalStrength === "moderate" ? 2 : 1),
+        );
+        genderMargin = Math.max(1.01, signals.inferredGenderMargin || 1.03);
         reasons.push(`signals:${signals.signalStrength}:gender`);
+        signals.inferredGenderReasons.slice(0, 3).forEach((reason) => {
+          reasons.push(`gender:${reason}`);
+        });
       }
 
       const categoryMoveThreshold = currentCategory ? 0.84 : 0.68;
       const subMoveThreshold = currentSubcategory ? 0.78 : 0.64;
-      const genderMoveThreshold = currentGender ? 0.73 : 0.61;
+      const categoryForGender =
+        nextCategory ??
+        currentCategory ??
+        normalizeEnumValue(signals.inferredCategory, CATEGORY_VALUES);
+      let genderMoveThreshold = currentGender ? 0.79 : 0.64;
+      if (currentGender === "no_binario_unisex" && nextGender && nextGender !== "no_binario_unisex") {
+        genderMoveThreshold = Math.max(genderMoveThreshold, 0.87);
+      }
+      if (nextGender === "infantil" && currentGender && currentGender !== "infantil") {
+        genderMoveThreshold = Math.max(genderMoveThreshold, 0.9);
+      }
+      if (
+        nextGender &&
+        nextGender !== "no_binario_unisex" &&
+        categoryForGender &&
+        GENDER_NEUTRAL_CATEGORY_SET.has(categoryForGender)
+      ) {
+        genderMoveThreshold = Math.max(genderMoveThreshold, 0.9);
+      }
+      if (
+        nextGender === "infantil" &&
+        categoryForGender &&
+        CHILD_UNLIKELY_CATEGORY_SET.has(categoryForGender)
+      ) {
+        genderMoveThreshold = Math.max(genderMoveThreshold, 0.92);
+      }
+      if (currentGender && signals.inferredGenderSupport < 2) {
+        genderMoveThreshold = Math.max(genderMoveThreshold, 0.86);
+      }
 
       const finalCategory = categoryConfidence >= categoryMoveThreshold ? nextCategory : currentCategory;
       const finalSubcategory =

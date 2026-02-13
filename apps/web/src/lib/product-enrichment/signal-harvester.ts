@@ -43,6 +43,10 @@ export type HarvestedSignals = {
   inferredCategory: string | null;
   inferredSubcategory: string | null;
   inferredGender: string | null;
+  inferredGenderConfidence: number;
+  inferredGenderSupport: number;
+  inferredGenderMargin: number;
+  inferredGenderReasons: string[];
   inferredMaterials: string[];
   inferredPatterns: string[];
   signalStrength: SignalStrength;
@@ -55,6 +59,11 @@ type SignalInput = {
   brandName?: string | null;
   metadata?: Record<string, unknown> | null;
   sourceUrl?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  seoTags?: string[];
+  currentCategory?: string | null;
+  currentGender?: string | null;
   allowedCategoryValues?: string[];
   subcategoryByCategory?: Record<string, string[]>;
   allowedMaterialTags?: string[];
@@ -73,6 +82,16 @@ type CategorySignalMatch = {
   category: string | null;
   subcategory: string | null;
   productType: string | null;
+};
+
+type CanonicalGender = "masculino" | "femenino" | "no_binario_unisex" | "infantil";
+
+type GenderInferenceResult = {
+  gender: CanonicalGender | null;
+  confidence: number;
+  support: number;
+  margin: number;
+  reasons: string[];
 };
 
 const normalizeText = (value: string) =>
@@ -105,6 +124,267 @@ const dedupe = (values: string[]) => {
     output.push(cleaned);
   });
   return output;
+};
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const GENDER_VALUES: CanonicalGender[] = [
+  "masculino",
+  "femenino",
+  "no_binario_unisex",
+  "infantil",
+];
+
+const GENDER_NEUTRAL_CATEGORIES = new Set([
+  "hogar_y_lifestyle",
+  "gafas_y_optica",
+]);
+
+const CHILD_UNLIKELY_CATEGORIES = new Set([
+  "hogar_y_lifestyle",
+  "gafas_y_optica",
+  "joyeria_y_bisuteria",
+  "bolsos_y_marroquineria",
+]);
+
+const FEMALE_KEYWORDS = [
+  "mujer",
+  "women",
+  "womens",
+  "femenino",
+  "femenina",
+  "dama",
+  "ladies",
+];
+
+const MALE_KEYWORDS = [
+  "hombre",
+  "men",
+  "mens",
+  "masculino",
+  "masculina",
+  "caballero",
+];
+
+const UNISEX_KEYWORDS = ["unisex", "genderless", "gender neutral", "neutral"];
+
+const CHILD_STRICT_KEYWORDS = [
+  "infantil",
+  "kids",
+  "kid",
+  "baby",
+  "bebe",
+  "bebé",
+  "newborn",
+  "toddler",
+  "junior",
+  "ninos",
+  "ninas",
+  "boys",
+  "girls",
+  "for kids",
+  "para ninos",
+  "para ninas",
+  "diaper",
+  "pañal",
+];
+
+const CHILD_WEAK_NAME_KEYWORDS = ["nina", "nino"];
+
+const BABY_COLOR_PHRASES = [
+  "baby blue",
+  "baby pink",
+  "baby rose",
+  "baby rosa",
+  "baby celeste",
+  "baby lila",
+  "baby green",
+];
+
+const DIAPER_BAG_PHRASES = [
+  "diaper bag",
+  "diaper backpack",
+  "bolso panalera",
+  "panalera",
+  "pañalera",
+];
+
+const inferGenderSignal = (params: {
+  nameText: string;
+  descriptionText: string;
+  vendorTagText: string;
+  seoTitleText: string;
+  seoDescriptionText: string;
+  seoTagText: string;
+  currentCategory: string | null;
+  inferredCategory: string | null;
+  currentGender: string | null;
+}): GenderInferenceResult => {
+  type Bucket = {
+    score: number;
+    reasons: Set<string>;
+    sources: Set<string>;
+  };
+  const buckets = new Map<CanonicalGender, Bucket>(
+    GENDER_VALUES.map((gender) => [
+      gender,
+      { score: 0, reasons: new Set<string>(), sources: new Set<string>() },
+    ]),
+  );
+
+  const addScore = (
+    gender: CanonicalGender,
+    source: string,
+    score: number,
+    reason: string,
+  ) => {
+    if (score <= 0) return;
+    const current = buckets.get(gender);
+    if (!current) return;
+    current.score += score;
+    current.reasons.add(reason);
+    current.sources.add(source);
+  };
+
+  const sources: Array<{ key: string; text: string; weight: number }> = [
+    { key: "name", text: params.nameText, weight: 1.8 },
+    { key: "description", text: params.descriptionText, weight: 1.15 },
+    { key: "vendor_tags", text: params.vendorTagText, weight: 1.15 },
+    { key: "seo_tags", text: params.seoTagText, weight: 1.9 },
+    { key: "seo_title", text: params.seoTitleText, weight: 1.45 },
+    { key: "seo_description", text: params.seoDescriptionText, weight: 1.05 },
+  ];
+
+  let hasExplicitUnisex = false;
+  let hasDiaperBagContext = false;
+
+  for (const source of sources) {
+    const text = source.text;
+    if (!text) continue;
+
+    const hasFemale = hasAnyKeyword(text, FEMALE_KEYWORDS);
+    const hasMale = hasAnyKeyword(text, MALE_KEYWORDS);
+    const hasUnisex = hasAnyKeyword(text, UNISEX_KEYWORDS);
+    const hasChildStrict = hasAnyKeyword(text, CHILD_STRICT_KEYWORDS);
+    const hasWeakChildName = hasAnyKeyword(text, CHILD_WEAK_NAME_KEYWORDS);
+    const hasBabyColor = hasAnyKeyword(text, BABY_COLOR_PHRASES);
+    const hasDiaperBag = hasAnyKeyword(text, DIAPER_BAG_PHRASES);
+
+    if (hasFemale) addScore("femenino", source.key, source.weight * 1.08, "kw:gender_female");
+    if (hasMale) addScore("masculino", source.key, source.weight * 1.08, "kw:gender_male");
+    if (hasUnisex) {
+      addScore("no_binario_unisex", source.key, source.weight * 1.35, "kw:gender_unisex");
+      hasExplicitUnisex = true;
+    }
+    if (hasFemale && hasMale) {
+      addScore(
+        "no_binario_unisex",
+        source.key,
+        source.weight * 1.28,
+        "rule:gender_mixed_binary",
+      );
+    }
+
+    let childWeight = source.weight * 1.1;
+    if (hasBabyColor) childWeight *= 0.12;
+    if (hasWeakChildName && !hasAnyKeyword(text, ["para ninos", "para ninas", "ninos", "ninas"])) {
+      childWeight *= 0.18;
+    }
+    if (hasDiaperBag) {
+      hasDiaperBagContext = true;
+      childWeight *= 0.2;
+    }
+    if (hasChildStrict) {
+      addScore(
+        "infantil",
+        source.key,
+        childWeight,
+        hasBabyColor ? "kw:gender_child_muted_baby_color" : "kw:gender_child",
+      );
+    }
+  }
+
+  const categoryContext = params.inferredCategory ?? params.currentCategory ?? null;
+  if (categoryContext && GENDER_NEUTRAL_CATEGORIES.has(categoryContext)) {
+    addScore("no_binario_unisex", "context", 0.95, "ctx:gender_neutral_category");
+  }
+  if (categoryContext && CHILD_UNLIKELY_CATEGORIES.has(categoryContext)) {
+    addScore("no_binario_unisex", "context", 0.5, "ctx:child_unlikely_category");
+  }
+  if (params.currentGender === "no_binario_unisex") {
+    addScore("no_binario_unisex", "context", 0.35, "ctx:current_unisex");
+  }
+
+  if (hasDiaperBagContext) {
+    const childBucket = buckets.get("infantil");
+    if (childBucket) {
+      childBucket.score *= 0.22;
+      childBucket.reasons.add("suppress:diaper_bag");
+    }
+    addScore("no_binario_unisex", "context", 1.65, "ctx:diaper_bag_unisex");
+  }
+
+  const ranked = [...buckets.entries()]
+    .map(([gender, bucket]) => ({
+      gender,
+      score: bucket.score,
+      reasons: [...bucket.reasons],
+      sourceCount: bucket.sources.size,
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const top = ranked[0];
+  const second = ranked[1];
+  if (!top || top.score <= 0.95) {
+    return {
+      gender: null,
+      confidence: 0,
+      support: 0,
+      margin: 0,
+      reasons: [],
+    };
+  }
+
+  const secondScore = second?.score ?? 0;
+  const margin = top.score / Math.max(0.2, secondScore);
+  let confidence =
+    0.4 +
+    Math.min(0.25, top.score / 8) +
+    Math.min(0.2, (margin - 1) * 0.15) +
+    (top.sourceCount >= 2 ? 0.08 : 0);
+  if (top.gender === "no_binario_unisex" && hasExplicitUnisex) confidence += 0.1;
+  if (top.gender === "infantil" && top.sourceCount < 2) confidence -= 0.15;
+  if (secondScore > 0 && secondScore / top.score >= 0.82) confidence -= 0.09;
+  confidence = clamp(confidence, 0, 0.97);
+
+  if (top.gender === "infantil" && top.score < 2.1) {
+    return {
+      gender: null,
+      confidence: 0,
+      support: 0,
+      margin: 0,
+      reasons: [],
+    };
+  }
+
+  if (confidence < 0.57) {
+    return {
+      gender: null,
+      confidence: 0,
+      support: 0,
+      margin: 0,
+      reasons: [],
+    };
+  }
+
+  return {
+    gender: top.gender,
+    confidence,
+    support: top.sourceCount,
+    margin,
+    reasons: top.reasons.slice(0, 6),
+  };
 };
 
 const looksLikePantsBotaFit = (text: string) => {
@@ -355,6 +635,9 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
   const descriptionCleanText = cleanDescriptionForLLM(params.description);
   const nameText = normalizeText(safeName);
   const descText = normalizeText(descriptionCleanText);
+  const seoTitleText = normalizeText(params.seoTitle ?? "");
+  const seoDescriptionText = normalizeText(params.seoDescription ?? "");
+  const seoTagText = normalizeText((params.seoTags ?? []).join(" "));
 
   const nameMatch = pickCategorySignal(nameText, allowedCategories, allowedSubByCategory);
   const descriptionMatch = pickCategorySignal(descText, allowedCategories, allowedSubByCategory);
@@ -388,10 +671,34 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     return null;
   })();
 
-  const inferredGender = normalizeEnumValue(
+  const genderInference = inferGenderSignal({
+    nameText,
+    descriptionText: descText,
+    vendorTagText,
+    seoTitleText,
+    seoDescriptionText,
+    seoTagText,
+    currentCategory: normalizeEnumValue(params.currentCategory, allowedCategories),
+    inferredCategory,
+    currentGender: normalizeEnumValue(params.currentGender, GENDER_VALUES),
+  });
+  const fallbackGender = normalizeEnumValue(
     collectByRules(`${nameText} ${descText} ${vendorTagText}`, GENDER_KEYWORD_RULES)[0] ?? null,
-    ["masculino", "femenino", "no_binario_unisex", "infantil"],
+    GENDER_VALUES,
   );
+  const inferredGender = genderInference.gender ?? fallbackGender;
+  const inferredGenderConfidence = genderInference.gender
+    ? genderInference.confidence
+    : fallbackGender
+      ? 0.61
+      : 0;
+  const inferredGenderSupport = genderInference.gender ? genderInference.support : fallbackGender ? 1 : 0;
+  const inferredGenderMargin = genderInference.gender ? genderInference.margin : fallbackGender ? 1.01 : 0;
+  const inferredGenderReasons = genderInference.gender
+    ? genderInference.reasons
+    : fallbackGender
+      ? ["fallback:keyword_first_match"]
+      : [];
 
   const materialSignals = dedupe([
     ...collectByRules(`${nameText} ${descText} ${vendorTagText}`, MATERIAL_KEYWORD_RULES),
@@ -435,6 +742,10 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     inferredCategory,
     inferredSubcategory,
     inferredGender,
+    inferredGenderConfidence,
+    inferredGenderSupport,
+    inferredGenderMargin,
+    inferredGenderReasons,
     inferredMaterials,
     inferredPatterns,
     signalStrength,
@@ -458,6 +769,8 @@ export const buildSignalPayloadForPrompt = (signals: HarvestedSignals) => ({
   inferred_category: signals.inferredCategory,
   inferred_subcategory: signals.inferredSubcategory,
   inferred_gender: signals.inferredGender,
+  inferred_gender_confidence: signals.inferredGenderConfidence,
+  inferred_gender_reasons: signals.inferredGenderReasons,
   signal_strength: signals.signalStrength,
   conflicts: signals.conflictingSignals,
 });
