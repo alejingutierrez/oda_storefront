@@ -1536,23 +1536,34 @@ const GENDER_UNISEX_PATTERNS = [
 
 const GENDER_CHILD_STRICT_PATTERNS = [
   wordRe("infantil"),
-  wordRe("kids"),
-  wordRe("kid"),
   wordRe("newborn"),
   wordRe("toddler"),
   phraseRe("0 24 meses"),
   phraseRe("0-24 meses"),
+  wordRe("ninos"),
+  wordRe("ninas"),
+  phraseRe("para ninos"),
+  phraseRe("para ninas"),
+  phraseRe("for kids"),
 ];
 
 const GENDER_CHILD_BABY_PATTERNS = [wordRe("baby")];
 
+const GENDER_CHILD_SOFT_PATTERNS = [
+  // Soft: can be marketing noise or style naming.
+  wordRe("kids"),
+  wordRe("kid"),
+];
+
 const GENDER_CHILD_NAME_PATTERNS = [
+  // Soft: false positives are common with adult product names (e.g. "Nina Bottom").
   wordRe("nino"),
   wordRe("nina"),
 ];
 
 const GENDER_CHILD_PATTERNS = [
   ...GENDER_CHILD_STRICT_PATTERNS,
+  ...GENDER_CHILD_SOFT_PATTERNS,
   ...GENDER_CHILD_NAME_PATTERNS,
   wordRe("bebe"),
 ];
@@ -1570,6 +1581,14 @@ const GENDER_CHILD_ADULT_FALSE_POSITIVE_PATTERNS = [
   phraseRe("baby doll"),
   wordRe("babydoll"),
   phraseRe("baby tee"),
+];
+
+const GENDER_DIAPER_BAG_PATTERNS = [
+  phraseRe("diaper bag"),
+  phraseRe("diaper backpack"),
+  phraseRe("bolso panalera"),
+  wordRe("panalera"),
+  wordRe("pañalera"),
 ];
 
 const GENDER_SOURCE_WEIGHTS: Record<SourceName, number> = {
@@ -1657,22 +1676,24 @@ const inferGenderFromSources = (
     const hasUnisex = includesAny(text, GENDER_UNISEX_PATTERNS);
     const hasChildRaw = includesAny(text, GENDER_CHILD_PATTERNS);
     const hasChildStrict = includesAny(text, GENDER_CHILD_STRICT_PATTERNS);
+    const hasChildSoft = includesAny(text, GENDER_CHILD_SOFT_PATTERNS);
     const hasChildName = includesAny(text, GENDER_CHILD_NAME_PATTERNS);
     const hasChildBaby = includesAny(text, GENDER_CHILD_BABY_PATTERNS);
-    const hasChildColorOnly =
-      hasChildRaw &&
-      !hasChildStrict &&
-      includesAny(text, GENDER_CHILD_COLOR_PATTERNS);
+    const hasDiaperBag = includesAny(text, GENDER_DIAPER_BAG_PATTERNS);
+    const hasChildColorOnly = includesAny(text, GENDER_CHILD_COLOR_PATTERNS);
     const hasChildAdultFalsePositive = includesAny(text, GENDER_CHILD_ADULT_FALSE_POSITIVE_PATTERNS);
-    const allowBabyAsChildSignal = hasChildBaby && !hasChildColorOnly && !hasChildAdultFalsePositive;
+    const allowBabyAsChildSignal =
+      hasChildBaby && !hasChildColorOnly && !hasChildAdultFalsePositive && !hasDiaperBag;
 
     if (hasFemale) addScore("femenino", source, w * lexicalGenderWeight, "kw:gender_female");
     if (hasMale) addScore("masculino", source, w * lexicalGenderWeight, "kw:gender_male");
     if (hasFemaleProductType) addScore("femenino", source, w * 0.55, "kw:gender_female_product");
     if (hasMaleProductType) addScore("masculino", source, w * 0.55, "kw:gender_male_product");
     if (hasChildStrict) addScore("infantil", source, w * 1.25, "kw:gender_child_strict");
-    if (hasChildName) addScore("infantil", source, w * 0.85, "kw:gender_child_name");
-    if (allowBabyAsChildSignal) addScore("infantil", source, w * 0.78, "kw:gender_child_baby");
+    if (hasChildSoft) addScore("infantil", source, w * 0.22, "kw:gender_child_soft_kids");
+    if (hasChildName) addScore("infantil", source, w * 0.12, "kw:gender_child_soft_name");
+    if (allowBabyAsChildSignal) addScore("infantil", source, w * 0.18, "kw:gender_child_soft_baby");
+    if (hasDiaperBag) addScore("no_binario_unisex", source, w * 1.05, "ctx:diaper_bag_unisex");
     if (hasUnisex) {
       hasExplicitUnisex = true;
       addScore("no_binario_unisex", source, w * 1.35, "kw:gender_unisex");
@@ -1722,7 +1743,7 @@ const inferGenderFromSources = (
       "tarjeta_regalo",
     ].includes(category)
   ) {
-    addScore("no_binario_unisex", "name", 0.7, "cat:gender_neutral");
+    addScore("no_binario_unisex", "name", 2.2, "cat:gender_neutral");
   }
 
   if (brandPrior && brandPrior.gender === "femenino") {

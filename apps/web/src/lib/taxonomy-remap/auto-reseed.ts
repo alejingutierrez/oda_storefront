@@ -26,6 +26,7 @@ type CandidateRow = {
 };
 
 type AutoReseedRunStatus = "running" | "completed" | "skipped" | "failed";
+type AutoReseedMode = "default" | "refresh_pending";
 
 type AutoReseedRunRow = {
   id: string;
@@ -437,10 +438,12 @@ export const runTaxonomyAutoReseedBatch = async (params: {
   trigger: "decision" | "cron" | "manual";
   force?: boolean;
   limit?: number;
+  mode?: AutoReseedMode;
 }): Promise<TaxonomyAutoReseedResult> => {
   const phase = await getTaxonomyAutoReseedPhaseState();
   const defaultLimit = params.trigger === "manual" ? AUTO_LIMIT : Math.min(2_000, AUTO_LIMIT);
   const requestedLimit = Math.max(100, params.limit ?? defaultLimit);
+  const mode: AutoReseedMode = params.mode === "refresh_pending" ? "refresh_pending" : "default";
   if (!phase.enabled) {
     return {
       triggered: false,
@@ -527,6 +530,17 @@ export const runTaxonomyAutoReseedBatch = async (params: {
   const runKey = buildRunKey();
   const source = createSourceLabel(params.trigger, runKey);
   try {
+    const refreshPendingSql =
+      mode === "refresh_pending"
+        ? Prisma.sql`
+          AND EXISTS (
+            SELECT 1
+            FROM "taxonomy_remap_reviews" r_pending_only
+            WHERE r_pending_only."productId" = p.id
+              AND r_pending_only."status" = 'pending'
+          )
+        `
+        : Prisma.empty;
     const candidates = await prisma.$queryRaw<CandidateRow[]>(Prisma.sql`
       SELECT
         p.id,
@@ -549,6 +563,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         p.metadata
       FROM "products" p
       WHERE (p.metadata -> 'enrichment') IS NOT NULL
+        ${refreshPendingSql}
         AND NOT EXISTS (
           SELECT 1
           FROM "taxonomy_remap_reviews" r

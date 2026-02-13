@@ -25,15 +25,17 @@ export async function POST(req: Request) {
   }
 
   const body = (await req.json().catch(() => null)) as
-    | { force?: boolean; limit?: number }
+    | { force?: boolean; limit?: number; mode?: string }
     | null;
   const force = body?.force === true;
   const limit = typeof body?.limit === "number" ? Math.max(100, Math.floor(body.limit)) : undefined;
+  const mode = body?.mode === "refresh_pending" ? "refresh_pending" : undefined;
 
   const result = await runTaxonomyAutoReseedBatch({
     trigger: "manual",
     force,
     limit,
+    ...(mode ? { mode } : {}),
   });
 
   return NextResponse.json({ ok: true, result });

@@ -144,7 +144,7 @@ const WORD_SYNONYMS: Record<string, string[]> = {
   morral: ["backpack", "rucksack"],
   rinonera: ["riñonera", "fanny pack", "waist bag", "belt bag"],
   clutch: ["sobre", "evening bag"],
-  estuches: ["pouch", "case", "cosmetiquera", "neceser"],
+  estuches: ["pouch", "case", "cosmetiquera", "neceser", "portalapicero", "porta lapicero", "porta lapices", "porta lapiz"],
   loncheras: ["lunch bag", "lunchbox"],
   billetera: ["wallet"],
   llaveros: ["keychain", "key ring"],
@@ -165,9 +165,9 @@ const WORD_SYNONYMS: Record<string, string[]> = {
   piercings: ["barbell", "stud", "septum", "ear cuff"],
   relojes: ["watch", "watches"],
   regalo: ["gift card", "voucher", "bono", "tarjeta de regalo"],
-  hogar: ["home", "decor", "deco"],
+  hogar: ["home", "decor", "deco", "mascota", "mascotas", "perro", "perros", "gato", "gatos", "pet", "pets"],
   mesa: ["table linen", "mantel", "servilleta"],
-  cocina: ["kitchenware", "vajilla", "tableware", "utensilios"],
+  cocina: ["kitchenware", "vajilla", "tableware", "utensilios", "botella", "botilito", "bottle", "water bottle", "termo", "cantimplora"],
   cojines: ["cushion", "cushions", "funda de cojin"],
   velas: ["candle", "candles", "aroma", "difusor", "incienso"],
   belleza: ["beauty", "perfume", "body splash", "fragancia"],
@@ -547,9 +547,12 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "cartuchera",
     "neceser",
     "cosmetiquera",
+    "portalapicero",
+    "porta lapicero",
+    "porta lapices",
+    "porta lapiz",
     "lonchera",
     "billetera",
-    "llavero",
     "portadocumentos",
     "duffel",
     "maleta",
@@ -583,6 +586,12 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "tobillera",
     "dije",
     "charm",
+    "llavero",
+    "llaveros",
+    "keychain",
+    "keychains",
+    "key ring",
+    "keyring",
     "broche",
     "prendedor",
     "piercing",
@@ -609,6 +618,12 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "textiles de mesa",
     "vajilla",
     "cocina",
+    "botella",
+    "botilito",
+    "termo",
+    "cantimplora",
+    "bottle",
+    "water bottle",
     "cojin",
     "funda",
     "vela",
@@ -621,9 +636,26 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "papeleria",
     "agenda",
     "cuaderno",
+    "betun",
+    "betún",
+    "grasa para cuero",
+    "grasa fina para cuero",
+    "limpiador para cuero",
+    "cuidado del cuero",
+    "leather cleaner",
+    "leather care",
+    "shoe care",
     "toalla",
     "manta",
     "cobija",
+    "mascota",
+    "mascotas",
+    "perro",
+    "perros",
+    "gato",
+    "gatos",
+    "pet",
+    "pets",
   ],
 };
 
@@ -748,6 +780,12 @@ const deriveSubcategoryKeywords = (
         "dijes",
         "charm",
         "charms",
+        "llavero",
+        "llaveros",
+        "keychain",
+        "keychains",
+        "key ring",
+        "keyring",
         "colgante",
         "pendant",
         "x1",
@@ -775,7 +813,7 @@ const deriveSubcategoryKeywords = (
   if (categoryValue === "calzado") {
     keywords.push("suela", "plantilla", "horma", "calce", "shoelace", "cordones");
     if (subcategoryValue.includes("tenis") || subcategoryValue.includes("sneakers")) {
-      keywords.push("running shoe", "trainer", "court sneaker");
+      keywords.push("running shoe", "trainer", "court sneaker", "glider", "gliders");
     }
     if (subcategoryValue.includes("mocasines") || subcategoryValue.includes("loafers")) {
       keywords.push("loafer", "penny loafer", "driver");
@@ -791,7 +829,24 @@ const deriveSubcategoryKeywords = (
       keywords.push("crossbody", "cross body", "bolso cruzado");
     }
     if (subcategoryValue.includes("estuches") || subcategoryValue.includes("cartucheras")) {
-      keywords.push("pouch", "organizer", "organizador");
+      keywords.push(
+        "pouch",
+        "organizer",
+        "organizador",
+        "portalapicero",
+        "porta lapicero",
+        "porta lapices",
+        "porta lapiz",
+      );
+    }
+  }
+
+  if (categoryValue === "shorts_y_bermudas") {
+    if (subcategoryValue.includes("short_denim")) {
+      keywords.push("jort", "jorts");
+    }
+    if (subcategoryValue.includes("biker_short")) {
+      keywords.push("biker", "ciclista");
     }
   }
 
@@ -809,6 +864,27 @@ const deriveSubcategoryKeywords = (
 
   if (categoryValue === "hogar_y_lifestyle") {
     keywords.push("decor", "deco", "hogar", "home");
+    if (subcategoryValue.includes("hogar_otros")) {
+      keywords.push(
+        "mascota",
+        "mascotas",
+        "perro",
+        "perros",
+        "gato",
+        "gatos",
+        "pet",
+        "pets",
+        "betun",
+        "betún",
+        "grasa para cuero",
+        "grasa fina para cuero",
+        "limpiador para cuero",
+        "cuidado del cuero",
+        "leather cleaner",
+        "leather care",
+        "shoe care",
+      );
+    }
   }
 
   if (categoryValue === "accesorios_textiles_y_medias" && subcategoryValue.includes("accesorios_para_cabello")) {
@@ -911,7 +987,24 @@ export const PATTERN_KEYWORD_RULES: KeywordRule[] = [
 export const GENDER_KEYWORD_RULES: KeywordRule[] = [
   { key: "femenino", keywords: ["mujer", "women", "womens", "dama", "ladies", "femenino"] },
   { key: "masculino", keywords: ["hombre", "men", "mens", "caballero", "masculino"] },
-  { key: "infantil", keywords: ["nino", "niño", "nina", "niña", "kids", "infantil", "baby", "bebe", "bebé"] },
+  {
+    key: "infantil",
+    keywords: [
+      "infantil",
+      "bebe",
+      "bebé",
+      "newborn",
+      "toddler",
+      "junior",
+      "ninos",
+      "ninas",
+      "boys",
+      "girls",
+      "for kids",
+      "para ninos",
+      "para ninas",
+    ],
+  },
   { key: "no_binario_unisex", keywords: ["unisex", "genderless"] },
 ];
 

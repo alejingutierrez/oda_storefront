@@ -41,7 +41,9 @@ const extractCdnCgiUrl = (value: string) => {
 const normalizeSourceUrl = (raw: string | null) => {
   if (!raw) return null;
   const trimmed = raw.trim();
-  if (!trimmed || trimmed.length > 2048) return null;
+  // Some CDNs / WP image URLs can exceed 2k chars (querystrings, signed URLs).
+  // Keep a sane upper bound to avoid abuse, but be less strict to reduce 400s in admin grids.
+  if (!trimmed || trimmed.length > 8192) return null;
   const cdnOverride = extractCdnCgiUrl(trimmed);
   if (cdnOverride && cdnOverride !== trimmed) {
     return normalizeSourceUrl(cdnOverride);

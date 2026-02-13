@@ -3,11 +3,16 @@ import { CATEGORY_VALUES, SUBCATEGORY_BY_CATEGORY } from "@/lib/product-enrichme
 
 type Case = {
   name: string;
+  description?: string | null;
+  seoTags?: string[];
   currentCategory?: string | null;
   currentSubcategory?: string | null;
+  currentGender?: string | null;
   expect: {
     inferredCategory?: string;
     inferredSubcategory?: string | null;
+    inferredGender?: string | null;
+    notInferredGender?: string;
     nameCategory?: string | null;
     nameSubcategory?: string | null;
     notNameSubcategory?: string;
@@ -15,6 +20,22 @@ type Case = {
 };
 
 const CASES: Case[] = [
+  {
+    name: "Jorts Courage Sogno-Camel",
+    expect: {
+      inferredCategory: "shorts_y_bermudas",
+      inferredSubcategory: "short_denim",
+      nameSubcategory: "short_denim",
+    },
+  },
+  {
+    name: "GLIDERS",
+    expect: {
+      inferredCategory: "calzado",
+      inferredSubcategory: "tenis_sneakers",
+      nameSubcategory: "tenis_sneakers",
+    },
+  },
   {
     name: "Collar Curva Plata",
     currentCategory: "joyeria_y_bisuteria",
@@ -56,6 +77,53 @@ const CASES: Case[] = [
     },
   },
   {
+    name: "Portalapicero Ejecutivo Love Letters",
+    expect: {
+      inferredCategory: "bolsos_y_marroquineria",
+      inferredSubcategory: "estuches_cartucheras_neceseres",
+      nameSubcategory: "estuches_cartucheras_neceseres",
+    },
+  },
+  {
+    name: "Botilito Plegable Origami 650 ml Rojo",
+    expect: {
+      inferredCategory: "hogar_y_lifestyle",
+      inferredSubcategory: "cocina_y_vajilla",
+      nameSubcategory: "cocina_y_vajilla",
+    },
+  },
+  {
+    name: "Juguete Bone para mascota",
+    expect: {
+      inferredCategory: "hogar_y_lifestyle",
+      inferredSubcategory: "hogar_otros",
+      nameSubcategory: "hogar_otros",
+    },
+  },
+  {
+    name: "Llavero de Peluche Heart color Gris",
+    expect: {
+      inferredCategory: "joyeria_y_bisuteria",
+      inferredSubcategory: "dijes_charms",
+      nameSubcategory: "dijes_charms",
+    },
+  },
+  {
+    name: "Producto de cuero REF GRASA-FINA-PARA-CUERO",
+    expect: {
+      inferredCategory: "hogar_y_lifestyle",
+      inferredSubcategory: "hogar_otros",
+      nameSubcategory: "hogar_otros",
+    },
+  },
+  {
+    name: "Hoodie Azul Bebe con cremallera",
+    currentGender: "femenino",
+    expect: {
+      notInferredGender: "infantil",
+    },
+  },
+  {
     name: "Active Zip-Up Jacket - Black",
     expect: {
       nameCategory: "chaquetas_y_abrigos",
@@ -82,14 +150,14 @@ const run = () => {
     try {
       const signals = harvestProductSignals({
         name: testCase.name,
-        description: null,
+        description: testCase.description ?? null,
         metadata: null,
         sourceUrl: null,
         seoTitle: null,
         seoDescription: null,
-        seoTags: [],
+        seoTags: testCase.seoTags ?? [],
         currentCategory: testCase.currentCategory ?? null,
-        currentGender: null,
+        currentGender: testCase.currentGender ?? null,
         allowedCategoryValues: CATEGORY_VALUES,
         subcategoryByCategory: SUBCATEGORY_BY_CATEGORY,
       });
@@ -117,6 +185,16 @@ const run = () => {
           testCase.expect.notNameSubcategory,
         );
       }
+      if (testCase.expect.inferredGender !== undefined) {
+        assertEqual(`${testCase.name}: inferredGender`, signals.inferredGender, testCase.expect.inferredGender);
+      }
+      if (testCase.expect.notInferredGender) {
+        assertNotEqual(
+          `${testCase.name}: inferredGender`,
+          signals.inferredGender,
+          testCase.expect.notInferredGender,
+        );
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       failures.push(message);
@@ -134,4 +212,3 @@ const run = () => {
 };
 
 run();
-

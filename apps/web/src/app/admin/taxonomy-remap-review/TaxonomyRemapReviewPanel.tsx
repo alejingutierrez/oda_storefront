@@ -519,14 +519,14 @@ export default function TaxonomyRemapReviewPanel() {
     [status],
   );
 
-  const runAutoReseed = useCallback(async (force = false) => {
+  const runAutoReseed = useCallback(async (force = false, mode: "default" | "refresh_pending" = "default") => {
     setAutoReseedBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/admin/taxonomy-remap/auto-reseed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force, limit: 10000 }),
+        body: JSON.stringify({ force, limit: 10000, ...(mode === "refresh_pending" ? { mode } : {}) }),
       });
       if (!res.ok) {
         const payload = await res.json().catch(() => ({}));
@@ -763,10 +763,10 @@ export default function TaxonomyRemapReviewPanel() {
           <button
             type="button"
             className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => runAutoReseed(true)}
+            onClick={() => runAutoReseed(true, "refresh_pending")}
             disabled={autoReseedBusy}
           >
-            {autoReseedBusy ? "Forzando..." : "Forzar batch 10.000"}
+            {autoReseedBusy ? "Recalculando..." : "Recalcular pendientes"}
           </button>
         </div>
       </div>

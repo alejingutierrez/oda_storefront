@@ -169,11 +169,11 @@ const MALE_KEYWORDS = [
 
 const UNISEX_KEYWORDS = ["unisex", "genderless", "gender neutral", "neutral"];
 
-const CHILD_STRICT_KEYWORDS = [
+// Child signals are noisy in fashion catalogs because "baby" is commonly used as a color/style
+// (e.g. "baby blue", "baby tee") and "kids" can appear in marketing tags. For remaps we prefer
+// conservative moves to `infantil` unless there is strong evidence.
+const CHILD_HARD_KEYWORDS = [
   "infantil",
-  "kids",
-  "kid",
-  "baby",
   "bebe",
   "bebé",
   "newborn",
@@ -190,7 +190,7 @@ const CHILD_STRICT_KEYWORDS = [
   "pañal",
 ];
 
-const CHILD_WEAK_NAME_KEYWORDS = ["nina", "nino"];
+const CHILD_SOFT_KEYWORDS = ["kids", "kid", "baby"];
 
 const BABY_COLOR_PHRASES = [
   "baby blue",
@@ -200,6 +200,11 @@ const BABY_COLOR_PHRASES = [
   "baby celeste",
   "baby lila",
   "baby green",
+  "azul bebe",
+  "rosa bebe",
+  "celeste bebe",
+  "lila bebe",
+  "verde bebe",
 ];
 
 const DIAPER_BAG_PHRASES = [
@@ -221,6 +226,38 @@ const inferGenderSignal = (params: {
   inferredCategory: string | null;
   currentGender: string | null;
 }): GenderInferenceResult => {
+  const combinedText = [
+    params.nameText,
+    params.descriptionText,
+    params.vendorTagText,
+    params.seoTitleText,
+    params.seoDescriptionText,
+    params.seoTagText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const categoryContext = params.inferredCategory ?? params.currentCategory ?? null;
+  if (categoryContext && GENDER_NEUTRAL_CATEGORIES.has(categoryContext)) {
+    return {
+      gender: "no_binario_unisex",
+      confidence: 0.93,
+      support: 2,
+      margin: 2.4,
+      reasons: ["ctx:gender_neutral_category_forced"],
+    };
+  }
+
+  if (hasAnyKeyword(combinedText, DIAPER_BAG_PHRASES)) {
+    return {
+      gender: "no_binario_unisex",
+      confidence: 0.92,
+      support: 2,
+      margin: 2.2,
+      reasons: ["ctx:diaper_bag_unisex_forced"],
+    };
+  }
+
   type Bucket = {
     score: number;
     reasons: Set<string>;
@@ -257,7 +294,6 @@ const inferGenderSignal = (params: {
   ];
 
   let hasExplicitUnisex = false;
-  let hasDiaperBagContext = false;
 
   for (const source of sources) {
     const text = source.text;
@@ -266,13 +302,50 @@ const inferGenderSignal = (params: {
     const hasFemale = hasAnyKeyword(text, FEMALE_KEYWORDS);
     const hasMale = hasAnyKeyword(text, MALE_KEYWORDS);
     const hasUnisex = hasAnyKeyword(text, UNISEX_KEYWORDS);
-    const hasChildStrict = hasAnyKeyword(text, CHILD_STRICT_KEYWORDS);
-    const hasWeakChildName = hasAnyKeyword(text, CHILD_WEAK_NAME_KEYWORDS);
+    const hasBebeToken = hasAnyKeyword(text, ["bebe", "bebé"]);
     const hasBabyColor = hasAnyKeyword(text, BABY_COLOR_PHRASES);
-    const hasDiaperBag = hasAnyKeyword(text, DIAPER_BAG_PHRASES);
+    const hasOtherHardChild = hasAnyKeyword(text, [
+      "infantil",
+      "newborn",
+      "toddler",
+      "junior",
+      "ninos",
+      "ninas",
+      "boys",
+      "girls",
+      "for kids",
+      "para ninos",
+      "para ninas",
+      "diaper",
+      "pañal",
+    ]);
+    const hasChildHard = hasOtherHardChild || (hasBebeToken && !hasBabyColor);
+    const hasChildSoft = hasAnyKeyword(text, CHILD_SOFT_KEYWORDS);
+    const hasFemaleProduct = hasAnyKeyword(text, [
+      "brasier",
+      "bralette",
+      "panty",
+      "cachetero",
+      "tanga",
+      "brasilera",
+      "bikini",
+      "trikini",
+      "liguero",
+      "corset",
+      "babydoll",
+    ]);
+    const hasMaleProduct = hasAnyKeyword(text, [
+      "boxer",
+      "brief",
+      "briefs",
+      "jockstrap",
+      "suspensorio",
+    ]);
 
     if (hasFemale) addScore("femenino", source.key, source.weight * 1.08, "kw:gender_female");
     if (hasMale) addScore("masculino", source.key, source.weight * 1.08, "kw:gender_male");
+    if (hasFemaleProduct) addScore("femenino", source.key, source.weight * 0.85, "kw:gender_female_product");
+    if (hasMaleProduct) addScore("masculino", source.key, source.weight * 0.85, "kw:gender_male_product");
     if (hasUnisex) {
       addScore("no_binario_unisex", source.key, source.weight * 1.35, "kw:gender_unisex");
       hasExplicitUnisex = true;
@@ -288,41 +361,25 @@ const inferGenderSignal = (params: {
 
     let childWeight = source.weight * 1.1;
     if (hasBabyColor) childWeight *= 0.12;
-    if (hasWeakChildName && !hasAnyKeyword(text, ["para ninos", "para ninas", "ninos", "ninas"])) {
-      childWeight *= 0.18;
-    }
-    if (hasDiaperBag) {
-      hasDiaperBagContext = true;
-      childWeight *= 0.2;
-    }
-    if (hasChildStrict) {
+    // Never treat baby-color phrasing as an age signal.
+    const allowSoftChild = hasChildSoft && !hasBabyColor;
+    if (hasChildHard) {
       addScore(
         "infantil",
         source.key,
         childWeight,
-        hasBabyColor ? "kw:gender_child_muted_baby_color" : "kw:gender_child",
+        "kw:gender_child_hard",
       );
+    } else if (allowSoftChild) {
+      addScore("infantil", source.key, childWeight * 0.22, "kw:gender_child_soft");
     }
   }
 
-  const categoryContext = params.inferredCategory ?? params.currentCategory ?? null;
-  if (categoryContext && GENDER_NEUTRAL_CATEGORIES.has(categoryContext)) {
-    addScore("no_binario_unisex", "context", 0.95, "ctx:gender_neutral_category");
-  }
   if (categoryContext && CHILD_UNLIKELY_CATEGORIES.has(categoryContext)) {
     addScore("no_binario_unisex", "context", 0.5, "ctx:child_unlikely_category");
   }
   if (params.currentGender === "no_binario_unisex") {
     addScore("no_binario_unisex", "context", 0.35, "ctx:current_unisex");
-  }
-
-  if (hasDiaperBagContext) {
-    const childBucket = buckets.get("infantil");
-    if (childBucket) {
-      childBucket.score *= 0.22;
-      childBucket.reasons.add("suppress:diaper_bag");
-    }
-    addScore("no_binario_unisex", "context", 1.65, "ctx:diaper_bag_unisex");
   }
 
   const ranked = [...buckets.entries()]
@@ -533,6 +590,13 @@ const shouldIgnoreSubcategoryRule = (
   text: string,
 ) => {
   if (rule.subcategory.includes("denim") && !hasDenimEvidence(text)) {
+    return true;
+  }
+  if (
+    rule.category === "shorts_y_bermudas" &&
+    rule.subcategory === "biker_short" &&
+    hasAnyKeyword(text, ["chaqueta", "jacket", "biker jacket"])
+  ) {
     return true;
   }
   if (
@@ -799,10 +863,15 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     inferredCategory,
     currentGender: normalizeEnumValue(params.currentGender, GENDER_VALUES),
   });
-  const fallbackGender = normalizeEnumValue(
-    collectByRules(`${nameText} ${descText} ${vendorTagText}`, GENDER_KEYWORD_RULES)[0] ?? null,
+  const genderFallbackText = `${nameText} ${descText} ${vendorTagText}`;
+  let fallbackGender = normalizeEnumValue(
+    collectByRules(genderFallbackText, GENDER_KEYWORD_RULES)[0] ?? null,
     GENDER_VALUES,
   );
+  // Avoid interpreting "bebé/bebe" as infant when it's clearly part of a color phrase ("azul bebé", etc.).
+  if (fallbackGender === "infantil" && hasAnyKeyword(genderFallbackText, BABY_COLOR_PHRASES)) {
+    fallbackGender = null;
+  }
   const inferredGender = genderInference.gender ?? fallbackGender;
   const inferredGenderConfidence = genderInference.gender
     ? genderInference.confidence
