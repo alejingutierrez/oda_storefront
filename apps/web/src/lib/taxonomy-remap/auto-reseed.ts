@@ -293,6 +293,41 @@ const canMoveToCategory = (category: string | null, evidenceText: string) => {
   ) {
     return false;
   }
+  // "Set" is extremely ambiguous (home sets, gift sets, etc). Only move into clothing sets
+  // if we also have garment evidence.
+  if (category === "conjuntos_y_sets_2_piezas") {
+    const hasSetSignal = hasAnyKeyword(evidenceText, [
+      "conjunto",
+      "matching set",
+      "co ord",
+      "co-ord",
+      "dos piezas",
+      "2 piezas",
+      "set",
+    ]);
+    const hasGarmentSignal = hasAnyKeyword(evidenceText, [
+      "camiseta",
+      "top",
+      "camisa",
+      "blusa",
+      "pantalon",
+      "pantalón",
+      "falda",
+      "short",
+      "bermuda",
+      "legging",
+      "leggings",
+      "buzo",
+      "hoodie",
+      "sueter",
+      "suéter",
+      "blazer",
+      "enterizo",
+      "overol",
+      "vestido",
+    ]);
+    if (!hasSetSignal || !hasGarmentSignal) return false;
+  }
   const required = CATEGORY_MOVE_REQUIRED_EVIDENCE[category];
   if (!required || required.length === 0) return true;
   return hasAnyKeyword(evidenceText, required);
