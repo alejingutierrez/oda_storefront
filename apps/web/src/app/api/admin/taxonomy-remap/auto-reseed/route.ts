@@ -24,6 +24,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const debug = req.headers.get("x-oda-debug") === "1";
   const body = (await req.json().catch(() => null)) as
     | { force?: boolean; limit?: number; mode?: string }
     | null;
@@ -38,5 +39,9 @@ export async function POST(req: Request) {
     ...(mode ? { mode } : {}),
   });
 
-  return NextResponse.json({ ok: true, result });
+  return NextResponse.json({
+    ok: true,
+    result,
+    ...(debug ? { debug: { force, limit, mode } } : {}),
+  });
 }
