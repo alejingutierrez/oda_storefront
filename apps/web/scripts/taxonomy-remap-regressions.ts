@@ -21,6 +21,61 @@ type Case = {
 
 const CASES: Case[] = [
   {
+    name: "Bora Bora Triángulo Set",
+    description: "Bikini de dos piezas con top triangulo y panty. Traje de baño mujer.",
+    seoTags: ["bikini triangular", "traje de baño mujer", "ropa de playa", "swimwear"],
+    expect: {
+      inferredCategory: "trajes_de_bano_y_playa",
+      inferredSubcategory: "bikini",
+    },
+  },
+  {
+    name: "PLAYA LINDA SET PROFUNDO",
+    description: "Bikini de dos piezas: top triángulo y parte inferior tipo tanga.",
+    seoTags: ["bikini", "traje de baño", "swimwear", "bikini brasilera"],
+    expect: {
+      inferredCategory: "trajes_de_bano_y_playa",
+      inferredSubcategory: "bikini",
+    },
+  },
+  {
+    name: "Pantalón Perezosos - Rosa",
+    description: "Pantalón de pijama en algodón suave. Loungewear / ropa de descanso.",
+    seoTags: ["pantalon pijama", "ropa de descanso", "loungewear", "pijama mujer"],
+    expect: {
+      inferredCategory: "pijamas_y_ropa_de_descanso_loungewear",
+      inferredSubcategory: "pantalon_pijama",
+    },
+  },
+  {
+    name: "SET AGUSTINA NEGRO",
+    description: "Set de lencería de dos piezas: brasier y panty.",
+    seoTags: ["set lenceria", "brasier", "panty", "lenceria sensual"],
+    expect: {
+      inferredCategory: "lenceria_y_fajas_shapewear",
+      inferredSubcategory: "conjunto_lenceria",
+    },
+  },
+  {
+    name: "MINI GYM BAG - GRAY",
+    description: "Mini gym bag con cierre y cargadera ajustable. Bolso para gimnasio.",
+    seoTags: ["bolso gimnasio", "gym bag", "bolso deportivo"],
+    expect: {
+      inferredCategory: "bolsos_y_marroquineria",
+    },
+  },
+  {
+    name: "Chaqueta rompevientos café hombre",
+    description:
+      "Chaqueta rompevientos para hombre. Material técnico de secado rápido. Reflectiva. Outdoor.",
+    seoTags: ["chaqueta rompevientos hombre", "rompevientos", "chaqueta outdoor"],
+    expect: {
+      inferredCategory: "chaquetas_y_abrigos",
+      inferredSubcategory: "rompevientos",
+      notNameSubcategory: "chaqueta_tipo_cuero_cuero_o_sintetico",
+    },
+  },
+  {
     name: "Jorts Courage Sogno-Camel",
     expect: {
       inferredCategory: "shorts_y_bermudas",

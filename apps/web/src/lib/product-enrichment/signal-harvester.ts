@@ -174,8 +174,6 @@ const UNISEX_KEYWORDS = ["unisex", "genderless", "gender neutral", "neutral"];
 // conservative moves to `infantil` unless there is strong evidence.
 const CHILD_HARD_KEYWORDS = [
   "infantil",
-  "bebe",
-  "bebé",
   "newborn",
   "toddler",
   "junior",
@@ -304,21 +302,7 @@ const inferGenderSignal = (params: {
     const hasUnisex = hasAnyKeyword(text, UNISEX_KEYWORDS);
     const hasBebeToken = hasAnyKeyword(text, ["bebe", "bebé"]);
     const hasBabyColor = hasAnyKeyword(text, BABY_COLOR_PHRASES);
-    const hasOtherHardChild = hasAnyKeyword(text, [
-      "infantil",
-      "newborn",
-      "toddler",
-      "junior",
-      "ninos",
-      "ninas",
-      "boys",
-      "girls",
-      "for kids",
-      "para ninos",
-      "para ninas",
-      "diaper",
-      "pañal",
-    ]);
+    const hasOtherHardChild = hasAnyKeyword(text, CHILD_HARD_KEYWORDS);
     const hasChildHard = hasOtherHardChild || (hasBebeToken && !hasBabyColor);
     const hasChildSoft = hasAnyKeyword(text, CHILD_SOFT_KEYWORDS);
     const hasFemaleProduct = hasAnyKeyword(text, [
@@ -534,6 +518,63 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
     rule.category === "conjuntos_y_sets_2_piezas" &&
     hasAnyKeyword(text, ["set", "sets", "conjunto", "conjuntos", "matching set", "co ord", "dos piezas", "2 piezas"])
   ) {
+    // "Set" is extremely ambiguous. If the text clearly indicates a more specific domain
+    // (swimwear, lingerie, pijamas), do not classify as clothing sets.
+    const hasSwimSignal = hasAnyKeyword(text, [
+      "bikini",
+      "trikini",
+      "tankini",
+      "traje de bano",
+      "traje de baño",
+      "vestido de bano",
+      "vestido de baño",
+      "swimwear",
+      "beachwear",
+      "banador",
+      "bañador",
+      "rashguard",
+      "pantaloneta",
+      "pantaloneta de bano",
+      "pantaloneta de baño",
+      "short de bano",
+      "short de baño",
+      "boardshort",
+      "boardshorts",
+      "swim trunk",
+      "swim trunks",
+    ]);
+    const hasLingerieSignal = hasAnyKeyword(text, [
+      "lenceria",
+      "lencería",
+      "lingerie",
+      "corset",
+      "corse",
+      "babydoll",
+      "liguero",
+      "faja",
+      "shapewear",
+      "moldeador",
+      "brasier",
+      "bralette",
+      "panty",
+      "trusa",
+      "tanga",
+      "cachetero",
+      "brasilera",
+      "boxer",
+      "brief",
+    ]);
+    const hasSleepSignal = hasAnyKeyword(text, [
+      "pijama",
+      "sleepwear",
+      "loungewear",
+      "camison",
+      "camisón",
+      "homewear",
+      "ropa de descanso",
+    ]);
+    if (hasSwimSignal || hasLingerieSignal || hasSleepSignal) return true;
+
     const hasJewelrySignal = hasAnyKeyword(text, [
       "joyeria",
       "bisuteria",
@@ -576,6 +617,104 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
     if (hasJewelrySignal && !hasApparelSignal) return true;
   }
   if (
+    rule.category === "ropa_deportiva_y_performance" &&
+    hasAnyKeyword(text, [
+      "bag",
+      "bags",
+      "gym bag",
+      "bolso",
+      "bolsos",
+      "cartera",
+      "mochila",
+      "morral",
+      "bandolera",
+      "crossbody",
+      "clutch",
+      "billetera",
+      "wallet",
+      "duffel",
+      "maleta",
+      "maletas",
+      "equipaje",
+      "lonchera",
+      "cartuchera",
+      "neceser",
+      "estuche",
+    ])
+  ) {
+    // Avoid classifying bags as sportswear just because the text mentions "gym"/"active".
+    return true;
+  }
+  if (
+    rule.category === "camisetas_y_tops" &&
+    hasAnyKeyword(text, [
+      "bikini",
+      "trikini",
+      "tankini",
+      "traje de bano",
+      "traje de baño",
+      "vestido de bano",
+      "vestido de baño",
+      "swimwear",
+      "beachwear",
+      "rashguard",
+      "salida de bano",
+      "salida de baño",
+      "pareo",
+      "pantaloneta de bano",
+      "pantaloneta de baño",
+      "short de bano",
+      "short de baño",
+    ])
+  ) {
+    // Prevent "bikini top" / swimwear descriptions from being pulled into generic tops.
+    return true;
+  }
+  if (
+    rule.category === "ropa_interior_basica" &&
+    hasAnyKeyword(text, [
+      "lenceria",
+      "lencería",
+      "lingerie",
+      "corset",
+      "corse",
+      "babydoll",
+      "liguero",
+      "shapewear",
+      "faja",
+      "moldeador",
+      "body lencero",
+    ])
+  ) {
+    // If the text explicitly says lingerie/shapewear, prefer that category over basic underwear.
+    return true;
+  }
+  if (
+    rule.category === "ropa_interior_basica" &&
+    hasAnyKeyword(text, [
+      "bikini",
+      "trikini",
+      "tankini",
+      "traje de bano",
+      "traje de baño",
+      "vestido de bano",
+      "vestido de baño",
+      "swimwear",
+      "beachwear",
+      "rashguard",
+      "pantaloneta",
+      "pantaloneta de bano",
+      "pantaloneta de baño",
+      "short de bano",
+      "short de baño",
+      "boardshort",
+      "boardshorts",
+    ])
+  ) {
+    // Swimwear can contain underwear-ish words ("panty", "tanga"). Prefer swimwear if it's present.
+    return true;
+  }
+  if (
     rule.category === "camisetas_y_tops" &&
     rule.productType === "top" &&
     hasAnyKeyword(text, ["body cream", "body splash", "crema corporal", "locion", "locion corporal"])
@@ -590,6 +729,24 @@ const shouldIgnoreSubcategoryRule = (
   text: string,
 ) => {
   if (rule.subcategory.includes("denim") && !hasDenimEvidence(text)) {
+    return true;
+  }
+  if (
+    rule.category === "chaquetas_y_abrigos" &&
+    rule.subcategory === "chaqueta_tipo_cuero_cuero_o_sintetico" &&
+    !hasAnyKeyword(text, [
+      "cuero",
+      "piel",
+      "leather",
+      "faux leather",
+      "pu leather",
+      "polipiel",
+      "sintetico",
+      "sintético",
+      "vegano",
+    ])
+  ) {
+    // Avoid "leather jacket" just because the text says "chaqueta/jacket".
     return true;
   }
   if (
@@ -616,6 +773,25 @@ const shouldIgnoreSubcategoryRule = (
     rule.category === "shorts_y_bermudas" &&
     rule.subcategory === "biker_short" &&
     hasAnyKeyword(text, ["chaqueta", "jacket", "biker jacket"])
+  ) {
+    return true;
+  }
+  if (
+    rule.category === "trajes_de_bano_y_playa" &&
+    rule.subcategory === "traje_de_bano_infantil" &&
+    !hasAnyKeyword(text, [
+      "infantil",
+      "nino",
+      "niño",
+      "nina",
+      "niña",
+      "kid",
+      "kids",
+      "baby",
+      "bebe",
+      "bebé",
+      "junior",
+    ])
   ) {
     return true;
   }
@@ -812,10 +988,12 @@ const resolveSignalStrength = (
   vendorCategory: string | null,
   nameCategory: string | null,
   descriptionCategory: string | null,
+  seoCategory: string | null,
+  vendorTagCategory: string | null,
   conflicts: string[],
 ): SignalStrength => {
   if (!inferredCategory) return "weak";
-  const agrees = [vendorCategory, nameCategory, descriptionCategory].filter(
+  const agrees = [vendorCategory, nameCategory, descriptionCategory, seoCategory, vendorTagCategory].filter(
     (value) => value && value === inferredCategory,
   ).length;
   if (agrees >= 2 && conflicts.length === 0) return "strong";
@@ -839,6 +1017,9 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
   const seoTitleText = normalizeText(params.seoTitle ?? "");
   const seoDescriptionText = normalizeText(params.seoDescription ?? "");
   const seoTagText = normalizeText((params.seoTags ?? []).join(" "));
+  const seoCategoryText = normalizeText(
+    [seoTitleText, seoDescriptionText, seoTagText].filter(Boolean).join(" "),
+  );
 
   const nameMatch = pickCategorySignal(nameText, allowedCategories, allowedSubByCategory);
   const descriptionMatch = pickCategorySignal(descText, allowedCategories, allowedSubByCategory);
@@ -847,19 +1028,61 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
   const vendorCategory = normalizeEnumValue(platform.vendorCategory, allowedCategories);
   const vendorTagText = normalizeText(platform.vendorTags.join(" "));
   const vendorTagMatch = pickCategorySignal(vendorTagText, allowedCategories, allowedSubByCategory);
+  const seoMatch = pickCategorySignal(seoCategoryText, allowedCategories, allowedSubByCategory);
 
-  const categoryCandidates = [vendorCategory, nameMatch.category, descriptionMatch.category, vendorTagMatch.category]
-    .filter((value): value is string => Boolean(value));
-  const candidateCounts = new Map<string, number>();
-  categoryCandidates.forEach((value) => {
-    candidateCounts.set(value, (candidateCounts.get(value) ?? 0) + 1);
+  const currentCategory = normalizeEnumValue(params.currentCategory, allowedCategories);
+
+  type CategorySource = "vendor_category" | "vendor_tags" | "name" | "description" | "seo";
+  const CATEGORY_SOURCE_WEIGHTS: Record<CategorySource, number> = {
+    vendor_category: 7,
+    description: 6,
+    seo: 5,
+    vendor_tags: 4,
+    name: 3,
+  };
+
+  const categoryScores = new Map<string, { score: number; sources: Set<CategorySource> }>();
+  const bumpCategoryScore = (category: string | null, source: CategorySource) => {
+    if (!category) return;
+    const weight = CATEGORY_SOURCE_WEIGHTS[source];
+    const entry = categoryScores.get(category) ?? { score: 0, sources: new Set<CategorySource>() };
+    entry.score += weight;
+    entry.sources.add(source);
+    categoryScores.set(category, entry);
+  };
+
+  bumpCategoryScore(vendorCategory, "vendor_category");
+  bumpCategoryScore(vendorTagMatch.category, "vendor_tags");
+  bumpCategoryScore(nameMatch.category, "name");
+  bumpCategoryScore(descriptionMatch.category, "description");
+  bumpCategoryScore(seoMatch.category, "seo");
+
+  const rankedCategories = [...categoryScores.entries()].sort((a, b) => {
+    const scoreDelta = b[1].score - a[1].score;
+    if (scoreDelta !== 0) return scoreDelta;
+    const sourcesDelta = b[1].sources.size - a[1].sources.size;
+    if (sourcesDelta !== 0) return sourcesDelta;
+    // Deterministic: when still tied, keep current category if it's among the tied set.
+    if (currentCategory) {
+      if (a[0] === currentCategory && b[0] !== currentCategory) return -1;
+      if (b[0] === currentCategory && a[0] !== currentCategory) return 1;
+    }
+    return a[0].localeCompare(b[0]);
   });
 
-  const sortedCandidates = [...candidateCounts.entries()].sort((a, b) => b[1] - a[1]);
-  const inferredCategory = sortedCandidates[0]?.[0] ?? null;
-  const conflictingSignals = sortedCandidates.length > 1 ? sortedCandidates.slice(1).map((entry) => entry[0]) : [];
+  const inferredCategory = rankedCategories[0]?.[0] ?? null;
+  const topScore = rankedCategories[0]?.[1].score ?? 0;
+  const conflictingSignals = rankedCategories
+    .slice(1)
+    .filter(([, meta]) => meta.score >= topScore - 1 && meta.score > 0)
+    .map(([category]) => category);
 
-  const subCandidates = [nameMatch.subcategory, descriptionMatch.subcategory]
+  const subCandidates = [
+    descriptionMatch.subcategory,
+    seoMatch.subcategory,
+    nameMatch.subcategory,
+    vendorTagMatch.subcategory,
+  ]
     .filter((value): value is string => Boolean(value));
   const inferredSubcategory = (() => {
     if (!inferredCategory) return null;
@@ -926,6 +1149,8 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     vendorCategory,
     nameMatch.category,
     descriptionMatch.category,
+    seoMatch.category,
+    vendorTagMatch.category,
     conflictingSignals,
   );
 
