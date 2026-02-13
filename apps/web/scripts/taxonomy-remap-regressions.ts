@@ -130,6 +130,14 @@ const CASES: Case[] = [
       notNameSubcategory: "chaqueta_denim",
     },
   },
+  {
+    name: "Camisa Blanca",
+    currentCategory: "camisas_y_blusas",
+    expect: {
+      nameSubcategory: "camisa_casual",
+      notNameSubcategory: "camisa_formal",
+    },
+  },
 ];
 
 const assertEqual = (label: string, actual: unknown, expected: unknown) => {

@@ -593,6 +593,26 @@ const shouldIgnoreSubcategoryRule = (
     return true;
   }
   if (
+    rule.category === "camisas_y_blusas" &&
+    rule.subcategory === "camisa_formal" &&
+    !hasAnyKeyword(text, [
+      "formal",
+      "de vestir",
+      "camisa de vestir",
+      "office",
+      "business",
+      "dress shirt",
+      "oxford",
+      "tuxedo",
+      "smoking",
+      "sastreria",
+      "tailoring",
+    ])
+  ) {
+    // Avoid classifying as "formal" just because the text contains generic "camisa/shirt".
+    return true;
+  }
+  if (
     rule.category === "shorts_y_bermudas" &&
     rule.subcategory === "biker_short" &&
     hasAnyKeyword(text, ["chaqueta", "jacket", "biker jacket"])
