@@ -9,6 +9,9 @@
   --oda-gold: #d9c3a0;
   --oda-border: #e6dfd5;
   --oda-love: #c1121f;
+  /* Used to keep mobile overlays (dock/compare/to-top) from overlapping content. */
+  --oda-mobile-dock-h: calc(env(safe-area-inset-bottom) + 5.75rem);
+  --oda-mobile-dock-gap: 0.75rem;
 }
 
 @theme inline {
@@ -115,6 +118,24 @@ summary::-webkit-details-marker {
 
 .oda-range--max {
   z-index: 4;
+}
+
+@media (pointer: coarse) {
+  .oda-range {
+    height: 52px;
+  }
+
+  .oda-range::-webkit-slider-thumb {
+    height: 26px;
+    width: 26px;
+    border-width: 3px;
+  }
+
+  .oda-range::-moz-range-thumb {
+    height: 26px;
+    width: 26px;
+    border-width: 3px;
+  }
 }
 
 @layer components {

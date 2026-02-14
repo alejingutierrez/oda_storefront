@@ -117,6 +117,21 @@ function normalizeArray(values?: string[]) {
   return Array.from(new Set(values)).sort();
 }
 
+function normalizePriceRanges(ranges?: Array<{ min?: number; max?: number }>) {
+  if (!ranges || ranges.length === 0) return undefined;
+  const tokens = ranges
+    .map((range) => {
+      const min = typeof range.min === "number" && Number.isFinite(range.min) ? Math.floor(range.min) : null;
+      const max = typeof range.max === "number" && Number.isFinite(range.max) ? Math.floor(range.max) : null;
+      if (min === null && max === null) return null;
+      if (min !== null && max !== null && max < min) return null;
+      return `${min ?? ""}:${max ?? ""}`;
+    })
+    .filter((token): token is string => Boolean(token));
+  if (tokens.length === 0) return undefined;
+  return Array.from(new Set(tokens)).sort();
+}
+
 function buildFacetsCacheKey(filters: CatalogFilters) {
   const key: Record<string, unknown> = {};
   if (filters.q) key.q = filters.q.toLowerCase();
@@ -132,8 +147,13 @@ function buildFacetsCacheKey(filters: CatalogFilters) {
   if (filters.occasions?.length) key.occasions = normalizeArray(filters.occasions);
   if (filters.seasons?.length) key.seasons = normalizeArray(filters.seasons);
   if (filters.styles?.length) key.styles = normalizeArray(filters.styles);
-  if (filters.priceMin !== undefined) key.priceMin = filters.priceMin;
-  if (filters.priceMax !== undefined) key.priceMax = filters.priceMax;
+  const priceRanges = normalizePriceRanges(filters.priceRanges);
+  if (priceRanges) {
+    key.priceRanges = priceRanges;
+  } else {
+    if (filters.priceMin !== undefined) key.priceMin = filters.priceMin;
+    if (filters.priceMax !== undefined) key.priceMax = filters.priceMax;
+  }
   if (filters.inStock) key.inStock = 1;
   if (filters.enrichedOnly) key.enrichedOnly = 1;
   return JSON.stringify(key);
@@ -241,7 +261,7 @@ export async function getCatalogSubcategories(filters: CatalogFilters): Promise<
 
 export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<CatalogPriceBounds> {
   // El slider debe mostrar el rango disponible segun filtros (pero sin que el propio rango limite el dominio).
-  const boundsFilters = omitFilters(filters, ["priceMin", "priceMax"]);
+  const boundsFilters = omitFilters(filters, ["priceMin", "priceMax", "priceRanges"]);
   const cacheKey = buildFacetsCacheKey(boundsFilters);
   const cached = unstable_cache(
     async () => {
@@ -278,7 +298,7 @@ export async function getCatalogPriceInsights(
   filters: CatalogFilters,
   bucketCount = 18,
 ): Promise<CatalogPriceInsights> {
-  const boundsFilters = omitFilters(filters, ["priceMin", "priceMax"]);
+  const boundsFilters = omitFilters(filters, ["priceMin", "priceMax", "priceRanges"]);
   const cacheKey = `${buildFacetsCacheKey(boundsFilters)}::buckets:${bucketCount}`;
   const cached = unstable_cache(
     async () => {

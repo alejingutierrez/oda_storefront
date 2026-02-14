@@ -84,11 +84,12 @@ export default function CatalogToolbar({
 
     let count = 0;
 
-    const hasPrice = next.has("price_min") || next.has("price_max");
+    const hasPrice = next.has("price_min") || next.has("price_max") || next.has("price_range");
     if (hasPrice) {
       count += 1;
       next.delete("price_min");
       next.delete("price_max");
+      next.delete("price_range");
     }
 
     const keys = ["gender", "category", "subcategory", "brandId", "color", "material", "pattern"];
@@ -99,7 +100,7 @@ export default function CatalogToolbar({
     }
 
     // Cuenta cualquier filtro extra no contemplado arriba.
-    for (const _ of next.entries()) count += 1;
+    count += Array.from(next).length;
     return count;
   }, [params]);
 
@@ -274,7 +275,7 @@ export default function CatalogToolbar({
             aria-label="Cerrar guardados"
             onClick={() => setSavedOpen(false)}
           />
-          <div className="absolute right-0 top-0 flex h-full w-full max-w-[26rem] flex-col border-l border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] shadow-[0_30px_90px_rgba(23,21,19,0.35)]">
+          <div className="absolute right-0 top-0 flex h-full w-full max-w-[26rem] flex-col border-l border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] pr-[env(safe-area-inset-right)] shadow-[0_30px_90px_rgba(23,21,19,0.35)]">
             <div className="flex items-center justify-between gap-3 border-b border-[color:var(--oda-border)] bg-white px-5 py-4">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
@@ -344,10 +345,11 @@ export default function CatalogToolbar({
                         <button
                           type="button"
                           onClick={() => deleteSavedSearch(item.id)}
-                          className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]"
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-sm font-semibold text-[color:var(--oda-taupe)] transition hover:bg-[color:var(--oda-stone)]"
                           title="Eliminar"
+                          aria-label={`Eliminar ${item.name}`}
                         >
-                          Quitar
+                          ×
                         </button>
                       </div>
                     ))}

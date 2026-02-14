@@ -20,6 +20,39 @@ type PersistedState = {
   items: CatalogProduct[];
 };
 
+type MobileLayoutState = {
+  version: 1;
+  columns: 1 | 2;
+  aspect: "original" | "portrait" | "square";
+};
+
+const MOBILE_LAYOUT_KEY = "oda_catalog_mobile_layout_v1";
+
+function readMobileLayout(): MobileLayoutState {
+  if (typeof window === "undefined") return { version: 1, columns: 1, aspect: "original" };
+  try {
+    const raw = window.localStorage.getItem(MOBILE_LAYOUT_KEY);
+    if (!raw) return { version: 1, columns: 1, aspect: "original" };
+    const parsed = JSON.parse(raw) as Partial<MobileLayoutState> | null;
+    if (!parsed || parsed.version !== 1) return { version: 1, columns: 1, aspect: "original" };
+    const columns = parsed.columns === 2 ? 2 : 1;
+    const aspect =
+      parsed.aspect === "portrait" || parsed.aspect === "square" ? parsed.aspect : "original";
+    return { version: 1, columns, aspect };
+  } catch {
+    return { version: 1, columns: 1, aspect: "original" };
+  }
+}
+
+function writeMobileLayout(state: MobileLayoutState) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(MOBILE_LAYOUT_KEY, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+}
+
 function readPersisted(key: string): PersistedState | null {
   if (typeof window === "undefined") return null;
   try {
@@ -111,16 +144,24 @@ export default function CatalogProductsInfinite({
   } | null>(null);
   const previewAbortRef = useRef<AbortController | null>(null);
 
+  const [mobileLayout, setMobileLayout] = useState<MobileLayoutState>(() => readMobileLayout());
+  useEffect(() => {
+    writeMobileLayout(mobileLayout);
+  }, [mobileLayout]);
+
   const gridClassName = useMemo(() => {
-    const base = "grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 md:grid-cols-3";
+    const baseCols =
+      mobileLayout.columns === 2 ? "grid-cols-2 gap-3 sm:gap-6" : "grid-cols-1 gap-4 sm:gap-6";
+    const base = `grid ${baseCols} sm:grid-cols-2 md:grid-cols-3`;
     return filtersCollapsed ? `${base} lg:grid-cols-4` : `${base} lg:grid-cols-3`;
-  }, [filtersCollapsed]);
+  }, [filtersCollapsed, mobileLayout.columns]);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadedIdsRef = useRef(new Set((restored?.items ?? initialItems).map((item) => item.id)));
   const prefetchRef = useRef<Record<number, ApiResponse>>({});
   const scrollYRef = useRef(restored?.scrollY ?? 0);
   const persistTimeoutRef = useRef<number | null>(null);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     if (!navigationPending) {
@@ -240,7 +281,8 @@ export default function CatalogProductsInfinite({
 
   const loadMore = useCallback(async () => {
     if (navigationPending) return;
-    if (loading || !hasMore) return;
+    if (loadingRef.current || loading || !hasMore) return;
+    loadingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -280,6 +322,7 @@ export default function CatalogProductsInfinite({
       const message = err instanceof Error ? err.message : "load_failed";
       setError(message);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }, [hasMore, initialSearchParams, loading, navigationPending, page]);
@@ -300,9 +343,9 @@ export default function CatalogProductsInfinite({
       type RequestIdleCallbackFn = (cb: () => void, opts?: { timeout?: number }) => number;
       const ric = (window as unknown as { requestIdleCallback?: RequestIdleCallbackFn }).requestIdleCallback;
       if (ric) {
-        ric(fn, { timeout: 1200 });
+        ric(fn, { timeout: 650 });
       } else {
-        window.setTimeout(fn, 350);
+        window.setTimeout(fn, 140);
       }
     };
 
@@ -335,10 +378,47 @@ export default function CatalogProductsInfinite({
           void loadMore();
         }
       },
-      { rootMargin: "900px" },
+      { rootMargin: "1200px" },
     );
     observer.observe(node);
     return () => observer.disconnect();
+  }, [hasMore, loadMore, navigationPending]);
+
+  // Fallback: en algunos móviles el IntersectionObserver puede ser intermitente (targets sin alto, iOS quirks).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (navigationPending) return;
+    if (!hasMore) return;
+
+    const thresholdPx = 1200;
+    let raf: number | null = null;
+
+    const check = () => {
+      raf = null;
+      if (loadingRef.current) return;
+      const doc = document.documentElement;
+      const scrollY = window.scrollY || 0;
+      const viewport = window.innerHeight || 0;
+      const height = doc.scrollHeight || 0;
+      if (!height) return;
+      if (scrollY + viewport >= height - thresholdPx) {
+        void loadMore();
+      }
+    };
+
+    const onScroll = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(check);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    check();
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
   }, [hasMore, loadMore, navigationPending]);
 
   if (!navigationPending && display.items.length === 0) {
@@ -364,6 +444,98 @@ export default function CatalogProductsInfinite({
     <CompareProvider>
       <div className="flex flex-col gap-6">
         <div id="catalog-results" className="scroll-mt-32">
+          <div className="lg:hidden">
+            <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-4 py-3 shadow-[0_16px_40px_rgba(23,21,19,0.06)]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                    Columnas
+                  </span>
+                  <div className="inline-flex overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)]">
+                    <button
+                      type="button"
+                      onClick={() => setMobileLayout((prev) => ({ ...prev, columns: 1 }))}
+                      className={[
+                        "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
+                        mobileLayout.columns === 1
+                          ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                          : "text-[color:var(--oda-ink)]",
+                      ].join(" ")}
+                      aria-pressed={mobileLayout.columns === 1}
+                      title="1 por fila"
+                    >
+                      1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMobileLayout((prev) => ({ ...prev, columns: 2 }))}
+                      className={[
+                        "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
+                        mobileLayout.columns === 2
+                          ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                          : "text-[color:var(--oda-ink)]",
+                      ].join(" ")}
+                      aria-pressed={mobileLayout.columns === 2}
+                      title="2 por fila"
+                    >
+                      2
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                    Formato
+                  </span>
+                  <div className="inline-flex overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)]">
+                    <button
+                      type="button"
+                      onClick={() => setMobileLayout((prev) => ({ ...prev, aspect: "original" }))}
+                      className={[
+                        "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
+                        mobileLayout.aspect === "original"
+                          ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                          : "text-[color:var(--oda-ink)]",
+                      ].join(" ")}
+                      aria-pressed={mobileLayout.aspect === "original"}
+                      title="Original (3:4)"
+                    >
+                      3:4
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMobileLayout((prev) => ({ ...prev, aspect: "portrait" }))}
+                      className={[
+                        "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
+                        mobileLayout.aspect === "portrait"
+                          ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                          : "text-[color:var(--oda-ink)]",
+                      ].join(" ")}
+                      aria-pressed={mobileLayout.aspect === "portrait"}
+                      title="Vertical (4:5)"
+                    >
+                      4:5
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMobileLayout((prev) => ({ ...prev, aspect: "square" }))}
+                      className={[
+                        "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
+                        mobileLayout.aspect === "square"
+                          ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                          : "text-[color:var(--oda-ink)]",
+                      ].join(" ")}
+                      aria-pressed={mobileLayout.aspect === "square"}
+                      title="Cuadrado (1:1)"
+                    >
+                      1:1
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {navigationPending && !preview ? (
             <div className="grid gap-4">
               <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
@@ -374,7 +546,12 @@ export default function CatalogProductsInfinite({
           ) : (
             <div className={gridClassName}>
               {display.items.map((product) => (
-                <CatalogProductCard key={product.id} product={product} />
+                <CatalogProductCard
+                  key={product.id}
+                  product={product}
+                  mobileAspect={mobileLayout.aspect}
+                  mobileCompact={mobileLayout.columns === 2}
+                />
               ))}
             </div>
           )}
@@ -422,7 +599,7 @@ export default function CatalogProductsInfinite({
 
           {hasMore ? (
             <div className="w-full">
-              <div ref={sentinelRef} />
+              <div ref={sentinelRef} className="h-px w-full" />
               <div className="mt-2 flex items-center justify-center">
                 <button
                   type="button"
@@ -446,6 +623,52 @@ export default function CatalogProductsInfinite({
       </div>
 
       <CompareBar />
+
+      <ToTopButton />
     </CompareProvider>
+  );
+}
+
+function ToTopButton() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let raf: number | null = null;
+
+    const check = () => {
+      raf = null;
+      setVisible((window.scrollY || 0) > 900);
+    };
+
+    const onScroll = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(check);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    check();
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+      }}
+      className="fixed bottom-[calc(var(--oda-mobile-dock-h)+var(--oda-mobile-dock-gap)+4.25rem)] right-4 z-40 inline-flex items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/92 px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] shadow-[0_20px_60px_rgba(23,21,19,0.20)] backdrop-blur transition hover:bg-[color:var(--oda-stone)] lg:bottom-6"
+      aria-label="Volver arriba"
+      title="Arriba"
+    >
+      Arriba
+    </button>
   );
 }

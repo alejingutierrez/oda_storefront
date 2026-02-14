@@ -122,7 +122,7 @@ export default function CompareBar() {
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] z-40 px-4 lg:bottom-6 lg:px-6">
+      <div className="fixed inset-x-0 bottom-[calc(var(--oda-mobile-dock-h)+var(--oda-mobile-dock-gap))] z-40 px-4 lg:bottom-6 lg:px-6">
         <div className="mx-auto flex w-full max-w-[1320px] items-center justify-between gap-3 rounded-xl border border-[color:var(--oda-border)] bg-white/92 px-3 py-2 shadow-[0_24px_70px_rgba(23,21,19,0.16)] backdrop-blur">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
@@ -231,7 +231,7 @@ export default function CompareBar() {
                       key={item.id}
                       className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-4 shadow-[0_16px_40px_rgba(23,21,19,0.10)]"
                     >
-                      <div className="aspect-[3/4] w-full rounded-xl bg-[color:var(--oda-stone)]" />
+                      <div className="aspect-square w-full rounded-xl bg-[color:var(--oda-stone)]" />
                       <div className="mt-4 grid gap-2">
                         <div className="h-3 w-20 rounded-full bg-[color:var(--oda-stone)]" />
                         <div className="h-4 w-32 rounded-full bg-[color:var(--oda-stone)]" />
@@ -358,7 +358,7 @@ export default function CompareBar() {
                         key={item.id}
                         className="snap-center shrink-0 w-[80%] rounded-2xl border border-[color:var(--oda-border)] bg-white shadow-[0_16px_40px_rgba(23,21,19,0.10)]"
                       >
-                        <div className="relative aspect-[3/4] w-full overflow-hidden rounded-t-2xl bg-[color:var(--oda-stone)]">
+                        <div className="relative aspect-square w-full overflow-hidden rounded-t-2xl bg-[color:var(--oda-stone)]">
                           {src ? (
                             <Image
                               src={src}

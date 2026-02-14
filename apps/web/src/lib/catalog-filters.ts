@@ -48,6 +48,37 @@ export function getNumberParamFromSearch(params: URLSearchParams, key: string): 
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function parsePriceRanges(values?: string[]): Array<{ min?: number; max?: number }> | undefined {
+  if (!values || values.length === 0) return undefined;
+  const ranges: Array<{ min?: number; max?: number }> = [];
+
+  for (const raw of values) {
+    const token = String(raw || "").trim();
+    if (!token) continue;
+
+    const parts = token.includes(":") ? token.split(":") : token.includes("-") ? token.split("-") : null;
+    if (!parts || parts.length !== 2) continue;
+
+    const [minRaw, maxRaw] = parts;
+    const minValue = minRaw.trim().length > 0 ? Number(minRaw.trim()) : null;
+    const maxValue = maxRaw.trim().length > 0 ? Number(maxRaw.trim()) : null;
+
+    const min = minValue !== null && Number.isFinite(minValue) ? Math.max(0, Math.floor(minValue)) : null;
+    const max = maxValue !== null && Number.isFinite(maxValue) ? Math.max(0, Math.floor(maxValue)) : null;
+
+    if (min === null && max === null) continue;
+    if (min !== null && max !== null && max < min) continue;
+
+    const out: { min?: number; max?: number } = {};
+    if (min !== null) out.min = min;
+    if (max !== null) out.max = max;
+    ranges.push(out);
+  }
+
+  if (ranges.length === 0) return undefined;
+  return ranges;
+}
+
 export function getBooleanParamFromSearch(params: URLSearchParams, key: string): boolean {
   const value = getParamFromSearch(params, key);
   if (!value) return false;
@@ -69,14 +100,16 @@ export function parseGenderList(values?: string[]): GenderKey[] | undefined {
 }
 
 export function parseCatalogFiltersFromSearchParams(params: URLSearchParams): CatalogFilters {
+  const priceRanges = parsePriceRanges(getListFromSearch(params, "price_range"));
   return {
     q: getParamFromSearch(params, "q"),
     categories: getListFromSearch(params, "category"),
     subcategories: getListFromSearch(params, "subcategory"),
     genders: parseGenderList(getListFromSearch(params, "gender")),
     brandIds: getListFromSearch(params, "brandId"),
-    priceMin: getNumberParamFromSearch(params, "price_min"),
-    priceMax: getNumberParamFromSearch(params, "price_max"),
+    priceMin: priceRanges ? undefined : getNumberParamFromSearch(params, "price_min"),
+    priceMax: priceRanges ? undefined : getNumberParamFromSearch(params, "price_max"),
+    priceRanges,
     colors: getListFromSearch(params, "color"),
     sizes: getListFromSearch(params, "size"),
     fits: getListFromSearch(params, "fit"),

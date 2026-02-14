@@ -9,6 +9,9 @@ export type CatalogFilters = {
   brandIds?: string[];
   priceMin?: number;
   priceMax?: number;
+  // Unión disjunta de rangos de precio (p.ej. [:200000], [400000:700000], [800000:]).
+  // Si existe, tiene prioridad sobre `priceMin/priceMax`.
+  priceRanges?: Array<{ min?: number; max?: number }>;
   colors?: string[];
   sizes?: string[];
   fits?: string[];
@@ -169,11 +172,27 @@ export function buildVariantConditions(filters: CatalogFilters): Prisma.Sql[] {
   if (filters.fits && filters.fits.length > 0) {
     variantConditions.push(Prisma.sql`v.fit in (${Prisma.join(filters.fits)})`);
   }
-  if (filters.priceMin !== undefined) {
-    variantConditions.push(Prisma.sql`v.price >= ${filters.priceMin}`);
-  }
-  if (filters.priceMax !== undefined) {
-    variantConditions.push(Prisma.sql`v.price <= ${filters.priceMax}`);
+  if (filters.priceRanges && filters.priceRanges.length > 0) {
+    const parts: Prisma.Sql[] = [];
+    for (const range of filters.priceRanges) {
+      const min = typeof range.min === "number" && Number.isFinite(range.min) ? range.min : null;
+      const max = typeof range.max === "number" && Number.isFinite(range.max) ? range.max : null;
+      if (min === null && max === null) continue;
+      if (min !== null && max !== null && max < min) continue;
+      if (min !== null && max !== null) parts.push(Prisma.sql`(v.price between ${min} and ${max})`);
+      else if (min !== null) parts.push(Prisma.sql`(v.price >= ${min})`);
+      else if (max !== null) parts.push(Prisma.sql`(v.price <= ${max})`);
+    }
+    if (parts.length > 0) {
+      variantConditions.push(Prisma.sql`(${Prisma.join(parts, " or ")})`);
+    }
+  } else {
+    if (filters.priceMin !== undefined) {
+      variantConditions.push(Prisma.sql`v.price >= ${filters.priceMin}`);
+    }
+    if (filters.priceMax !== undefined) {
+      variantConditions.push(Prisma.sql`v.price <= ${filters.priceMax}`);
+    }
   }
   if (filters.inStock) {
     variantConditions.push(

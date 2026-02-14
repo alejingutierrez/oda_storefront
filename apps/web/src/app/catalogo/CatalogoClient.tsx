@@ -32,6 +32,30 @@ function isAbortError(err: unknown) {
   return false;
 }
 
+function normalizeSearchKey(raw: string) {
+  const input = (raw ?? "").trim();
+  if (!input) return "";
+
+  const params = new URLSearchParams(input);
+  const map = new Map<string, string[]>();
+  for (const [key, value] of params.entries()) {
+    const cleaned = value.trim();
+    if (!cleaned) continue;
+    const list = map.get(key) ?? [];
+    list.push(cleaned);
+    map.set(key, list);
+  }
+
+  const keys = Array.from(map.keys()).sort();
+  const out = new URLSearchParams();
+  for (const key of keys) {
+    const values = map.get(key) ?? [];
+    if (values.length > 1) values.sort();
+    for (const value of values) out.append(key, value);
+  }
+  return out.toString();
+}
+
 function FiltersSkeleton() {
   return (
     <div className="flex flex-col gap-6">
@@ -95,19 +119,25 @@ export default function CatalogoClient({
     const next = new URLSearchParams(params.toString());
     next.delete("page");
     next.delete("sort");
-    return next.toString();
+    return normalizeSearchKey(next.toString());
   }, [params]);
 
-  const uiSearchKey = useMemo(() => {
+  const uiSearchKeyRaw = useMemo(() => {
     const next = new URLSearchParams(params.toString());
     next.delete("page");
     return next.toString();
   }, [params]);
 
+  const uiSearchKey = useMemo(() => normalizeSearchKey(uiSearchKeyRaw), [uiSearchKeyRaw]);
+  const initialSearchKey = useMemo(
+    () => normalizeSearchKey(initialSearchParams),
+    [initialSearchParams],
+  );
+
   // Cuando el usuario cambia filtros (router.replace), `useSearchParams()` se actualiza antes
   // de que lleguen los nuevos props SSR. En ese lapso, evitamos "re-key" del grid para no
   // mostrar productos antiguos bajo filtros nuevos.
-  const navigationPending = uiSearchKey !== initialSearchParams;
+  const navigationPending = uiSearchKey !== initialSearchKey;
 
   const [facets, setFacets] = useState<FacetsLite | null>(null);
   const [facetsLoading, setFacetsLoading] = useState(false);
@@ -154,7 +184,7 @@ export default function CatalogoClient({
   const priceBounds: CatalogPriceBounds = { min: null, max: null };
 
   return (
-    <section className="oda-container pb-28 pt-10 lg:pb-16">
+    <section className="oda-container pb-[calc(var(--oda-mobile-dock-h)+1.25rem)] pt-10 lg:pb-16">
       <div className="flex flex-col gap-6">
         <div className="flex items-end justify-between gap-6">
           <div>
@@ -200,21 +230,21 @@ export default function CatalogoClient({
               <CatalogToolbar
                 totalCount={totalCount}
                 activeBrandCount={activeBrandCount}
-                searchKey={uiSearchKey || initialSearchParams}
+                searchKey={uiSearchKey || initialSearchKey}
                 filtersCollapsed={filtersCollapsed}
                 onToggleFiltersCollapsed={toggleFiltersCollapsed}
               />
             </div>
 
-            <CatalogProductsInfinite
-              key={initialSearchParams}
-              initialItems={initialItems}
-              totalCount={totalCount}
-              initialSearchParams={initialSearchParams}
-              navigationPending={navigationPending}
-              optimisticSearchParams={uiSearchKey}
-              filtersCollapsed={filtersCollapsed}
-            />
+              <CatalogProductsInfinite
+                key={initialSearchParams}
+                initialItems={initialItems}
+                totalCount={totalCount}
+                initialSearchParams={initialSearchParams}
+                navigationPending={navigationPending}
+                optimisticSearchParams={uiSearchKey}
+                filtersCollapsed={filtersCollapsed}
+              />
           </div>
         </div>
       </div>

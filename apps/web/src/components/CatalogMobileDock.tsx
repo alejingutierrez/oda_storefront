@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import CatalogoFiltersPanel from "@/components/CatalogoFiltersPanel";
 import type { CatalogPriceBounds } from "@/lib/catalog-data";
@@ -25,11 +25,17 @@ type Facets = {
 
 function countActiveFilters(params: URLSearchParams) {
   let count = 0;
+  let hasPrice = false;
   for (const [key, value] of params.entries()) {
     if (key === "sort" || key === "page") continue;
     if (value.trim().length === 0) continue;
+    if (key === "price_min" || key === "price_max" || key === "price_range") {
+      hasPrice = true;
+      continue;
+    }
     count += 1;
   }
+  if (hasPrice) count += 1;
   return count;
 }
 
@@ -52,6 +58,35 @@ export default function CatalogMobileDock({
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const dockRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = dockRef.current;
+    if (!node) return;
+
+    const root = document.documentElement;
+    const commit = () => {
+      const height = Math.ceil(node.getBoundingClientRect().height || 0);
+      if (!height) return;
+      root.style.setProperty("--oda-mobile-dock-h", `${height}px`);
+    };
+
+    commit();
+
+    const onResize = () => commit();
+    window.addEventListener("resize", onResize);
+
+    if (typeof ResizeObserver === "undefined") {
+      return () => window.removeEventListener("resize", onResize);
+    }
+
+    const ro = new ResizeObserver(() => commit());
+    ro.observe(node);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
 
   const sort = params.get("sort") ?? "new";
   const hasFilters = useMemo(() => {
@@ -119,7 +154,10 @@ export default function CatalogMobileDock({
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[color:var(--oda-border)] bg-white/92 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur lg:hidden">
+      <div
+        ref={dockRef}
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-[color:var(--oda-border)] bg-white/92 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-18px_50px_rgba(23,21,19,0.10)] backdrop-blur lg:hidden"
+      >
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"

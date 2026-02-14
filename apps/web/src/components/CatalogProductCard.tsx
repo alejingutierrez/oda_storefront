@@ -74,7 +74,15 @@ function CompareIcon({ active }: { active: boolean }) {
   );
 }
 
-export default function CatalogProductCard({ product }: { product: CatalogProduct }) {
+export default function CatalogProductCard({
+  product,
+  mobileAspect = "original",
+  mobileCompact = false,
+}: {
+  product: CatalogProduct;
+  mobileAspect?: "original" | "portrait" | "square";
+  mobileCompact?: boolean;
+}) {
   const compare = useCompare();
   const href = product.sourceUrl ?? "#";
   const coverUrl = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
@@ -214,42 +222,65 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
 
   const activeImageUrl = images[activeIndex] ?? coverUrl ?? null;
 
-  // Crossfade: mantenemos una imagen base y montamos una overlay que hace fade-in.
-  // Esto mejora la percepcion del carrusel (menos "blink" al cambiar src).
+  // Crossfade: mantenemos una imagen base y montamos una overlay que hace fade-in
+  // solo cuando la nueva imagen termina de cargar (evita flicker/flash blanco).
   const [baseImageUrl, setBaseImageUrl] = useState<string | null>(() => activeImageUrl);
-  const [transitionImageUrl, setTransitionImageUrl] = useState<string | null>(null);
-  const transitionTimeoutRef = useRef<number | null>(null);
+  const [overlayImageUrl, setOverlayImageUrl] = useState<string | null>(null);
+  const [overlayVisible, setOverlayVisible] = useState(false);
+  const overlayTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (transitionTimeoutRef.current) {
-      window.clearTimeout(transitionTimeoutRef.current);
-      transitionTimeoutRef.current = null;
+    if (overlayTimeoutRef.current) {
+      window.clearTimeout(overlayTimeoutRef.current);
+      overlayTimeoutRef.current = null;
     }
+
     if (!activeImageUrl) {
       setBaseImageUrl(null);
-      setTransitionImageUrl(null);
+      setOverlayImageUrl(null);
+      setOverlayVisible(false);
       return;
     }
+
     if (!baseImageUrl) {
       setBaseImageUrl(activeImageUrl);
-      setTransitionImageUrl(null);
+      setOverlayImageUrl(null);
+      setOverlayVisible(false);
       return;
     }
+
     if (activeImageUrl === baseImageUrl) return;
 
-    setTransitionImageUrl(activeImageUrl);
-    transitionTimeoutRef.current = window.setTimeout(() => {
-      setBaseImageUrl(activeImageUrl);
-      setTransitionImageUrl(null);
-      transitionTimeoutRef.current = null;
-    }, 620);
+    setOverlayImageUrl(activeImageUrl);
+    setOverlayVisible(false);
+
     return () => {
-      if (transitionTimeoutRef.current) {
-        window.clearTimeout(transitionTimeoutRef.current);
-        transitionTimeoutRef.current = null;
+      if (overlayTimeoutRef.current) {
+        window.clearTimeout(overlayTimeoutRef.current);
+        overlayTimeoutRef.current = null;
       }
     };
   }, [activeImageUrl, baseImageUrl]);
+
+  const aspectClass =
+    mobileAspect === "square"
+      ? "aspect-square"
+      : mobileAspect === "portrait"
+        ? "aspect-[4/5]"
+        : "aspect-[3/4]";
+
+  const cornerSize = mobileCompact ? "h-8 w-8" : "h-9 w-9";
+  const cornerInset = mobileCompact ? "left-2 top-2" : "left-3 top-3";
+  const favInset = mobileCompact ? "right-2 top-2" : "right-3 top-3";
+
+  const glassHeight =
+    mobileAspect === "square"
+      ? mobileCompact
+        ? "h-[34%]"
+        : "h-[28%]"
+      : mobileCompact
+        ? "h-[28%]"
+        : "h-[22%]";
 
   const priceLabel = useMemo(
     () => formatPriceRange(product.minPrice, product.maxPrice, product.currency),
@@ -269,7 +300,7 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
       }}
     >
       {compare ? (
-        <div className="absolute left-3 top-3 z-10">
+        <div className={["absolute z-10", cornerInset].join(" ")}>
           <button
             type="button"
             onClick={(event) => {
@@ -280,7 +311,7 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
             aria-pressed={compared}
             aria-label={compared ? "Quitar de comparar" : "Agregar a comparar"}
             className={[
-              "inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/50 shadow-[0_18px_50px_rgba(23,21,19,0.16)] backdrop-blur transition lg:h-10 lg:w-10",
+              `inline-flex ${cornerSize} items-center justify-center rounded-full border border-white/50 shadow-[0_18px_50px_rgba(23,21,19,0.16)] backdrop-blur transition lg:h-10 lg:w-10`,
               compared
                 ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
                 : "bg-white/70 text-[color:var(--oda-ink)] hover:bg-white",
@@ -291,17 +322,21 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
           </button>
         </div>
       ) : null}
-      <div className="absolute right-3 top-3 z-10">
+      <div className={["absolute z-10", favInset].join(" ")}>
         <FavoriteToggle
           productId={product.id}
           ariaLabel={`Guardar ${product.name} en favoritos`}
-          className="h-9 w-9 lg:h-10 lg:w-10"
+          className={[cornerSize, "lg:h-10 lg:w-10"].join(" ")}
         />
       </div>
       <Link
         href={href}
         ref={viewRef}
-        className="relative block aspect-[3/4] w-full overflow-hidden bg-[color:var(--oda-stone)]"
+        className={[
+          "relative block w-full overflow-hidden bg-[color:var(--oda-stone)]",
+          aspectClass,
+          "lg:aspect-[3/4]",
+        ].join(" ")}
       >
         {baseImageUrl ? (
           <>
@@ -310,21 +345,46 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
               alt={product.name}
               fill
               unoptimized={!!baseImageUrl && baseImageUrl.startsWith("/api/image-proxy")}
-              sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
+              sizes={
+                mobileCompact
+                  ? "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 46vw"
+                  : "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
+              }
               className="object-cover object-center transition duration-700 group-hover:scale-[1.07] group-hover:-translate-y-1 motion-reduce:transition-none"
               placeholder="blur"
               blurDataURL={IMAGE_BLUR_DATA_URL}
               priority={false}
             />
-            {transitionImageUrl ? (
+            {overlayImageUrl ? (
               <Image
-                key={transitionImageUrl}
-                src={transitionImageUrl}
+                key={overlayImageUrl}
+                src={overlayImageUrl}
                 alt={product.name}
                 fill
-                unoptimized={!!transitionImageUrl && transitionImageUrl.startsWith("/api/image-proxy")}
-                sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
-                className="object-cover object-center oda-fade-in transition duration-700 group-hover:scale-[1.07] group-hover:-translate-y-1 motion-reduce:animate-none motion-reduce:transition-none"
+                unoptimized={!!overlayImageUrl && overlayImageUrl.startsWith("/api/image-proxy")}
+                sizes={
+                  mobileCompact
+                    ? "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 46vw"
+                    : "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
+                }
+                onLoadingComplete={() => {
+                  // Fade-in, then commit the overlay as the new base.
+                  setOverlayVisible(true);
+                  if (overlayTimeoutRef.current) {
+                    window.clearTimeout(overlayTimeoutRef.current);
+                  }
+                  overlayTimeoutRef.current = window.setTimeout(() => {
+                    setBaseImageUrl(overlayImageUrl);
+                    setOverlayImageUrl(null);
+                    setOverlayVisible(false);
+                    overlayTimeoutRef.current = null;
+                  }, 360);
+                }}
+                className={[
+                  "object-cover object-center transition-[opacity,transform] duration-400 ease-out",
+                  overlayVisible ? "opacity-100" : "opacity-0",
+                  "group-hover:scale-[1.07] group-hover:-translate-y-1 motion-reduce:transition-none",
+                ].join(" ")}
                 placeholder="blur"
                 blurDataURL={IMAGE_BLUR_DATA_URL}
                 priority={false}
@@ -340,24 +400,78 @@ export default function CatalogProductCard({ product }: { product: CatalogProduc
         {/* Mobile: siempre visible (bottom glass). Desktop: aparece al hover desde abajo. */}
         <div
           className={[
-            "absolute inset-x-0 bottom-0 h-[22%] border-t border-white/40 bg-white/45 backdrop-blur-xl",
+            `absolute inset-x-0 bottom-0 ${glassHeight} border-t border-white/40 bg-white/45 backdrop-blur-xl`,
             "transition duration-500",
             "lg:h-[26%] lg:translate-y-6 lg:opacity-0 lg:group-hover:translate-y-0 lg:group-hover:opacity-100",
           ].join(" ")}
         >
-          <div className="flex h-full flex-col justify-start gap-1.5 px-3 py-2.5 lg:px-4 lg:py-4">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-[color:var(--oda-ink-soft)] lg:text-[10px]">
-              {product.brandName}
-            </p>
-            <h3 className="truncate text-[13px] font-semibold leading-snug text-[color:var(--oda-ink)] lg:text-sm">
+          <div
+            className={[
+              "flex h-full flex-col justify-start gap-1.5 lg:px-4 lg:py-4",
+              mobileCompact ? "px-2.5 py-2" : "px-3 py-2.5",
+            ].join(" ")}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p
+                className={[
+                  "font-semibold uppercase tracking-[0.28em] text-[color:var(--oda-ink-soft)] lg:text-[10px]",
+                  mobileCompact ? "text-[8px]" : "text-[9px]",
+                ].join(" ")}
+              >
+                {product.brandName}
+              </p>
+              <span
+                className={[
+                  "inline-flex items-center justify-center rounded-full border border-white/50 bg-white/55 text-[color:var(--oda-ink)] shadow-[0_12px_28px_rgba(23,21,19,0.10)] backdrop-blur",
+                  mobileCompact ? "h-8 w-8" : "h-9 w-9",
+                  "lg:opacity-0 lg:group-hover:opacity-100 lg:transition",
+                ].join(" ")}
+                aria-hidden="true"
+                title="Ver en tienda"
+              >
+                <CartIcon />
+              </span>
+            </div>
+            <h3
+              className={[
+                "font-semibold leading-snug text-[color:var(--oda-ink)] lg:text-sm",
+                mobileCompact ? "text-[12px] line-clamp-2" : "text-[13px] truncate",
+              ].join(" ")}
+            >
               {product.name}
             </h3>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)] lg:text-xs">
+            <p
+              className={[
+                "uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)] lg:text-xs",
+                mobileCompact ? "text-[9px]" : "text-[10px]",
+              ].join(" ")}
+            >
               {priceLabel}
             </p>
           </div>
         </div>
       </Link>
     </article>
+  );
+}
+
+function CartIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 6h15l-1.5 9H7.2L6 6Z" />
+      <path d="M6 6 5 3H2" />
+      <path d="M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />
+      <path d="M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />
+    </svg>
   );
 }
