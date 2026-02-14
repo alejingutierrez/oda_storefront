@@ -86,6 +86,19 @@ const CASES: Case[] = [
     },
   },
   {
+    name: "Camiseta Tipo Polo Negra para Hombre",
+    description: "Polo negro de manga corta para hombre con cuello tipo polo y botones.",
+    seoTags: ["polo negro hombre", "camiseta polo algodon", "polo manga corta"],
+    currentCategory: "camisetas_y_tops",
+    currentSubcategory: "polo",
+    expect: {
+      inferredCategory: "camisetas_y_tops",
+      inferredSubcategory: "polo",
+      nameSubcategory: "polo",
+      notNameSubcategory: "camiseta_manga_corta",
+    },
+  },
+  {
     name: "Jorts Courage Sogno-Camel",
     expect: {
       inferredCategory: "shorts_y_bermudas",

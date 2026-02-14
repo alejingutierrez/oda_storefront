@@ -81,6 +81,7 @@ const WORD_SYNONYMS: Record<string, string[]> = {
   camiseta: ["tshirt", "t shirt", "tee", "franela"],
   top: ["bluson", "croptop", "crop top", "tank top"],
   bodysuit: ["body", "body suit"],
+  polo: ["polo shirt", "camisa polo", "pique", "piqué"],
   camisa: ["shirt", "button down"],
   blusa: ["blouse"],
   guayabera: ["shirt cubana", "camisa cubana"],

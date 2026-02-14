@@ -732,6 +732,22 @@ const shouldIgnoreSubcategoryRule = (
     return true;
   }
   if (
+    rule.category === "camisetas_y_tops" &&
+    rule.subcategory === "camiseta_cuello_alto_tortuga" &&
+    !hasAnyKeyword(text, ["cuello alto", "tortuga", "turtleneck", "high neck", "mock neck"])
+  ) {
+    // Avoid classifying as turtleneck just because the text contains the generic word "cuello".
+    return true;
+  }
+  if (
+    rule.category === "camisetas_y_tops" &&
+    (rule.subcategory === "camiseta_manga_corta" || rule.subcategory === "camiseta_manga_larga") &&
+    hasAnyKeyword(text, ["polo"])
+  ) {
+    // "Camiseta tipo polo" is still a polo; do not downgrade to generic sleeve-length tees.
+    return true;
+  }
+  if (
     rule.category === "camisas_y_blusas" &&
     rule.subcategory.startsWith("blusa_") &&
     hasAnyKeyword(text, ["camisa", "shirt", "button down", "guayabera"]) &&

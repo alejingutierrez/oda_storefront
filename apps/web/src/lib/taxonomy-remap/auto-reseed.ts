@@ -977,9 +977,12 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         }
       }
 
-      const categoryChanged = nextCategory !== currentCategory;
+      const categoryMoveThreshold = currentCategory ? 0.84 : 0.68;
+      const subMoveThreshold = currentSubcategory ? 0.78 : 0.64;
+      const categoryCandidate = categoryConfidence >= categoryMoveThreshold ? nextCategory : currentCategory;
+      const categoryCandidateChanged = categoryCandidate !== currentCategory;
 
-      const allowedSub = nextCategory ? SUBCATEGORY_BY_CATEGORY[nextCategory] ?? [] : [];
+      const allowedSub = categoryCandidate ? SUBCATEGORY_BY_CATEGORY[categoryCandidate] ?? [] : [];
 
       let nextSubcategory = currentSubcategory;
       let subConfidence = 0;
@@ -988,17 +991,18 @@ export const runTaxonomyAutoReseedBatch = async (params: {
       const isNameBackedSubcategory = Boolean(
         signals.nameSubcategory && signals.inferredSubcategory === signals.nameSubcategory,
       );
+      const allowUnbackedSubcategory = categoryCandidateChanged;
 
       if (
         signals.inferredSubcategory &&
         allowedSub.includes(signals.inferredSubcategory) &&
         signals.inferredSubcategory !== currentSubcategory &&
         (signals.signalStrength !== "weak" || !currentSubcategory) &&
-        isNameBackedSubcategory
+        (isNameBackedSubcategory || allowUnbackedSubcategory)
       ) {
         if (
           !canMoveToSubcategory({
-            category: nextCategory,
+            category: categoryCandidate,
             subcategory: signals.inferredSubcategory,
             evidenceText,
           })
@@ -1025,7 +1029,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
 
       // Always enforce category↔subcategory validity when category changes (even if the suggested
       // subcategory move was blocked and we kept the current subcategory).
-      if (categoryChanged && nextSubcategory && !allowedSub.includes(nextSubcategory)) {
+      if (categoryCandidateChanged && nextSubcategory && !allowedSub.includes(nextSubcategory)) {
         nextSubcategory = null;
         subConfidence = 0.58;
         subSupport = 1;
@@ -1061,8 +1065,6 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         });
       }
 
-      const categoryMoveThreshold = currentCategory ? 0.84 : 0.68;
-      const subMoveThreshold = currentSubcategory ? 0.78 : 0.64;
       const categoryForGender =
         nextCategory ??
         currentCategory ??
@@ -1093,7 +1095,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         genderMoveThreshold = Math.max(genderMoveThreshold, 0.86);
       }
 
-      const finalCategory = categoryConfidence >= categoryMoveThreshold ? nextCategory : currentCategory;
+      const finalCategory = categoryCandidate;
       const finalCategoryChanged = finalCategory !== currentCategory;
       const finalSubcategory = (() => {
         if (!finalCategory) return null;
@@ -1107,9 +1109,24 @@ export const runTaxonomyAutoReseedBatch = async (params: {
       })();
       const finalGender = genderConfidence >= genderMoveThreshold ? nextGender : currentGender;
 
-      const changedCategory = finalCategory !== currentCategory;
-      const changedSubcategory = finalSubcategory !== currentSubcategory;
+      let proposedCategory = finalCategory;
+      let proposedSubcategory = finalSubcategory;
+      if (finalCategoryChanged && !finalSubcategory) {
+        // Subcategory cannot be cleared in remap proposals. If we cannot confidently assign a
+        // valid subcategory for the new category, drop the category move but still allow gender moves.
+        proposedCategory = currentCategory;
+        proposedSubcategory = currentSubcategory;
+        reasons.push("blocked:category_move_missing_subcategory");
+      }
+      // Never propose clearing a subcategory (even if an internal normalization produced null).
+      if (!proposedCategory || (!finalCategoryChanged && currentSubcategory && !proposedSubcategory)) {
+        proposedSubcategory = currentSubcategory;
+      }
+
+      const changedCategory = proposedCategory !== currentCategory;
+      const changedSubcategory = proposedSubcategory !== currentSubcategory;
       const changedGender = finalGender !== currentGender;
+
       if (!changedCategory && !changedSubcategory && !changedGender) continue;
 
       const confidence = Math.max(categoryConfidence, subConfidence, genderConfidence);
@@ -1123,8 +1140,8 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         fromCategory: currentCategory,
         fromSubcategory: currentSubcategory,
         fromGender: currentGender,
-        toCategory: finalCategory,
-        toSubcategory: finalSubcategory,
+        toCategory: proposedCategory,
+        toSubcategory: proposedSubcategory,
         toGender: finalGender,
         confidence: Number(confidence.toFixed(4)),
         reasons: [...new Set(reasons)].slice(0, 8),
