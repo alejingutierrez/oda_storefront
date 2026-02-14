@@ -568,28 +568,35 @@ const canMoveToCategory = (category: string | null, evidenceText: string) => {
   ) {
     return false;
   }
-  if (
-    category === "pantalones_no_denim" &&
-    hasAnyKeyword(evidenceText, [
-      "ropa interior",
-      "underwear",
-      "brasier",
-      "bralette",
-      "panty",
-      "trusa",
-      "tanga",
-      "cachetero",
-      "brasilera",
-      "brief",
-      "boxer",
-      "calzon",
-      "calzón",
-      "calzoncillo",
-    ])
-  ) {
-    // "Culotte" is also used for underwear. If underwear evidence exists, don't move into pants.
-    return false;
-  }
+	  if (
+	    category === "pantalones_no_denim" &&
+	    hasAnyKeyword(evidenceText, [
+	      "ropa interior",
+	      "underwear",
+	      "brasier",
+	      "bralette",
+	      "panty",
+	      "pantys",
+	      "panties",
+	      "trusa",
+	      "tanga",
+	      "cachetero",
+	      "cacheteros",
+	      "cachetera",
+	      "cacheteras",
+	      "brasilera",
+	      "brief",
+	      "boxer",
+	      "boxers",
+	      "calzon",
+	      "calzón",
+	      "calzoncillo",
+	      "calzoncillos",
+	    ])
+	  ) {
+	    // "Culotte" is also used for underwear. If underwear evidence exists, don't move into pants.
+	    return false;
+	  }
   // "Set" is extremely ambiguous (home sets, gift sets, etc). Only move into clothing sets
   // if we also have garment evidence.
   if (category === "conjuntos_y_sets_2_piezas") {

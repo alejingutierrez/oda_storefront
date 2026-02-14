@@ -212,8 +212,56 @@ const CASES: Case[] = [
     name: "Camisa Blanca",
     currentCategory: "camisas_y_blusas",
     expect: {
-      nameSubcategory: "camisa_casual",
       notNameSubcategory: "camisa_formal",
+    },
+  },
+  {
+    name: "Rodeo Crop Top Set",
+    expect: {
+      inferredCategory: "camisetas_y_tops",
+      inferredSubcategory: "crop_top",
+      nameSubcategory: "crop_top",
+      notNameSubcategory: "camiseta_manga_corta",
+    },
+  },
+  {
+    name: "Charm Bulldog Latte",
+    expect: {
+      inferredCategory: "joyeria_y_bisuteria",
+      inferredSubcategory: "dijes_charms",
+      nameSubcategory: "dijes_charms",
+    },
+  },
+  {
+    name: "Charm City Corazón Cherry Cherry",
+    expect: {
+      inferredCategory: "joyeria_y_bisuteria",
+      inferredSubcategory: "dijes_charms",
+      nameSubcategory: "dijes_charms",
+    },
+  },
+  {
+    name: "GAFAS MONTURA DOBLE",
+    expect: {
+      inferredCategory: "gafas_y_optica",
+      inferredSubcategory: "monturas",
+      nameSubcategory: "monturas",
+    },
+  },
+  {
+    name: "Aretes de botas texanas",
+    expect: {
+      inferredCategory: "joyeria_y_bisuteria",
+      inferredSubcategory: "aretes_pendientes",
+      nameSubcategory: "aretes_pendientes",
+    },
+  },
+  {
+    name: "PAQUETE DE CACHETEROS TIPO CULOTTE X2",
+    expect: {
+      inferredCategory: "ropa_interior_basica",
+      inferredSubcategory: "brasilera",
+      nameSubcategory: "brasilera",
     },
   },
 ];
