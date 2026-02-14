@@ -25,7 +25,7 @@ export default function Header({ menu }: { menu: MegaMenuData }) {
             <input
               type="text"
               placeholder="Buscar"
-              className="w-72 bg-transparent text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] placeholder:text-[color:var(--oda-taupe)] focus:outline-none"
+              className="w-[28rem] bg-transparent text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] placeholder:text-[color:var(--oda-taupe)] focus:outline-none"
             />
           </div>
           <Link

@@ -315,10 +315,15 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
 
 export async function getCatalogPriceInsights(
   filters: CatalogFilters,
-  bucketCount = 18,
+  bucketCount?: number,
 ): Promise<CatalogPriceInsights> {
   const boundsFilters = omitFilters(filters, ["priceMin", "priceMax", "priceRanges"]);
-  const cacheKey = `${buildFacetsCacheKey(boundsFilters)}::buckets:${bucketCount}`;
+  const requestedBucketCount =
+    typeof bucketCount === "number" && Number.isFinite(bucketCount) && bucketCount >= 6
+      ? Math.round(bucketCount)
+      : null;
+  const bucketKey = requestedBucketCount ? String(requestedBucketCount) : "auto";
+  const cacheKey = `${buildFacetsCacheKey(boundsFilters)}::buckets:${bucketKey}`;
   const cached = unstable_cache(
     async () => {
       const { productWhere, variantWhere } = buildVariantWhere(boundsFilters);
@@ -418,6 +423,32 @@ export async function getCatalogPriceInsights(
         max: typeof max === "number" && Number.isFinite(max) ? max : null,
       };
 
+      const autoBucketCount = (input: { stats: CatalogPriceStats | null; bounds: CatalogPriceBounds }) => {
+        // Buenas prácticas: Freedman–Diaconis con IQR cuando hay suficientes datos.
+        // Con pocos datos o IQR inválido, caemos a un bucketCount estable para evitar UI inestable.
+        const DEFAULT = 18;
+        const { stats, bounds } = input;
+        if (!stats) return DEFAULT;
+        if (stats.count < 60) return DEFAULT;
+        if (typeof bounds.min !== "number" || typeof bounds.max !== "number") return DEFAULT;
+        const range = bounds.max - bounds.min;
+        if (!Number.isFinite(range) || range <= 0) return DEFAULT;
+        const p25 = stats.p25;
+        const p75 = stats.p75;
+        if (typeof p25 !== "number" || typeof p75 !== "number") return DEFAULT;
+        const iqr = p75 - p25;
+        if (!Number.isFinite(iqr) || iqr <= 0) return DEFAULT;
+        const denom = Math.cbrt(stats.count);
+        if (!Number.isFinite(denom) || denom <= 0) return DEFAULT;
+        const binWidth = (2 * iqr) / denom;
+        if (!Number.isFinite(binWidth) || binWidth <= 0) return DEFAULT;
+        const raw = Math.round(range / binWidth);
+        // Clamp para que el histograma siga siendo legible y barato de computar.
+        return Math.max(12, Math.min(28, raw || DEFAULT));
+      };
+
+      const resolvedBucketCount = requestedBucketCount ?? autoBucketCount({ stats, bounds });
+
       const histogramRangeOk =
         typeof bounds.min === "number" &&
         typeof bounds.max === "number" &&
@@ -425,7 +456,7 @@ export async function getCatalogPriceInsights(
         Number.isFinite(bounds.max) &&
         bounds.max > bounds.min;
 
-      if (!histogramRangeOk || bucketCount < 6) {
+      if (!histogramRangeOk || resolvedBucketCount < 6) {
         return { bounds, histogram: null, stats };
       }
 
@@ -440,22 +471,22 @@ export async function getCatalogPriceInsights(
           and v.price > 0
         )
         select
-          least(${bucketCount}, greatest(1, width_bucket(price, ${bounds.min}, ${bounds.max}, ${bucketCount}))) as bucket,
+          least(${resolvedBucketCount}, greatest(1, width_bucket(price, ${bounds.min}, ${bounds.max}, ${resolvedBucketCount}))) as bucket,
           count(*) as cnt
         from prices
         group by 1
         order by 1 asc
       `);
 
-      const buckets = Array.from({ length: bucketCount }, () => 0);
+      const buckets = Array.from({ length: resolvedBucketCount }, () => 0);
       for (const row of rows) {
-        const index = Math.max(0, Math.min(bucketCount - 1, Number(row.bucket) - 1));
+        const index = Math.max(0, Math.min(resolvedBucketCount - 1, Number(row.bucket) - 1));
         buckets[index] = Number(row.cnt ?? 0);
       }
 
       return {
         bounds,
-        histogram: { bucketCount, buckets },
+        histogram: { bucketCount: resolvedBucketCount, buckets },
         stats,
       };
     },

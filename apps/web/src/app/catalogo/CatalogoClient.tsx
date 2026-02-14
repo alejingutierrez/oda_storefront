@@ -256,11 +256,17 @@ export default function CatalogoClient({
     const onVis = () => {
       if (!document.hidden) bump();
     };
+    const onPageShow = (event: PageTransitionEvent) => {
+      // bfcache: al volver atrás/adelante, refresh de facets/subcats/precio.
+      if (event.persisted) bump();
+    };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, []);
 
@@ -278,6 +284,7 @@ export default function CatalogoClient({
 
     const next = new URLSearchParams(facetsFetchKey);
     const timeout = window.setTimeout(async () => {
+      const watchdog = window.setTimeout(() => controller.abort(), 8000);
       try {
         const res = await fetch(`/api/catalog/facets-lite?${next.toString()}`, {
           signal: controller.signal,
@@ -304,6 +311,7 @@ export default function CatalogoClient({
           return isValidFacetsLite(cached) ? cached : null;
         });
       } finally {
+        window.clearTimeout(watchdog);
         setFacetsLoading(false);
       }
     }, 120);

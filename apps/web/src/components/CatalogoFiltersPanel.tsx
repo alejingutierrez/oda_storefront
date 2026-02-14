@@ -221,11 +221,16 @@ export default function CatalogoFiltersPanel({
     const onVis = () => {
       if (!document.hidden) bump();
     };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) bump();
+    };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, []);
 
@@ -362,6 +367,7 @@ export default function CatalogoFiltersPanel({
     setSubcategoriesLoading(true);
 
     const timeout = window.setTimeout(async () => {
+      const watchdog = window.setTimeout(() => controller.abort(), 8000);
       try {
         const res = await fetch(`/api/catalog/subcategories?${next.toString()}`, {
           signal: controller.signal,
@@ -378,6 +384,7 @@ export default function CatalogoFiltersPanel({
         // Mantén el último estado válido (evita “parpadeo” al volver a una pestaña inactiva).
         setResolvedSubcategories((prev) => prev);
       } finally {
+        window.clearTimeout(watchdog);
         setSubcategoriesLoading(false);
       }
     }, 150);
@@ -397,6 +404,7 @@ export default function CatalogoFiltersPanel({
 
     const next = new URLSearchParams(priceBoundsFetchKey);
     const timeout = window.setTimeout(async () => {
+      const watchdog = window.setTimeout(() => controller.abort(), 8000);
       try {
         const res = await fetch(`/api/catalog/price-bounds?${next.toString()}`, {
           signal: controller.signal,
@@ -437,6 +445,7 @@ export default function CatalogoFiltersPanel({
         setResolvedPriceHistogram((prev) => prev);
         setResolvedPriceStats((prev) => prev);
       } finally {
+        window.clearTimeout(watchdog);
         setPriceBoundsLoading(false);
       }
     }, 150);
@@ -1016,6 +1025,92 @@ function PriceRange({
     if (!Number.isFinite(range) || range <= 0) return [];
     const q = (value: number) => snap(value);
 
+    const fromHistogram = (() => {
+      if (!histogram) return null;
+      const buckets = Array.isArray(histogram.buckets) ? histogram.buckets : null;
+      if (!buckets || buckets.length < 10) return null;
+
+      const bucketCount = buckets.length;
+      const width = range / bucketCount;
+      if (!Number.isFinite(width) || width <= 0) return null;
+
+      const weights = buckets.map((value) => (Number.isFinite(value) ? Math.max(0, value) : 0));
+      const total = weights.reduce((acc, value) => acc + value, 0);
+      if (total < 120) return null;
+
+      const midpoints = weights.map((_, idx) => minBound + (idx + 0.5) * width);
+      const W = Array.from({ length: bucketCount + 1 }, () => 0);
+      const WX = Array.from({ length: bucketCount + 1 }, () => 0);
+      const WX2 = Array.from({ length: bucketCount + 1 }, () => 0);
+
+      for (let i = 0; i < bucketCount; i += 1) {
+        const w = weights[i];
+        const x = midpoints[i];
+        W[i + 1] = W[i] + w;
+        WX[i + 1] = WX[i] + w * x;
+        WX2[i + 1] = WX2[i] + w * x * x;
+      }
+
+      const sse = (start: number, end: number) => {
+        const wt = W[end + 1] - W[start];
+        if (wt <= 0) return 0;
+        const wx = WX[end + 1] - WX[start];
+        const wx2 = WX2[end + 1] - WX2[start];
+        return wx2 - (wx * wx) / wt;
+      };
+
+      // “Natural breaks” (k=4) sobre el histograma (ponderado por frecuencia).
+      const K = 4;
+      if (bucketCount < K + 2) return null;
+
+      const dp = Array.from({ length: K }, () =>
+        Array.from({ length: bucketCount }, () => Number.POSITIVE_INFINITY),
+      );
+      const bt = Array.from({ length: K }, () => Array.from({ length: bucketCount }, () => -1));
+
+      for (let j = 0; j < bucketCount; j += 1) {
+        dp[0][j] = sse(0, j);
+        bt[0][j] = 0;
+      }
+
+      for (let k = 1; k < K; k += 1) {
+        for (let j = k; j < bucketCount; j += 1) {
+          let best = Number.POSITIVE_INFINITY;
+          let bestI = -1;
+          for (let i = k; i <= j; i += 1) {
+            const cost = dp[k - 1][i - 1] + sse(i, j);
+            if (cost < best) {
+              best = cost;
+              bestI = i;
+            }
+          }
+          dp[k][j] = best;
+          bt[k][j] = bestI;
+        }
+      }
+
+      if (!Number.isFinite(dp[K - 1][bucketCount - 1])) return null;
+
+      const starts = Array.from({ length: K }, () => 0);
+      let j = bucketCount - 1;
+      for (let k = K - 1; k >= 0; k -= 1) {
+        const i = bt[k][j];
+        if (typeof i !== "number" || i < 0) return null;
+        starts[k] = i;
+        j = i - 1;
+      }
+
+      const rawCuts = starts
+        .slice(1)
+        .map((idx) => clamp(q(minBound + idx * width), minBound, maxBound));
+      const uniqueCuts = Array.from(new Set(rawCuts))
+        .filter((value) => value > minBound && value < maxBound)
+        .sort((a, b) => a - b);
+
+      if (uniqueCuts.length < 3) return null;
+      return uniqueCuts.slice(0, 3);
+    })();
+
     const fromStats =
       typeof stats?.p25 === "number" &&
       typeof stats?.p50 === "number" &&
@@ -1025,21 +1120,19 @@ function PriceRange({
       Number.isFinite(stats.p75) &&
       stats.p25 < stats.p50 &&
       stats.p50 < stats.p75
-        ? [stats.p25, stats.p50, stats.p75]
+        ? [stats.p25, stats.p50, stats.p75].map((value) => clamp(q(value), minBound, maxBound))
         : null;
 
-    const [c1, c2, c3] = fromStats ?? [
-      minBound + range * 0.25,
-      minBound + range * 0.5,
-      minBound + range * 0.75,
+    const fallbackCuts = [
+      clamp(q(minBound + range * 0.25), minBound, maxBound),
+      clamp(q(minBound + range * 0.5), minBound, maxBound),
+      clamp(q(minBound + range * 0.75), minBound, maxBound),
     ];
 
-    const b1 = clamp(q(c1), minBound, maxBound);
-    const b2 = clamp(q(c2), minBound, maxBound);
-    const b3 = clamp(q(c3), minBound, maxBound);
-
-    const unique = Array.from(new Set([b1, b2, b3])).filter((v) => v > minBound && v < maxBound);
-    const cuts = [minBound, ...unique, maxBound];
+    const unique = Array.from(new Set(fromHistogram ?? fromStats ?? fallbackCuts)).filter(
+      (v) => v > minBound && v < maxBound,
+    );
+    const cuts = [minBound, ...unique.sort((a, b) => a - b), maxBound];
     if (cuts.length < 3) return [];
 
     const tokenFor = (min: number | null, max: number | null) => `${min ?? ""}:${max ?? ""}`;
@@ -1083,8 +1176,8 @@ function PriceRange({
     if (!maxCount) return null;
     return histogram.buckets.map((count, index) => ({
       key: index,
-      // 8px..32px (más legible sin hacer crecer la caja)
-      height: 8 + Math.round((Math.max(0, count) / maxCount) * 24),
+      // 6px..40px (más legible sin hacer crecer la caja)
+      height: 6 + Math.round((Math.max(0, count) / maxCount) * 34),
     }));
   })();
 
@@ -1231,7 +1324,7 @@ function PriceRange({
       <div className="relative h-10">
         {histogramBars ? (
           <div
-            className="absolute inset-x-0 top-1/2 flex h-8 -translate-y-1/2 items-end gap-[2px] opacity-70"
+            className="absolute inset-x-0 top-1/2 flex h-10 -translate-y-1/2 items-end gap-[2px] opacity-75"
             aria-hidden
           >
             {histogramBars.map((bar) => (

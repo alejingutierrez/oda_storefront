@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   const parsedFilters = parseCatalogFiltersFromSearchParams(url.searchParams, { categoryMode: "single" });
   const filters = { ...parsedFilters, inStock: true, enrichedOnly: true };
 
-  const insights = await getCatalogPriceInsights(filters, 18);
+  const insights = await getCatalogPriceInsights(filters);
 
   return NextResponse.json(
     { bounds: insights.bounds, histogram: insights.histogram, stats: insights.stats },
