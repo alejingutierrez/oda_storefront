@@ -95,11 +95,12 @@ const WORD_SYNONYMS: Record<string, string[]> = {
   blazer: ["americana", "saco blazer"],
   sastreria: ["tailoring", "tailored"],
   pantalon: ["pants", "trousers", "trouser"],
+  lino: ["linen"],
   jean: ["jeans", "denim"],
   shorts: ["short", "bermuda"],
   falda: ["skirt"],
   vestido: ["dress"],
-  enterizo: ["jumpsuit", "mono"],
+  enterizo: ["jumpsuit"],
   overol: ["overall", "dungaree"],
   conjunto: ["set", "matching set", "co ord", "co-ord", "dos piezas"],
   deportiva: ["athleisure", "activewear", "sportswear"],
@@ -184,6 +185,7 @@ const PHRASE_SYNONYMS: Record<string, string[]> = {
   "body bodysuit": ["bodysuit", "body", "leotardo"],
   "hoodie canguro": ["hoodie", "canguro", "sudadera con capucha"],
   "hoodie con cremallera": ["zip hoodie", "hoodie zip", "sudadera con cierre"],
+  "crop top": ["crop tee", "cropped tee", "cropped t shirt", "cropped t-shirt", "cropped tee shirt"],
   "buzo cuello alto half zip": ["half zip", "quarter zip", "sweater cuello alto"],
   "chaqueta tipo cuero cuero o sintetico": ["chaqueta de cuero", "chaqueta leather", "biker jacket"],
   "puffer acolchada": ["puffer", "chaqueta acolchada", "plumifero"],
@@ -210,7 +212,16 @@ const PHRASE_SYNONYMS: Record<string, string[]> = {
   "set loungewear jogger buzo": ["set loungewear", "conjunto homewear"],
   "vestido de bano entero": ["traje de baño entero", "one piece", "one-piece swimsuit"],
   "bermuda boxer de bano": ["boardshort", "trunk de baño", "short de baño hombre"],
-  "salida de bano kaftan": ["kaftan", "cover up", "salida de playa"],
+  "salida de bano kaftan": [
+    "kaftan",
+    "cover up",
+    "coverup",
+    "beach cover up",
+    "cobertor",
+    "cobertor de playa",
+    "cobertor playa",
+    "salida de playa",
+  ],
   "panal de agua bebe": ["pañal de agua", "swim diaper"],
   "uniforme medico scrubs": ["scrubs", "uniforme medico", "uniforme médico"],
   "ropa reflectiva alta visibilidad": ["alta visibilidad", "hi vis", "reflectiva"],
@@ -378,7 +389,6 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "overol",
     "overall",
     "jardinera",
-    "mono",
   ],
   conjuntos_y_sets_2_piezas: [
     "conjunto",
@@ -454,6 +464,11 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "licra uv",
     "pareo",
     "salida de bano",
+    "cobertor",
+    "cobertor de playa",
+    "cobertor playa",
+    "cover up",
+    "coverup",
     "beachwear",
     "pantaloneta",
     "pantaloneta de bano",
@@ -821,6 +836,18 @@ const deriveSubcategoryKeywords = (
     }
     if (subcategoryValue.includes("botines")) {
       keywords.push("ankle boot", "chelsea boot");
+    }
+  }
+
+  if (categoryValue === "buzos_hoodies_y_sueteres") {
+    if (subcategoryValue === "hoodie_con_cremallera") {
+      keywords.push("cierre", "con cierre", "zip", "zipper", "cremallera");
+    }
+    if (subcategoryValue === "buzo_cuello_alto_half_zip") {
+      keywords.push("half zip", "quarter zip", "zip", "cierre", "cremallera");
+    }
+    if (subcategoryValue === "buzo_cuello_redondo") {
+      keywords.push("cuello redondo", "crewneck");
     }
   }
 

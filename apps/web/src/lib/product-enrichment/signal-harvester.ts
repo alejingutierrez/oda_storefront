@@ -491,6 +491,42 @@ const isCharmAccessoryForNeckwear = (text: string) => {
 
 const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
   if (
+    rule.category === "camisas_y_blusas" &&
+    hasAnyKeyword(text, ["chaleco"]) &&
+    !hasAnyKeyword(text, ["manga", "boton", "botones", "button", "button down", "cuello", "collar", "blusa", "blouse"])
+  ) {
+    // "chaleco/camisa" product names are common; default to "chaleco" unless there's explicit shirt structure evidence.
+    return true;
+  }
+  if (
+    rule.category === "chaquetas_y_abrigos" &&
+    hasAnyKeyword(text, [
+      "bag",
+      "bags",
+      "bolso",
+      "bolsos",
+      "cartera",
+      "mochila",
+      "morral",
+      "bandolera",
+      "crossbody",
+      "clutch",
+      "billetera",
+      "wallet",
+      "duffel",
+      "maleta",
+      "maletas",
+      "equipaje",
+      "lonchera",
+      "cartuchera",
+      "neceser",
+      "estuche",
+    ])
+  ) {
+    // Avoid classifying bags as outerwear just because they include "puffer"/"acolchado", etc.
+    return true;
+  }
+  if (
     rule.category === "joyeria_y_bisuteria" &&
     hasAnyKeyword(text, ["collar", "collares", "gargantilla"]) &&
     hasAnyKeyword(text, ["camisa", "blusa"]) &&
@@ -646,6 +682,55 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
     return true;
   }
   if (
+    rule.category === "ropa_deportiva_y_performance" &&
+    hasAnyKeyword(text, [
+      "calzado",
+      "footwear",
+      "zapato",
+      "zapatos",
+      "shoe",
+      "shoes",
+      "sneaker",
+      "sneakers",
+      "sandalia",
+      "sandalias",
+      "tacon",
+      "tacones",
+      "bota",
+      "botas",
+      "botin",
+      "botines",
+      "mocasin",
+      "mocasines",
+      "loafer",
+      "loafers",
+    ])
+  ) {
+    // Footwear is handled by "calzado" even when it says "deportivo".
+    return true;
+  }
+  if (
+    rule.category === "camisetas_y_tops" &&
+    hasAnyKeyword(text, [
+      "ropa deportiva",
+      "activewear",
+      "athleisure",
+      "sportswear",
+      "gym",
+      "running",
+      "training",
+      "entrenamiento",
+      "compresion",
+      "compresión",
+      "compression",
+      "dry fit",
+      "quick dry",
+    ])
+  ) {
+    // Prefer "ropa_deportiva_y_performance" when sports evidence exists.
+    return true;
+  }
+  if (
     rule.category === "camisetas_y_tops" &&
     hasAnyKeyword(text, [
       "bikini",
@@ -671,6 +756,37 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
     return true;
   }
   if (
+    rule.category === "camisetas_y_tops" &&
+    hasAnyKeyword(text, [
+      "buzo",
+      "hoodie",
+      "sudadera",
+      "sweatshirt",
+      "sueter",
+      "suéter",
+      "sweater",
+      "jersey",
+      "cardigan",
+    ]) &&
+    !hasAnyKeyword(text, [
+      "camiseta",
+      "tshirt",
+      "t shirt",
+      "tee",
+      "top",
+      "crop top",
+      "croptop",
+      "camisilla",
+      "esqueleto",
+      "tank top",
+      "bodysuit",
+      "body",
+    ])
+  ) {
+    // "Buzo con cuello polo" and similar should stay as sweaters/hoodies, not tops.
+    return true;
+  }
+  if (
     rule.category === "ropa_interior_basica" &&
     hasAnyKeyword(text, [
       "lenceria",
@@ -692,6 +808,33 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
   if (
     rule.category === "ropa_interior_basica" &&
     hasAnyKeyword(text, [
+      // "interior" alone is too ambiguous ("guía interior", etc.). Require underwear-ish evidence.
+      "interior",
+    ]) &&
+    !hasAnyKeyword(text, [
+      "ropa interior",
+      "underwear",
+      "intimate",
+      "brasier",
+      "bralette",
+      "panty",
+      "trusa",
+      "tanga",
+      "cachetero",
+      "brasilera",
+      "calzon",
+      "calzón",
+      "calzoncillo",
+      "boxer",
+      "brief",
+      "camisilla interior",
+    ])
+  ) {
+    return true;
+  }
+  if (
+    rule.category === "ropa_interior_basica" &&
+    hasAnyKeyword(text, [
       "bikini",
       "trikini",
       "tankini",
@@ -702,6 +845,16 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
       "swimwear",
       "beachwear",
       "rashguard",
+      "banador",
+      "bañador",
+      "swim",
+      "swimsuit",
+      "de bano",
+      "de baño",
+      "playa",
+      "beach",
+      "pool",
+      "piscina",
       "pantaloneta",
       "pantaloneta de bano",
       "pantaloneta de baño",
@@ -732,6 +885,35 @@ const shouldIgnoreSubcategoryRule = (
     return true;
   }
   if (
+    rule.category === "chaquetas_y_abrigos" &&
+    rule.subcategory === "puffer_acolchada" &&
+    hasAnyKeyword(text, [
+      "bag",
+      "bags",
+      "bolso",
+      "bolsos",
+      "cartera",
+      "mochila",
+      "morral",
+      "bandolera",
+      "crossbody",
+      "clutch",
+      "billetera",
+      "wallet",
+      "duffel",
+      "maleta",
+      "maletas",
+      "equipaje",
+      "lonchera",
+      "cartuchera",
+      "neceser",
+      "estuche",
+    ])
+  ) {
+    // "Bolso puffer" is still a bag.
+    return true;
+  }
+  if (
     rule.category === "camisetas_y_tops" &&
     rule.subcategory === "camiseta_cuello_alto_tortuga" &&
     !hasAnyKeyword(text, ["cuello alto", "tortuga", "turtleneck", "high neck", "mock neck"])
@@ -755,6 +937,23 @@ const shouldIgnoreSubcategoryRule = (
   ) {
     // If the product is explicitly called a "camisa/shirt", don't pull it into "blusa_*" just
     // because it mentions sleeve length or other shared attributes.
+    return true;
+  }
+  if (
+    rule.category === "camisas_y_blusas" &&
+    (rule.subcategory === "blusa_manga_corta" || rule.subcategory === "blusa_manga_larga")
+  ) {
+    const hasShortSleeve = hasAnyKeyword(text, ["manga corta", "short sleeve", "short-sleeve"]);
+    const hasLongSleeve = hasAnyKeyword(text, ["manga larga", "long sleeve", "long-sleeve"]);
+    if (rule.subcategory === "blusa_manga_corta" && !hasShortSleeve) return true;
+    if (rule.subcategory === "blusa_manga_larga" && !hasLongSleeve) return true;
+  }
+  if (
+    rule.category === "camisas_y_blusas" &&
+    rule.subcategory === "camisa_casual" &&
+    hasAnyKeyword(text, ["lino", "linen"])
+  ) {
+    // If it's explicitly linen, keep it as "camisa_de_lino" instead of "camisa_casual".
     return true;
   }
   if (
@@ -796,10 +995,42 @@ const shouldIgnoreSubcategoryRule = (
     return true;
   }
   if (
+    rule.category === "buzos_hoodies_y_sueteres" &&
+    rule.subcategory === "buzo_cuello_redondo" &&
+    hasAnyKeyword(text, ["cierre", "cremallera", "zip", "zipper", "half zip", "quarter zip"])
+  ) {
+    // If the product clearly has a closure/zip, don't classify it as crewneck.
+    return true;
+  }
+  if (
     rule.category === "shorts_y_bermudas" &&
     rule.subcategory === "biker_short" &&
     hasAnyKeyword(text, ["chaqueta", "jacket", "biker jacket"])
   ) {
+    return true;
+  }
+  if (
+    rule.category === "bolsos_y_marroquineria" &&
+    rule.subcategory === "cartera_bolso_de_mano" &&
+    !hasAnyKeyword(text, ["cartera", "bolso de mano", "purse", "handbag"]) 
+  ) {
+    // Avoid matching just "mano" from phrases like "hecho a mano".
+    return true;
+  }
+  if (
+    rule.category === "bolsos_y_marroquineria" &&
+    rule.subcategory === "cartera_bolso_de_mano" &&
+    hasAnyKeyword(text, [
+      "bandolera",
+      "crossbody",
+      "cross body",
+      "bolso cruzado",
+      "correa larga",
+      "strap",
+      "strap bag",
+    ])
+  ) {
+    // If it's explicitly crossbody/bandolera, don't pull it into handbag.
     return true;
   }
   if (
@@ -819,6 +1050,53 @@ const shouldIgnoreSubcategoryRule = (
       "junior",
     ])
   ) {
+    return true;
+  }
+  if (
+    rule.category === "trajes_de_bano_y_playa" &&
+    rule.subcategory === "vestido_de_bano_entero"
+  ) {
+    // Prefer the dedicated kids bucket when the product is clearly infant/kids.
+    if (
+      hasAnyKeyword(text, [
+        "infantil",
+        "nino",
+        "niño",
+        "nina",
+        "niña",
+        "kid",
+        "kids",
+        "baby",
+        "bebe",
+        "bebé",
+        "junior",
+      ])
+    ) {
+      return true;
+    }
+    // "Vestido de baño" is generic in CO. Require one-piece evidence to classify as "entero".
+    if (
+      !hasAnyKeyword(text, [
+        "entero",
+        "una pieza",
+        "one piece",
+        "one-piece",
+        "one piece swimsuit",
+        "traje de baño entero",
+        "traje de bano entero",
+        "enterizo",
+      ])
+    ) {
+      return true;
+    }
+  }
+  if (
+    rule.category === "joyeria_y_bisuteria" &&
+    rule.subcategory === "aretes_pendientes" &&
+    hasAnyKeyword(text, ["cadena", "collar", "collares", "necklace", "choker", "gargantilla"]) &&
+    !hasAnyKeyword(text, ["arete", "aretes", "earring", "earrings", "topos", "argolla", "argollas"])
+  ) {
+    // Avoid routing chains/necklaces into earrings due to "pendientes" ambiguity/ties.
     return true;
   }
   if (
@@ -870,6 +1148,39 @@ const shouldIgnoreSubcategoryRule = (
   return false;
 };
 
+// Subcategory scoring must not rely on category-generic anchors like "bolso" or "camisa";
+// those create order-based ties and cause noisy remap proposals.
+const GENERIC_SUBCATEGORY_KEYWORDS_BY_CATEGORY: Record<string, string[]> = {
+  camisetas_y_tops: ["camiseta", "tshirt", "t shirt", "tee", "top"],
+  camisas_y_blusas: ["camisa", "shirt", "blusa", "blouse"],
+  buzos_hoodies_y_sueteres: [
+    "buzo",
+    "hoodie",
+    "sudadera",
+    "sweatshirt",
+    "sueter",
+    "suéter",
+    "sweater",
+    "jersey",
+    "cardigan",
+  ],
+  chaquetas_y_abrigos: ["chaqueta", "jacket", "abrigo", "coat"],
+  pantalones_no_denim: ["pantalon", "pantalón", "pants", "trouser", "trousers"],
+  shorts_y_bermudas: ["short", "shorts", "bermuda", "bermudas"],
+  faldas: ["falda", "skirt"],
+  vestidos: ["vestido", "dress"],
+  jeans_y_denim: ["jean", "jeans", "denim"],
+  calzado: ["calzado", "footwear", "zapato", "zapatos", "shoe", "shoes"],
+  bolsos_y_marroquineria: ["bolso", "bolsos", "bag", "bags"],
+};
+
+const GENERIC_SUBCATEGORY_SET_BY_CATEGORY = new Map<string, Set<string>>(
+  Object.entries(GENERIC_SUBCATEGORY_KEYWORDS_BY_CATEGORY).map(([category, keywords]) => [
+    category,
+    new Set(keywords.map((kw) => normalizeText(kw))),
+  ]),
+);
+
 const pickSubcategorySignal = (
   text: string,
   category: string,
@@ -878,6 +1189,7 @@ const pickSubcategorySignal = (
   const allowedSubs = allowedSubByCategory[category] ?? [];
   if (!allowedSubs.length) return { subcategory: null, productType: null };
 
+  const genericKeywordSet = GENERIC_SUBCATEGORY_SET_BY_CATEGORY.get(category) ?? new Set<string>();
   const scoreBySubcategory = new Map<string, number>();
   const bestProductTypeBySubcategory = new Map<string, string | null>();
 
@@ -886,7 +1198,11 @@ const pickSubcategorySignal = (
     if (shouldIgnoreSubcategoryRule(rule, text)) return;
     const subcategory = normalizeEnumValue(rule.subcategory, allowedSubs);
     if (!subcategory) return;
-    const score = scoreKeywordHits(text, rule.keywords);
+    const effectiveKeywords =
+      genericKeywordSet.size > 0
+        ? rule.keywords.filter((keyword) => !genericKeywordSet.has(normalizeText(keyword)))
+        : rule.keywords;
+    const score = scoreKeywordHits(text, effectiveKeywords);
     if (score <= 0) return;
     scoreBySubcategory.set(subcategory, (scoreBySubcategory.get(subcategory) ?? 0) + score);
     if (!bestProductTypeBySubcategory.has(subcategory)) {
@@ -1103,22 +1419,43 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     .filter(([, meta]) => meta.score >= topScore - 1 && meta.score > 0)
     .map(([category]) => category);
 
-  const subCandidates = [
-    descriptionMatch.subcategory,
-    seoMatch.subcategory,
-    nameMatch.subcategory,
-    vendorTagMatch.subcategory,
-  ]
-    .filter((value): value is string => Boolean(value));
   const inferredSubcategory = (() => {
     if (!inferredCategory) return null;
     const allowedSubs = allowedSubByCategory[inferredCategory] ?? [];
     if (!allowedSubs.length) return null;
-    for (const sub of subCandidates) {
-      const normalized = normalizeEnumValue(sub, allowedSubs);
-      if (normalized) return normalized;
-    }
-    return null;
+    type SubcategorySource = "description" | "seo" | "vendor_tags" | "name";
+    const SUBCATEGORY_SOURCE_WEIGHTS: Record<SubcategorySource, number> = {
+      description: 6,
+      seo: 5,
+      vendor_tags: 4,
+      name: 3,
+    };
+
+    const scores = new Map<string, { score: number; sources: Set<SubcategorySource> }>();
+    const bump = (value: string | null | undefined, source: SubcategorySource) => {
+      if (!value) return;
+      const normalized = normalizeEnumValue(value, allowedSubs);
+      if (!normalized) return;
+      const entry = scores.get(normalized) ?? { score: 0, sources: new Set<SubcategorySource>() };
+      entry.score += SUBCATEGORY_SOURCE_WEIGHTS[source];
+      entry.sources.add(source);
+      scores.set(normalized, entry);
+    };
+
+    bump(descriptionMatch.subcategory, "description");
+    bump(seoMatch.subcategory, "seo");
+    bump(vendorTagMatch.subcategory, "vendor_tags");
+    bump(nameMatch.subcategory, "name");
+
+    const ranked = [...scores.entries()].sort((a, b) => {
+      const scoreDelta = b[1].score - a[1].score;
+      if (scoreDelta !== 0) return scoreDelta;
+      const sourcesDelta = b[1].sources.size - a[1].sources.size;
+      if (sourcesDelta !== 0) return sourcesDelta;
+      return a[0].localeCompare(b[0]);
+    });
+
+    return ranked[0]?.[0] ?? null;
   })();
 
   const genderInference = inferGenderSignal({

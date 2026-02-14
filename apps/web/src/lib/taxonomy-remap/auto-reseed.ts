@@ -11,6 +11,7 @@ import { normalizeEnumValue } from "@/lib/product-enrichment/utils";
 import {
   SUBCATEGORY_KEYWORD_RULES,
   hasAnyKeyword,
+  scoreKeywordHits,
 } from "@/lib/product-enrichment/keyword-dictionaries";
 
 type CandidateRow = {
@@ -286,6 +287,177 @@ const CATEGORY_MOVE_REQUIRED_EVIDENCE: Partial<Record<string, string[]>> = {
 
 const canMoveToCategory = (category: string | null, evidenceText: string) => {
   if (!category) return false;
+  if (category === "ropa_interior_basica") {
+    // "interior" alone is too ambiguous (e.g. "guía interior"). Require underwear evidence.
+    const hasUnderwearEvidence = hasAnyKeyword(evidenceText, [
+      "ropa interior",
+      "underwear",
+      "brasier",
+      "bralette",
+      "panty",
+      "trusa",
+      "tanga",
+      "boxer",
+      "brief",
+      "camisilla interior",
+      "cachetero",
+      "calzon",
+      "calzón",
+      "calzoncillo",
+    ]);
+    if (!hasUnderwearEvidence) return false;
+
+    // Swimwear often contains underwear-ish words ("panty", "brief"). Do not move into underwear if swim is present.
+    const hasSwimEvidence = hasAnyKeyword(evidenceText, [
+      "bikini",
+      "trikini",
+      "tankini",
+      "traje de bano",
+      "traje de baño",
+      "vestido de bano",
+      "vestido de baño",
+      "swimwear",
+      "beachwear",
+      "banador",
+      "bañador",
+      "swim",
+      "swimsuit",
+      "de bano",
+      "de baño",
+      "playa",
+      "beach",
+      "pool",
+      "piscina",
+    ]);
+    if (hasSwimEvidence) return false;
+  }
+  if (
+    category === "ropa_deportiva_y_performance" &&
+    hasAnyKeyword(evidenceText, [
+      "calzado",
+      "footwear",
+      "zapato",
+      "zapatos",
+      "shoe",
+      "shoes",
+      "sneaker",
+      "sneakers",
+      "sandalia",
+      "sandalias",
+      "bota",
+      "botas",
+      "botin",
+      "botines",
+      "mocasin",
+      "mocasines",
+      "loafer",
+      "loafers",
+    ])
+  ) {
+    // Never remap footwear into sportswear.
+    return false;
+  }
+  if (category === "ropa_deportiva_y_performance") {
+    // Require more than the generic adjective "deportivo(a)" to move into sportswear.
+    const strongKeywords = [
+      "activewear",
+      "athleisure",
+      "sportswear",
+      "gym",
+      "running",
+      "training",
+      "entrenamiento",
+      "compresion",
+      "compresión",
+      "compression",
+      "dry fit",
+      "quick dry",
+      "antibacterial",
+      "uv",
+      "performance",
+      "workout",
+      "fitness",
+    ];
+    const hasHighSignal = hasAnyKeyword(evidenceText, [
+      "activewear",
+      "athleisure",
+      "sportswear",
+      "gym",
+      "running",
+      "training",
+      "workout",
+      "fitness",
+    ]);
+    // Either we see a high-signal sports token, or at least two strong hits (1 phrase or 2+ words).
+    const sportScore = scoreKeywordHits(evidenceText, strongKeywords);
+    if (!hasHighSignal && sportScore < 2) return false;
+  }
+  if (
+    category === "chaquetas_y_abrigos" &&
+    hasAnyKeyword(evidenceText, [
+      "bag",
+      "bags",
+      "bolso",
+      "bolsos",
+      "cartera",
+      "mochila",
+      "morral",
+      "bandolera",
+      "crossbody",
+      "clutch",
+      "billetera",
+      "wallet",
+      "duffel",
+      "maleta",
+      "maletas",
+      "equipaje",
+      "lonchera",
+      "cartuchera",
+      "neceser",
+      "estuche",
+    ])
+  ) {
+    // "Bolso puffer" should not move into outerwear.
+    return false;
+  }
+  if (
+    category === "camisetas_y_tops" &&
+    hasAnyKeyword(evidenceText, [
+      "bikini",
+      "trikini",
+      "tankini",
+      "traje de bano",
+      "traje de baño",
+      "vestido de bano",
+      "vestido de baño",
+      "swimwear",
+      "beachwear",
+      "rashguard",
+      "salida de bano",
+      "salida de baño",
+      "cover up",
+      "coverup",
+      "cobertor",
+      "cobertor de playa",
+      "cobertor playa",
+      "pareo",
+      "playa",
+      "beach",
+      "pool",
+      "piscina",
+    ])
+  ) {
+    // Avoid moving cover-ups/swimwear items into generic tops.
+    return false;
+  }
+  if (
+    category === "camisas_y_blusas" &&
+    hasAnyKeyword(evidenceText, ["chaleco"]) &&
+    !hasAnyKeyword(evidenceText, ["manga", "boton", "botones", "button", "button down", "cuello", "collar", "blusa", "blouse"])
+  ) {
+    // Avoid moving "chaleco/camisa" hybrids into shirts unless there's explicit shirt evidence.
+    return false;
+  }
   // Avoid moving into "no denim" when the product clearly says "denim/jean".
   if (
     category === "pantalones_no_denim" &&
@@ -348,6 +520,21 @@ const GENERIC_SUBCATEGORY_KEYWORDS_BY_CATEGORY: Record<string, string[]> = {
     "tank top",
   ],
   camisas_y_blusas: ["camisa", "shirt", "blusa", "blouse"],
+  buzos_hoodies_y_sueteres: [
+    "buzo",
+    "hoodie",
+    "sudadera",
+    "sweatshirt",
+    "sueter",
+    "suéter",
+    "sweater",
+    "jersey",
+    "cardigan",
+    "chaleco",
+    "ruana",
+    "poncho",
+  ],
+  chaquetas_y_abrigos: ["chaqueta", "jacket", "abrigo", "coat"],
   pantalones_no_denim: ["pantalon", "pants", "trouser", "trousers"],
   shorts_y_bermudas: ["short", "shorts", "bermuda", "bermudas"],
   faldas: ["falda", "skirt"],
@@ -366,6 +553,8 @@ const GENERIC_SUBCATEGORY_KEYWORDS_BY_CATEGORY: Record<string, string[]> = {
     "pool",
     "piscina",
   ],
+  calzado: ["calzado", "footwear", "zapato", "zapatos", "shoe", "shoes"],
+  bolsos_y_marroquineria: ["bolso", "bolsos", "bag", "bags"],
 };
 
 const GENERIC_SUBCATEGORY_SET_BY_CATEGORY = new Map<string, Set<string>>(
@@ -402,6 +591,18 @@ const canMoveToSubcategory = (params: {
   }
 
   return hasAnyKeyword(params.evidenceText, specificKeywords);
+};
+
+const scoreSubcategoryEvidence = (params: {
+  category: string | null;
+  subcategory: string | null;
+  evidenceText: string;
+}) => {
+  if (!params.category || !params.subcategory) return 0;
+  const key = `${params.category}:${params.subcategory}`;
+  const specificKeywords = SUBCATEGORY_SPECIFIC_KEYWORDS_BY_KEY.get(key) ?? [];
+  if (!specificKeywords.length) return 0;
+  return scoreKeywordHits(params.evidenceText, specificKeywords);
 };
 
 const asBool = (value: string | undefined, fallback: boolean) => {
@@ -777,7 +978,9 @@ export const runTaxonomyAutoReseedBatch = async (params: {
   }
 
   const lastAuto = await getLastAutoReseedMeta();
-  if (!params.force && lastAuto?.createdAt) {
+  // `refresh_pending` is an iterative hygiene operation. It must be able to run even inside cooldown,
+  // otherwise false positives remain stuck in the queue while we refine rules.
+  if (mode !== "refresh_pending" && !params.force && lastAuto?.createdAt) {
     const cooldownMs = AUTO_COOLDOWN_MINUTES * 60_000;
     const ageMs = Date.now() - lastAuto.createdAt.getTime();
     if (ageMs < cooldownMs) {
@@ -956,7 +1159,14 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         signals.inferredCategory !== currentCategory &&
         (signals.signalStrength !== "weak" || !currentCategory)
       ) {
-        if (currentCategory && !canMoveToCategory(signals.inferredCategory, evidenceText)) {
+        // If the current category is strongly supported, don't churn it just because another
+        // category also matches some generic terms (e.g. sports bras/camisetas deportivas → "crop top").
+        if (
+          currentCategory === "ropa_deportiva_y_performance" &&
+          canMoveToCategory(currentCategory, evidenceText)
+        ) {
+          reasons.push("blocked:keep_current_sportswear");
+        } else if (currentCategory && !canMoveToCategory(signals.inferredCategory, evidenceText)) {
           reasons.push(`blocked:category_missing_evidence:${signals.inferredCategory}`);
         } else {
         nextCategory = signals.inferredCategory;
@@ -992,6 +1202,13 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         signals.nameSubcategory && signals.inferredSubcategory === signals.nameSubcategory,
       );
       const allowUnbackedSubcategory = categoryCandidateChanged;
+      const currentSubEvidenceScore = currentSubcategory
+        ? scoreSubcategoryEvidence({
+            category: categoryCandidate,
+            subcategory: currentSubcategory,
+            evidenceText,
+          })
+        : 0;
 
       if (
         signals.inferredSubcategory &&
@@ -1000,6 +1217,17 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         (signals.signalStrength !== "weak" || !currentSubcategory) &&
         (isNameBackedSubcategory || allowUnbackedSubcategory)
       ) {
+        const nextSubEvidenceScore = scoreSubcategoryEvidence({
+          category: categoryCandidate,
+          subcategory: signals.inferredSubcategory,
+          evidenceText,
+        });
+        const requiredNextScore = currentSubcategory ? 2 : 1;
+        if (!categoryCandidateChanged && currentSubcategory && currentSubEvidenceScore > 0) {
+          reasons.push(`blocked:subcategory_current_has_evidence:${currentSubcategory}`);
+        } else if (!categoryCandidateChanged && nextSubEvidenceScore < requiredNextScore) {
+          reasons.push(`blocked:subcategory_low_support:${signals.inferredSubcategory}`);
+        } else {
         if (
           !canMoveToSubcategory({
             category: categoryCandidate,
@@ -1024,6 +1252,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
                 ? 1.16
                 : 1.02;
           reasons.push(`signals:${signals.signalStrength}:subcategory`);
+        }
         }
       }
 

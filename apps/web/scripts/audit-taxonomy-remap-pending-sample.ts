@@ -96,6 +96,97 @@ const FORMAL_EVIDENCE = [
   "tailoring",
 ];
 
+const SWIM_EVIDENCE = [
+  "bikini",
+  "trikini",
+  "tankini",
+  "traje de bano",
+  "traje de baño",
+  "vestido de bano",
+  "vestido de baño",
+  "banador",
+  "bañador",
+  "swimwear",
+  "beachwear",
+  "swim",
+  "swimsuit",
+  "de bano",
+  "de baño",
+  "playa",
+  "beach",
+  "pool",
+  "piscina",
+  "salida de bano",
+  "salida de baño",
+  "cover up",
+  "coverup",
+  "cobertor",
+  "cobertor playa",
+  "cobertor de playa",
+];
+
+const BAG_EVIDENCE = [
+  "bolso",
+  "bolsos",
+  "bag",
+  "bags",
+  "cartera",
+  "mochila",
+  "morral",
+  "bandolera",
+  "crossbody",
+  "clutch",
+  "billetera",
+  "wallet",
+  "maleta",
+  "equipaje",
+  "cartuchera",
+  "neceser",
+  "estuche",
+  "lonchera",
+];
+
+const FOOTWEAR_EVIDENCE = [
+  "calzado",
+  "footwear",
+  "zapato",
+  "zapatos",
+  "shoe",
+  "shoes",
+  "sneaker",
+  "sneakers",
+  "sandalia",
+  "sandalias",
+  "bota",
+  "botas",
+  "botin",
+  "botines",
+  "mocasin",
+  "mocasines",
+  "loafer",
+  "loafers",
+  "tacon",
+  "tacones",
+];
+
+const SPORTS_EVIDENCE = [
+  "deportivo",
+  "deportiva",
+  "ropa deportiva",
+  "activewear",
+  "athleisure",
+  "sportswear",
+  "gym",
+  "running",
+  "training",
+  "entrenamiento",
+  "compresion",
+  "compresión",
+  "compression",
+  "dry fit",
+  "quick dry",
+];
+
 const scoreSubcategoryCandidates = (category: string, text: string) => {
   const scored: Array<{ subcategory: string; score: number }> = [];
   for (const rule of SUBCATEGORY_KEYWORD_RULES) {
@@ -158,6 +249,16 @@ const main = async () => {
     suspicious: {
       camisa_formal_without_evidence: 0,
       denim_without_evidence: 0,
+      interior_false_positive: 0,
+      mono_vs_mono: 0,
+      jewelry_chain_to_aretes: 0,
+      swim_to_underwear: 0,
+      bikini_to_one_piece: 0,
+      bag_to_puffer: 0,
+      shoe_to_sportswear: 0,
+      sportswear_to_generic_top: 0,
+      linen_to_casual: 0,
+      zip_to_crewneck: 0,
     },
     topMoves: new Map<string, number>(),
   };
@@ -216,6 +317,117 @@ const main = async () => {
         suspiciousDenim = true;
         summary.suspicious.denim_without_evidence += 1;
       }
+    }
+
+    const proposedCategory = row.to_category ?? row.from_category ?? row.product_category ?? null;
+
+    let suspiciousInterior = false;
+    if (
+      proposedCategory === "ropa_interior_basica" &&
+      allText.includes("guia interior") &&
+      ![
+        "ropa interior",
+        "underwear",
+        "brasier",
+        "bralette",
+        "panty",
+        "trusa",
+        "tanga",
+        "boxer",
+        "brief",
+        "cachetero",
+        "calzon",
+        "calzoncillo",
+      ].some((kw) => allText.includes(normalizeText(kw)))
+    ) {
+      suspiciousInterior = true;
+      summary.suspicious.interior_false_positive += 1;
+    }
+
+    let suspiciousMono = false;
+    if (
+      proposedCategory === "enterizos_y_overoles" &&
+      allText.includes("mono") &&
+      ["panty", "lenceria", "lingerie", "encaje", "ropa interior"].some((kw) => allText.includes(normalizeText(kw)))
+    ) {
+      suspiciousMono = true;
+      summary.suspicious.mono_vs_mono += 1;
+    }
+
+    let suspiciousJewelryChain = false;
+    if (
+      proposedCategory === "joyeria_y_bisuteria" &&
+      row.to_subcategory === "aretes_pendientes" &&
+      ["cadena", "collar", "collares", "necklace", "choker", "gargantilla"].some((kw) => allText.includes(kw)) &&
+      !["arete", "aretes", "earring", "earrings", "topos", "argolla", "argollas"].some((kw) => allText.includes(kw))
+    ) {
+      suspiciousJewelryChain = true;
+      summary.suspicious.jewelry_chain_to_aretes += 1;
+    }
+
+    let suspiciousSwimToUnderwear = false;
+    if (row.from_category === "trajes_de_bano_y_playa" && row.to_category === "ropa_interior_basica") {
+      suspiciousSwimToUnderwear = true;
+      summary.suspicious.swim_to_underwear += 1;
+    }
+
+    let suspiciousBikiniToOnePiece = false;
+    if (
+      row.from_category === "trajes_de_bano_y_playa" &&
+      row.from_subcategory === "bikini" &&
+      row.to_category === "trajes_de_bano_y_playa" &&
+      row.to_subcategory === "vestido_de_bano_entero"
+    ) {
+      suspiciousBikiniToOnePiece = true;
+      summary.suspicious.bikini_to_one_piece += 1;
+    }
+
+    let suspiciousBagToPuffer = false;
+    if (row.from_category === "bolsos_y_marroquineria" && row.to_category === "chaquetas_y_abrigos") {
+      suspiciousBagToPuffer = true;
+      summary.suspicious.bag_to_puffer += 1;
+    }
+
+    let suspiciousShoeToSportswear = false;
+    if (row.from_category === "calzado" && row.to_category === "ropa_deportiva_y_performance") {
+      suspiciousShoeToSportswear = true;
+      summary.suspicious.shoe_to_sportswear += 1;
+    }
+
+    let suspiciousSportsToGenericTop = false;
+    if (
+      row.from_category === "ropa_deportiva_y_performance" &&
+      row.to_category === "camisetas_y_tops" &&
+      SPORTS_EVIDENCE.some((kw) => allText.includes(normalizeText(kw)))
+    ) {
+      suspiciousSportsToGenericTop = true;
+      summary.suspicious.sportswear_to_generic_top += 1;
+    }
+
+    let suspiciousLinenToCasual = false;
+    if (
+      row.from_category === "camisas_y_blusas" &&
+      row.from_subcategory === "camisa_de_lino" &&
+      row.to_category === "camisas_y_blusas" &&
+      row.to_subcategory === "camisa_casual" &&
+      ["lino", "linen"].some((kw) => allText.includes(kw))
+    ) {
+      suspiciousLinenToCasual = true;
+      summary.suspicious.linen_to_casual += 1;
+    }
+
+    let suspiciousZipToCrewneck = false;
+    if (
+      row.from_category === "buzos_hoodies_y_sueteres" &&
+      row.from_subcategory === "hoodie_con_cremallera" &&
+      row.to_category === "buzos_hoodies_y_sueteres" &&
+      row.to_subcategory === "buzo_cuello_redondo" &&
+      ["cierre", "cremallera", "zip", "zipper", "half zip", "quarter zip"].some((kw) =>
+        allText.includes(normalizeText(kw)),
+      )
+    ) {
+      suspiciousZipToCrewneck = true;
+      summary.suspicious.zip_to_crewneck += 1;
     }
 
     const nameScores =
@@ -280,6 +492,16 @@ const main = async () => {
       flags: {
         suspiciousCamisaFormal,
         suspiciousDenim,
+        suspiciousInterior,
+        suspiciousMono,
+        suspiciousJewelryChain,
+        suspiciousSwimToUnderwear,
+        suspiciousBikiniToOnePiece,
+        suspiciousBagToPuffer,
+        suspiciousShoeToSportswear,
+        suspiciousSportsToGenericTop,
+        suspiciousLinenToCasual,
+        suspiciousZipToCrewneck,
       },
     };
   });
@@ -294,7 +516,7 @@ const main = async () => {
     `- moveType: category=${summary.moveType.category}, subcategory=${summary.moveType.subcategory}, gender=${summary.moveType.gender}, multi=${summary.moveType.multi}`,
   );
   mdLines.push(
-    `- suspicious: camisa_formal_without_evidence=${summary.suspicious.camisa_formal_without_evidence}, denim_without_evidence=${summary.suspicious.denim_without_evidence}`,
+    `- suspicious: camisa_formal_without_evidence=${summary.suspicious.camisa_formal_without_evidence}, denim_without_evidence=${summary.suspicious.denim_without_evidence}, interior_false_positive=${summary.suspicious.interior_false_positive}, mono_vs_mono=${summary.suspicious.mono_vs_mono}, jewelry_chain_to_aretes=${summary.suspicious.jewelry_chain_to_aretes}, swim_to_underwear=${summary.suspicious.swim_to_underwear}, bikini_to_one_piece=${summary.suspicious.bikini_to_one_piece}, bag_to_puffer=${summary.suspicious.bag_to_puffer}, shoe_to_sportswear=${summary.suspicious.shoe_to_sportswear}, sportswear_to_generic_top=${summary.suspicious.sportswear_to_generic_top}, linen_to_casual=${summary.suspicious.linen_to_casual}, zip_to_crewneck=${summary.suspicious.zip_to_crewneck}`,
   );
   mdLines.push("");
   mdLines.push("## Top Moves (sample)");
@@ -314,8 +536,10 @@ const main = async () => {
     mdLines.push(`  - from: ${fromCat} / ${fromSub}`);
     mdLines.push(`  - to: ${toCat} / ${toSub}`);
     mdLines.push(`  - conf: ${item.confidence ?? "null"} · support: ${item.support ?? "null"} · margin: ${item.marginRatio ?? "null"}`);
-    if (item.flags.suspiciousCamisaFormal) mdLines.push(`  - flag: suspiciousCamisaFormal`);
-    if (item.flags.suspiciousDenim) mdLines.push(`  - flag: suspiciousDenim`);
+    const flags = Object.entries(item.flags)
+      .filter(([, value]) => Boolean(value))
+      .map(([key]) => key);
+    if (flags.length) mdLines.push(`  - flags: ${flags.join(", ")}`);
   });
   mdLines.push("");
 
@@ -337,4 +561,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect().catch(() => null);
   });
-
