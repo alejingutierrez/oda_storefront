@@ -136,6 +136,11 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 ## Catalogo (public)
 - Ruta `/catalogo` (y aliases `/buscar`, `/g/*`) con filtros, facets y scroll infinito.
 - El catálogo público fuerza `inStock=true` y `enrichedOnly=true` (no muestra productos sin `products.metadata.enrichment`).
+- Filtro de precio:
+  - Slider (rango continuo): `price_min` y `price_max`.
+  - Rangos múltiples (unión disjunta real): `price_range=min:max` (parámetro repetible). Si existe al menos un `price_range`, tiene prioridad sobre `price_min/price_max` (la UI limpia `price_range` al interactuar con el slider).
+- Layout mobile:
+  - Preferencia persistida en `localStorage` key `oda_catalog_mobile_layout_v1` (default = layout previo).
 - Imágenes en cards:
   - Si `products.imageCoverUrl` ya apunta a Vercel Blob (`*.public.blob.vercel-storage.com`), se sirve con `next/image` optimizado.
   - Si el cover aún no está en Blob, se sirve via `/api/image-proxy` (cachea en Blob/CDN). En este caso se renderiza como `unoptimized` para evitar el 400 `INVALID_IMAGE_OPTIMIZE_REQUEST` de Vercel cuando `next/image` intenta optimizar un `src` bajo `/api/*`.

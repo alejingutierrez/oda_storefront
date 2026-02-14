@@ -658,6 +658,38 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: % covers en Blob para productos enriched; tasa de fallos del proxy/backfill; 4xx de `_next/image` (objetivo: 0 para URLs proxy).
 - Estado: **done (2026-02-08)**.
 
+### MC-125 Catálogo público: refinamientos PLP `/catalogo` (mobile + precio + cards)
+- Historia: Como usuario, quiero que el listado `/catalogo` responda más rápido y sea más claro en mobile y desktop (scroll infinito confiable, filtros estables y cards legibles), para explorar sin fricción.
+- Alcance:
+  - Categorías (desktop): mostrar primeras 10 en vista, resto en scroll interno con indicador visual.
+  - Scroll infinito (mobile): endurecer `IntersectionObserver` + fallback por scroll; sentinel con alto; prefetch más agresivo; botón “Cargar más” como backup.
+  - Cards: CTA como icono de cesta dentro del glass (sin texto); en desktop aparece solo con hover; en mobile siempre visible y más compacto en layout 2 columnas.
+  - Carrusel automático: transición más sutil sin flicker/flash blanco (crossfade cuando la nueva imagen carga).
+  - Precio:
+    - Histograma más legible sin aumentar altura del filtro.
+    - Slider con thumbs touch-friendly y z-index correcto para manipular min y max.
+    - Soportar unión disjunta real de rangos con `price_range=min:max` repetible (prioridad sobre `price_min/price_max`).
+    - Bounds/histograma dinámicos según el set filtrado (sin auto-contarse contra el propio filtro de precio).
+  - Colores: ordenar swatches por gama/similaridad.
+  - Comparador (mobile): previews 1:1 para usar mejor el espacio.
+  - UX mobile: dock de filtros fijo abajo + padding de contenido para evitar overlap; botón “Arriba”.
+  - Layout mobile: toggle al inicio del listado para 1/2 columnas y aspect 1:1 / 4:5 / 3:4 (default = layout previo).
+- CA:
+  - En desktop, si hay más de 10 categorías, se percibe claramente que hay más (scroll interno + hint) sin crecer indefinidamente la caja.
+  - En mobile, el scroll infinito carga de forma consistente; si falla, el botón “Cargar más” sigue funcionando.
+  - El carrusel no parpadea ni muestra fundido a blanco al cambiar de imagen.
+  - El filtro de precio permite manipular ambas “bolitas” (min/max) en mobile y responde bien a touch.
+  - `price_range` aplica unión OR entre rangos seleccionados; al mover el slider se limpia `price_range` y se usa rango continuo.
+  - Toggle de layout mobile persiste por sesión y su default no cambia respecto al comportamiento previo.
+  - En el drawer de búsquedas guardadas, el botón eliminar no queda cortado por safe-area.
+- Datos:
+  - Query params: `price_range` (repetible, tokens `min:max`).
+  - Persistencia UI: `localStorage` key `oda_catalog_mobile_layout_v1`.
+- NF: sin solapes del dock con CompareBar/ToTop; feedback de loading visible durante transiciones; no re-mount agresivo de filtros.
+- Riesgos: UX confusa si se mezclan `price_range` y slider; mitigación: el slider limpia `price_range` al interactuar y la UI lo indica.
+- Métricas: tasa de carga exitosa de páginas (infinite scroll), tiempo percibido al aplicar filtros/sort, interacción con toggles de layout.
+- Estado: **done (2026-02-14)**.
+
 ### MC-123 Revisión manual de remapeo taxonómico (categoría/subcategoría/género)
 - Historia: Como curador/admin, quiero revisar propuestas de reclasificación antes de aplicarlas, para evitar cambios erróneos de taxonomía y mantener consistencia del catálogo.
 - Alcance:
