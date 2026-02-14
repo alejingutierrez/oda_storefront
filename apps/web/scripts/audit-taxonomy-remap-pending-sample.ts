@@ -96,7 +96,7 @@ const FORMAL_EVIDENCE = [
   "tailoring",
 ];
 
-const SWIM_EVIDENCE = [
+const SWIM_STRONG_EVIDENCE = [
   "bikini",
   "trikini",
   "tankini",
@@ -108,21 +108,16 @@ const SWIM_EVIDENCE = [
   "bañador",
   "swimwear",
   "beachwear",
-  "swim",
-  "swimsuit",
-  "de bano",
-  "de baño",
-  "playa",
-  "beach",
-  "pool",
-  "piscina",
-  "salida de bano",
-  "salida de baño",
-  "cover up",
-  "coverup",
-  "cobertor",
-  "cobertor playa",
-  "cobertor de playa",
+  "pantaloneta",
+  "pantaloneta de bano",
+  "pantaloneta de baño",
+  "short de bano",
+  "short de baño",
+  "boardshort",
+  "boardshorts",
+  "swim trunk",
+  "swim trunks",
+  "rashguard",
 ];
 
 const BAG_EVIDENCE = [
@@ -146,27 +141,57 @@ const BAG_EVIDENCE = [
   "lonchera",
 ];
 
-const FOOTWEAR_EVIDENCE = [
-  "calzado",
-  "footwear",
-  "zapato",
-  "zapatos",
-  "shoe",
-  "shoes",
-  "sneaker",
-  "sneakers",
-  "sandalia",
-  "sandalias",
-  "bota",
-  "botas",
-  "botin",
-  "botines",
-  "mocasin",
-  "mocasines",
-  "loafer",
-  "loafers",
-  "tacon",
-  "tacones",
+const HOODIE_EVIDENCE = [
+  "buzo",
+  "hoodie",
+  "sudadera",
+  "sweatshirt",
+  "sueter",
+  "suéter",
+  "sweater",
+  "jersey",
+  "cardigan",
+  "capucha",
+];
+
+const LINGERIE_STRONG_EVIDENCE = [
+  "corset",
+  "corse",
+  "corsé",
+  "babydoll",
+  "liguero",
+  "shapewear",
+  "faja",
+  "moldeador",
+  "torso moldeador",
+  "controlwear",
+  "body lencero",
+  "conjunto lenceria",
+  "conjunto de lenceria",
+  "set lenceria",
+  "set de lenceria",
+  "lingerie set",
+  "pantimedia",
+  "pantimedias",
+  "media velada",
+  "medias veladas",
+  "pantyhose",
+  "hosiery",
+  "stocking",
+  "stockings",
+  "tights",
+];
+
+const HOSIERY_EVIDENCE = [
+  "pantimedia",
+  "pantimedias",
+  "media velada",
+  "medias veladas",
+  "pantyhose",
+  "hosiery",
+  "stocking",
+  "stockings",
+  "tights",
 ];
 
 const SPORTS_EVIDENCE = [
@@ -259,6 +284,12 @@ const main = async () => {
       sportswear_to_generic_top: 0,
       linen_to_casual: 0,
       zip_to_crewneck: 0,
+      underwear_to_lingerie: 0,
+      panty_to_hosiery: 0,
+      panty_to_lingerie_set: 0,
+      ear_cuff_to_piercing: 0,
+      swim_short_to_cotton_short: 0,
+      canguro_bag_to_hoodie: 0,
     },
     topMoves: new Map<string, number>(),
   };
@@ -430,6 +461,85 @@ const main = async () => {
       summary.suspicious.zip_to_crewneck += 1;
     }
 
+    let suspiciousUnderwearToLingerie = false;
+    if (
+      row.from_category === "ropa_interior_basica" &&
+      row.to_category === "lenceria_y_fajas_shapewear" &&
+      ["panty", "trusa", "tanga", "brasier", "bralette", "brief", "boxer", "cachetero", "brasilera"].some((kw) =>
+        allText.includes(normalizeText(kw)),
+      ) &&
+      !LINGERIE_STRONG_EVIDENCE.some((kw) => allText.includes(normalizeText(kw)))
+    ) {
+      suspiciousUnderwearToLingerie = true;
+      summary.suspicious.underwear_to_lingerie += 1;
+    }
+
+    let suspiciousPantyToHosiery = false;
+    if (
+      row.to_category === "lenceria_y_fajas_shapewear" &&
+      row.to_subcategory === "medias_lenceria_panty_lenceria" &&
+      !HOSIERY_EVIDENCE.some((kw) => allText.includes(normalizeText(kw)))
+    ) {
+      suspiciousPantyToHosiery = true;
+      summary.suspicious.panty_to_hosiery += 1;
+    }
+
+    let suspiciousPantyToLingerieSet = false;
+    if (
+      row.to_category === "lenceria_y_fajas_shapewear" &&
+      row.to_subcategory === "conjunto_lenceria"
+    ) {
+      const hasTopPiece = ["brasier", "bralette", "bra"].some((kw) => allText.includes(normalizeText(kw)));
+      const hasBottomPiece = ["panty", "trusa", "tanga", "cachetero", "brasilera", "calzon", "calzón"].some((kw) =>
+        allText.includes(normalizeText(kw)),
+      );
+      if (!hasTopPiece || !hasBottomPiece) {
+        suspiciousPantyToLingerieSet = true;
+        summary.suspicious.panty_to_lingerie_set += 1;
+      }
+    }
+
+    let suspiciousEarCuffToPiercing = false;
+    if (
+      row.to_category === "joyeria_y_bisuteria" &&
+      row.to_subcategory === "piercings" &&
+      ["ear cuff", "ear cuffs", "earcuff"].some((kw) => allText.includes(normalizeText(kw))) &&
+      !["piercing", "septum", "barbell", "labret", "helix"].some((kw) => allText.includes(normalizeText(kw)))
+    ) {
+      suspiciousEarCuffToPiercing = true;
+      summary.suspicious.ear_cuff_to_piercing += 1;
+    }
+
+    let suspiciousSwimShortToCottonShort = false;
+    if (
+      row.from_category === "trajes_de_bano_y_playa" &&
+      row.to_category === "shorts_y_bermudas" &&
+      SWIM_STRONG_EVIDENCE.some((kw) => allText.includes(normalizeText(kw)))
+    ) {
+      suspiciousSwimShortToCottonShort = true;
+      summary.suspicious.swim_short_to_cotton_short += 1;
+    }
+    if (
+      row.to_category === "shorts_y_bermudas" &&
+      row.to_subcategory === "short_casual_algodon" &&
+      SWIM_STRONG_EVIDENCE.some((kw) => allText.includes(normalizeText(kw)))
+    ) {
+      suspiciousSwimShortToCottonShort = true;
+      summary.suspicious.swim_short_to_cotton_short += 1;
+    }
+
+    let suspiciousCanguroBagToHoodie = false;
+    if (
+      row.from_category === "bolsos_y_marroquineria" &&
+      row.to_category === "buzos_hoodies_y_sueteres" &&
+      row.to_subcategory === "hoodie_canguro" &&
+      BAG_EVIDENCE.some((kw) => allText.includes(normalizeText(kw))) &&
+      !HOODIE_EVIDENCE.some((kw) => allText.includes(normalizeText(kw)))
+    ) {
+      suspiciousCanguroBagToHoodie = true;
+      summary.suspicious.canguro_bag_to_hoodie += 1;
+    }
+
     const nameScores =
       categoryFinal ? scoreSubcategoryCandidates(categoryFinal, nameText).slice(0, 6) : [];
     const seoScores =
@@ -502,6 +612,12 @@ const main = async () => {
         suspiciousSportsToGenericTop,
         suspiciousLinenToCasual,
         suspiciousZipToCrewneck,
+        suspiciousUnderwearToLingerie,
+        suspiciousPantyToHosiery,
+        suspiciousPantyToLingerieSet,
+        suspiciousEarCuffToPiercing,
+        suspiciousSwimShortToCottonShort,
+        suspiciousCanguroBagToHoodie,
       },
     };
   });
@@ -516,7 +632,7 @@ const main = async () => {
     `- moveType: category=${summary.moveType.category}, subcategory=${summary.moveType.subcategory}, gender=${summary.moveType.gender}, multi=${summary.moveType.multi}`,
   );
   mdLines.push(
-    `- suspicious: camisa_formal_without_evidence=${summary.suspicious.camisa_formal_without_evidence}, denim_without_evidence=${summary.suspicious.denim_without_evidence}, interior_false_positive=${summary.suspicious.interior_false_positive}, mono_vs_mono=${summary.suspicious.mono_vs_mono}, jewelry_chain_to_aretes=${summary.suspicious.jewelry_chain_to_aretes}, swim_to_underwear=${summary.suspicious.swim_to_underwear}, bikini_to_one_piece=${summary.suspicious.bikini_to_one_piece}, bag_to_puffer=${summary.suspicious.bag_to_puffer}, shoe_to_sportswear=${summary.suspicious.shoe_to_sportswear}, sportswear_to_generic_top=${summary.suspicious.sportswear_to_generic_top}, linen_to_casual=${summary.suspicious.linen_to_casual}, zip_to_crewneck=${summary.suspicious.zip_to_crewneck}`,
+    `- suspicious: camisa_formal_without_evidence=${summary.suspicious.camisa_formal_without_evidence}, denim_without_evidence=${summary.suspicious.denim_without_evidence}, interior_false_positive=${summary.suspicious.interior_false_positive}, mono_vs_mono=${summary.suspicious.mono_vs_mono}, jewelry_chain_to_aretes=${summary.suspicious.jewelry_chain_to_aretes}, swim_to_underwear=${summary.suspicious.swim_to_underwear}, bikini_to_one_piece=${summary.suspicious.bikini_to_one_piece}, bag_to_puffer=${summary.suspicious.bag_to_puffer}, shoe_to_sportswear=${summary.suspicious.shoe_to_sportswear}, sportswear_to_generic_top=${summary.suspicious.sportswear_to_generic_top}, linen_to_casual=${summary.suspicious.linen_to_casual}, zip_to_crewneck=${summary.suspicious.zip_to_crewneck}, underwear_to_lingerie=${summary.suspicious.underwear_to_lingerie}, panty_to_hosiery=${summary.suspicious.panty_to_hosiery}, panty_to_lingerie_set=${summary.suspicious.panty_to_lingerie_set}, ear_cuff_to_piercing=${summary.suspicious.ear_cuff_to_piercing}, swim_short_to_cotton_short=${summary.suspicious.swim_short_to_cotton_short}, canguro_bag_to_hoodie=${summary.suspicious.canguro_bag_to_hoodie}`,
   );
   mdLines.push("");
   mdLines.push("## Top Moves (sample)");

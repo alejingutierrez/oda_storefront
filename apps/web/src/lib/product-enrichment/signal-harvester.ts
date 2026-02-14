@@ -455,6 +455,134 @@ const matchesWordWindow = (text: string, from: string, to: string, maxBetween: n
 const hasDenimEvidence = (text: string) =>
   hasAnyKeyword(text, ["denim", "jean", "jeans", "indigo", "jort", "jorts"]);
 
+const UNDERWEAR_EVIDENCE = [
+  "ropa interior",
+  "underwear",
+  "intimate",
+  "brasier",
+  "bralette",
+  "panty",
+  "trusa",
+  "tanga",
+  "cachetero",
+  "brasilera",
+  "calzon",
+  "calzón",
+  "calzoncillo",
+  "boxer",
+  "brief",
+  "camisilla interior",
+];
+
+const HOSIERY_EVIDENCE = [
+  "pantimedia",
+  "pantimedias",
+  "media velada",
+  "medias veladas",
+  "pantyhose",
+  "hosiery",
+  "stocking",
+  "stockings",
+  "tights",
+];
+
+const SWIM_EVIDENCE = [
+  "bikini",
+  "trikini",
+  "tankini",
+  "traje de bano",
+  "traje de baño",
+  "vestido de bano",
+  "vestido de baño",
+  "swimwear",
+  "beachwear",
+  "rashguard",
+  "banador",
+  "bañador",
+  "pantaloneta",
+  "pantaloneta de bano",
+  "pantaloneta de baño",
+  "short de bano",
+  "short de baño",
+  "boardshort",
+  "boardshorts",
+  "swim trunk",
+  "swim trunks",
+];
+
+const BAG_EVIDENCE = [
+  "rinonera",
+  "riñonera",
+  "waist bag",
+  "belt bag",
+  "bolso",
+  "bolsos",
+  "bag",
+  "bags",
+  "cartera",
+  "mochila",
+  "morral",
+  "bandolera",
+  "crossbody",
+  "clutch",
+  "billetera",
+  "wallet",
+  "cartuchera",
+  "neceser",
+  "estuche",
+  "lonchera",
+  "maleta",
+  "equipaje",
+  "correa",
+  "cintura",
+  "compartimento",
+];
+
+// Brand-level SEO often uses "lenceria" generically for any underwear. Only treat it as
+// a category signal when we see explicit lingerie/shapewear/hosiery evidence.
+const LINGERIE_STRONG_EVIDENCE = [
+  "corset",
+  "corse",
+  "corsé",
+  "babydoll",
+  "liguero",
+  "shapewear",
+  "faja",
+  "moldeador",
+  "torso moldeador",
+  "controlwear",
+  "body lencero",
+  "conjunto lenceria",
+  "conjunto de lenceria",
+  "set lenceria",
+  "set de lenceria",
+  "lingerie set",
+  ...HOSIERY_EVIDENCE,
+];
+
+const HOODIE_EVIDENCE = [
+  "buzo",
+  "hoodie",
+  "sudadera",
+  "sweatshirt",
+  "sueter",
+  "suéter",
+  "sweater",
+  "jersey",
+  "cardigan",
+  "capucha",
+];
+
+const hasUnderwearEvidence = (text: string) => hasAnyKeyword(text, UNDERWEAR_EVIDENCE);
+const hasHosieryEvidence = (text: string) => hasAnyKeyword(text, HOSIERY_EVIDENCE);
+const hasSwimEvidence = (text: string) => hasAnyKeyword(text, SWIM_EVIDENCE);
+const hasBagEvidence = (text: string) => hasAnyKeyword(text, BAG_EVIDENCE);
+const hasStrongLingerieEvidence = (text: string) => hasAnyKeyword(text, LINGERIE_STRONG_EVIDENCE);
+const hasHoodieEvidence = (text: string) => hasAnyKeyword(text, HOODIE_EVIDENCE);
+const hasCottonEvidence = (text: string) => hasAnyKeyword(text, ["algodon", "algodón", "cotton"]);
+const hasPiercingEvidence = (text: string) =>
+  hasAnyKeyword(text, ["piercing", "piercings", "septum", "barbell", "labret", "helix"]);
+
 const countJewelryPieceTypes = (text: string) => {
   const groups: string[][] = [
     ["arete", "aretes", "earring", "earrings", "pendiente", "pendientes"],
@@ -788,21 +916,10 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
   }
   if (
     rule.category === "ropa_interior_basica" &&
-    hasAnyKeyword(text, [
-      "lenceria",
-      "lencería",
-      "lingerie",
-      "corset",
-      "corse",
-      "babydoll",
-      "liguero",
-      "shapewear",
-      "faja",
-      "moldeador",
-      "body lencero",
-    ])
+    hasStrongLingerieEvidence(text)
   ) {
-    // If the text explicitly says lingerie/shapewear, prefer that category over basic underwear.
+    // Prefer lingerie/shapewear only when evidence is explicit; the word "lenceria/lingerie"
+    // alone is too noisy in vendor SEO.
     return true;
   }
   if (
@@ -811,60 +928,39 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
       // "interior" alone is too ambiguous ("guía interior", etc.). Require underwear-ish evidence.
       "interior",
     ]) &&
-    !hasAnyKeyword(text, [
-      "ropa interior",
-      "underwear",
-      "intimate",
-      "brasier",
-      "bralette",
-      "panty",
-      "trusa",
-      "tanga",
-      "cachetero",
-      "brasilera",
-      "calzon",
-      "calzón",
-      "calzoncillo",
-      "boxer",
-      "brief",
-      "camisilla interior",
-    ])
+    !hasUnderwearEvidence(text)
   ) {
     return true;
   }
   if (
     rule.category === "ropa_interior_basica" &&
     hasAnyKeyword(text, [
-      "bikini",
-      "trikini",
-      "tankini",
-      "traje de bano",
-      "traje de baño",
-      "vestido de bano",
-      "vestido de baño",
-      "swimwear",
-      "beachwear",
-      "rashguard",
-      "banador",
-      "bañador",
-      "swim",
-      "swimsuit",
-      "de bano",
-      "de baño",
-      "playa",
-      "beach",
-      "pool",
-      "piscina",
-      "pantaloneta",
-      "pantaloneta de bano",
-      "pantaloneta de baño",
-      "short de bano",
-      "short de baño",
-      "boardshort",
-      "boardshorts",
+      ...SWIM_EVIDENCE,
     ])
   ) {
     // Swimwear can contain underwear-ish words ("panty", "tanga"). Prefer swimwear if it's present.
+    return true;
+  }
+  if (
+    rule.category === "lenceria_y_fajas_shapewear" &&
+    hasUnderwearEvidence(text) &&
+    !hasStrongLingerieEvidence(text)
+  ) {
+    // Many lingerie brands use "lenceria" as a generic brand label. If the product looks like
+    // basic underwear and we don't have explicit shapewear/hosiery/lingerie evidence, ignore.
+    return true;
+  }
+  if (rule.category === "shorts_y_bermudas" && hasSwimEvidence(text)) {
+    // Avoid pulling swim shorts ("short de baño", "pantaloneta", etc.) into generic shorts.
+    return true;
+  }
+  if (
+    rule.category === "buzos_hoodies_y_sueteres" &&
+    hasAnyKeyword(text, ["canguro"]) &&
+    hasBagEvidence(text) &&
+    !hasHoodieEvidence(text)
+  ) {
+    // "Canguro" is ambiguous in CO: hoodie vs fanny pack. If bag evidence exists, treat as bag.
     return true;
   }
   if (
@@ -882,6 +978,47 @@ const shouldIgnoreSubcategoryRule = (
   text: string,
 ) => {
   if (rule.subcategory.includes("denim") && !hasDenimEvidence(text)) {
+    return true;
+  }
+  if (
+    rule.category === "lenceria_y_fajas_shapewear" &&
+    rule.subcategory === "medias_lenceria_panty_lenceria" &&
+    !hasHosieryEvidence(text)
+  ) {
+    // In CO "panty" is commonly underwear; require explicit hosiery evidence to classify as lingerie hosiery.
+    return true;
+  }
+  if (
+    rule.category === "lenceria_y_fajas_shapewear" &&
+    rule.subcategory === "conjunto_lenceria"
+  ) {
+    const hasTopPiece = hasAnyKeyword(text, ["brasier", "bralette", "bra"]);
+    const hasBottomPiece = hasAnyKeyword(text, ["panty", "trusa", "tanga", "cachetero", "brasilera", "calzon", "calzón"]);
+    if (!hasTopPiece || !hasBottomPiece) return true;
+  }
+  if (
+    rule.category === "shorts_y_bermudas" &&
+    rule.subcategory === "short_casual_algodon" &&
+    (!hasCottonEvidence(text) || hasSwimEvidence(text))
+  ) {
+    // Require cotton evidence and reject if swimwear signals exist.
+    return true;
+  }
+  if (
+    rule.category === "buzos_hoodies_y_sueteres" &&
+    rule.subcategory === "hoodie_canguro" &&
+    hasBagEvidence(text) &&
+    !hasHoodieEvidence(text)
+  ) {
+    return true;
+  }
+  if (
+    rule.category === "joyeria_y_bisuteria" &&
+    rule.subcategory === "piercings" &&
+    hasAnyKeyword(text, ["ear cuff", "ear cuffs", "earcuff"]) &&
+    !hasPiercingEvidence(text)
+  ) {
+    // "Ear cuff" is usually an earring-type accessory, not a piercing.
     return true;
   }
   if (

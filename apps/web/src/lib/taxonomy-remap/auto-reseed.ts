@@ -262,6 +262,21 @@ const CATEGORY_MOVE_REQUIRED_EVIDENCE: Partial<Record<string, string[]>> = {
     "watch",
     "choker",
   ],
+  buzos_hoodies_y_sueteres: [
+    "buzo",
+    "hoodie",
+    "sudadera",
+    "sweatshirt",
+    "sueter",
+    "suéter",
+    "sweater",
+    "jersey",
+    "cardigan",
+    "crewneck",
+    "pulover",
+    "pullover",
+    "capucha",
+  ],
   hogar_y_lifestyle: [
     "poster",
     "arte",
@@ -330,6 +345,87 @@ const canMoveToCategory = (category: string | null, evidenceText: string) => {
       "piscina",
     ]);
     if (hasSwimEvidence) return false;
+  }
+  if (category === "lenceria_y_fajas_shapewear") {
+    // The word "lenceria/lingerie" is noisy in vendor SEO; only move into this category when
+    // we have explicit shapewear/lingerie/hosiery evidence (or an explicit lingerie set).
+    const hasStrongLingerieEvidence = hasAnyKeyword(evidenceText, [
+      "corset",
+      "corse",
+      "corsé",
+      "babydoll",
+      "liguero",
+      "shapewear",
+      "faja",
+      "moldeador",
+      "torso moldeador",
+      "controlwear",
+      "body lencero",
+      "conjunto lenceria",
+      "conjunto de lenceria",
+      "set lenceria",
+      "set de lenceria",
+      "lingerie set",
+      "pantimedia",
+      "pantimedias",
+      "media velada",
+      "medias veladas",
+      "pantyhose",
+      "hosiery",
+      "stocking",
+      "stockings",
+      "tights",
+    ]);
+    if (!hasStrongLingerieEvidence) return false;
+  }
+  if (category === "shorts_y_bermudas") {
+    // Do not move swim shorts into generic shorts.
+    const hasSwimEvidence = hasAnyKeyword(evidenceText, [
+      "bikini",
+      "trikini",
+      "tankini",
+      "traje de bano",
+      "traje de baño",
+      "vestido de bano",
+      "vestido de baño",
+      "swimwear",
+      "beachwear",
+      "banador",
+      "bañador",
+      "pantaloneta",
+      "pantaloneta de bano",
+      "pantaloneta de baño",
+      "short de bano",
+      "short de baño",
+      "boardshort",
+      "boardshorts",
+      "swim trunk",
+      "swim trunks",
+    ]);
+    if (hasSwimEvidence) return false;
+  }
+  if (
+    category === "buzos_hoodies_y_sueteres" &&
+    hasAnyKeyword(evidenceText, ["canguro"]) &&
+    hasAnyKeyword(evidenceText, [
+      "rinonera",
+      "riñonera",
+      "waist bag",
+      "belt bag",
+      "bolso",
+      "bolsos",
+      "bag",
+      "bags",
+      "cartera",
+      "mochila",
+      "morral",
+      "bandolera",
+      "crossbody",
+    ]) &&
+    !hasAnyKeyword(evidenceText, ["buzo", "hoodie", "sudadera", "sweatshirt", "sueter", "suéter", "sweater"])
+  ) {
+    // "Canguro" is ambiguous in CO (hoodie vs riñonera). If it looks like a bag, don't move into sweaters/hoodies.
+    return false;
   }
   if (
     category === "ropa_deportiva_y_performance" &&
@@ -580,6 +676,108 @@ const canMoveToSubcategory = (params: {
   const key = `${params.category}:${params.subcategory}`;
   const specificKeywords = SUBCATEGORY_SPECIFIC_KEYWORDS_BY_KEY.get(key) ?? [];
   if (!specificKeywords.length) return false;
+
+  if (params.category === "lenceria_y_fajas_shapewear" && params.subcategory === "medias_lenceria_panty_lenceria") {
+    const hasHosieryEvidence = hasAnyKeyword(params.evidenceText, [
+      "pantimedia",
+      "pantimedias",
+      "media velada",
+      "medias veladas",
+      "pantyhose",
+      "hosiery",
+      "stocking",
+      "stockings",
+      "tights",
+      "medias de encaje",
+    ]);
+    if (!hasHosieryEvidence) return false;
+  }
+
+  if (params.category === "lenceria_y_fajas_shapewear" && params.subcategory === "conjunto_lenceria") {
+    const hasTopPiece = hasAnyKeyword(params.evidenceText, ["brasier", "bralette", "bra"]);
+    const hasBottomPiece = hasAnyKeyword(params.evidenceText, [
+      "panty",
+      "trusa",
+      "tanga",
+      "cachetero",
+      "brasilera",
+      "calzon",
+      "calzón",
+      "brief",
+    ]);
+    if (!hasTopPiece || !hasBottomPiece) return false;
+  }
+
+  if (params.category === "shorts_y_bermudas" && params.subcategory === "short_casual_algodon") {
+    const hasCottonEvidence = hasAnyKeyword(params.evidenceText, ["algodon", "algodón", "cotton"]);
+    const hasSwimEvidence = hasAnyKeyword(params.evidenceText, [
+      "bikini",
+      "trikini",
+      "tankini",
+      "traje de bano",
+      "traje de baño",
+      "vestido de bano",
+      "vestido de baño",
+      "swimwear",
+      "beachwear",
+      "banador",
+      "bañador",
+      "pantaloneta",
+      "pantaloneta de bano",
+      "pantaloneta de baño",
+      "short de bano",
+      "short de baño",
+      "boardshort",
+      "boardshorts",
+      "swim trunk",
+      "swim trunks",
+    ]);
+    if (!hasCottonEvidence || hasSwimEvidence) return false;
+  }
+
+  if (params.category === "buzos_hoodies_y_sueteres" && params.subcategory === "hoodie_canguro") {
+    const hasBagEvidence = hasAnyKeyword(params.evidenceText, [
+      "rinonera",
+      "riñonera",
+      "waist bag",
+      "belt bag",
+      "bolso",
+      "bolsos",
+      "bag",
+      "bags",
+      "cartera",
+      "mochila",
+      "morral",
+      "bandolera",
+      "crossbody",
+      "cintura",
+      "correa",
+    ]);
+    const hasHoodieEvidence = hasAnyKeyword(params.evidenceText, [
+      "buzo",
+      "hoodie",
+      "sudadera",
+      "sweatshirt",
+      "sueter",
+      "suéter",
+      "sweater",
+      "capucha",
+    ]);
+    if (hasBagEvidence && !hasHoodieEvidence) return false;
+  }
+
+  if (params.category === "joyeria_y_bisuteria" && params.subcategory === "piercings") {
+    const hasEarCuff = hasAnyKeyword(params.evidenceText, ["ear cuff", "ear cuffs", "earcuff"]);
+    const hasPiercingEvidence = hasAnyKeyword(params.evidenceText, [
+      "piercing",
+      "piercings",
+      "septum",
+      "barbell",
+      "labret",
+      "helix",
+    ]);
+    if (hasEarCuff && !hasPiercingEvidence) return false;
+  }
 
   // Disambiguate camisa vs blusa: don't propose blusa_* unless the text explicitly says "blusa".
   if (
