@@ -23,7 +23,7 @@ type PersistedState = {
 type MobileLayoutState = {
   version: 1;
   columns: 1 | 2;
-  aspect: "original" | "portrait" | "square";
+  aspect: "original" | "square";
 };
 
 const MOBILE_LAYOUT_KEY = "oda_catalog_mobile_layout_v1";
@@ -36,8 +36,8 @@ function readMobileLayout(): MobileLayoutState {
     const parsed = JSON.parse(raw) as Partial<MobileLayoutState> | null;
     if (!parsed || parsed.version !== 1) return { version: 1, columns: 1, aspect: "original" };
     const columns = parsed.columns === 2 ? 2 : 1;
-    const aspect =
-      parsed.aspect === "portrait" || parsed.aspect === "square" ? parsed.aspect : "original";
+    // Migration: "portrait" (4:5) ya no existe; cae a "original" (3:4).
+    const aspect = parsed.aspect === "square" ? "square" : "original";
     return { version: 1, columns, aspect };
   } catch {
     return { version: 1, columns: 1, aspect: "original" };
@@ -183,7 +183,6 @@ export default function CatalogProductsInfinite({
     nextParams.set("page", "1");
 
     void fetch(`/api/catalog/products?${nextParams.toString()}`, {
-      cache: "no-store",
       signal: controller.signal,
     })
       .then(async (res) => {
@@ -296,9 +295,7 @@ export default function CatalogProductsInfinite({
             const nextParams = new URLSearchParams(initialSearchParams);
             nextParams.delete("page");
             nextParams.set("page", String(nextPage));
-            const res = await fetch(`/api/catalog/products?${nextParams.toString()}`, {
-              cache: "no-store",
-            });
+            const res = await fetch(`/api/catalog/products?${nextParams.toString()}`);
             if (!res.ok) {
               throw new Error(`http_${res.status}`);
             }
@@ -350,7 +347,7 @@ export default function CatalogProductsInfinite({
     };
 
     schedule(() => {
-      void fetch(`/api/catalog/products?${nextParams.toString()}`, { cache: "no-store" })
+      void fetch(`/api/catalog/products?${nextParams.toString()}`)
         .then(async (res) => {
           if (!res.ok) return null;
           const payload = (await res.json()) as ApiResponse;
@@ -443,98 +440,84 @@ export default function CatalogProductsInfinite({
   return (
     <CompareProvider>
       <div className="flex flex-col gap-6">
-        <div id="catalog-results" className="scroll-mt-32">
-          <div className="lg:hidden">
-            <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-4 py-3 shadow-[0_16px_40px_rgba(23,21,19,0.06)]">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-                    Columnas
-                  </span>
-                  <div className="inline-flex overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)]">
-                    <button
-                      type="button"
-                      onClick={() => setMobileLayout((prev) => ({ ...prev, columns: 1 }))}
-                      className={[
-                        "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
-                        mobileLayout.columns === 1
-                          ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
-                          : "text-[color:var(--oda-ink)]",
-                      ].join(" ")}
-                      aria-pressed={mobileLayout.columns === 1}
-                      title="1 por fila"
-                    >
-                      1
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMobileLayout((prev) => ({ ...prev, columns: 2 }))}
-                      className={[
-                        "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
-                        mobileLayout.columns === 2
-                          ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
-                          : "text-[color:var(--oda-ink)]",
-                      ].join(" ")}
-                      aria-pressed={mobileLayout.columns === 2}
-                      title="2 por fila"
-                    >
-                      2
-                    </button>
+          <div id="catalog-results" className="scroll-mt-32">
+            <div className="lg:hidden">
+              <div className="mb-4 rounded-2xl border border-[color:var(--oda-border)] bg-white px-4 py-3 shadow-[0_16px_40px_rgba(23,21,19,0.06)]">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                      Columnas
+                    </p>
+                    <div className="mt-2 inline-flex overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)]">
+                      <button
+                        type="button"
+                        onClick={() => setMobileLayout((prev) => ({ ...prev, columns: 1 }))}
+                        className={[
+                          "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
+                          mobileLayout.columns === 1
+                            ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                            : "text-[color:var(--oda-ink)]",
+                        ].join(" ")}
+                        aria-pressed={mobileLayout.columns === 1}
+                        title="1 por fila"
+                      >
+                        1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMobileLayout((prev) => ({ ...prev, columns: 2 }))}
+                        className={[
+                          "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
+                          mobileLayout.columns === 2
+                            ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                            : "text-[color:var(--oda-ink)]",
+                        ].join(" ")}
+                        aria-pressed={mobileLayout.columns === 2}
+                        title="2 por fila"
+                      >
+                        2
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-                    Formato
-                  </span>
-                  <div className="inline-flex overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)]">
-                    <button
-                      type="button"
-                      onClick={() => setMobileLayout((prev) => ({ ...prev, aspect: "original" }))}
-                      className={[
-                        "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
-                        mobileLayout.aspect === "original"
-                          ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
-                          : "text-[color:var(--oda-ink)]",
-                      ].join(" ")}
-                      aria-pressed={mobileLayout.aspect === "original"}
-                      title="Original (3:4)"
-                    >
-                      3:4
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMobileLayout((prev) => ({ ...prev, aspect: "portrait" }))}
-                      className={[
-                        "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
-                        mobileLayout.aspect === "portrait"
-                          ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
-                          : "text-[color:var(--oda-ink)]",
-                      ].join(" ")}
-                      aria-pressed={mobileLayout.aspect === "portrait"}
-                      title="Vertical (4:5)"
-                    >
-                      4:5
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMobileLayout((prev) => ({ ...prev, aspect: "square" }))}
-                      className={[
-                        "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
-                        mobileLayout.aspect === "square"
-                          ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
-                          : "text-[color:var(--oda-ink)]",
-                      ].join(" ")}
-                      aria-pressed={mobileLayout.aspect === "square"}
-                      title="Cuadrado (1:1)"
-                    >
-                      1:1
-                    </button>
+                  <div>
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                      Formato
+                    </p>
+                    <div className="mt-2 inline-flex overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)]">
+                      <button
+                        type="button"
+                        onClick={() => setMobileLayout((prev) => ({ ...prev, aspect: "original" }))}
+                        className={[
+                          "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
+                          mobileLayout.aspect === "original"
+                            ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                            : "text-[color:var(--oda-ink)]",
+                        ].join(" ")}
+                        aria-pressed={mobileLayout.aspect === "original"}
+                        title="Original (3:4)"
+                      >
+                        3:4
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMobileLayout((prev) => ({ ...prev, aspect: "square" }))}
+                        className={[
+                          "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
+                          mobileLayout.aspect === "square"
+                            ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                            : "text-[color:var(--oda-ink)]",
+                        ].join(" ")}
+                        aria-pressed={mobileLayout.aspect === "square"}
+                        title="Cuadrado (1:1)"
+                      >
+                        1:1
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
 
           {navigationPending && !preview ? (
             <div className="grid gap-4">
@@ -663,12 +646,23 @@ function ToTopButton() {
       type="button"
       onClick={() => {
         window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+        const filters = document.getElementById("catalog-filters-scroll");
+        if (filters) {
+          try {
+            filters.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+          } catch {
+            filters.scrollTop = 0;
+          }
+        }
       }}
-      className="fixed bottom-[calc(var(--oda-mobile-dock-h)+var(--oda-mobile-dock-gap)+4.25rem)] right-4 z-40 inline-flex items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/92 px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] shadow-[0_20px_60px_rgba(23,21,19,0.20)] backdrop-blur transition hover:bg-[color:var(--oda-stone)] lg:bottom-6"
+      className="fixed right-4 top-24 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/92 text-[color:var(--oda-ink)] shadow-[0_20px_60px_rgba(23,21,19,0.20)] backdrop-blur transition hover:bg-[color:var(--oda-stone)] lg:bottom-6 lg:right-6 lg:top-auto lg:h-auto lg:w-auto lg:px-4 lg:py-3 lg:text-[10px] lg:font-semibold lg:uppercase lg:tracking-[0.22em]"
       aria-label="Volver arriba"
       title="Arriba"
     >
-      Arriba
+      <span className="text-base leading-none lg:hidden" aria-hidden="true">
+        ↑
+      </span>
+      <span className="hidden lg:inline">Arriba</span>
     </button>
   );
 }

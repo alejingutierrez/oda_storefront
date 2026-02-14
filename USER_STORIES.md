@@ -662,18 +662,22 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Historia: Como usuario, quiero que el listado `/catalogo` responda más rápido y sea más claro en mobile y desktop (scroll infinito confiable, filtros estables y cards legibles), para explorar sin fricción.
 - Alcance:
   - Categorías (desktop): mostrar primeras 10 en vista, resto en scroll interno con indicador visual.
+  - Categoría es single-select: al elegir una, se colapsan las demás y queda visible solo la seleccionada (con acción “Cambiar”).
   - Scroll infinito (mobile): endurecer `IntersectionObserver` + fallback por scroll; sentinel con alto; prefetch más agresivo; botón “Cargar más” como backup.
-  - Cards: CTA como icono de cesta dentro del glass (sin texto); en desktop aparece solo con hover; en mobile siempre visible y más compacto en layout 2 columnas.
+  - Cards: sin CTA de compra/cesta (no compite con marca/título/precio); mejorar legibilidad del glass en 1:1 y 3:4 (1 o 2 columnas). Enlaces a producto siempre abren en nueva pestaña.
   - Carrusel automático: transición más sutil sin flicker/flash blanco (crossfade cuando la nueva imagen carga).
   - Precio:
     - Histograma más legible sin aumentar altura del filtro.
     - Slider con thumbs touch-friendly y z-index correcto para manipular min y max.
     - Soportar unión disjunta real de rangos con `price_range=min:max` repetible (prioridad sobre `price_min/price_max`).
-    - Bounds/histograma dinámicos según el set filtrado (sin auto-contarse contra el propio filtro de precio).
+    - Bounds/histograma dinámicos según el set filtrado (sin auto-contarse contra el propio filtro de precio) y dominio robusto para evitar outliers (p02/p98).
   - Colores: ordenar swatches por gama/similaridad.
   - Comparador (mobile): previews 1:1 para usar mejor el espacio.
   - UX mobile: dock de filtros fijo abajo + padding de contenido para evitar overlap; botón “Arriba”.
-  - Layout mobile: toggle al inicio del listado para 1/2 columnas y aspect 1:1 / 4:5 / 3:4 (default = layout previo).
+  - Layout mobile: toggle al inicio del listado para 1/2 columnas y aspect 1:1 / 3:4 (sin 4:5); en 2 columnas se oculta “Comparar”.
+  - UX desktop: panel de filtros más angosto, toolbar con iconos (guardar/limpiar), orden alfabético en marcas/categorías/subcategorías/materiales/patrones, sin conteos por opción en filtros.
+  - Header: no reacciona al scroll; menú mobile con scroll interno (no desplaza la página) y search sin zoom iOS.
+  - Resiliencia: cache corto (CDN) + fallback en `sessionStorage` para facets/subcategorías/precio al volver a una pestaña inactiva.
 - CA:
   - En desktop, si hay más de 10 categorías, se percibe claramente que hay más (scroll interno + hint) sin crecer indefinidamente la caja.
   - En mobile, el scroll infinito carga de forma consistente; si falla, el botón “Cargar más” sigue funcionando.
@@ -682,6 +686,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - `price_range` aplica unión OR entre rangos seleccionados; al mover el slider se limpia `price_range` y se usa rango continuo.
   - Toggle de layout mobile persiste por sesión y su default no cambia respecto al comportamiento previo.
   - En el drawer de búsquedas guardadas, el botón eliminar no queda cortado por safe-area.
+  - Enlaces de producto abren siempre en nueva pestaña.
 - Datos:
   - Query params: `price_range` (repetible, tokens `min:max`).
   - Persistencia UI: `localStorage` key `oda_catalog_mobile_layout_v1`.

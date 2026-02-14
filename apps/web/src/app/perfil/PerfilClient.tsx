@@ -115,8 +115,25 @@ function FavoriteCard({
   busy: boolean;
 }) {
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const [listPickerOpen, setListPickerOpen] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    if (!listPickerOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setListPickerOpen(false);
+      if (detailsRef.current) detailsRef.current.open = false;
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [listPickerOpen]);
 
   const title = favorite.product.name;
   const brand = favorite.product.brand?.name ?? "Marca";
@@ -176,12 +193,43 @@ function FavoriteCard({
               Ver en tienda
             </a>
 
-            <details ref={detailsRef} className="relative">
+            <details
+              ref={detailsRef}
+              className="relative"
+              onToggle={(event) => setListPickerOpen(event.currentTarget.open)}
+            >
               <summary className="cursor-pointer rounded-full border border-[color:var(--oda-ink)] px-5 py-2 text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-ink)]">
                 Guardar en lista
               </summary>
-              <div className="absolute left-0 top-full z-10 mt-3 w-[min(340px,90vw)] rounded-2xl border border-[color:var(--oda-border)] bg-white p-4 shadow-[0_24px_70px_rgba(23,21,19,0.18)]">
-                <p className="text-[10px] uppercase tracking-[0.25em] text-[color:var(--oda-taupe)]">
+              {listPickerOpen ? (
+                <button
+                  type="button"
+                  className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+                  aria-label="Cerrar listas"
+                  onClick={() => {
+                    setListPickerOpen(false);
+                    if (detailsRef.current) detailsRef.current.open = false;
+                  }}
+                />
+              ) : null}
+              <div className="fixed inset-x-4 bottom-6 top-24 z-50 overflow-auto rounded-3xl border border-[color:var(--oda-border)] bg-white p-4 shadow-[0_30px_90px_rgba(23,21,19,0.30)] lg:absolute lg:left-0 lg:right-auto lg:top-full lg:bottom-auto lg:z-10 lg:mt-3 lg:w-[min(340px,90vw)] lg:rounded-2xl lg:p-4 lg:shadow-[0_24px_70px_rgba(23,21,19,0.18)]">
+                <div className="mb-3 flex items-center justify-between gap-3 lg:hidden">
+                  <p className="text-[10px] uppercase tracking-[0.25em] text-[color:var(--oda-taupe)]">
+                    Elige una lista
+                  </p>
+                  <button
+                    type="button"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-sm font-semibold text-[color:var(--oda-ink)]"
+                    aria-label="Cerrar"
+                    onClick={() => {
+                      setListPickerOpen(false);
+                      if (detailsRef.current) detailsRef.current.open = false;
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="hidden text-[10px] uppercase tracking-[0.25em] text-[color:var(--oda-taupe)] lg:block">
                   Elige una lista
                 </p>
                 <div className="mt-3 grid gap-2">
@@ -219,7 +267,7 @@ function FavoriteCard({
                       value={newListName}
                       onChange={(event) => setNewListName(event.target.value)}
                       placeholder="Nombre de la lista"
-                      className="w-full rounded-xl border border-[color:var(--oda-border)] px-3 py-2 text-sm text-[color:var(--oda-ink)]"
+                      className="w-full rounded-xl border border-[color:var(--oda-border)] bg-white px-3 py-2 text-base text-[color:var(--oda-ink)] lg:text-sm"
                     />
                     <button
                       type="button"

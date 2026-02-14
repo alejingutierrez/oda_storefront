@@ -20,7 +20,8 @@ export async function GET(req: Request) {
 
   return NextResponse.json(result, {
     headers: {
-      "cache-control": "no-store",
+      // Cache corto en CDN: el catálogo es público y ya revalida en server (`unstable_cache`).
+      "cache-control": "public, max-age=0, s-maxage=60, stale-while-revalidate=600",
     },
   });
 }

@@ -156,7 +156,7 @@ export default function CatalogMobileDock({
     <>
       <div
         ref={dockRef}
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-[color:var(--oda-border)] bg-white/92 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-18px_50px_rgba(23,21,19,0.10)] backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-[color:var(--oda-border)] bg-white/92 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur lg:hidden"
       >
         <div className="flex items-center justify-between gap-3">
           <button
@@ -293,7 +293,7 @@ export default function CatalogMobileDock({
                   {isPending ? "Aplicando…" : "Aplicar"}
                 </button>
               </div>
-              <p className="mt-3 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+              <p className="mt-3 text-[8px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                 Tip: puedes seleccionar varios filtros antes de aplicar.
               </p>
             </div>

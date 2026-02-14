@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { CatalogPriceBounds, CatalogPriceHistogram } from "@/lib/catalog-data";
+import type { CatalogPriceBounds, CatalogPriceHistogram, CatalogPriceStats } from "@/lib/catalog-data";
 
 type FacetItem = {
   value: string;
@@ -61,21 +61,62 @@ function isAbortError(err: unknown) {
   return false;
 }
 
+function readSessionJson<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionJson(key: string, value: unknown) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+}
+
+function isValidPriceBounds(input: unknown): input is CatalogPriceBounds {
+  if (!input || typeof input !== "object") return false;
+  const obj = input as { min?: unknown; max?: unknown };
+  const minOk = obj.min === null || (typeof obj.min === "number" && Number.isFinite(obj.min));
+  const maxOk = obj.max === null || (typeof obj.max === "number" && Number.isFinite(obj.max));
+  return minOk && maxOk;
+}
+
+function isValidPriceHistogram(input: unknown): input is CatalogPriceHistogram {
+  if (!input || typeof input !== "object") return false;
+  const obj = input as { bucketCount?: unknown; buckets?: unknown };
+  if (typeof obj.bucketCount !== "number" || !Number.isFinite(obj.bucketCount)) return false;
+  if (!Array.isArray(obj.buckets)) return false;
+  return obj.buckets.every((value) => typeof value === "number" && Number.isFinite(value));
+}
+
+function isValidPriceStats(input: unknown): input is CatalogPriceStats {
+  if (!input || typeof input !== "object") return false;
+  const obj = input as Partial<CatalogPriceStats>;
+  if (typeof obj.count !== "number" || !Number.isFinite(obj.count)) return false;
+  if (typeof obj.min !== "number" || !Number.isFinite(obj.min)) return false;
+  if (typeof obj.max !== "number" || !Number.isFinite(obj.max)) return false;
+  const percentileFields = ["p02", "p25", "p50", "p75", "p98"] as const;
+  return percentileFields.every((field) => {
+    const value = obj[field];
+    if (value === null) return true;
+    return typeof value === "number" && Number.isFinite(value);
+  });
+}
+
 function sortFacetItems(items: FacetItem[], selectedValues: string[]) {
-  const selectedSet = new Set(selectedValues);
-  const orderMap = new Map(selectedValues.map((value, index) => [value, index]));
-
+  void selectedValues;
   return [...items].sort((a, b) => {
-    const aSelected = selectedSet.has(a.value);
-    const bSelected = selectedSet.has(b.value);
-    if (aSelected !== bSelected) return aSelected ? -1 : 1;
-
-    if (aSelected && bSelected) {
-      return (orderMap.get(a.value) ?? 0) - (orderMap.get(b.value) ?? 0);
-    }
-
-    if (a.count !== b.count) return b.count - a.count;
-    return a.label.localeCompare(b.label, "es", { sensitivity: "base" });
+    const cmp = a.label.localeCompare(b.label, "es", { sensitivity: "base" });
+    if (cmp !== 0) return cmp;
+    return a.value.localeCompare(b.value, "es", { sensitivity: "base" });
   });
 }
 
@@ -122,8 +163,7 @@ function rgbToHsl(rgb: { r: number; g: number; b: number }) {
 }
 
 function sortColorFacetItems(items: FacetItem[], selectedValues: string[]) {
-  const selectedSet = new Set(selectedValues);
-  const orderMap = new Map(selectedValues.map((value, index) => [value, index]));
+  void selectedValues;
 
   const keyFor = (item: FacetItem) => {
     const rgb = item.swatch ? hexToRgb(item.swatch) : null;
@@ -136,14 +176,6 @@ function sortColorFacetItems(items: FacetItem[], selectedValues: string[]) {
   };
 
   return [...items].sort((a, b) => {
-    const aSelected = selectedSet.has(a.value);
-    const bSelected = selectedSet.has(b.value);
-    if (aSelected !== bSelected) return aSelected ? -1 : 1;
-
-    if (aSelected && bSelected) {
-      return (orderMap.get(a.value) ?? 0) - (orderMap.get(b.value) ?? 0);
-    }
-
     const ka = keyFor(a);
     const kb = keyFor(b);
 
@@ -180,14 +212,34 @@ export default function CatalogoFiltersPanel({
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
+  const [resumeTick, setResumeTick] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const bump = () => setResumeTick((prev) => prev + 1);
+    const onFocus = () => bump();
+    const onVis = () => {
+      if (!document.hidden) bump();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
 
   const searchParamsString = params.toString();
   const currentParamsString = mode === "draft" ? draftParamsString : searchParamsString;
 
   const selected = useMemo(() => {
     const current = new URLSearchParams(currentParamsString);
+    const category = current
+      .getAll("category")
+      .map((value) => value.trim())
+      .find((value) => value.length > 0);
     return {
-      categories: current.getAll("category"),
+      categories: category ? [category] : [],
       subcategories: current.getAll("subcategory"),
       genders: current.getAll("gender"),
       brandIds: current.getAll("brandId"),
@@ -213,6 +265,7 @@ export default function CatalogoFiltersPanel({
   }, [currentParamsString]);
   const [resolvedPriceBounds, setResolvedPriceBounds] = useState<CatalogPriceBounds>(priceBounds);
   const [resolvedPriceHistogram, setResolvedPriceHistogram] = useState<CatalogPriceHistogram | null>(null);
+  const [resolvedPriceStats, setResolvedPriceStats] = useState<CatalogPriceStats | null>(null);
   const [priceBoundsLoading, setPriceBoundsLoading] = useState(false);
   const priceBoundsAbortRef = useRef<AbortController | null>(null);
   const priceBoundsFetchKey = useMemo(() => {
@@ -225,6 +278,14 @@ export default function CatalogoFiltersPanel({
     next.delete("price_range");
     return next.toString();
   }, [currentParamsString]);
+  const subcategoriesSessionKey = useMemo(
+    () => `oda_catalog_subcategories_v1:${subcategoriesFetchKey || "base"}`,
+    [subcategoriesFetchKey],
+  );
+  const priceInsightsSessionKey = useMemo(
+    () => `oda_catalog_price_insights_v1:${priceBoundsFetchKey || "base"}`,
+    [priceBoundsFetchKey],
+  );
   const brandSearchResetKey = useMemo(
     () =>
       `${selected.categories.join(",")}::${selected.genders.join(",")}::${selected.subcategories.join(",")}`,
@@ -246,6 +307,46 @@ export default function CatalogoFiltersPanel({
   }, [priceBounds]);
 
   useEffect(() => {
+    if (subcategories.length > 0) return;
+    const cached = readSessionJson<unknown>(subcategoriesSessionKey);
+    if (!Array.isArray(cached)) return;
+    const next = cached
+      .filter((item) => item && typeof item === "object")
+      .map((item) => {
+        const row = item as Partial<FacetItem>;
+        return {
+          value: typeof row.value === "string" ? row.value : "",
+          label: typeof row.label === "string" ? row.label : "",
+          count: typeof row.count === "number" && Number.isFinite(row.count) ? row.count : 0,
+          swatch: typeof row.swatch === "string" ? row.swatch : null,
+          group: typeof row.group === "string" ? row.group : null,
+        } satisfies FacetItem;
+      })
+      .filter((item) => item.value && item.label);
+    if (next.length > 0) setResolvedSubcategories(next);
+  }, [subcategories.length, subcategoriesSessionKey]);
+
+  useEffect(() => {
+    const cached = readSessionJson<unknown>(priceInsightsSessionKey);
+    if (!cached || typeof cached !== "object") return;
+    const obj = cached as { bounds?: unknown; histogram?: unknown; stats?: unknown };
+    if (isValidPriceBounds(obj.bounds)) {
+      setResolvedPriceBounds(obj.bounds);
+    }
+    if (obj.histogram === null) {
+      setResolvedPriceHistogram(null);
+    } else if (isValidPriceHistogram(obj.histogram)) {
+      setResolvedPriceHistogram(obj.histogram);
+    }
+    if (obj.stats === null) {
+      setResolvedPriceStats(null);
+    } else if (isValidPriceStats(obj.stats)) {
+      setResolvedPriceStats(obj.stats);
+    }
+  }, [priceInsightsSessionKey]);
+
+  useEffect(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
     const next = new URLSearchParams(subcategoriesFetchKey);
     const categories = next.getAll("category").filter((value) => value.trim().length > 0);
     if (categories.length === 0) {
@@ -263,17 +364,19 @@ export default function CatalogoFiltersPanel({
     const timeout = window.setTimeout(async () => {
       try {
         const res = await fetch(`/api/catalog/subcategories?${next.toString()}`, {
-          cache: "no-store",
           signal: controller.signal,
         });
         if (!res.ok) {
           throw new Error(`http_${res.status}`);
         }
         const payload = (await res.json()) as { items?: FacetItem[] };
-        setResolvedSubcategories(Array.isArray(payload?.items) ? payload.items : []);
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        setResolvedSubcategories(items);
+        writeSessionJson(subcategoriesSessionKey, items);
       } catch (err) {
         if (isAbortError(err)) return;
-        setResolvedSubcategories([]);
+        // Mantén el último estado válido (evita “parpadeo” al volver a una pestaña inactiva).
+        setResolvedSubcategories((prev) => prev);
       } finally {
         setSubcategoriesLoading(false);
       }
@@ -283,9 +386,10 @@ export default function CatalogoFiltersPanel({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [subcategoriesFetchKey]);
+  }, [subcategoriesFetchKey, subcategoriesSessionKey, resumeTick]);
 
   useEffect(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
     priceBoundsAbortRef.current?.abort();
     const controller = new AbortController();
     priceBoundsAbortRef.current = controller;
@@ -295,7 +399,6 @@ export default function CatalogoFiltersPanel({
     const timeout = window.setTimeout(async () => {
       try {
         const res = await fetch(`/api/catalog/price-bounds?${next.toString()}`, {
-          cache: "no-store",
           signal: controller.signal,
         });
         if (!res.ok) {
@@ -304,21 +407,35 @@ export default function CatalogoFiltersPanel({
         const payload = (await res.json()) as {
           bounds?: CatalogPriceBounds;
           histogram?: CatalogPriceHistogram | null;
+          stats?: CatalogPriceStats | null;
         };
         const bounds = payload?.bounds;
-        setResolvedPriceBounds({
+        const nextBounds: CatalogPriceBounds = {
           min: typeof bounds?.min === "number" ? bounds.min : null,
           max: typeof bounds?.max === "number" ? bounds.max : null,
-        });
+        };
+        setResolvedPriceBounds(nextBounds);
 
         const histogram = payload?.histogram;
-        setResolvedPriceHistogram(
-          histogram && Array.isArray(histogram.buckets) ? histogram : null,
-        );
+        const nextHistogram =
+          histogram && Array.isArray(histogram.buckets) ? histogram : null;
+        setResolvedPriceHistogram(nextHistogram);
+
+        const stats = payload?.stats;
+        const nextStats = stats === null ? null : isValidPriceStats(stats) ? stats : null;
+        setResolvedPriceStats(nextStats);
+
+        writeSessionJson(priceInsightsSessionKey, {
+          bounds: nextBounds,
+          histogram: nextHistogram,
+          stats: nextStats,
+        });
       } catch (err) {
         if (isAbortError(err)) return;
-        setResolvedPriceBounds({ min: null, max: null });
-        setResolvedPriceHistogram(null);
+        // Mantén el último estado válido (evita “romper” el filtro de precio al volver a una pestaña inactiva).
+        setResolvedPriceBounds((prev) => prev);
+        setResolvedPriceHistogram((prev) => prev);
+        setResolvedPriceStats((prev) => prev);
       } finally {
         setPriceBoundsLoading(false);
       }
@@ -328,7 +445,7 @@ export default function CatalogoFiltersPanel({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [priceBoundsFetchKey]);
+  }, [priceBoundsFetchKey, priceInsightsSessionKey, resumeTick]);
 
   const applyParams = (next: URLSearchParams) => {
     if (selected.sort && !next.get("sort")) {
@@ -351,6 +468,17 @@ export default function CatalogoFiltersPanel({
     applyParams(next);
   };
 
+  const toggleCategory = (value: string) => {
+    const next = new URLSearchParams(currentParamsString);
+    const currentCategory = selected.categories[0] ?? null;
+    next.delete("category");
+    next.delete("subcategory"); // subcategorías dependen de categoría
+    if (currentCategory !== value) {
+      next.append("category", value);
+    }
+    commitParams(next);
+  };
+
   const toggleMulti = (key: string, value: string) => {
     const next = new URLSearchParams(currentParamsString);
     const values = next.getAll(key);
@@ -365,11 +493,22 @@ export default function CatalogoFiltersPanel({
   };
 
   const isChecked = (list: string[], value: string) => list.includes(value);
+  const activeCategory = selected.categories[0] ?? null;
+  const [categoriesExpanded, setCategoriesExpanded] = useState(false);
+  useEffect(() => {
+    setCategoriesExpanded(false);
+  }, [activeCategory]);
 
   const sortedCategories = useMemo(
     () => sortFacetItems(facets.categories, selected.categories),
     [facets.categories, selected.categories],
   );
+  const visibleCategories = useMemo(() => {
+    if (!activeCategory) return sortedCategories;
+    if (categoriesExpanded) return sortedCategories;
+    const only = sortedCategories.filter((item) => item.value === activeCategory);
+    return only.length > 0 ? only : sortedCategories;
+  }, [activeCategory, categoriesExpanded, sortedCategories]);
   const sortedColors = useMemo(
     () => sortColorFacetItems(facets.colors, selected.colors),
     [facets.colors, selected.colors],
@@ -413,7 +552,6 @@ export default function CatalogoFiltersPanel({
                   />
                   {item.label}
                 </span>
-                <span className="text-xs text-[color:var(--oda-taupe)]">{item.count}</span>
               </label>
             );
           })}
@@ -435,8 +573,25 @@ export default function CatalogoFiltersPanel({
           </span>
         </summary>
         <div className="mt-4">
-          <div className="relative flex flex-col gap-2 lg:max-h-[18rem] lg:overflow-auto lg:pr-2">
-            {sortedCategories.map((item) => {
+          {activeCategory && !categoriesExpanded ? (
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                Categoría seleccionada
+              </p>
+              <button
+                type="button"
+                onClick={() => setCategoriesExpanded(true)}
+                className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
+              >
+                Cambiar
+              </button>
+            </div>
+          ) : null}
+          <div
+            data-oda-scroll-allow="true"
+            className="relative flex flex-col gap-2 lg:max-h-[18rem] lg:overflow-auto lg:pr-2"
+          >
+            {visibleCategories.map((item) => {
               const checked = isChecked(selected.categories, item.value);
               const disabled = (item.count === 0 && !checked) || isPending;
               return (
@@ -451,23 +606,18 @@ export default function CatalogoFiltersPanel({
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => toggleMulti("category", item.value)}
+                      onChange={() => toggleCategory(item.value)}
                       className="h-4 w-4 accent-[color:var(--oda-ink)]"
                       disabled={disabled}
                     />
                     <span className="truncate">{item.label}</span>
                   </span>
-                  <span className="text-xs text-[color:var(--oda-taupe)]">{item.count}</span>
                 </label>
               );
             })}
-            {sortedCategories.length > 10 ? (
-              <div className="pointer-events-none sticky bottom-0 hidden lg:block">
-                <div
-                  className="h-12 w-full bg-gradient-to-t from-white to-transparent"
-                  aria-hidden
-                />
-                <div className="absolute bottom-3 right-3 rounded-full border border-[color:var(--oda-border)] bg-white/85 px-3 py-1 text-[9px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)] shadow-[0_12px_30px_rgba(23,21,19,0.10)] backdrop-blur">
+            {!activeCategory && sortedCategories.length > 10 ? (
+              <div className="pointer-events-none sticky bottom-0 hidden justify-end bg-white/90 pt-2 lg:flex">
+                <div className="rounded-full border border-[color:var(--oda-border)] bg-white px-3 py-1 text-[9px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
                   Scroll ↓
                 </div>
               </div>
@@ -527,7 +677,6 @@ export default function CatalogoFiltersPanel({
                       />
                       <span className="truncate">{item.label}</span>
                     </span>
-                    <span className="text-xs text-[color:var(--oda-taupe)]">{item.count}</span>
                   </label>
                 );
               })
@@ -558,7 +707,7 @@ export default function CatalogoFiltersPanel({
             className="w-full rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-sm"
             disabled={isPending}
           />
-          <div className="max-h-64 overflow-auto pr-1">
+          <div data-oda-scroll-allow="true" className="max-h-64 overflow-auto pr-1">
             <div className="flex flex-col gap-2">
               {sortFacetItems(
                 facets.brands.filter((item) => {
@@ -588,7 +737,6 @@ export default function CatalogoFiltersPanel({
                       />
                       <span className="truncate">{item.label}</span>
                     </span>
-                    <span className="text-xs text-[color:var(--oda-taupe)]">{item.count}</span>
                   </label>
                 );
               })}
@@ -611,6 +759,7 @@ export default function CatalogoFiltersPanel({
         <PriceRange
           bounds={resolvedPriceBounds}
           histogram={resolvedPriceHistogram}
+          stats={resolvedPriceStats}
           selectedMinRaw={selected.priceMin}
           selectedMaxRaw={selected.priceMax}
           selectedRangesRaw={selected.priceRanges}
@@ -656,7 +805,7 @@ export default function CatalogoFiltersPanel({
                 <span
                   className={[
                     "block h-8 w-8 rounded-[12px] border border-[color:var(--oda-border)] shadow-[0_10px_22px_rgba(23,21,19,0.10)] transition",
-                    "peer-checked:border-[color:var(--oda-ink)] peer-checked:shadow-[0_16px_30px_rgba(23,21,19,0.16)]",
+                    "peer-checked:ring-2 peer-checked:ring-[color:var(--oda-ink)] peer-checked:ring-inset peer-checked:shadow-[0_16px_30px_rgba(23,21,19,0.16)]",
                   ].join(" ")}
                   style={{ backgroundColor: item.swatch ?? "#fff" }}
                 >
@@ -704,7 +853,6 @@ export default function CatalogoFiltersPanel({
                   />
                   {item.label}
                 </span>
-                <span className="text-xs text-[color:var(--oda-taupe)]">{item.count}</span>
               </label>
             );
           })}
@@ -747,7 +895,6 @@ export default function CatalogoFiltersPanel({
                   />
                   {item.label}
                 </span>
-                <span className="text-xs text-[color:var(--oda-taupe)]">{item.count}</span>
               </label>
             );
           })}
@@ -760,6 +907,7 @@ export default function CatalogoFiltersPanel({
 function PriceRange({
   bounds,
   histogram,
+  stats,
   selectedMinRaw,
   selectedMaxRaw,
   selectedRangesRaw,
@@ -769,6 +917,7 @@ function PriceRange({
 }: {
   bounds: CatalogPriceBounds;
   histogram?: CatalogPriceHistogram | null;
+  stats?: CatalogPriceStats | null;
   selectedMinRaw?: string | null;
   selectedMaxRaw?: string | null;
   selectedRangesRaw?: string[];
@@ -867,9 +1016,27 @@ function PriceRange({
     if (!Number.isFinite(range) || range <= 0) return [];
     const q = (value: number) => snap(value);
 
-    const b1 = clamp(q(minBound + range * 0.25), minBound, maxBound);
-    const b2 = clamp(q(minBound + range * 0.5), minBound, maxBound);
-    const b3 = clamp(q(minBound + range * 0.75), minBound, maxBound);
+    const fromStats =
+      typeof stats?.p25 === "number" &&
+      typeof stats?.p50 === "number" &&
+      typeof stats?.p75 === "number" &&
+      Number.isFinite(stats.p25) &&
+      Number.isFinite(stats.p50) &&
+      Number.isFinite(stats.p75) &&
+      stats.p25 < stats.p50 &&
+      stats.p50 < stats.p75
+        ? [stats.p25, stats.p50, stats.p75]
+        : null;
+
+    const [c1, c2, c3] = fromStats ?? [
+      minBound + range * 0.25,
+      minBound + range * 0.5,
+      minBound + range * 0.75,
+    ];
+
+    const b1 = clamp(q(c1), minBound, maxBound);
+    const b2 = clamp(q(c2), minBound, maxBound);
+    const b3 = clamp(q(c3), minBound, maxBound);
 
     const unique = Array.from(new Set([b1, b2, b3])).filter((v) => v > minBound && v < maxBound);
     const cuts = [minBound, ...unique, maxBound];
@@ -916,8 +1083,8 @@ function PriceRange({
     if (!maxCount) return null;
     return histogram.buckets.map((count, index) => ({
       key: index,
-      // 7px..24px (sin cambiar la altura total del filtro)
-      height: 7 + Math.round((Math.max(0, count) / maxCount) * 17),
+      // 8px..32px (más legible sin hacer crecer la caja)
+      height: 8 + Math.round((Math.max(0, count) / maxCount) * 24),
     }));
   })();
 
@@ -1064,7 +1231,7 @@ function PriceRange({
       <div className="relative h-10">
         {histogramBars ? (
           <div
-            className="absolute inset-x-0 top-1/2 flex h-6 -translate-y-1/2 items-end gap-[2px] opacity-70"
+            className="absolute inset-x-0 top-1/2 flex h-8 -translate-y-1/2 items-end gap-[2px] opacity-70"
             aria-hidden
           >
             {histogramBars.map((bar) => (

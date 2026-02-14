@@ -25,6 +25,40 @@ type FacetsLite = {
   patterns: FacetItem[];
 };
 
+function readSessionJson<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionJson(key: string, value: unknown) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+}
+
+function isValidFacetsLite(input: unknown): input is FacetsLite {
+  if (!input || typeof input !== "object") return false;
+  const obj = input as Partial<FacetsLite>;
+  const arrays = [
+    obj.categories,
+    obj.genders,
+    obj.brands,
+    obj.colors,
+    obj.materials,
+    obj.patterns,
+  ];
+  return arrays.every((value) => Array.isArray(value));
+}
+
 function isAbortError(err: unknown) {
   if (!err) return false;
   if (err instanceof DOMException) return err.name === "AbortError";
@@ -93,6 +127,7 @@ export default function CatalogoClient({
 }) {
   const params = useSearchParams();
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const [resumeTick, setResumeTick] = useState(0);
 
   useEffect(() => {
     try {
@@ -139,11 +174,41 @@ export default function CatalogoClient({
   // mostrar productos antiguos bajo filtros nuevos.
   const navigationPending = uiSearchKey !== initialSearchKey;
 
-  const [facets, setFacets] = useState<FacetsLite | null>(null);
+  const facetsSessionKey = useMemo(
+    () => `oda_catalog_facets_lite_v1:${facetsFetchKey || "base"}`,
+    [facetsFetchKey],
+  );
+  const [facets, setFacets] = useState<FacetsLite | null>(() => {
+    const cached = readSessionJson<unknown>(facetsSessionKey);
+    return isValidFacetsLite(cached) ? cached : null;
+  });
   const [facetsLoading, setFacetsLoading] = useState(false);
   const facetsAbortRef = useRef<AbortController | null>(null);
+  const facetsLastAttemptAtRef = useRef<number>(0);
+  const facetsLastOkAtRef = useRef<number>(0);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const bump = () => setResumeTick((prev) => prev + 1);
+    const onFocus = () => bump();
+    const onVis = () => {
+      if (!document.hidden) bump();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
+    const now = Date.now();
+    // Evita loops si focus/visibility se disparan en ráfaga.
+    if (now - facetsLastAttemptAtRef.current < 800) return;
+    facetsLastAttemptAtRef.current = now;
+
     facetsAbortRef.current?.abort();
     const controller = new AbortController();
     facetsAbortRef.current = controller;
@@ -153,7 +218,6 @@ export default function CatalogoClient({
     const timeout = window.setTimeout(async () => {
       try {
         const res = await fetch(`/api/catalog/facets-lite?${next.toString()}`, {
-          cache: "no-store",
           signal: controller.signal,
         });
         if (!res.ok) {
@@ -161,10 +225,22 @@ export default function CatalogoClient({
         }
         const payload = (await res.json()) as { facets?: FacetsLite };
         const nextFacets = payload?.facets;
-        setFacets(nextFacets ?? null);
+        if (isValidFacetsLite(nextFacets)) {
+          setFacets(nextFacets);
+          writeSessionJson(facetsSessionKey, nextFacets);
+          facetsLastOkAtRef.current = Date.now();
+        } else {
+          // Mantén el último estado válido.
+          setFacets((prev) => prev);
+        }
       } catch (err) {
         if (isAbortError(err)) return;
-        setFacets(null);
+        // Mantén el último estado válido: es preferible a “romper” la UI al volver a una pestaña inactiva.
+        setFacets((prev) => {
+          if (prev) return prev;
+          const cached = readSessionJson<unknown>(facetsSessionKey);
+          return isValidFacetsLite(cached) ? cached : null;
+        });
       } finally {
         setFacetsLoading(false);
       }
@@ -174,7 +250,7 @@ export default function CatalogoClient({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [facetsFetchKey]);
+  }, [facetsFetchKey, facetsSessionKey, resumeTick]);
 
   const activeBrandCount = useMemo(() => {
     if (!facets) return null;
@@ -198,13 +274,16 @@ export default function CatalogoClient({
         <div
           className={[
             "grid gap-8",
-            filtersCollapsed ? "lg:grid-cols-1" : "lg:grid-cols-[340px_minmax(0,1fr)]",
+            filtersCollapsed ? "lg:grid-cols-1" : "lg:grid-cols-[240px_minmax(0,1fr)]",
           ].join(" ")}
         >
           {!filtersCollapsed ? (
-            <div className="hidden lg:block lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-auto lg:pr-1 lg:pb-8">
+            <div
+              id="catalog-filters-scroll"
+              className="hidden lg:block lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-auto lg:overscroll-contain lg:pr-1 lg:pb-8"
+            >
               <div className="sticky top-0 z-20 bg-[color:var(--oda-cream)] pb-4">
-                <div className="flex items-center justify-between gap-3 rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-3 shadow-[0_18px_50px_rgba(23,21,19,0.08)]">
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-3">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
                     Filtros
                   </p>
@@ -236,15 +315,15 @@ export default function CatalogoClient({
               />
             </div>
 
-              <CatalogProductsInfinite
-                key={initialSearchParams}
-                initialItems={initialItems}
-                totalCount={totalCount}
-                initialSearchParams={initialSearchParams}
-                navigationPending={navigationPending}
-                optimisticSearchParams={uiSearchKey}
-                filtersCollapsed={filtersCollapsed}
-              />
+            <CatalogProductsInfinite
+              key={initialSearchParams}
+              initialItems={initialItems}
+              totalCount={totalCount}
+              initialSearchParams={initialSearchParams}
+              navigationPending={navigationPending}
+              optimisticSearchParams={uiSearchKey}
+              filtersCollapsed={filtersCollapsed}
+            />
           </div>
         </div>
       </div>

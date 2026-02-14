@@ -13,10 +13,11 @@ export async function GET(req: Request) {
   const insights = await getCatalogPriceInsights(filters, 18);
 
   return NextResponse.json(
-    { bounds: insights.bounds, histogram: insights.histogram },
+    { bounds: insights.bounds, histogram: insights.histogram, stats: insights.stats },
     {
       headers: {
-        "cache-control": "no-store",
+        // Cache corto en CDN para estabilidad (pestañas inactivas / back-forward).
+        "cache-control": "public, max-age=0, s-maxage=60, stale-while-revalidate=600",
       },
     },
   );

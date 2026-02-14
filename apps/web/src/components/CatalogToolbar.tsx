@@ -21,6 +21,48 @@ type SavedSearch = {
 
 const SAVED_SEARCHES_KEY = "oda_catalog_saved_searches_v1";
 
+function SaveIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M19 21H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11l5 5v9a2 2 0 0 1-2 2Z" />
+      <path d="M17 21v-8H7v8" />
+      <path d="M7 3v4h8" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M6 6l1 16h10l1-16" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
 function loadSavedSearches(): SavedSearch[] {
   if (typeof window === "undefined") return [];
   try {
@@ -188,7 +230,7 @@ export default function CatalogToolbar({
 
   return (
     <>
-      <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-3 lg:sticky lg:top-24 lg:z-30 lg:shadow-[0_30px_80px_rgba(23,21,19,0.10)]">
+      <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-3 lg:sticky lg:top-24 lg:z-30">
         <div className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-baseline gap-4">
             <p className="text-sm text-[color:var(--oda-ink)]">
@@ -245,9 +287,11 @@ export default function CatalogToolbar({
             <button
               type="button"
               onClick={() => setSavedOpen(true)}
-              className="rounded-full border border-[color:var(--oda-border)] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
+              aria-label="Guardados"
+              title="Guardados"
             >
-              Guardados
+              <SaveIcon />
             </button>
 
             <button
@@ -255,13 +299,15 @@ export default function CatalogToolbar({
               onClick={handleClear}
               disabled={!hasFilters || isPending}
               className={[
-                "rounded-full border px-4 py-2 text-xs uppercase tracking-[0.2em] transition",
+                "inline-flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold transition",
                 hasFilters && !isPending
                   ? "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]"
                   : "cursor-not-allowed border-[color:var(--oda-border)] bg-white text-[color:var(--oda-taupe)] opacity-60",
               ].join(" ")}
+              aria-label="Limpiar filtros"
+              title="Limpiar"
             >
-              Limpiar
+              ×
             </button>
           </div>
         </div>
@@ -345,11 +391,11 @@ export default function CatalogToolbar({
                         <button
                           type="button"
                           onClick={() => deleteSavedSearch(item.id)}
-                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-sm font-semibold text-[color:var(--oda-taupe)] transition hover:bg-[color:var(--oda-stone)]"
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-[color:var(--oda-love)] transition hover:bg-[color:var(--oda-stone)]"
                           title="Eliminar"
                           aria-label={`Eliminar ${item.name}`}
                         >
-                          ×
+                          <TrashIcon />
                         </button>
                       </div>
                     ))}

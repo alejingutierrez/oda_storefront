@@ -16,7 +16,8 @@ export async function GET(req: Request) {
     { facets },
     {
       headers: {
-        "cache-control": "no-store",
+        // Cache corto en CDN para que al volver a una pestaña inactiva no “parpadeen” los filtros.
+        "cache-control": "public, max-age=0, s-maxage=60, stale-while-revalidate=600",
       },
     },
   );

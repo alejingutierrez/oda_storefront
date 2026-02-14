@@ -101,9 +101,12 @@ export function parseGenderList(values?: string[]): GenderKey[] | undefined {
 
 export function parseCatalogFiltersFromSearchParams(params: URLSearchParams): CatalogFilters {
   const priceRanges = parsePriceRanges(getListFromSearch(params, "price_range"));
+  // En PLP, `category` es single-select (tomamos solo la primera).
+  const categoriesRaw = getListFromSearch(params, "category");
+  const categories = categoriesRaw && categoriesRaw.length > 0 ? [categoriesRaw[0]!] : undefined;
   return {
     q: getParamFromSearch(params, "q"),
-    categories: getListFromSearch(params, "category"),
+    categories,
     subcategories: getListFromSearch(params, "subcategory"),
     genders: parseGenderList(getListFromSearch(params, "gender")),
     brandIds: getListFromSearch(params, "brandId"),

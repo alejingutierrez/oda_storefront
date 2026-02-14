@@ -80,11 +80,12 @@ export default function CatalogProductCard({
   mobileCompact = false,
 }: {
   product: CatalogProduct;
-  mobileAspect?: "original" | "portrait" | "square";
+  mobileAspect?: "original" | "square";
   mobileCompact?: boolean;
 }) {
   const compare = useCompare();
   const href = product.sourceUrl ?? "#";
+  const openInNewTab = href !== "#";
   const coverUrl = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
   // Vercel/Next bloquea optimizacion de `next/image` cuando el src es un endpoint `/api/*` (INVALID_IMAGE_OPTIMIZE_REQUEST).
   const [images, setImages] = useState<string[]>(() => (coverUrl ? [coverUrl] : []));
@@ -159,6 +160,7 @@ export default function CatalogProductCard({
   }, []);
 
   const beginCarousel = useCallback(async () => {
+    if (typeof document !== "undefined" && document.hidden) return;
     await ensureExtras();
     const list = imagesRef.current;
     if (list.length <= 1) return;
@@ -170,6 +172,7 @@ export default function CatalogProductCard({
 
     if (intervalRef.current) return;
     intervalRef.current = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       const latest = imagesRef.current;
       if (latest.length <= 1) return;
       setActiveIndex((current) => {
@@ -185,7 +188,7 @@ export default function CatalogProductCard({
     startTimeoutRef.current = window.setTimeout(() => {
       startTimeoutRef.current = null;
       void beginCarousel();
-    }, 2000);
+    }, 350);
   }, [beginCarousel]);
 
   const viewRef = useRef<HTMLAnchorElement | null>(null);
@@ -220,6 +223,19 @@ export default function CatalogProductCard({
     return () => stopCarousel();
   }, [stopCarousel]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVis = () => {
+      if (document.hidden) stopCarousel();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("blur", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("blur", onVis);
+    };
+  }, [stopCarousel]);
+
   const activeImageUrl = images[activeIndex] ?? coverUrl ?? null;
 
   // Crossfade: mantenemos una imagen base y montamos una overlay que hace fade-in
@@ -228,6 +244,7 @@ export default function CatalogProductCard({
   const [overlayImageUrl, setOverlayImageUrl] = useState<string | null>(null);
   const [overlayVisible, setOverlayVisible] = useState(false);
   const overlayTimeoutRef = useRef<number | null>(null);
+  const overlayTargetRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (overlayTimeoutRef.current) {
@@ -251,6 +268,7 @@ export default function CatalogProductCard({
 
     if (activeImageUrl === baseImageUrl) return;
 
+    overlayTargetRef.current = activeImageUrl;
     setOverlayImageUrl(activeImageUrl);
     setOverlayVisible(false);
 
@@ -265,9 +283,7 @@ export default function CatalogProductCard({
   const aspectClass =
     mobileAspect === "square"
       ? "aspect-square"
-      : mobileAspect === "portrait"
-        ? "aspect-[4/5]"
-        : "aspect-[3/4]";
+      : "aspect-[3/4]";
 
   const cornerSize = mobileCompact ? "h-8 w-8" : "h-9 w-9";
   const cornerInset = mobileCompact ? "left-2 top-2" : "left-3 top-3";
@@ -276,11 +292,11 @@ export default function CatalogProductCard({
   const glassHeight =
     mobileAspect === "square"
       ? mobileCompact
-        ? "h-[34%]"
-        : "h-[28%]"
+        ? "h-[42%]"
+        : "h-[30%]"
       : mobileCompact
-        ? "h-[28%]"
-        : "h-[22%]";
+        ? "h-[34%]"
+        : "h-[24%]";
 
   const priceLabel = useMemo(
     () => formatPriceRange(product.minPrice, product.maxPrice, product.currency),
@@ -299,7 +315,7 @@ export default function CatalogProductCard({
         if (canHover) stopCarousel();
       }}
     >
-      {compare ? (
+      {compare && !mobileCompact ? (
         <div className={["absolute z-10", cornerInset].join(" ")}>
           <button
             type="button"
@@ -332,6 +348,8 @@ export default function CatalogProductCard({
       <Link
         href={href}
         ref={viewRef}
+        target={openInNewTab ? "_blank" : undefined}
+        rel={openInNewTab ? "noreferrer noopener" : undefined}
         className={[
           "relative block w-full overflow-hidden bg-[color:var(--oda-stone)]",
           aspectClass,
@@ -368,12 +386,14 @@ export default function CatalogProductCard({
                     : "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
                 }
                 onLoadingComplete={() => {
+                  if (overlayTargetRef.current !== overlayImageUrl) return;
                   // Fade-in, then commit the overlay as the new base.
                   setOverlayVisible(true);
                   if (overlayTimeoutRef.current) {
                     window.clearTimeout(overlayTimeoutRef.current);
                   }
                   overlayTimeoutRef.current = window.setTimeout(() => {
+                    if (overlayTargetRef.current !== overlayImageUrl) return;
                     setBaseImageUrl(overlayImageUrl);
                     setOverlayImageUrl(null);
                     setOverlayVisible(false);
@@ -411,27 +431,14 @@ export default function CatalogProductCard({
               mobileCompact ? "px-2.5 py-2" : "px-3 py-2.5",
             ].join(" ")}
           >
-            <div className="flex items-center justify-between gap-2">
-              <p
-                className={[
-                  "font-semibold uppercase tracking-[0.28em] text-[color:var(--oda-ink-soft)] lg:text-[10px]",
-                  mobileCompact ? "text-[8px]" : "text-[9px]",
-                ].join(" ")}
-              >
-                {product.brandName}
-              </p>
-              <span
-                className={[
-                  "inline-flex items-center justify-center rounded-full border border-white/50 bg-white/55 text-[color:var(--oda-ink)] shadow-[0_12px_28px_rgba(23,21,19,0.10)] backdrop-blur",
-                  mobileCompact ? "h-8 w-8" : "h-9 w-9",
-                  "lg:opacity-0 lg:group-hover:opacity-100 lg:transition",
-                ].join(" ")}
-                aria-hidden="true"
-                title="Ver en tienda"
-              >
-                <CartIcon />
-              </span>
-            </div>
+            <p
+              className={[
+                "font-semibold uppercase tracking-[0.28em] text-[color:var(--oda-ink-soft)] lg:text-[10px]",
+                mobileCompact ? "text-[8px]" : "text-[9px]",
+              ].join(" ")}
+            >
+              {product.brandName}
+            </p>
             <h3
               className={[
                 "font-semibold leading-snug text-[color:var(--oda-ink)] lg:text-sm",
@@ -452,26 +459,5 @@ export default function CatalogProductCard({
         </div>
       </Link>
     </article>
-  );
-}
-
-function CartIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M6 6h15l-1.5 9H7.2L6 6Z" />
-      <path d="M6 6 5 3H2" />
-      <path d="M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />
-      <path d="M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />
-    </svg>
   );
 }

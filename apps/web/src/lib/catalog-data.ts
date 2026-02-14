@@ -107,9 +107,21 @@ export type CatalogPriceHistogram = {
   buckets: number[];
 };
 
+export type CatalogPriceStats = {
+  count: number;
+  min: number;
+  max: number;
+  p02: number | null;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+  p98: number | null;
+};
+
 export type CatalogPriceInsights = {
   bounds: CatalogPriceBounds;
   histogram: CatalogPriceHistogram | null;
+  stats: CatalogPriceStats | null;
 };
 
 function normalizeArray(values?: string[]) {
@@ -157,6 +169,13 @@ function buildFacetsCacheKey(filters: CatalogFilters) {
   if (filters.inStock) key.inStock = 1;
   if (filters.enrichedOnly) key.enrichedOnly = 1;
   return JSON.stringify(key);
+}
+
+function getPriceStep(max: number) {
+  if (!Number.isFinite(max) || max <= 0) return 1000;
+  if (max <= 200_000) return 1000;
+  if (max <= 900_000) return 5000;
+  return 10_000;
 }
 
 function omitFilters(filters: CatalogFilters, keys: (keyof CatalogFilters)[]): CatalogFilters {
@@ -304,25 +323,99 @@ export async function getCatalogPriceInsights(
     async () => {
       const { productWhere, variantWhere } = buildVariantWhere(boundsFilters);
 
-      const boundsRows = await prisma.$queryRaw<
-        Array<{ min_price: string | null; max_price: string | null }>
+      const statsRows = await prisma.$queryRaw<
+        Array<{
+          n: bigint;
+          min_price: string | null;
+          max_price: string | null;
+          p02: string | null;
+          p25: string | null;
+          p50: string | null;
+          p75: string | null;
+          p98: string | null;
+        }>
       >(Prisma.sql`
+        with prices as (
+          select v.price as price
+          from products p
+          join brands b on b.id = p."brandId"
+          join variants v on v."productId" = p.id
+          ${productWhere}
+          ${variantWhere}
+          and v.price > 0
+        )
         select
-          min(v.price) as min_price,
-          max(v.price) as max_price
-        from products p
-        join brands b on b.id = p."brandId"
-        join variants v on v."productId" = p.id
-        ${productWhere}
-        ${variantWhere}
-        and v.price > 0
+          count(*) as n,
+          min(price) as min_price,
+          max(price) as max_price,
+          percentile_cont(0.02) within group (order by price) as p02,
+          percentile_cont(0.25) within group (order by price) as p25,
+          percentile_cont(0.50) within group (order by price) as p50,
+          percentile_cont(0.75) within group (order by price) as p75,
+          percentile_cont(0.98) within group (order by price) as p98
+        from prices
       `);
-      const boundsRow = boundsRows[0];
-      const min = boundsRow?.min_price ? Number(boundsRow.min_price) : null;
-      const max = boundsRow?.max_price ? Number(boundsRow.max_price) : null;
+      const row = statsRows[0];
+
+      const count = Number(row?.n ?? 0);
+      const minHard = row?.min_price ? Number(row.min_price) : null;
+      const maxHard = row?.max_price ? Number(row.max_price) : null;
+      const p02 = row?.p02 ? Number(row.p02) : null;
+      const p25 = row?.p25 ? Number(row.p25) : null;
+      const p50 = row?.p50 ? Number(row.p50) : null;
+      const p75 = row?.p75 ? Number(row.p75) : null;
+      const p98 = row?.p98 ? Number(row.p98) : null;
+
+      const hardOk =
+        typeof minHard === "number" &&
+        typeof maxHard === "number" &&
+        Number.isFinite(minHard) &&
+        Number.isFinite(maxHard) &&
+        maxHard > minHard;
+
+      const stats: CatalogPriceStats | null = hardOk
+        ? {
+            count,
+            min: minHard,
+            max: maxHard,
+            p02: typeof p02 === "number" && Number.isFinite(p02) ? p02 : null,
+            p25: typeof p25 === "number" && Number.isFinite(p25) ? p25 : null,
+            p50: typeof p50 === "number" && Number.isFinite(p50) ? p50 : null,
+            p75: typeof p75 === "number" && Number.isFinite(p75) ? p75 : null,
+            p98: typeof p98 === "number" && Number.isFinite(p98) ? p98 : null,
+          }
+        : null;
+
+      let min = hardOk ? minHard : null;
+      let max = hardOk ? maxHard : null;
+
+      const robustOk =
+        hardOk &&
+        count >= 30 &&
+        typeof p02 === "number" &&
+        typeof p98 === "number" &&
+        Number.isFinite(p02) &&
+        Number.isFinite(p98) &&
+        p98 > p02;
+
+      // Dominio robusto: evita que outliers dominen el rango/histograma.
+      if (robustOk) {
+        min = Math.max(minHard!, p02);
+        max = Math.min(maxHard!, p98);
+      }
+
+      // Alinea el rango a pasos “humanos” para que el slider no muestre números raros.
+      if (hardOk && typeof min === "number" && typeof max === "number") {
+        const step = getPriceStep(max);
+        const alignedMin = Math.max(0, Math.floor(min / step) * step);
+        const alignedMax = Math.ceil(max / step) * step;
+        min = alignedMin;
+        max = alignedMax > alignedMin ? alignedMax : alignedMin + step;
+      }
+
       const bounds: CatalogPriceBounds = {
-        min: Number.isFinite(min) ? min : null,
-        max: Number.isFinite(max) ? max : null,
+        min: typeof min === "number" && Number.isFinite(min) ? min : null,
+        max: typeof max === "number" && Number.isFinite(max) ? max : null,
       };
 
       const histogramRangeOk =
@@ -333,7 +426,7 @@ export async function getCatalogPriceInsights(
         bounds.max > bounds.min;
 
       if (!histogramRangeOk || bucketCount < 6) {
-        return { bounds, histogram: null };
+        return { bounds, histogram: null, stats };
       }
 
       const rows = await prisma.$queryRaw<Array<{ bucket: number; cnt: bigint }>>(Prisma.sql`
@@ -363,6 +456,7 @@ export async function getCatalogPriceInsights(
       return {
         bounds,
         histogram: { bucketCount, buckets },
+        stats,
       };
     },
     ["catalog-price-insights", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
