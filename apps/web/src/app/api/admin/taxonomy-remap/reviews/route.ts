@@ -214,7 +214,8 @@ export async function GET(req: Request) {
       ${whereSql}
       ORDER BY
         CASE r."status" WHEN 'pending' THEN 0 WHEN 'accepted' THEN 1 ELSE 2 END,
-        r."createdAt" DESC
+        r."createdAt" DESC,
+        r.id ASC
       LIMIT ${limit}
       OFFSET ${offset}
     `),

@@ -97,27 +97,6 @@ type ReviewsResponse = {
   };
 };
 
-type AutoReseedResult = {
-  triggered: boolean;
-  reason:
-    | "triggered"
-    | "disabled"
-    | "pending_above_threshold"
-    | "cooldown_active"
-    | "already_running"
-    | "no_candidates"
-    | "error";
-  pendingCount: number;
-  pendingThreshold: number;
-  scanned: number;
-  proposed: number;
-  enqueued: number;
-  executionId: string | null;
-  source: string | null;
-  runKey: string | null;
-  error?: string;
-};
-
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: "pending", label: "Pendientes" },
   { value: "accepted", label: "Aceptadas" },
@@ -146,16 +125,6 @@ const formatNullable = (value: string | null | undefined) => {
 const formatScore = (value: number | null | undefined, digits = 3) => {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   return value.toFixed(digits);
-};
-
-const AUTO_RESEED_REASON_LABEL: Record<AutoReseedResult["reason"], string> = {
-  triggered: "Batch creado",
-  disabled: "Desactivado por configuración",
-  pending_above_threshold: "Pendientes por encima del umbral",
-  cooldown_active: "Cooldown activo",
-  already_running: "Ya hay una ejecución en curso",
-  no_candidates: "Sin candidatos elegibles",
-  error: "Error en ejecución",
 };
 
 const normalizeComparable = (value: string | null | undefined) =>
@@ -234,12 +203,6 @@ export default function TaxonomyRemapReviewPanel() {
   const [actionById, setActionById] = useState<Record<string, "accept" | "reject">>({});
   const [previewImage, setPreviewImage] = useState<{ url: string; alt: string } | null>(null);
   const [autoReseedBusy, setAutoReseedBusy] = useState(false);
-  const [decisionBusyCount, setDecisionBusyCount] = useState(0);
-  const [autoReseedFeedback, setAutoReseedFeedback] = useState<{
-    at: string;
-    source: "manual" | "decision";
-    result: AutoReseedResult;
-  } | null>(null);
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflightDecisionRef = useRef<Set<string>>(new Set());
   const [brokenImageById, setBrokenImageById] = useState<Record<string, true>>({});
@@ -413,13 +376,14 @@ export default function TaxonomyRemapReviewPanel() {
   }, [status, changeType, page, search, brandId, mergeIncomingItems]);
 
   useEffect(() => {
-    const shouldPoll = phase.running || autoReseedBusy || decisionBusyCount > 0;
+    const shouldPoll =
+      phase.running || autoReseedBusy || Object.keys(actionById).length > 0;
     if (!shouldPoll) return;
     const timer = setInterval(() => {
       void fetchItemsSilent();
     }, 2500);
     return () => clearInterval(timer);
-  }, [phase.running, autoReseedBusy, decisionBusyCount, fetchItemsSilent]);
+  }, [phase.running, autoReseedBusy, actionById, fetchItemsSilent]);
 
   const scheduleSilentRefresh = useCallback(() => {
     if (silentRefreshTimerRef.current) {
@@ -532,16 +496,7 @@ export default function TaxonomyRemapReviewPanel() {
         const payload = await res.json().catch(() => ({}));
         throw new Error(payload.error || "No se pudo ejecutar auto-reseed");
       }
-      const payload = (await res.json().catch(() => ({}))) as {
-        result?: AutoReseedResult;
-      };
-      if (payload.result) {
-        setAutoReseedFeedback({
-          at: new Date().toISOString(),
-          source: "manual",
-          result: payload.result,
-        });
-      }
+      await res.json().catch(() => ({}));
       await fetchItems();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo ejecutar auto-reseed");
@@ -555,7 +510,6 @@ export default function TaxonomyRemapReviewPanel() {
     const decidedAt = new Date().toISOString();
     let acceptedOnServer = false;
     inflightDecisionRef.current.add(item.id);
-    setDecisionBusyCount((prev) => prev + 1);
     optimisticDecisionsRef.current.set(item.id, { status: "accepted", decidedAt });
     setActionById((prev) => ({ ...prev, [item.id]: "accept" }));
     setError(null);
@@ -570,16 +524,7 @@ export default function TaxonomyRemapReviewPanel() {
         const payload = await res.json().catch(() => ({}));
         throw new Error(payload.error || "No se pudo aceptar la propuesta");
       }
-      const payload = (await res.json().catch(() => ({}))) as {
-        autoReseed?: AutoReseedResult;
-      };
-      if (payload.autoReseed) {
-        setAutoReseedFeedback({
-          at: new Date().toISOString(),
-          source: "decision",
-          result: payload.autoReseed,
-        });
-      }
+      await res.json().catch(() => ({}));
       acceptedOnServer = true;
       scheduleSilentRefresh();
     } catch (err) {
@@ -593,7 +538,6 @@ export default function TaxonomyRemapReviewPanel() {
         return next;
       });
       inflightDecisionRef.current.delete(item.id);
-      setDecisionBusyCount((prev) => Math.max(0, prev - 1));
       if (!acceptedOnServer) optimisticDecisionsRef.current.delete(item.id);
     }
   }, [applyOptimisticDecision, scheduleSilentRefresh]);
@@ -603,7 +547,6 @@ export default function TaxonomyRemapReviewPanel() {
     const decidedAt = new Date().toISOString();
     let rejectedOnServer = false;
     inflightDecisionRef.current.add(item.id);
-    setDecisionBusyCount((prev) => prev + 1);
     optimisticDecisionsRef.current.set(item.id, { status: "rejected", decidedAt });
     setActionById((prev) => ({ ...prev, [item.id]: "reject" }));
     setError(null);
@@ -618,16 +561,7 @@ export default function TaxonomyRemapReviewPanel() {
         const payload = await res.json().catch(() => ({}));
         throw new Error(payload.error || "No se pudo rechazar la propuesta");
       }
-      const payload = (await res.json().catch(() => ({}))) as {
-        autoReseed?: AutoReseedResult;
-      };
-      if (payload.autoReseed) {
-        setAutoReseedFeedback({
-          at: new Date().toISOString(),
-          source: "decision",
-          result: payload.autoReseed,
-        });
-      }
+      await res.json().catch(() => ({}));
       rejectedOnServer = true;
       scheduleSilentRefresh();
     } catch (err) {
@@ -641,7 +575,6 @@ export default function TaxonomyRemapReviewPanel() {
         return next;
       });
       inflightDecisionRef.current.delete(item.id);
-      setDecisionBusyCount((prev) => Math.max(0, prev - 1));
       if (!rejectedOnServer) optimisticDecisionsRef.current.delete(item.id);
     }
   }, [applyOptimisticDecision, scheduleSilentRefresh]);
@@ -692,83 +625,15 @@ export default function TaxonomyRemapReviewPanel() {
           </span>
         </div>
       </div>
-      {phase.running || autoReseedBusy || decisionBusyCount > 0 ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-amber-300 bg-white">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-          </span>
-          <span className="font-semibold">
-            {phase.running
-              ? "Auto-reseed en ejecución"
-              : "Procesando decisión y evaluando auto-reseed"}
-          </span>
-          {phase.runningSince ? (
-            <span>desde {formatDateTime(phase.runningSince)}</span>
-          ) : null}
-          {phase.runningExecutionId ? (
-            <span className="rounded-md bg-white px-1.5 py-0.5 text-[11px] text-amber-700">
-              run {phase.runningExecutionId.slice(0, 8)}
-            </span>
-          ) : null}
-          {decisionBusyCount > 0 ? (
-            <span className="rounded-md bg-white px-1.5 py-0.5 text-[11px] text-amber-700">
-              decisiones en curso: {decisionBusyCount}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-      {autoReseedFeedback ? (
-        <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
-          <p className="font-semibold">
-            Última evaluación auto-reseed ({autoReseedFeedback.source === "manual" ? "manual" : "por decisión"}):{" "}
-            {AUTO_RESEED_REASON_LABEL[autoReseedFeedback.result.reason]}
-          </p>
-          <p className="mt-1">
-            {formatDateTime(autoReseedFeedback.at)} · scanned {autoReseedFeedback.result.scanned} · propuestas{" "}
-            {autoReseedFeedback.result.proposed} · encoladas {autoReseedFeedback.result.enqueued}
-          </p>
-          {autoReseedFeedback.result.error ? (
-            <p className="mt-1 text-rose-700">{autoReseedFeedback.result.error}</p>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="mt-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-1">
-          <p>
-            Auto-reseed: <span className="font-semibold">{phase.enabled ? "Activo" : "Inactivo"}</span> ·
-            Umbral: <span className="font-semibold">≤ {phase.pendingThreshold}</span> pendientes ·
-            Batch: <span className="font-semibold">{phase.autoLimit}</span>
-          </p>
-          <p>
-            {phase.lastAutoReseedAt
-              ? `Último auto-reseed: ${formatDateTime(phase.lastAutoReseedAt)} · creados ${phase.lastAutoReseedCreated} · pendientes de ese batch ${phase.lastAutoReseedPendingNow}`
-              : "Sin ejecuciones automáticas registradas"}
-          </p>
-          <p>
-            Última ejecución:{" "}
-            <span className="font-semibold">
-              {phase.lastRunStatus ? `${phase.lastRunStatus}${phase.lastRunReason ? ` (${phase.lastRunReason})` : ""}` : "sin datos"}
-            </span>
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => runAutoReseed(false)}
-            disabled={autoReseedBusy}
-          >
-            {autoReseedBusy ? "Ejecutando..." : "Intentar auto-reseed"}
-          </button>
-          <button
-            type="button"
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => runAutoReseed(true, "refresh_pending")}
-            disabled={autoReseedBusy}
-          >
-            {autoReseedBusy ? "Recalculando..." : "Recalcular pendientes"}
-          </button>
-        </div>
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => runAutoReseed(true, "refresh_pending")}
+          disabled={autoReseedBusy}
+        >
+          {autoReseedBusy ? "Recalculando..." : "Recalcular pendientes"}
+        </button>
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-12">
