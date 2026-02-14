@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useDescope, useSession, useUser } from "@descope/nextjs-sdk/client";
+import { getSessionToken, useDescope, useSession, useUser } from "@descope/nextjs-sdk/client";
 
 type ProfileUser = {
   id: string;
@@ -355,62 +355,72 @@ export default function PerfilClient() {
     window.setTimeout(() => setNotice((current) => (current === next ? null : current)), 4500);
   };
 
-  const authFetch = async (
-    input: Parameters<typeof fetch>[0],
-    init: RequestInit = {},
-  ) => {
-    const headers = new Headers(init.headers);
-    if (sessionToken && typeof sessionToken === "string") {
-      headers.set("Authorization", `Bearer ${sessionToken}`);
-    }
-    return fetch(input, { ...init, headers, credentials: "include" });
-  };
+  const authFetch = useCallback(
+    async (input: Parameters<typeof fetch>[0], init: RequestInit = {}) => {
+      const headers = new Headers(init.headers);
+      const token = (() => {
+        const sdkToken = getSessionToken();
+        if (typeof sdkToken === "string" && sdkToken.trim().length > 0) return sdkToken.trim();
+        if (typeof sessionToken === "string" && sessionToken.trim().length > 0) return sessionToken.trim();
+        return null;
+      })();
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+      return fetch(input, { ...init, headers, credentials: "include" });
+    },
+    [sessionToken],
+  );
 
-  const handleUnauthorized = async () => {
+  const handleUnauthorized = useCallback(async () => {
     try {
       await sdk.logout();
     } catch (error) {
       console.error("Perfil: fallo logout tras 401", error);
     }
     router.replace(`${buildSignInHref(nextAfterSignIn)}&error=unauthorized`);
-  };
+  }, [nextAfterSignIn, router, sdk]);
 
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     const res = await authFetch("/api/user/profile");
     if (res.status === 401) return null;
     if (!res.ok) throw new Error("profile_fetch_failed");
     const data = (await res.json()) as { user: ProfileUser };
     return data.user;
-  };
+  }, [authFetch]);
 
-  const loadFavorites = async () => {
+  const loadFavorites = useCallback(async () => {
     const res = await authFetch("/api/user/favorites");
     if (res.status === 401) return null;
     if (!res.ok) throw new Error("favorites_fetch_failed");
     const data = (await res.json()) as { favorites: FavoritePayload[] };
     return data.favorites;
-  };
+  }, [authFetch]);
 
-  const loadLists = async () => {
+  const loadLists = useCallback(async () => {
     const res = await authFetch("/api/user/lists");
     if (res.status === 401) return null;
     if (!res.ok) throw new Error("lists_fetch_failed");
     const data = (await res.json()) as { lists: ListPayload[] };
     return data.lists;
-  };
+  }, [authFetch]);
 
-  const loadListItems = async (listId: string) => {
+  const loadListItems = useCallback(async (listId: string) => {
     const res = await authFetch(`/api/user/lists/${listId}/items`);
     if (res.status === 401) return null;
     if (!res.ok) throw new Error("list_items_fetch_failed");
     const data = (await res.json()) as { items: ListItemPayload[] };
     return data.items;
-  };
+  }, [authFetch]);
 
   useEffect(() => {
     if (isSessionLoading || isUserLoading) return;
     if (!isAuthenticated) {
       router.replace(buildSignInHref(nextAfterSignIn));
+      return;
+    }
+    // Puede haber un pequeño race justo despues de login/hard reload.
+    // Evitamos pegarle a /api/user/* sin token para no provocar 401 y logout falso.
+    const token = getSessionToken();
+    if (!token || typeof token !== "string" || token.trim().length === 0) {
       return;
     }
 
@@ -465,7 +475,19 @@ export default function PerfilClient() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, isSessionLoading, isUserLoading, nextAfterSignIn, router]);
+  }, [
+    handleUnauthorized,
+    isAuthenticated,
+    isSessionLoading,
+    isUserLoading,
+    loadFavorites,
+    loadListItems,
+    loadLists,
+    loadProfile,
+    nextAfterSignIn,
+    router,
+    sessionToken,
+  ]);
 
   const selectedList = useMemo(() => {
     if (!selectedListId) return null;
@@ -984,10 +1006,9 @@ export default function PerfilClient() {
                           if (!next) return;
                           setBusy(true);
                           try {
-                            const res = await fetch(`/api/user/lists/${selectedList.id}`, {
+                            const res = await authFetch(`/api/user/lists/${selectedList.id}`, {
                               method: "PATCH",
                               headers: { "content-type": "application/json" },
-                              credentials: "include",
                               body: JSON.stringify({ name: next }),
                             });
                             if (res.status === 401) {

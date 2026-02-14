@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useDescope, useSession } from "@descope/nextjs-sdk/client";
+import { getSessionToken, useDescope, useSession } from "@descope/nextjs-sdk/client";
 
 type FavoriteKey = string;
 
@@ -115,9 +115,11 @@ export default function FavoritesProvider({
     }
   }, [favoritesByKey, isAuthenticated, isSessionLoading]);
 
-  const authHeader = useMemo(() => {
-    if (!sessionToken || typeof sessionToken !== "string") return null;
-    return `Bearer ${sessionToken}`;
+  const readToken = useCallback(() => {
+    const sdkToken = getSessionToken();
+    if (typeof sdkToken === "string" && sdkToken.trim().length > 0) return sdkToken.trim();
+    if (typeof sessionToken === "string" && sessionToken.trim().length > 0) return sessionToken.trim();
+    return null;
   }, [sessionToken]);
 
   const getFavoriteId = useCallback(
@@ -137,9 +139,17 @@ export default function FavoritesProvider({
       return;
     }
 
+    const token = readToken();
+    if (!token) {
+      // Evitamos tratarlo como 401 real: puede ser un race justo después de login/hard reload.
+      // Dejamos el cache local y reintentamos cuando `sessionToken`/SDK emitan el token.
+      setLoaded(true);
+      return;
+    }
+
     setLoaded(false);
     try {
-      const headers: HeadersInit = authHeader ? { Authorization: authHeader } : {};
+      const headers: HeadersInit = { Authorization: `Bearer ${token}` };
       const res = await fetch("/api/user/favorites", {
         headers,
         credentials: "include",
@@ -175,7 +185,7 @@ export default function FavoritesProvider({
     } finally {
       setLoaded(true);
     }
-  }, [authHeader, isAuthenticated, isSessionLoading, sdk]);
+  }, [isAuthenticated, isSessionLoading, readToken, sdk]);
 
   useEffect(() => {
     void refresh();
@@ -192,7 +202,11 @@ export default function FavoritesProvider({
 
       const key = makeKey(productId, variantId);
       const existingId = favoritesRef.current[key] ?? null;
-      const headersBase: HeadersInit = authHeader ? { Authorization: authHeader } : {};
+      const token = readToken();
+      if (!token) {
+        throw new Error("session_loading");
+      }
+      const headersBase: HeadersInit = { Authorization: `Bearer ${token}` };
 
       if (existingId) {
         const res = await fetch(`/api/user/favorites/${existingId}`, {
@@ -259,7 +273,7 @@ export default function FavoritesProvider({
       setFavoritesByKey((prev) => ({ ...prev, [key]: favoriteId }));
       return { action: "added", favoriteId };
     },
-    [authHeader, isAuthenticated, isSessionLoading, sdk],
+    [isAuthenticated, isSessionLoading, readToken, sdk],
   );
 
   const value = useMemo<FavoritesContextValue>(

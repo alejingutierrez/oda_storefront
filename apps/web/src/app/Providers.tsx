@@ -13,7 +13,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       baseUrl={process.env.NEXT_PUBLIC_DESCOPE_BASE_URL}
       persistTokens
       autoRefresh
-      sessionTokenViaCookie={{ sameSite: "Lax", secure: isProd }}
+      // El session JWT puede crecer (claims/roles) y romper el set-cookie por tamaño.
+      // Persistimos session token en storage y guardamos refresh en cookie para que el middleware
+      // pueda validar navegacion a rutas privadas (p.ej. `/perfil`) sin depender del session cookie.
+      refreshTokenViaCookie={{ sameSite: "Lax", secure: isProd }}
     >
       <FavoritesProvider>
         <ExperienceTracker />

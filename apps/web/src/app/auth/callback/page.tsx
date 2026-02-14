@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useDescope, useSession, useUser } from "@descope/nextjs-sdk/client";
+import { getSessionToken, useDescope, useSession, useUser } from "@descope/nextjs-sdk/client";
 
 const normalizeNext = (value?: string | null) => {
   if (!value) return "/perfil";
@@ -16,7 +16,7 @@ const LOGIN_NEXT_KEY = "oda_login_next_v1";
 export default function AuthCallbackPage() {
   const router = useRouter();
   const sdk = useDescope();
-  const { isAuthenticated, isSessionLoading, sessionToken } = useSession();
+  const { isAuthenticated, isSessionLoading } = useSession();
   const { user, isUserLoading } = useUser();
   const [next] = useState(() => {
     if (typeof window === "undefined") return "/perfil";
@@ -39,19 +39,31 @@ export default function AuthCallbackPage() {
   const [attempt, setAttempt] = useState(0);
   const startedRef = useRef(false);
 
-  const authHeaders = useMemo(() => {
-    if (!sessionToken || typeof sessionToken !== "string") return null;
-    return { Authorization: `Bearer ${sessionToken}` } as const;
-  }, [sessionToken]);
+  const readSessionToken = useMemo(() => {
+    return () => {
+      const token = getSessionToken();
+      if (typeof token !== "string") return null;
+      const clean = token.trim();
+      return clean.length > 0 ? clean : null;
+    };
+  }, []);
 
   useEffect(() => {
     if (startedRef.current) return;
     if (isSessionLoading || isUserLoading) return;
+    // Justo después del redirect de OAuth, Descope puede tardar un instante en poblar isAuthenticated/sessionToken.
+    // Evitamos un redirect prematuro a /sign-in para no causar loops.
     if (!isAuthenticated) {
-      const qs = new URLSearchParams({ next, error: "not_authenticated" });
-      router.replace(`/sign-in?${qs.toString()}`);
-      return;
+      const token = readSessionToken();
+      if (!token) {
+        const timeout = window.setTimeout(() => {
+          const qs = new URLSearchParams({ next, error: "not_authenticated" });
+          router.replace(`/sign-in?${qs.toString()}`);
+        }, 1200);
+        return () => window.clearTimeout(timeout);
+      }
     }
+
     startedRef.current = true;
 
     let cancelled = false;
@@ -62,9 +74,10 @@ export default function AuthCallbackPage() {
         if (cancelled) return;
         setAttempt(i);
         try {
+          const token = readSessionToken();
           const headers: Record<string, string> = { "content-type": "application/json" };
-          if (authHeaders) {
-            headers.Authorization = authHeaders.Authorization;
+          if (token) {
+            headers.Authorization = `Bearer ${token}`;
           }
           const res = await fetch("/api/user/sync", {
             method: "POST",
@@ -81,18 +94,22 @@ export default function AuthCallbackPage() {
           }
 
           if (res.status === 401) {
-            // 401 puede ocurrir si el cookie de sesion aun no esta listo justo despues del redirect.
-            // Reintentamos un par de veces antes de limpiar sesion para evitar loops falsos.
-            const UNAUTHORIZED_GRACE = 3;
-            if (i < UNAUTHORIZED_GRACE) {
+            // 401 puede ocurrir si el token aun no esta disponible justo despues del redirect.
+            // Solo hacemos logout si ya teniamos token y aun asi falla varias veces.
+            const UNAUTHORIZED_GRACE = 4;
+            if (!token && i < MAX_ATTEMPTS) {
+              console.warn("Auth callback unauthorized (missing token); will retry", {
+                attempt: i,
+              });
+            } else if (i < UNAUTHORIZED_GRACE) {
               console.warn("Auth callback unauthorized; will retry", {
                 attempt: i,
-                hasSessionToken: Boolean(authHeaders),
+                hasSessionToken: Boolean(token),
               });
             } else {
               console.error("Auth callback unauthorized; clearing Descope session", {
                 attempt: i,
-                hasSessionToken: Boolean(authHeaders),
+                hasSessionToken: Boolean(token),
               });
               try {
                 await sdk.logout();
@@ -135,10 +152,10 @@ export default function AuthCallbackPage() {
     next,
     sdk,
     user,
-    authHeaders,
     isAuthenticated,
     isSessionLoading,
     isUserLoading,
+    readSessionToken,
   ]);
 
   return (
