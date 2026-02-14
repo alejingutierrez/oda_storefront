@@ -1,10 +1,12 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@descope/nextjs-sdk/client";
+
+const LOGIN_NEXT_KEY = "oda_login_next_v1";
 
 const computeReturnTo = () => {
   if (typeof window === "undefined") return null;
@@ -87,11 +89,16 @@ export default function SignInClient() {
   });
   const flowId = flowOverride || process.env.NEXT_PUBLIC_DESCOPE_SIGNIN_FLOW_ID || "sign-up-or-in";
   const [flowError, setFlowError] = useState<string | null>(null);
-  const redirectAfterSuccess = useMemo(() => {
-    const target = returnTo ?? "/perfil";
-    const params = new URLSearchParams();
-    params.set("next", target);
-    return `/auth/callback?${params.toString()}`;
+  const redirectAfterSuccess = "/auth/callback";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!returnTo) return;
+    try {
+      window.sessionStorage.setItem(LOGIN_NEXT_KEY, returnTo);
+    } catch {
+      // ignore
+    }
   }, [returnTo]);
 
   useEffect(() => {
@@ -118,7 +125,6 @@ export default function SignInClient() {
               theme="light"
               debug={debugFlow}
               redirectAfterSuccess={redirectAfterSuccess}
-              redirectAfterError="/sign-in"
               onSuccess={() => {
                 setFlowError(null);
                 // Navegacion hard para evitar edge-cases donde el SPA nav no dispare el callback.
@@ -135,4 +141,3 @@ export default function SignInClient() {
     </main>
   );
 }
-

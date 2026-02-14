@@ -270,18 +270,26 @@ export default function CatalogToolbar({
 
             <label className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
               Ordenar
-              <select
-                key={searchKey}
-                value={selectedOption.value}
-                onChange={(event) => handleSortChange(event.target.value)}
-                className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
-              >
-                {SORT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              <span className="relative inline-flex">
+                <select
+                  key={searchKey}
+                  value={selectedOption.value}
+                  onChange={(event) => handleSortChange(event.target.value)}
+                  className="appearance-none rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-2 pr-9 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+                >
+                  {SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <span
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--oda-taupe)]"
+                  aria-hidden="true"
+                >
+                  ▾
+                </span>
+              </span>
             </label>
 
             <button
@@ -314,7 +322,7 @@ export default function CatalogToolbar({
       </div>
 
       {savedOpen ? (
-        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-[200]" role="dialog" aria-modal="true">
           <button
             type="button"
             className="absolute inset-0 bg-black/40"
@@ -340,7 +348,7 @@ export default function CatalogToolbar({
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto px-5 pb-6 pt-5">
+            <div className="flex-1 overflow-auto overflow-x-hidden px-5 pb-6 pt-5">
               <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
                 Guardar búsqueda actual
               </p>
@@ -370,7 +378,7 @@ export default function CatalogToolbar({
                     {savedSearches.map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-center justify-between gap-3 rounded-2xl border border-[color:var(--oda-border)] bg-white px-4 py-3"
+                        className="flex w-full min-w-0 items-center justify-between gap-3 rounded-2xl border border-[color:var(--oda-border)] bg-white px-4 py-3"
                       >
                         <button
                           type="button"

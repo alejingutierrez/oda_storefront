@@ -11,6 +11,8 @@ const normalizeNext = (value?: string | null) => {
   return value;
 };
 
+const LOGIN_NEXT_KEY = "oda_login_next_v1";
+
 export default function AuthCallbackPage() {
   const router = useRouter();
   const sdk = useDescope();
@@ -19,7 +21,19 @@ export default function AuthCallbackPage() {
   const [next] = useState(() => {
     if (typeof window === "undefined") return "/perfil";
     const params = new URLSearchParams(window.location.search);
-    return normalizeNext(params.get("next"));
+    if (params.has("next")) {
+      return normalizeNext(params.get("next"));
+    }
+    try {
+      const stored = window.sessionStorage.getItem(LOGIN_NEXT_KEY);
+      if (stored) {
+        window.sessionStorage.removeItem(LOGIN_NEXT_KEY);
+        return normalizeNext(stored);
+      }
+    } catch {
+      // ignore
+    }
+    return "/perfil";
   });
   const [message, setMessage] = useState("Procesando inicio de sesion…");
   const [attempt, setAttempt] = useState(0);

@@ -150,6 +150,68 @@ export default function CatalogoClient({
     });
   };
 
+  // Desktop: el scroll con rueda/trackpad sobre la columna izquierda debe desplazar SOLO filtros,
+  // nunca el listado de productos (incluso en Safari, donde `overscroll-behavior` puede ser inconsistente).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (filtersCollapsed) return;
+
+    const el = document.getElementById("catalog-filters-scroll");
+    if (!el) return;
+
+    const media = window.matchMedia("(min-width: 1024px)");
+    const toPixels = (event: WheelEvent) => {
+      if (event.deltaMode === 1) return event.deltaY * 16; // lines → px (aprox)
+      if (event.deltaMode === 2) return event.deltaY * window.innerHeight; // pages → px
+      return event.deltaY; // px
+    };
+    const canScroll = (node: HTMLElement, deltaY: number) => {
+      const max = node.scrollHeight - node.clientHeight;
+      if (!Number.isFinite(max) || max <= 0) return false;
+      if (deltaY > 0) return node.scrollTop < max;
+      if (deltaY < 0) return node.scrollTop > 0;
+      return false;
+    };
+
+    const pickScrollTarget = (target: HTMLElement, deltaY: number) => {
+      const candidates: HTMLElement[] = [];
+      let node: HTMLElement | null = target;
+      while (node && node !== el) {
+        if (node.getAttribute("data-oda-scroll-allow") === "true") {
+          candidates.push(node);
+        }
+        node = node.parentElement;
+      }
+      candidates.push(el);
+
+      for (const candidate of candidates) {
+        if (canScroll(candidate, deltaY)) return candidate;
+      }
+      // Si nada puede scrollear en esa dirección, nos quedamos con el contenedor
+      // para "tragar" el wheel y no encadenar al window/products.
+      return el;
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      if (!media.matches) return;
+      if (event.ctrlKey) return; // zoom trackpad
+      const deltaY = toPixels(event);
+      if (!deltaY) return;
+
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+
+      event.preventDefault();
+      const node = pickScrollTarget(target, deltaY);
+      node.scrollTop += deltaY;
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, [filtersCollapsed]);
+
   const facetsFetchKey = useMemo(() => {
     const next = new URLSearchParams(params.toString());
     next.delete("page");

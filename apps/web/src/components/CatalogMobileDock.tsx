@@ -179,18 +179,26 @@ export default function CatalogMobileDock({
 
           <label className="ml-auto flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
             <span className="sr-only">Ordenar</span>
-            <select
-              value={selectedOption.value}
-              onChange={(event) => handleSortChange(event.target.value)}
-              aria-label="Ordenar"
-              className="h-11 min-w-[8.25rem] rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
-            >
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <span className="relative inline-flex">
+              <select
+                value={selectedOption.value}
+                onChange={(event) => handleSortChange(event.target.value)}
+                aria-label="Ordenar"
+                className="h-11 min-w-[8.25rem] appearance-none rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 pr-9 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <span
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--oda-taupe)]"
+                aria-hidden="true"
+              >
+                ▾
+              </span>
+            </span>
           </label>
 
           <button
