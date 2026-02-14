@@ -15,7 +15,7 @@ export default async function CatalogoView({ searchParams }: { searchParams: Sea
   const { params } = canonicalizeCatalogSearchParams(rawParams);
 
   const sort = parseCatalogSortFromSearchParams(params, "new");
-  const parsedFilters = parseCatalogFiltersFromSearchParams(params);
+  const parsedFilters = parseCatalogFiltersFromSearchParams(params, { categoryMode: "single" });
   const filters: CatalogFilters = { ...parsedFilters, inStock: true, enrichedOnly: true };
 
   const [menu, products] = await Promise.all([

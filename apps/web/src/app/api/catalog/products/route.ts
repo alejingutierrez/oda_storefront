@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const page = parseCatalogPageFromSearchParams(url.searchParams, 1);
   const sort = parseCatalogSortFromSearchParams(url.searchParams, "new");
-  const parsedFilters = parseCatalogFiltersFromSearchParams(url.searchParams);
+  const parsedFilters = parseCatalogFiltersFromSearchParams(url.searchParams, { categoryMode: "single" });
   const filters = { ...parsedFilters, inStock: true, enrichedOnly: true };
 
   const result = await getCatalogProducts({ filters, page, sort });

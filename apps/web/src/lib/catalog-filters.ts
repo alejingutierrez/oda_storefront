@@ -99,11 +99,22 @@ export function parseGenderList(values?: string[]): GenderKey[] | undefined {
   return normalized.length > 0 ? Array.from(new Set(normalized)) : undefined;
 }
 
-export function parseCatalogFiltersFromSearchParams(params: URLSearchParams): CatalogFilters {
+type ParseCatalogFiltersOptions = {
+  categoryMode?: "single" | "multi";
+};
+
+export function parseCatalogFiltersFromSearchParams(
+  params: URLSearchParams,
+  options?: ParseCatalogFiltersOptions,
+): CatalogFilters {
   const priceRanges = parsePriceRanges(getListFromSearch(params, "price_range"));
-  // En PLP, `category` es single-select (tomamos solo la primera).
+  // Public PLP es single-select; admin/product-curation puede necesitar multi-select.
+  const categoryMode = options?.categoryMode ?? "multi";
   const categoriesRaw = getListFromSearch(params, "category");
-  const categories = categoriesRaw && categoriesRaw.length > 0 ? [categoriesRaw[0]!] : undefined;
+  const categories =
+    categoryMode === "single" && categoriesRaw && categoriesRaw.length > 0
+      ? [categoriesRaw[0]!]
+      : categoriesRaw;
   return {
     q: getParamFromSearch(params, "q"),
     categories,
