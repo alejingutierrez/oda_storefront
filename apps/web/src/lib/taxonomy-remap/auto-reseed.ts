@@ -302,6 +302,13 @@ const CATEGORY_MOVE_REQUIRED_EVIDENCE: Partial<Record<string, string[]>> = {
 
 const canMoveToCategory = (category: string | null, evidenceText: string) => {
   if (!category) return false;
+  if (
+    category === "calzado" &&
+    hasAnyKeyword(evidenceText, ["arete", "aretes", "earring", "earrings", "topos", "pendiente", "pendientes"])
+  ) {
+    // Avoid misclassifying jewelry shaped like shoes ("aretes de botas/tenis") as footwear.
+    return false;
+  }
   if (category === "ropa_interior_basica") {
     // "interior" alone is too ambiguous (e.g. "guía interior"). Require underwear evidence.
     const hasUnderwearEvidence = hasAnyKeyword(evidenceText, [
@@ -561,6 +568,28 @@ const canMoveToCategory = (category: string | null, evidenceText: string) => {
   ) {
     return false;
   }
+  if (
+    category === "pantalones_no_denim" &&
+    hasAnyKeyword(evidenceText, [
+      "ropa interior",
+      "underwear",
+      "brasier",
+      "bralette",
+      "panty",
+      "trusa",
+      "tanga",
+      "cachetero",
+      "brasilera",
+      "brief",
+      "boxer",
+      "calzon",
+      "calzón",
+      "calzoncillo",
+    ])
+  ) {
+    // "Culotte" is also used for underwear. If underwear evidence exists, don't move into pants.
+    return false;
+  }
   // "Set" is extremely ambiguous (home sets, gift sets, etc). Only move into clothing sets
   // if we also have garment evidence.
   if (category === "conjuntos_y_sets_2_piezas") {
@@ -650,6 +679,7 @@ const GENERIC_SUBCATEGORY_KEYWORDS_BY_CATEGORY: Record<string, string[]> = {
     "piscina",
   ],
   calzado: ["calzado", "footwear", "zapato", "zapatos", "shoe", "shoes"],
+  gafas_y_optica: ["gafas", "lentes", "eyewear"],
   bolsos_y_marroquineria: ["bolso", "bolsos", "bag", "bags"],
 };
 
@@ -1360,6 +1390,11 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         // If the current category is strongly supported, don't churn it just because another
         // category also matches some generic terms (e.g. sports bras/camisetas deportivas → "crop top").
         if (
+          currentCategory === "conjuntos_y_sets_2_piezas" &&
+          canMoveToCategory(currentCategory, evidenceText)
+        ) {
+          reasons.push("blocked:keep_current_set");
+        } else if (
           currentCategory === "ropa_deportiva_y_performance" &&
           canMoveToCategory(currentCategory, evidenceText)
         ) {

@@ -619,6 +619,21 @@ const isCharmAccessoryForNeckwear = (text: string) => {
 
 const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
   if (
+    rule.category === "calzado" &&
+    hasAnyKeyword(text, ["arete", "aretes", "earring", "earrings", "topos", "pendiente", "pendientes"])
+  ) {
+    // Avoid misclassifying jewelry shaped like shoes ("aretes de botas/tenis") as footwear.
+    return true;
+  }
+  if (
+    rule.category === "pantalones_no_denim" &&
+    hasAnyKeyword(text, ["culotte"]) &&
+    hasUnderwearEvidence(text)
+  ) {
+    // "Culotte" is also an underwear style in CO (cacheteros tipo culotte). Prefer underwear when present.
+    return true;
+  }
+  if (
     rule.category === "camisas_y_blusas" &&
     hasAnyKeyword(text, ["chaleco"]) &&
     !hasAnyKeyword(text, ["manga", "boton", "botones", "button", "button down", "cuello", "collar", "blusa", "blouse"])
@@ -981,6 +996,24 @@ const shouldIgnoreSubcategoryRule = (
     return true;
   }
   if (
+    rule.category === "camisetas_y_tops" &&
+    (rule.subcategory === "camiseta_manga_corta" || rule.subcategory === "camiseta_manga_larga") &&
+    hasAnyKeyword(text, [
+      "crop top",
+      "croptop",
+      "tank top",
+      "camisilla",
+      "esqueleto",
+      "sin mangas",
+      "bodysuit",
+      "body",
+      "henley",
+    ])
+  ) {
+    // Avoid downgrading specific tops into generic sleeve-length tees due to shared "manga corta/larga".
+    return true;
+  }
+  if (
     rule.category === "lenceria_y_fajas_shapewear" &&
     rule.subcategory === "medias_lenceria_panty_lenceria" &&
     !hasHosieryEvidence(text)
@@ -1253,8 +1286,17 @@ const shouldIgnoreSubcategoryRule = (
   }
   if (
     rule.category === "joyeria_y_bisuteria" &&
+    rule.subcategory === "collares" &&
+    hasAnyKeyword(text, ["charm", "charms", "dije", "dijes", "llavero", "llaveros", "keychain", "keychains"]) &&
+    !hasAnyKeyword(text, ["collar", "collares", "necklace", "choker", "gargantilla"])
+  ) {
+    // Bag charms/keychains often include a "cadena" but are not necklaces.
+    return true;
+  }
+  if (
+    rule.category === "joyeria_y_bisuteria" &&
     rule.subcategory === "dijes_charms" &&
-    hasAnyKeyword(text, ["collar", "collares", "cadena", "cadenas", "necklace", "choker", "gargantilla"]) &&
+    hasAnyKeyword(text, ["collar", "collares", "necklace", "choker", "gargantilla"]) &&
     !isCharmAccessoryForNeckwear(text)
   ) {
     return true;
@@ -1308,6 +1350,7 @@ const GENERIC_SUBCATEGORY_KEYWORDS_BY_CATEGORY: Record<string, string[]> = {
   vestidos: ["vestido", "dress"],
   jeans_y_denim: ["jean", "jeans", "denim"],
   calzado: ["calzado", "footwear", "zapato", "zapatos", "shoe", "shoes"],
+  gafas_y_optica: ["gafas", "lentes", "eyewear"],
   bolsos_y_marroquineria: ["bolso", "bolsos", "bag", "bags"],
 };
 
