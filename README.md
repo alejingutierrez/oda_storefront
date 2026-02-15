@@ -156,6 +156,17 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   IMAGE_BACKFILL_LIMIT=0 IMAGE_BACKFILL_CONCURRENCY=6 node apps/web/scripts/backfill-image-covers-to-blob.mjs
   ```
 
+### Performance (filtros `/catalogo`)
+- En Neon (prod/stg), los filtros del catálogo dependen de índices para evitar `seq scan` en queries de `products/variants` (subcategorías, bounds de precio, listados).
+- SQL (re-aplicable): `apps/web/scripts/catalog-filter-indexes.sql`
+- Script: `apps/web/scripts/apply-catalog-filter-indexes.sh` (usa `NEON_DATABASE_URL` desde `.env` y `CREATE INDEX CONCURRENTLY`).
+- Benchmark E2E (latencia por endpoint + resumen p50/p95 + casos >2s):
+  ```bash
+  BASE_URL=https://oda-storefront-6ee5.vercel.app node apps/web/scripts/benchmark-catalog-filters.mjs
+  node apps/web/scripts/benchmark-catalog-filters.mjs --limit 30
+  node apps/web/scripts/benchmark-catalog-filters.mjs --no-price-sort
+  ```
+
 ## Home (public)
 - Ruta `/` con home editorial (estilo Farfetch) y grillas cuadradas.
 - Mega menu por género con estructura completa basada en categorías reales y reglas `category + subcategory` (ver `HOME_PLAN.md`).

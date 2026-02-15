@@ -644,6 +644,7 @@ export default function CatalogoFiltersPanel({
     [facets.colors, selected.colors],
   );
   const subcategoriesSettled = subcategoriesResolvedKey === subcategoriesSessionKey;
+  const [subcategoriesEmptyReady, setSubcategoriesEmptyReady] = useState(false);
   const injectedSelectedSubcategories = useMemo(() => {
     const normalizedSelected = Array.from(
       new Set(
@@ -671,10 +672,21 @@ export default function CatalogoFiltersPanel({
     if (injectedSelectedSubcategories.length === 0) return resolvedSubcategories;
     return [...resolvedSubcategories, ...injectedSelectedSubcategories];
   }, [injectedSelectedSubcategories, resolvedSubcategories, subcategoriesSettled]);
-  const showSubcategoriesSkeleton =
-    displaySubcategories.length === 0 && (subcategoriesLoading || !subcategoriesSettled);
-  const showSubcategoriesEmpty =
+  const rawSubcategoriesEmpty =
     displaySubcategories.length === 0 && subcategoriesSettled && !subcategoriesLoading;
+  useEffect(() => {
+    if (!rawSubcategoriesEmpty) {
+      setSubcategoriesEmptyReady(false);
+      return;
+    }
+    setSubcategoriesEmptyReady(false);
+    const timeout = window.setTimeout(() => setSubcategoriesEmptyReady(true), 500);
+    return () => window.clearTimeout(timeout);
+  }, [rawSubcategoriesEmpty, subcategoriesSessionKey]);
+  const showSubcategoriesEmpty = rawSubcategoriesEmpty && subcategoriesEmptyReady;
+  const showSubcategoriesSkeleton =
+    displaySubcategories.length === 0 &&
+    (subcategoriesLoading || !subcategoriesSettled || (rawSubcategoriesEmpty && !subcategoriesEmptyReady));
   const visibleBrands = useMemo(() => {
     const query = brandSearch.trim().toLowerCase();
     const list = query

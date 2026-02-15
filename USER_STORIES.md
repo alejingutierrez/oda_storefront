@@ -1081,6 +1081,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: Edge caché Vercel; fallback estático si API falla.
 - Riesgos: Cache staleness; mitigar con revalidate tags y SWR.
 - Métricas: CWV, tasa de revalidaciones, hit ratio CDN.
+- Estado: **done (2026-02-15)**. PLP `/catalogo`: filtros <2s (p95 < 0.40s en endpoints clave) con índices DB + hardening del empty-state de subcategorías.
 
 ### MC-017 Gestión de secrets/entornos
 - Historia: Como DevOps, quiero secretos por ambiente y rotables, para mantener seguridad y trazabilidad.
