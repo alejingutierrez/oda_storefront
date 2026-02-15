@@ -108,6 +108,15 @@ export function parseCatalogFiltersFromSearchParams(
   options?: ParseCatalogFiltersOptions,
 ): CatalogFilters {
   const priceRanges = parsePriceRanges(getListFromSearch(params, "price_range"));
+  const seoTags = (() => {
+    const raw = getListFromSearch(params, "seo_tag");
+    if (!raw || raw.length === 0) return undefined;
+    const cleaned = raw
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.length > 0);
+    if (cleaned.length === 0) return undefined;
+    return Array.from(new Set(cleaned));
+  })();
   // Public PLP es single-select; admin/product-curation puede necesitar multi-select.
   const categoryMode = options?.categoryMode ?? "multi";
   const categoriesRaw = getListFromSearch(params, "category");
@@ -121,6 +130,7 @@ export function parseCatalogFiltersFromSearchParams(
     subcategories: getListFromSearch(params, "subcategory"),
     genders: parseGenderList(getListFromSearch(params, "gender")),
     brandIds: getListFromSearch(params, "brandId"),
+    seoTags,
     priceMin: priceRanges ? undefined : getNumberParamFromSearch(params, "price_min"),
     priceMax: priceRanges ? undefined : getNumberParamFromSearch(params, "price_max"),
     priceRanges,

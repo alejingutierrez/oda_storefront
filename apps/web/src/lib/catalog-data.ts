@@ -67,6 +67,7 @@ export type CatalogFacets = {
   categories: CatalogFacetItem[];
   genders: CatalogFacetItem[];
   brands: CatalogFacetItem[];
+  seoTags: CatalogFacetItem[];
   colors: CatalogFacetItem[];
   sizes: CatalogFacetItem[];
   fits: CatalogFacetItem[];
@@ -159,6 +160,7 @@ function buildFacetsCacheKey(filters: CatalogFilters) {
   if (filters.subcategories?.length) key.subcategories = normalizeArray(filters.subcategories);
   if (filters.genders?.length) key.genders = normalizeArray(filters.genders);
   if (filters.brandIds?.length) key.brandIds = normalizeArray(filters.brandIds);
+  if (filters.seoTags?.length) key.seoTags = normalizeArray(filters.seoTags);
   if (filters.colors?.length) key.colors = normalizeArray(filters.colors);
   if (filters.sizes?.length) key.sizes = normalizeArray(filters.sizes);
   if (filters.fits?.length) key.fits = normalizeArray(filters.fits);
@@ -575,6 +577,7 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
   const categoryFilters = omitFilters(filters, ["categories"]);
   const genderFilters = omitFilters(filters, ["genders"]);
   const brandFilters = omitFilters(filters, ["brandIds"]);
+  const seoTagFilters = omitFilters(filters, ["seoTags"]);
   const colorFilters = omitFilters(filters, ["colors"]);
   const sizeFilters = omitFilters(filters, ["sizes"]);
   const fitFilters = omitFilters(filters, ["fits"]);
@@ -587,6 +590,7 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
   const categoryWhere = buildWhere(categoryFilters);
   const genderWhere = buildWhere(genderFilters);
   const brandWhere = buildWhere(brandFilters);
+  const seoTagWhere = buildWhere(seoTagFilters);
   const materialWhere = buildWhere(materialFilters);
   const patternWhere = buildWhere(patternFilters);
   const occasionWhere = buildWhere(occasionFilters);
@@ -604,6 +608,7 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
     categories,
     genders,
     brands,
+    seoTags,
     colors,
     sizes,
     fits,
@@ -639,6 +644,19 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
       ${brandWhere}
       group by b.id, b.name
       order by cnt desc
+    `),
+    prisma.$queryRaw<Array<{ tag: string; cnt: bigint }>>(Prisma.sql`
+      select tag, count(*) as cnt
+      from (
+        select unnest(p."seoTags") as tag
+        from products p
+        join brands b on b.id = p."brandId"
+        ${seoTagWhere}
+      ) t
+      where tag is not null and tag <> ''
+      group by tag
+      order by cnt desc
+      limit 100
     `),
     prisma.$queryRaw<Array<{ id: string; family: string; name: string; hex: string; cnt: bigint }>>(Prisma.sql`
       with color_counts as (
@@ -763,6 +781,11 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
     label: row.name,
     count: Number(row.cnt),
   }));
+  const seoTagItems = seoTags.map((row) => ({
+    value: row.tag,
+    label: labelize(row.tag),
+    count: Number(row.cnt),
+  }));
   const selectedColors = new Set(filters.colors ?? []);
   const colorItems = colors
     .map((row) => ({
@@ -855,6 +878,30 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
         value,
         label: row?.name ?? "Marca",
         count: row?.count ?? 0,
+      });
+    }
+  }
+
+  const selectedSeoTags = filters.seoTags ?? [];
+  const missingSeoTags = selectedSeoTags.filter((value) => !seoTagItems.some((item) => item.value === value));
+  if (missingSeoTags.length > 0) {
+    const rows = await prisma.$queryRaw<Array<{ tag: string; cnt: bigint }>>(Prisma.sql`
+      select tag, count(*) as cnt
+      from (
+        select unnest(p."seoTags") as tag
+        from products p
+        join brands b on b.id = p."brandId"
+        ${seoTagWhere}
+      ) t
+      where tag in (${Prisma.join(missingSeoTags)})
+      group by tag
+    `);
+    const countMap = new Map(rows.map((row) => [row.tag, Number(row.cnt)]));
+    for (const value of missingSeoTags) {
+      seoTagItems.push({
+        value,
+        label: labelize(value),
+        count: countMap.get(value) ?? 0,
       });
     }
   }
@@ -1032,6 +1079,7 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
       count: genderCounts.get(gender) ?? 0,
     })),
     brands: brandItems,
+    seoTags: seoTagItems,
     colors: colorItems,
     sizes: sizeItems,
     fits: fitItems,

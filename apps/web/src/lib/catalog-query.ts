@@ -7,6 +7,7 @@ export type CatalogFilters = {
   subcategories?: string[];
   genders?: GenderKey[];
   brandIds?: string[];
+  seoTags?: string[];
   priceMin?: number;
   priceMax?: number;
   // Unión disjunta de rangos de precio (p.ej. [:200000], [400000:700000], [800000:]).
@@ -96,6 +97,9 @@ export function buildProductConditions(filters: CatalogFilters): Prisma.Sql[] {
   }
   if (filters.styles && filters.styles.length > 0) {
     conditions.push(Prisma.sql`p."stylePrimary" in (${Prisma.join(filters.styles)})`);
+  }
+  if (filters.seoTags && filters.seoTags.length > 0) {
+    conditions.push(Prisma.sql`p."seoTags" && ${buildTextArray(filters.seoTags)}`);
   }
   if (filters.materials && filters.materials.length > 0) {
     conditions.push(Prisma.sql`p."materialTags" && ${buildTextArray(filters.materials)}`);

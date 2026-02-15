@@ -23,6 +23,7 @@ type Facets = {
   categories: FacetItem[];
   genders: FacetItem[];
   brands: FacetItem[];
+  seoTags: FacetItem[];
   colors: FacetItem[];
   sizes: FacetItem[];
   fits: FacetItem[];
@@ -69,12 +70,20 @@ type SelectionBanner = { kind: "info" | "warning"; text: string };
 const PAGE_SIZE = 36;
 const SELECT_ALL_LIMIT = 1200;
 
+type CssVarStyle = CSSProperties & Record<`--${string}`, string>;
+
 function buildSearchKey(params: URLSearchParams) {
   const next = new URLSearchParams(params.toString());
   // Infinite scroll maneja page internamente.
   next.delete("page");
   next.delete("pageSize");
   return next.toString();
+}
+
+function isAbortError(err: unknown) {
+  if (!err || typeof err !== "object") return false;
+  if (!("name" in err)) return false;
+  return (err as { name?: unknown }).name === "AbortError";
 }
 
 function classNames(...parts: Array<string | false | null | undefined>) {
@@ -249,7 +258,7 @@ export default function ProductCurationPanel() {
           return merged;
         });
       } catch (err) {
-        if ((err as any)?.name === "AbortError") return;
+        if (isAbortError(err)) return;
         console.warn(err);
         setError(err instanceof Error ? err.message : "Error cargando productos");
         setHasMore(false);
@@ -372,15 +381,16 @@ export default function ProductCurationPanel() {
   );
 
   const catalogThemeVars = useMemo(() => {
-    return {
-      ["--oda-ink" as any]: "#0f172a",
-      ["--oda-ink-soft" as any]: "#334155",
-      ["--oda-cream" as any]: "#f8fafc",
-      ["--oda-stone" as any]: "#f1f5f9",
-      ["--oda-taupe" as any]: "#64748b",
-      ["--oda-gold" as any]: "#e2e8f0",
-      ["--oda-border" as any]: "#e2e8f0",
-    } as CSSProperties;
+    const vars: CssVarStyle = {
+      "--oda-ink": "#0f172a",
+      "--oda-ink-soft": "#334155",
+      "--oda-cream": "#f8fafc",
+      "--oda-stone": "#f1f5f9",
+      "--oda-taupe": "#64748b",
+      "--oda-gold": "#e2e8f0",
+      "--oda-border": "#e2e8f0",
+    };
+    return vars;
   }, []);
 
   return (

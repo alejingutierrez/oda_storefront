@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 type FacetItem = {
@@ -14,6 +14,7 @@ type Facets = {
   categories: FacetItem[];
   genders: FacetItem[];
   brands: FacetItem[];
+  seoTags: FacetItem[];
   colors: FacetItem[];
   sizes: FacetItem[];
   fits: FacetItem[];
@@ -68,6 +69,7 @@ export default function CatalogFiltersPanel({ facets, subcategories }: Props) {
       subcategories: current.getAll("subcategory"),
       genders: current.getAll("gender"),
       brandIds: current.getAll("brandId"),
+      seoTags: current.getAll("seo_tag"),
       colors: current.getAll("color"),
       sizes: current.getAll("size"),
       fits: current.getAll("fit"),
@@ -84,16 +86,11 @@ export default function CatalogFiltersPanel({ facets, subcategories }: Props) {
     };
   }, [searchParamsString]);
 
-  const [searchText, setSearchText] = useState(selected.q);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const priceMinRef = useRef<HTMLInputElement | null>(null);
+  const priceMaxRef = useRef<HTMLInputElement | null>(null);
   const [brandSearch, setBrandSearch] = useState("");
-  const [priceMin, setPriceMin] = useState(selected.priceMin);
-  const [priceMax, setPriceMax] = useState(selected.priceMax);
-
-  useEffect(() => {
-    setSearchText(selected.q);
-    setPriceMin(selected.priceMin);
-    setPriceMax(selected.priceMax);
-  }, [selected.q, selected.priceMin, selected.priceMax]);
+  const [seoTagSearch, setSeoTagSearch] = useState("");
 
   const applyParams = (next: URLSearchParams) => {
     if (selected.sort && !next.get("sort")) {
@@ -142,10 +139,13 @@ export default function CatalogFiltersPanel({ facets, subcategories }: Props) {
   const isChecked = (list: string[], value: string) => list.includes(value);
 
   const handleSearchCommit = () => {
-    setSingle("q", searchText.trim());
+    const value = (searchInputRef.current?.value ?? "").trim();
+    setSingle("q", value);
   };
 
   const handlePriceCommit = () => {
+    const priceMin = (priceMinRef.current?.value ?? "").trim();
+    const priceMax = (priceMaxRef.current?.value ?? "").trim();
     const next = new URLSearchParams(searchParamsString);
     if (priceMin.trim().length > 0) {
       next.set("price_min", priceMin.trim());
@@ -166,8 +166,9 @@ export default function CatalogFiltersPanel({ facets, subcategories }: Props) {
         <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">Buscar</p>
         <div className="mt-3 flex flex-col gap-3">
           <input
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
+            key={`q:${selected.q}`}
+            ref={searchInputRef}
+            defaultValue={selected.q}
             onBlur={handleSearchCommit}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -326,13 +327,68 @@ export default function CatalogFiltersPanel({ facets, subcategories }: Props) {
 
       <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
         <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
+          SEO tags
+          <span className="text-[10px] text-[color:var(--oda-taupe)]">
+            {buildSelectedLabel(selected.seoTags.length)}
+          </span>
+        </summary>
+        <div className="mt-4 grid gap-3">
+          {facets.seoTags.length > 0 ? (
+            <>
+              <input
+                value={seoTagSearch}
+                onChange={(event) => setSeoTagSearch(event.target.value)}
+                placeholder="Buscar SEO tag…"
+                className="w-full rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-sm"
+                disabled={isPending}
+              />
+              <div className="max-h-64 overflow-auto pr-1">
+                <div className="flex flex-col gap-2">
+                  {sortFacetItems(
+                    facets.seoTags.filter((item) => {
+                      const query = seoTagSearch.trim().toLowerCase();
+                      if (!query) return true;
+                      return (
+                        item.label.toLowerCase().includes(query) || item.value.toLowerCase().includes(query)
+                      );
+                    }),
+                    selected.seoTags,
+                  ).map((item) => (
+                    <label
+                      key={item.value}
+                      className="flex cursor-pointer items-center justify-between gap-3 text-sm"
+                    >
+                      <span className="flex min-w-0 items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={isChecked(selected.seoTags, item.value)}
+                          onChange={() => toggleMulti("seo_tag", item.value)}
+                          className="h-4 w-4 accent-[color:var(--oda-ink)]"
+                        />
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                      <span className="text-xs text-[color:var(--oda-taupe)]">{item.count}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-[color:var(--oda-taupe)]">No hay SEO tags para estos resultados.</p>
+          )}
+        </div>
+      </details>
+
+      <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
+        <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
           Precio
         </summary>
         <div className="mt-4 grid gap-3">
           <div className="grid grid-cols-2 gap-3">
             <input
-              value={priceMin}
-              onChange={(event) => setPriceMin(event.target.value)}
+              key={`price-min:${selected.priceMin}`}
+              ref={priceMinRef}
+              defaultValue={selected.priceMin}
               onBlur={handlePriceCommit}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -344,8 +400,9 @@ export default function CatalogFiltersPanel({ facets, subcategories }: Props) {
               className="w-full rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-2 text-sm"
             />
             <input
-              value={priceMax}
-              onChange={(event) => setPriceMax(event.target.value)}
+              key={`price-max:${selected.priceMax}`}
+              ref={priceMaxRef}
+              defaultValue={selected.priceMax}
               onBlur={handlePriceCommit}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
