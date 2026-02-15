@@ -6,9 +6,13 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const isCronRequest = (req: Request) => {
-  const cronHeader = req.headers.get("x-vercel-cron");
+  const cronHeader = (req.headers.get("x-vercel-cron") ?? "").toLowerCase();
   const userAgent = req.headers.get("user-agent") ?? "";
-  return cronHeader === "1" || userAgent.toLowerCase().includes("vercel-cron");
+  return (
+    cronHeader === "1" ||
+    cronHeader === "true" ||
+    userAgent.toLowerCase().includes("vercel-cron")
+  );
 };
 
 const hasAdminToken = (req: Request) => {
