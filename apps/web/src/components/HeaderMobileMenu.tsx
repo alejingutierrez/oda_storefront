@@ -54,8 +54,8 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                 onClick={() => setOpen(false)}
               />
 
-              <div className="absolute inset-x-4 bottom-6 top-24 overflow-hidden rounded-3xl border border-white/40 bg-white/70 shadow-[0_30px_90px_rgba(23,21,19,0.30)] backdrop-blur-xl">
-                <div className="flex items-center justify-between gap-3 border-b border-white/30 bg-white/55 px-5 py-4 backdrop-blur-xl">
+              <div className="oda-glass-noise absolute inset-x-4 bottom-6 top-24 overflow-hidden rounded-3xl border border-white/50 bg-white/85 shadow-[0_30px_90px_rgba(23,21,19,0.30)] backdrop-blur-2xl">
+                <div className="flex items-center justify-between gap-3 border-b border-white/40 bg-white/75 px-5 py-4 backdrop-blur-xl">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
                     Menu
                   </p>
