@@ -8,7 +8,6 @@ import type { CatalogProduct } from "@/lib/catalog-data";
 
 type ApiResponse = {
   items: CatalogProduct[];
-  totalCount: number;
   pageSize?: number;
 };
 
@@ -27,6 +26,7 @@ type MobileLayoutState = {
 };
 
 const MOBILE_LAYOUT_KEY = "oda_catalog_mobile_layout_v1";
+const DEFAULT_PAGE_SIZE = 24;
 
 function readMobileLayout(): MobileLayoutState {
   if (typeof window === "undefined") return { version: 1, columns: 1, aspect: "original" };
@@ -113,7 +113,7 @@ export default function CatalogProductsInfinite({
   filtersCollapsed = false,
 }: {
   initialItems: CatalogProduct[];
-  totalCount: number;
+  totalCount?: number | null;
   initialSearchParams: string;
   navigationPending?: boolean;
   optimisticSearchParams?: string;
@@ -135,12 +135,17 @@ export default function CatalogProductsInfinite({
 
   const [items, setItems] = useState<CatalogProduct[]>(() => restored?.items ?? initialItems);
   const [page, setPage] = useState(() => restored?.page ?? 1);
+  const [pageSize, setPageSize] = useState(() => DEFAULT_PAGE_SIZE);
+  const [hasMoreFallback, setHasMoreFallback] = useState(() => {
+    const initialCount = (restored?.items ?? initialItems).length;
+    return initialCount >= DEFAULT_PAGE_SIZE;
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
     key: string;
     items: CatalogProduct[];
-    totalCount: number;
+    pageSize: number;
   } | null>(null);
   const previewAbortRef = useRef<AbortController | null>(null);
 
@@ -182,19 +187,23 @@ export default function CatalogProductsInfinite({
     nextParams.delete("page");
     nextParams.set("page", "1");
 
-    void fetch(`/api/catalog/products?${nextParams.toString()}`, {
+    void fetch(`/api/catalog/products-page?${nextParams.toString()}`, {
       signal: controller.signal,
     })
       .then(async (res) => {
         if (!res.ok) return null;
         const data = (await res.json()) as ApiResponse;
         const nextItems = Array.isArray(data.items) ? data.items : [];
-        const nextTotal = typeof data.totalCount === "number" ? data.totalCount : 0;
-        return { items: nextItems, totalCount: nextTotal };
+        const nextPageSize =
+          typeof data.pageSize === "number" && Number.isFinite(data.pageSize) && data.pageSize > 0
+            ? Math.round(data.pageSize)
+            : DEFAULT_PAGE_SIZE;
+        return { items: nextItems, pageSize: nextPageSize };
       })
       .then((payload) => {
         if (!payload) return;
-        setPreview({ key, items: payload.items, totalCount: payload.totalCount });
+        setPreview({ key, items: payload.items, pageSize: payload.pageSize });
+        setPageSize(payload.pageSize);
       })
       .catch((err) => {
         if ((err as { name?: unknown })?.name === "AbortError") return;
@@ -212,11 +221,14 @@ export default function CatalogProductsInfinite({
         ? persisted
         : null;
 
-    setItems(usable?.items ?? initialItems);
+    const nextItems = usable?.items ?? initialItems;
+    setItems(nextItems);
     setPage(usable?.page ?? 1);
+    setPageSize(DEFAULT_PAGE_SIZE);
+    setHasMoreFallback(nextItems.length >= DEFAULT_PAGE_SIZE);
     setLoading(false);
     setError(null);
-    loadedIdsRef.current = new Set((usable?.items ?? initialItems).map((item) => item.id));
+    loadedIdsRef.current = new Set(nextItems.map((item) => item.id));
     prefetchRef.current = {};
     scrollYRef.current = usable?.scrollY ?? 0;
 
@@ -260,23 +272,26 @@ export default function CatalogProductsInfinite({
     });
   }, [items, navigationPending, page, stateKey]);
 
-  const display = useMemo(() => {
+  const displayItems = useMemo(() => {
     if (navigationPending) {
       if (preview && (optimisticSearchParams ?? "").trim() === preview.key) {
-        return { items: preview.items, totalCount: preview.totalCount };
+        return preview.items;
       }
     }
-    return { items, totalCount };
-  }, [items, navigationPending, optimisticSearchParams, preview, totalCount]);
+    return items;
+  }, [items, navigationPending, optimisticSearchParams, preview]);
 
-  const hasMore = useMemo(
-    () => display.items.length < display.totalCount,
-    [display.items.length, display.totalCount],
-  );
+  const knownTotalCount =
+    typeof totalCount === "number" && Number.isFinite(totalCount) && totalCount >= 0 ? totalCount : null;
+  const hasMore = useMemo(() => {
+    if (knownTotalCount !== null) return displayItems.length < knownTotalCount;
+    return hasMoreFallback;
+  }, [displayItems.length, hasMoreFallback, knownTotalCount]);
+
   const progressPct = useMemo(() => {
-    if (!display.totalCount) return 0;
-    return Math.max(0, Math.min(100, (display.items.length / display.totalCount) * 100));
-  }, [display.items.length, display.totalCount]);
+    if (!knownTotalCount) return null;
+    return Math.max(0, Math.min(100, (displayItems.length / knownTotalCount) * 100));
+  }, [displayItems.length, knownTotalCount]);
 
   const loadMore = useCallback(async () => {
     if (navigationPending) return;
@@ -295,7 +310,7 @@ export default function CatalogProductsInfinite({
             const nextParams = new URLSearchParams(initialSearchParams);
             nextParams.delete("page");
             nextParams.set("page", String(nextPage));
-            const res = await fetch(`/api/catalog/products?${nextParams.toString()}`);
+            const res = await fetch(`/api/catalog/products-page?${nextParams.toString()}`);
             if (!res.ok) {
               throw new Error(`http_${res.status}`);
             }
@@ -304,6 +319,10 @@ export default function CatalogProductsInfinite({
 
       delete prefetchRef.current[nextPage];
       const nextItems = Array.isArray(data.items) ? data.items : [];
+      const nextPageSize =
+        typeof data.pageSize === "number" && Number.isFinite(data.pageSize) && data.pageSize > 0
+          ? Math.round(data.pageSize)
+          : pageSize;
       setItems((prev) => {
         const merged = [...prev];
         for (const item of nextItems) {
@@ -315,6 +334,8 @@ export default function CatalogProductsInfinite({
         return merged;
       });
       setPage(nextPage);
+      setPageSize(nextPageSize);
+      setHasMoreFallback(nextItems.length >= nextPageSize);
     } catch (err) {
       const message = err instanceof Error ? err.message : "load_failed";
       setError(message);
@@ -322,7 +343,7 @@ export default function CatalogProductsInfinite({
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [hasMore, initialSearchParams, loading, navigationPending, page]);
+  }, [hasMore, initialSearchParams, loading, navigationPending, page, pageSize]);
 
   useEffect(() => {
     if (navigationPending) return;
@@ -347,7 +368,7 @@ export default function CatalogProductsInfinite({
     };
 
     schedule(() => {
-      void fetch(`/api/catalog/products?${nextParams.toString()}`)
+      void fetch(`/api/catalog/products-page?${nextParams.toString()}`)
         .then(async (res) => {
           if (!res.ok) return null;
           const payload = (await res.json()) as ApiResponse;
@@ -418,7 +439,7 @@ export default function CatalogProductsInfinite({
     };
   }, [hasMore, loadMore, navigationPending]);
 
-  if (!navigationPending && display.items.length === 0) {
+  if (!navigationPending && displayItems.length === 0) {
     return (
       <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-10 text-center">
         <p className="text-lg font-semibold text-[color:var(--oda-ink)]">
@@ -528,7 +549,7 @@ export default function CatalogProductsInfinite({
             </div>
           ) : (
             <ul className={[gridClassName, "list-none p-0 m-0"].join(" ")} aria-label="Productos">
-              {display.items.map((product) => (
+              {displayItems.map((product) => (
                 <li key={product.id}>
                   <CatalogProductCard
                     product={product}
@@ -547,23 +568,33 @@ export default function CatalogProductsInfinite({
               <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                 Mostrando{" "}
                 <span className="font-semibold text-[color:var(--oda-ink)]">
-                  {display.items.length.toLocaleString("es-CO")}
+                  {displayItems.length.toLocaleString("es-CO")}
                 </span>{" "}
-                de{" "}
-                <span className="font-semibold text-[color:var(--oda-ink)]">
-                  {display.totalCount.toLocaleString("es-CO")}
-                </span>
+                {knownTotalCount !== null ? (
+                  <>
+                    de{" "}
+                    <span className="font-semibold text-[color:var(--oda-ink)]">
+                      {knownTotalCount.toLocaleString("es-CO")}
+                    </span>
+                  </>
+                ) : null}
               </p>
-              <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                {Math.round(progressPct)}%
-              </p>
+              {progressPct !== null ? (
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                  {Math.round(progressPct)}%
+                </p>
+              ) : null}
             </div>
-            <div className="mt-3 h-2 w-full rounded-full bg-[color:var(--oda-stone)]">
-              <div
-                className="h-2 rounded-full bg-[color:var(--oda-ink)] transition-[width] duration-300 ease-out motion-reduce:transition-none"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
+            {progressPct !== null ? (
+              <div className="mt-3 h-2 w-full rounded-full bg-[color:var(--oda-stone)]">
+                <div
+                  className="h-2 rounded-full bg-[color:var(--oda-ink)] transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            ) : (
+              <div className="mt-3 h-2 w-full rounded-full bg-[color:var(--oda-stone)]" aria-hidden="true" />
+            )}
           </div>
 
           {error ? (
@@ -613,7 +644,7 @@ export default function CatalogProductsInfinite({
   );
 }
 
-function ToTopButton({ progressPct }: { progressPct: number }) {
+function ToTopButton({ progressPct }: { progressPct: number | null }) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -642,12 +673,16 @@ function ToTopButton({ progressPct }: { progressPct: number }) {
 
   if (!visible) return null;
 
+  const canShowPct = typeof progressPct === "number" && Number.isFinite(progressPct) && progressPct > 0;
+
   return (
     <div className="fixed right-4 top-24 z-40 lg:bottom-6 lg:right-6 lg:top-auto">
       <div className="mb-2 hidden justify-center lg:flex">
-        <span className="inline-flex rounded-full border border-[color:var(--oda-border)] bg-white/92 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] shadow-[0_20px_60px_rgba(23,21,19,0.18)] backdrop-blur">
-          {Math.round(progressPct)}% visto
-        </span>
+        {canShowPct ? (
+          <span className="inline-flex rounded-full border border-[color:var(--oda-border)] bg-white/92 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] shadow-[0_20px_60px_rgba(23,21,19,0.18)] backdrop-blur">
+            {Math.round(progressPct)}% visto
+          </span>
+        ) : null}
       </div>
       <button
         type="button"

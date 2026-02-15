@@ -148,7 +148,7 @@ export default function CatalogoClient({
   initialSubcategories,
 }: {
   initialItems: CatalogProduct[];
-  totalCount: number;
+  totalCount: number | null;
   initialSearchParams: string;
   initialFacets?: FacetsLite | null;
   initialPriceInsights?: CatalogPriceInsights | null;
@@ -361,13 +361,6 @@ export default function CatalogoClient({
     };
   }, []);
 
-  const facetsFetchKey = useMemo(() => {
-    const next = new URLSearchParams(params.toString());
-    next.delete("page");
-    next.delete("sort");
-    return normalizeSearchKey(next.toString());
-  }, [params]);
-
   const uiSearchKeyRaw = useMemo(() => {
     const next = new URLSearchParams(params.toString());
     next.delete("page");
@@ -385,13 +378,49 @@ export default function CatalogoClient({
   // mostrar productos antiguos bajo filtros nuevos.
   const navigationPending = uiSearchKey !== initialSearchKey;
 
-  const facetsSessionKey = useMemo(
-    () => `oda_catalog_facets_lite_v1:${facetsFetchKey || "base"}`,
-    [facetsFetchKey],
+  const totalCountFetchKey = useMemo(() => {
+    const next = new URLSearchParams(params.toString());
+    next.delete("page");
+    next.delete("sort");
+    return normalizeSearchKey(next.toString());
+  }, [params]);
+  const totalCountSessionKey = useMemo(
+    () => `oda_catalog_products_count_v1:${totalCountFetchKey || "base"}`,
+    [totalCountFetchKey],
   );
+  const [resolvedTotalCount, setResolvedTotalCount] = useState<number | null>(() => {
+    if (typeof totalCount === "number" && Number.isFinite(totalCount) && totalCount >= 0) return totalCount;
+    const cached = readSessionJson<unknown>(totalCountSessionKey);
+    return typeof cached === "number" && Number.isFinite(cached) && cached >= 0 ? cached : null;
+  });
+  const totalCountLastOkAtRef = useRef<number>(0);
+  const totalCountLastOkKeyRef = useRef<string>("");
+  const totalCountAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (typeof totalCount === "number" && Number.isFinite(totalCount) && totalCount >= 0) {
+      setResolvedTotalCount(totalCount);
+      writeSessionJson(totalCountSessionKey, totalCount);
+      totalCountLastOkAtRef.current = Date.now();
+      totalCountLastOkKeyRef.current = totalCountSessionKey;
+      return;
+    }
+
+    const cached = readSessionJson<unknown>(totalCountSessionKey);
+    if (typeof cached === "number" && Number.isFinite(cached) && cached >= 0) {
+      setResolvedTotalCount(cached);
+      totalCountLastOkAtRef.current = Date.now();
+      totalCountLastOkKeyRef.current = totalCountSessionKey;
+    } else {
+      setResolvedTotalCount(null);
+    }
+  }, [totalCount, totalCountSessionKey]);
+
+  const facetsSessionKey = "oda_catalog_facets_static_v1";
   const [facets, setFacets] = useState<FacetsLite | null>(() => {
     if (isValidFacetsLite(initialFacets)) return initialFacets;
-    return null;
+    const cached = readSessionJson<unknown>(facetsSessionKey);
+    return isValidFacetsLite(cached) ? cached : null;
   });
   const [facetsLoading, setFacetsLoading] = useState(false);
   const facetsAbortRef = useRef<AbortController | null>(null);
@@ -463,11 +492,10 @@ export default function CatalogoClient({
     facetsAbortRef.current = controller;
     setFacetsLoading(true);
 
-    const next = new URLSearchParams(facetsFetchKey);
     const timeout = window.setTimeout(async () => {
       const watchdog = window.setTimeout(() => controller.abort(), 8000);
       try {
-        const res = await fetch(`/api/catalog/facets-lite?${next.toString()}`, {
+        const res = await fetch("/api/catalog/facets-static", {
           signal: controller.signal,
         });
         if (!res.ok) {
@@ -502,7 +530,56 @@ export default function CatalogoClient({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [facets, facetsFetchKey, facetsSessionKey, navigationPending, resumeTick]);
+  }, [facets, facetsSessionKey, navigationPending, resumeTick]);
+
+  useEffect(() => {
+    if (navigationPending) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    const now = Date.now();
+    const isFresh =
+      totalCountLastOkKeyRef.current === totalCountSessionKey &&
+      now - totalCountLastOkAtRef.current < 60_000;
+    if (isFresh && typeof resolvedTotalCount === "number") return;
+
+    totalCountAbortRef.current?.abort();
+    const controller = new AbortController();
+    totalCountAbortRef.current = controller;
+
+    const next = new URLSearchParams(totalCountFetchKey);
+    const timeout = window.setTimeout(async () => {
+      const watchdog = window.setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(`/api/catalog/products-count?${next.toString()}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          throw new Error(`http_${res.status}`);
+        }
+        const payload = (await res.json()) as { totalCount?: number };
+        const nextTotal =
+          typeof payload.totalCount === "number" && Number.isFinite(payload.totalCount) && payload.totalCount >= 0
+            ? payload.totalCount
+            : null;
+        if (nextTotal !== null) {
+          setResolvedTotalCount(nextTotal);
+          writeSessionJson(totalCountSessionKey, nextTotal);
+          totalCountLastOkAtRef.current = Date.now();
+          totalCountLastOkKeyRef.current = totalCountSessionKey;
+        }
+      } catch (err) {
+        if (isAbortError(err)) return;
+        // Mantén el último estado válido si existe.
+        setResolvedTotalCount((prev) => prev);
+      } finally {
+        window.clearTimeout(watchdog);
+      }
+    }, 140);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [navigationPending, resumeTick, resolvedTotalCount, totalCountFetchKey, totalCountSessionKey]);
 
   const closeListsDrawer = useCallback(() => {
     setListsOpen(false);
@@ -736,7 +813,7 @@ export default function CatalogoClient({
             <section aria-label="Resultados" className="flex flex-col gap-6">
               <div className="hidden lg:block">
                 <CatalogToolbar
-                  totalCount={totalCount}
+                  totalCount={resolvedTotalCount}
                   activeBrandCount={activeBrandCount}
                   searchKey={uiSearchKey || initialSearchKey}
                   filtersCollapsed={filtersCollapsed}
@@ -747,7 +824,7 @@ export default function CatalogoClient({
               <CatalogProductsInfinite
                 key={initialSearchParams}
                 initialItems={initialItems}
-                totalCount={totalCount}
+                totalCount={resolvedTotalCount}
                 initialSearchParams={initialSearchParams}
                 navigationPending={navigationPending}
                 optimisticSearchParams={uiSearchKey}
@@ -759,7 +836,7 @@ export default function CatalogoClient({
       </div>
 
       <CatalogMobileDock
-        totalCount={totalCount}
+        totalCount={resolvedTotalCount}
         activeBrandCount={activeBrandCount}
         facets={facets}
         subcategories={initialSubcats}

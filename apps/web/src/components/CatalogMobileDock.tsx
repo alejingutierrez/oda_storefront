@@ -49,7 +49,7 @@ export default function CatalogMobileDock({
   priceStats,
   facetsLoading = false,
 }: {
-  totalCount: number;
+  totalCount: number | null;
   activeBrandCount?: number | null;
   facets: Facets | null;
   subcategories: FacetItem[];
@@ -238,7 +238,11 @@ export default function CatalogMobileDock({
 
         <div className="mt-2 flex items-baseline justify-between text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
           <span>
-            {totalCount.toLocaleString("es-CO")} productos
+            {typeof totalCount === "number" ? (
+              `${totalCount.toLocaleString("es-CO")} productos`
+            ) : (
+              <span className="inline-flex h-3 w-20 rounded-full bg-[color:var(--oda-stone)]" />
+            )}
           </span>
           {typeof activeBrandCount === "number" ? (
             <span>{activeBrandCount.toLocaleString("es-CO")} marcas</span>

@@ -97,6 +97,11 @@ export type CatalogProductResult = {
   totalCount: number;
 };
 
+export type CatalogProductPageResult = {
+  items: CatalogProduct[];
+  pageSize: number;
+};
+
 export type CatalogPriceBounds = {
   min: number | null;
   max: number | null;
@@ -257,6 +262,72 @@ export async function getCatalogFacetsLite(filters: CatalogFilters): Promise<Cat
   const cached = unstable_cache(
     async () => computeCatalogFacetsLite(filters, taxonomy),
     ["catalog-facets-lite", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`, cacheKey],
+    { revalidate: CATALOG_REVALIDATE_SECONDS },
+  );
+
+  return cached();
+}
+
+export async function getCatalogFacetsStatic(): Promise<CatalogFacetsLite> {
+  const taxonomy = await getPublishedTaxonomyOptions();
+  const cached = unstable_cache(
+    async () => {
+      const [brands, colors] = await Promise.all([
+        prisma.brand.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        }),
+        prisma.standardColor.findMany({
+          select: { id: true, family: true, name: true, hex: true },
+          orderBy: [{ family: "asc" }, { name: "asc" }],
+        }),
+      ]);
+
+      const categories = (taxonomy.data.categories ?? [])
+        .filter((entry) => entry && entry.isActive !== false)
+        .map((entry) => ({
+          value: entry.key,
+          label: taxonomy.categoryLabels[entry.key] ?? labelize(entry.key),
+          count: 1,
+        }));
+
+      const materials = (taxonomy.data.materials ?? [])
+        .filter((entry) => entry && entry.isActive !== false)
+        .map((entry) => ({
+          value: entry.key,
+          label: taxonomy.materialLabels[entry.key] ?? labelize(entry.key),
+          count: 1,
+        }));
+
+      const patterns = (taxonomy.data.patterns ?? [])
+        .filter((entry) => entry && entry.isActive !== false)
+        .map((entry) => ({
+          value: entry.key,
+          label: taxonomy.patternLabels[entry.key] ?? labelize(entry.key),
+          count: 1,
+        }));
+
+      return {
+        categories,
+        genders: (["Femenino", "Masculino", "Unisex", "Infantil"] as GenderKey[]).map((gender) => ({
+          value: gender,
+          label: gender,
+          count: 1,
+        })),
+        brands: brands.map((row) => ({ value: row.id, label: row.name, count: 1 })),
+        colors: colors.map((row) => ({
+          value: row.id,
+          label: row.name,
+          count: 1,
+          swatch: row.hex,
+          group: row.family,
+        })),
+        materials,
+        patterns,
+      };
+    },
+    ["catalog-facets-static", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`],
     { revalidate: CATALOG_REVALIDATE_SECONDS },
   );
 
@@ -1279,6 +1350,39 @@ export async function getCatalogSubcategoriesUncached(filters: CatalogFilters): 
   return computeCatalogSubcategories(filters, taxonomy);
 }
 
+export async function getCatalogProductsPage(params: {
+  filters: CatalogFilters;
+  page: number;
+  sort: string;
+}): Promise<CatalogProductPageResult> {
+  const cacheKey = JSON.stringify({
+    filters: buildFacetsCacheKey(params.filters),
+    page: params.page,
+    sort: params.sort || "new",
+  });
+  const cached = unstable_cache(
+    () => computeCatalogProductsPage(params),
+    ["catalog-products-page", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
+    { revalidate: CATALOG_PRODUCTS_REVALIDATE_SECONDS },
+  );
+
+  const items = await cached();
+  return { items, pageSize: CATALOG_PAGE_SIZE };
+}
+
+export async function getCatalogProductsCount(params: { filters: CatalogFilters }): Promise<number> {
+  const cacheKey = JSON.stringify({
+    filters: buildFacetsCacheKey(params.filters),
+  });
+  const cached = unstable_cache(
+    () => computeCatalogProductsCount(params.filters),
+    ["catalog-products-count", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
+    { revalidate: CATALOG_PRODUCTS_REVALIDATE_SECONDS },
+  );
+
+  return cached();
+}
+
 export async function getCatalogProducts(params: {
   filters: CatalogFilters;
   page: number;
@@ -1295,6 +1399,192 @@ export async function getCatalogProducts(params: {
     { revalidate: CATALOG_PRODUCTS_REVALIDATE_SECONDS },
   );
   return cached();
+}
+
+async function computeCatalogProductsCount(filters: CatalogFilters): Promise<number> {
+  const productWhere = buildProductWhere(filters);
+  const variantConditions = buildVariantConditions(filters);
+  const variantWhere =
+    variantConditions.length > 0
+      ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
+      : Prisma.empty;
+  const variantExists =
+    variantConditions.length > 0
+      ? Prisma.sql`
+          and exists (
+            select 1 from variants v
+            where v."productId" = p.id
+              ${variantWhere}
+          )
+        `
+      : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
+    select count(*) as total
+    from products p
+    join brands b on b.id = p."brandId"
+    ${productWhere}
+    ${variantExists}
+  `);
+
+  return Number(rows[0]?.total ?? 0);
+}
+
+async function computeCatalogProductsPage(params: {
+  filters: CatalogFilters;
+  page: number;
+  sort: string;
+}): Promise<CatalogProduct[]> {
+  const { filters, page, sort } = params;
+  const offset = Math.max(0, (page - 1) * CATALOG_PAGE_SIZE);
+  const productWhere = buildProductWhere(filters);
+  const variantConditions = buildVariantConditions(filters);
+  const variantWhere =
+    variantConditions.length > 0
+      ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
+      : Prisma.empty;
+  const variantExists =
+    variantConditions.length > 0
+      ? Prisma.sql`
+          and exists (
+            select 1 from variants v
+            where v."productId" = p.id
+              ${variantWhere}
+          )
+        `
+      : Prisma.empty;
+
+  const sortKey = sort || "new";
+
+  const rows: Array<{
+    id: string;
+    name: string;
+    imageCoverUrl: string | null;
+    brandName: string;
+    sourceUrl: string | null;
+    minPrice: string | null;
+    maxPrice: string | null;
+    currency: string | null;
+  }> = await (async () => {
+    if (sortKey === "price_asc" || sortKey === "price_desc") {
+      const orderBy = buildOrderBy(sortKey, filters);
+      return prisma.$queryRaw<
+        Array<{
+          id: string;
+          name: string;
+          imageCoverUrl: string | null;
+          brandName: string;
+          sourceUrl: string | null;
+          minPrice: string | null;
+          maxPrice: string | null;
+          currency: string | null;
+        }>
+      >(
+        Prisma.sql`
+          select
+            p.id,
+            p.name,
+            p."imageCoverUrl",
+            b.name as "brandName",
+            p."sourceUrl",
+            min(case when v.price > 0 then v.price end) as "minPrice",
+            max(case when v.price > 0 then v.price end) as "maxPrice",
+            max(v.currency) as currency
+          from products p
+          join brands b on b.id = p."brandId"
+          join variants v on v."productId" = p.id
+            ${variantWhere}
+          ${productWhere}
+          group by
+            p.id,
+            p.name,
+            p."imageCoverUrl",
+            b.name,
+            p."sourceUrl",
+            p."createdAt"
+          ${orderBy}
+          limit ${CATALOG_PAGE_SIZE}
+          offset ${offset}
+        `,
+      );
+    }
+
+    const q = filters.q ? `%${filters.q}%` : null;
+    const isRelevancia = sortKey === "relevancia" && Boolean(q);
+
+    return prisma.$queryRaw<
+      Array<{
+        id: string;
+        name: string;
+        imageCoverUrl: string | null;
+        brandName: string;
+        sourceUrl: string | null;
+        minPrice: string | null;
+        maxPrice: string | null;
+        currency: string | null;
+      }>
+    >(
+      Prisma.sql`
+        with ids as (
+          select
+            p.id,
+            p."createdAt" as created_at
+            ${isRelevancia
+              ? Prisma.sql`,
+                case
+                  when p.name ilike ${q} then 0
+                  when b.name ilike ${q} then 1
+                  else 2
+                end as rank`
+              : Prisma.empty}
+          from products p
+          join brands b on b.id = p."brandId"
+          ${productWhere}
+          ${variantExists}
+          order by
+            ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
+            p."createdAt" desc
+          limit ${CATALOG_PAGE_SIZE}
+          offset ${offset}
+        )
+        select
+          p.id,
+          p.name,
+          p."imageCoverUrl",
+          b.name as "brandName",
+          p."sourceUrl",
+          vagg."minPrice",
+          vagg."maxPrice",
+          vagg.currency
+        from ids
+        join products p on p.id = ids.id
+        join brands b on b.id = p."brandId"
+        left join lateral (
+          select
+            min(case when v.price > 0 then v.price end) as "minPrice",
+            max(case when v.price > 0 then v.price end) as "maxPrice",
+            max(v.currency) as currency
+          from variants v
+          where v."productId" = p.id
+            ${variantWhere}
+        ) vagg on true
+        order by
+          ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
+          ids.created_at desc
+      `,
+    );
+  })();
+
+  return rows.map((item) => ({
+    id: item.id,
+    name: item.name,
+    imageCoverUrl: item.imageCoverUrl,
+    brandName: item.brandName,
+    sourceUrl: item.sourceUrl,
+    minPrice: item.minPrice,
+    maxPrice: item.maxPrice,
+    currency: item.currency,
+  }));
 }
 
 async function computeCatalogProducts(params: {

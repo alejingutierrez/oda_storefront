@@ -100,7 +100,7 @@ export default function CatalogToolbar({
   filtersCollapsed = false,
   onToggleFiltersCollapsed,
 }: {
-  totalCount: number;
+  totalCount: number | null;
   activeBrandCount?: number | null;
   searchKey: string;
   filtersCollapsed?: boolean;
@@ -234,7 +234,15 @@ export default function CatalogToolbar({
         <div className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-baseline gap-4">
             <p className="text-sm text-[color:var(--oda-ink)]">
-              <span className="font-semibold">{totalCount.toLocaleString("es-CO")}</span> productos
+              {typeof totalCount === "number" ? (
+                <span className="font-semibold">{totalCount.toLocaleString("es-CO")}</span>
+              ) : (
+                <span
+                  className="inline-flex h-4 w-16 rounded-full bg-[color:var(--oda-stone)] align-middle"
+                  aria-label="Cargando conteo"
+                />
+              )}{" "}
+              productos
             </p>
             {typeof activeBrandCount === "number" ? (
               <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
