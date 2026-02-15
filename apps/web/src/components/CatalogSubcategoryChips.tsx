@@ -104,24 +104,6 @@ function RailSkeleton({ density }: { density: "desktop" | "mobile" }) {
   );
 }
 
-function ArrowIcon({ dir }: { dir: "left" | "right" }) {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {dir === "left" ? <path d="m15 18-6-6 6-6" /> : <path d="m9 18 6-6-6-6" />}
-    </svg>
-  );
-}
-
 export default function CatalogSubcategoryChips({
   mode = "toolbar",
 }: {
@@ -203,40 +185,6 @@ export default function CatalogSubcategoryChips({
     };
   }, [category, key, mode, sessionKey]);
 
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  useEffect(() => {
-    if (mode !== "toolbar") return;
-    const node = scrollerRef.current;
-    if (!node) return;
-
-    const update = () => {
-      const max = Math.max(0, node.scrollWidth - node.clientWidth);
-      setCanScrollLeft(node.scrollLeft > 6);
-      setCanScrollRight(node.scrollLeft < max - 6);
-    };
-
-    update();
-    node.addEventListener("scroll", update, { passive: true });
-
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => update()) : null;
-    ro?.observe(node);
-
-    return () => {
-      node.removeEventListener("scroll", update);
-      ro?.disconnect();
-    };
-  }, [items?.length, mode]);
-
-  const scrollBy = (dir: -1 | 1) => {
-    const node = scrollerRef.current;
-    if (!node) return;
-    const delta = Math.max(180, Math.round(node.clientWidth * 0.8)) * dir;
-    node.scrollBy({ left: delta, behavior: "smooth" });
-  };
-
   const applyParams = (next: URLSearchParams) => {
     next.set("page", "1");
     const query = next.toString();
@@ -283,8 +231,8 @@ export default function CatalogSubcategoryChips({
     mode === "toolbar"
       ? "mt-2 border-t border-[color:var(--oda-border)] pt-2"
       : [
-          "sticky top-20 z-30 -mx-6 border-b border-[color:var(--oda-border)]",
-          "bg-[color:var(--oda-cream)]/92 px-6 py-2 backdrop-blur",
+          "sticky top-20 z-30 w-full min-w-0 max-w-full overflow-x-hidden border-b border-[color:var(--oda-border)]",
+          "bg-[color:rgba(251,248,243,0.92)] py-2 backdrop-blur",
           "shadow-[0_12px_32px_rgba(23,21,19,0.08)]",
           "lg:hidden",
         ].join(" ");
@@ -297,10 +245,8 @@ export default function CatalogSubcategoryChips({
         ) : (
           <>
             <div
-              ref={scrollerRef}
               className={[
-                "oda-no-scrollbar flex gap-2 overflow-x-auto py-1",
-                mode === "toolbar" ? "pr-10" : "",
+                "oda-no-scrollbar flex w-full min-w-0 max-w-full gap-2 overflow-x-auto py-1",
               ].join(" ")}
             >
               <button
@@ -403,52 +349,6 @@ export default function CatalogSubcategoryChips({
                 );
               })}
             </div>
-
-            {mode === "toolbar" ? (
-              <>
-                {canScrollLeft ? (
-                  <div className="pointer-events-none absolute left-0 top-0 h-full w-10 bg-gradient-to-r from-white to-white/0" />
-                ) : null}
-                {canScrollRight ? (
-                  <div className="pointer-events-none absolute right-0 top-0 h-full w-10 bg-gradient-to-l from-white to-white/0" />
-                ) : null}
-
-                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => scrollBy(-1)}
-                    className={[
-                      "inline-flex h-8 w-8 items-center justify-center rounded-full border bg-white shadow-[0_18px_50px_rgba(23,21,19,0.10)] transition",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                      canScrollLeft
-                        ? "border-[color:var(--oda-border)] text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]"
-                        : "cursor-not-allowed border-[color:var(--oda-border)] text-[color:var(--oda-taupe)] opacity-50",
-                    ].join(" ")}
-                    disabled={!canScrollLeft}
-                    aria-label="Desplazar subcategorías a la izquierda"
-                    title="Izquierda"
-                  >
-                    <ArrowIcon dir="left" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => scrollBy(1)}
-                    className={[
-                      "inline-flex h-8 w-8 items-center justify-center rounded-full border bg-white shadow-[0_18px_50px_rgba(23,21,19,0.10)] transition",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                      canScrollRight
-                        ? "border-[color:var(--oda-border)] text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]"
-                        : "cursor-not-allowed border-[color:var(--oda-border)] text-[color:var(--oda-taupe)] opacity-50",
-                    ].join(" ")}
-                    disabled={!canScrollRight}
-                    aria-label="Desplazar subcategorías a la derecha"
-                    title="Derecha"
-                  >
-                    <ArrowIcon dir="right" />
-                  </button>
-                </div>
-              </>
-            ) : null}
           </>
         )}
       </div>
