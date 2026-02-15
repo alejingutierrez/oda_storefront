@@ -527,16 +527,17 @@ export default function CatalogProductsInfinite({
               <ProductsSkeleton count={12} className={gridClassName} />
             </div>
           ) : (
-            <div className={gridClassName}>
+            <ul className={[gridClassName, "list-none p-0 m-0"].join(" ")} aria-label="Productos">
               {display.items.map((product) => (
-                <CatalogProductCard
-                  key={product.id}
-                  product={product}
-                  mobileAspect={mobileLayout.aspect}
-                  mobileCompact={mobileLayout.columns === 2}
-                />
+                <li key={product.id}>
+                  <CatalogProductCard
+                    product={product}
+                    mobileAspect={mobileLayout.aspect}
+                    mobileCompact={mobileLayout.columns === 2}
+                  />
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
 
@@ -607,12 +608,12 @@ export default function CatalogProductsInfinite({
 
       <CompareBar />
 
-      <ToTopButton />
+      <ToTopButton progressPct={progressPct} />
     </CompareProvider>
   );
 }
 
-function ToTopButton() {
+function ToTopButton({ progressPct }: { progressPct: number }) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -642,27 +643,34 @@ function ToTopButton() {
   if (!visible) return null;
 
   return (
-    <button
-      type="button"
-      onClick={() => {
-        window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-        const filters = document.getElementById("catalog-filters-scroll");
-        if (filters) {
-          try {
-            filters.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-          } catch {
-            filters.scrollTop = 0;
+    <div className="fixed right-4 top-24 z-40 lg:bottom-6 lg:right-6 lg:top-auto">
+      <div className="mb-2 hidden justify-center lg:flex">
+        <span className="inline-flex rounded-full border border-[color:var(--oda-border)] bg-white/92 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] shadow-[0_20px_60px_rgba(23,21,19,0.18)] backdrop-blur">
+          {Math.round(progressPct)}% visto
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+          const filters = document.getElementById("catalog-filters-scroll");
+          if (filters) {
+            try {
+              filters.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+            } catch {
+              filters.scrollTop = 0;
+            }
           }
-        }
-      }}
-      className="fixed right-4 top-24 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/92 text-[color:var(--oda-ink)] shadow-[0_20px_60px_rgba(23,21,19,0.20)] backdrop-blur transition hover:bg-[color:var(--oda-stone)] lg:bottom-6 lg:right-6 lg:top-auto lg:h-auto lg:w-auto lg:px-4 lg:py-3 lg:text-[10px] lg:font-semibold lg:uppercase lg:tracking-[0.22em]"
-      aria-label="Volver arriba"
-      title="Arriba"
-    >
-      <span className="text-base leading-none lg:hidden" aria-hidden="true">
-        ↑
-      </span>
-      <span className="hidden lg:inline">Arriba</span>
-    </button>
+        }}
+        className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/92 text-[color:var(--oda-ink)] shadow-[0_20px_60px_rgba(23,21,19,0.20)] backdrop-blur transition hover:bg-[color:var(--oda-stone)] lg:h-auto lg:w-auto lg:px-4 lg:py-3 lg:text-[10px] lg:font-semibold lg:uppercase lg:tracking-[0.22em]"
+        aria-label="Volver arriba"
+        title="Arriba"
+      >
+        <span className="text-base leading-none lg:hidden" aria-hidden="true">
+          ↑
+        </span>
+        <span className="hidden lg:inline">Arriba</span>
+      </button>
+    </div>
   );
 }

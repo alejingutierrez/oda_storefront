@@ -24,11 +24,15 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
             <li key={gender} className="group">
               <Link
                 href={`/g/${route}`}
-                className="block py-6 text-xs font-medium transition-colors hover:text-[color:var(--oda-ink-soft)]"
+                className={[
+                  "relative block py-6 text-xs font-medium transition-colors hover:text-[color:var(--oda-ink-soft)]",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                  "after:absolute after:left-1/2 after:bottom-4 after:h-[2px] after:w-0 after:-translate-x-1/2 after:rounded-full after:bg-[color:var(--oda-ink)] after:transition-all after:duration-200 hover:after:w-10",
+                ].join(" ")}
               >
                 {gender}
               </Link>
-              <div className="invisible absolute left-0 right-0 top-full rounded-2xl border border-[color:var(--oda-border)] bg-white/95 p-8 opacity-0 shadow-[0_30px_80px_rgba(23,21,19,0.18)] backdrop-blur transition-all duration-200 group-hover:visible group-hover:opacity-100">
+              <div className="invisible absolute left-0 right-0 top-full rounded-2xl border border-white/40 bg-white/70 p-8 opacity-0 shadow-[0_30px_80px_rgba(23,21,19,0.18)] backdrop-blur-xl transition-all duration-200 group-hover:visible group-hover:opacity-100">
                 <div className="grid grid-cols-4 gap-8">
                   <div className="col-span-2 flex flex-col gap-4">
                     <span className="text-xs uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
@@ -44,7 +48,11 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                             <div key={item.key} className="flex flex-col gap-2">
                               <Link
                                 href={item.href}
-                                className="text-sm font-medium text-[color:var(--oda-ink)] transition-colors hover:text-[color:var(--oda-ink-soft)]"
+                                className={[
+                                  "-mx-2 inline-flex rounded-lg px-2 py-1 text-sm font-medium text-[color:var(--oda-ink)] transition",
+                                  "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
+                                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                                ].join(" ")}
                               >
                                 {item.label}
                               </Link>
@@ -54,7 +62,11 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                                     <Link
                                       key={sub.key}
                                       href={sub.href}
-                                      className="text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] hover:text-[color:var(--oda-ink)]"
+                                      className={[
+                                        "-mx-2 inline-flex rounded-md px-2 py-1 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
+                                        "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
+                                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                                      ].join(" ")}
                                     >
                                       {sub.label}
                                     </Link>
@@ -76,7 +88,11 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                         <div key={item.key} className="flex flex-col gap-2">
                           <Link
                             href={item.href}
-                            className="text-sm font-medium text-[color:var(--oda-ink)] transition-colors hover:text-[color:var(--oda-ink-soft)]"
+                            className={[
+                              "-mx-2 inline-flex rounded-lg px-2 py-1 text-sm font-medium text-[color:var(--oda-ink)] transition",
+                              "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                            ].join(" ")}
                           >
                             {item.label}
                           </Link>
@@ -86,7 +102,11 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                                 <Link
                                   key={sub.key}
                                   href={sub.href}
-                                  className="text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] hover:text-[color:var(--oda-ink)]"
+                                  className={[
+                                    "-mx-2 inline-flex rounded-md px-2 py-1 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
+                                    "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
+                                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                                  ].join(" ")}
                                 >
                                   {sub.label}
                                 </Link>
@@ -106,7 +126,11 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                         <div key={item.key} className="flex flex-col gap-2">
                           <Link
                             href={item.href}
-                            className="text-sm font-medium text-[color:var(--oda-ink)] transition-colors hover:text-[color:var(--oda-ink-soft)]"
+                            className={[
+                              "-mx-2 inline-flex rounded-lg px-2 py-1 text-sm font-medium text-[color:var(--oda-ink)] transition",
+                              "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                            ].join(" ")}
                           >
                             {item.label}
                           </Link>
@@ -116,7 +140,11 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                                 <Link
                                   key={sub.key}
                                   href={sub.href}
-                                  className="text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] hover:text-[color:var(--oda-ink)]"
+                                  className={[
+                                    "-mx-2 inline-flex rounded-md px-2 py-1 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
+                                    "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
+                                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                                  ].join(" ")}
                                 >
                                   {sub.label}
                                 </Link>

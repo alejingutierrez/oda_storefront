@@ -695,6 +695,26 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: tasa de carga exitosa de páginas (infinite scroll), tiempo percibido al aplicar filtros/sort, interacción con toggles de layout.
 - Estado: **done (2026-02-14)**.
 
+### MC-126 PLP `/catalogo`: polish desktop + listas + SEO + header
+- Historia: Como usuario, quiero que el catálogo en desktop sea más ordenado y predecible (scroll de filtros por zonas, guardado en listas sin fricción y header consistente), y que la página tenga SEO más robusto, para explorar y compartir mejor.
+- Alcance:
+  - Desktop (layout): la columna de filtros crece +20px y la card de “Filtros” (con Ocultar) iguala altura con la toolbar (Ordenar/Guardados/Limpiar).
+  - Desktop (scroll): wheel sobre la zona izquierda (filtros o margen izquierdo) desplaza solo los filtros; wheel sobre resultados desplaza solo las cards.
+  - Filtros: categorías sin scroll anidado (top 10 + “Ver más/menos”); al seleccionar categoría se mantiene el modo single-select con acción “Cambiar”.
+  - Favoritos: al agregar un favorito en desktop, aparece un toast 6s “Agregar a una lista”; al hacer click abre un drawer con listas y permite crear lista + guardar en 1 flujo.
+  - Indicador: % de portafolio “visto” fijo sobre el botón “Arriba”, calculado sobre el total del set filtrado.
+  - Header: avatar sin texto “Perfil”; “Ingresar” con tipografía/jerarquía consistente; hover mejorado; menús con efecto glass (desktop + mobile).
+  - SEO: `generateMetadata` para `/catalogo` y `/g/*` (canonical + robots) y `/buscar` (noindex + canonical a `/catalogo`); `noindex` defensivo en combinaciones profundas de filtros.
+- CA:
+  - La card de “Filtros” y la toolbar quedan alineadas en altura.
+  - El scroll por zonas funciona: izquierda => filtros, derecha => resultados.
+  - El toast aparece solo en desktop, dura 6s y abre listas al click; el drawer permite guardar en lista existente y crear+guardar.
+  - El indicador “% visto” corresponde a `items_cargados / total` del filtro activo.
+  - `/buscar` no indexa y canonicaliza a `/catalogo`; `/catalogo` y `/g/*` exponen canonical + robots coherentes.
+- Datos: endpoints `GET/POST /api/user/lists` y `POST /api/user/lists/:listId/items`.
+- NF: overlays/drawers bloquean scroll de fondo y no disparan scroll accidental de filtros.
+- Estado: **done (2026-02-15)**.
+
 ### MC-123 Revisión manual de remapeo taxonómico (categoría/subcategoría/género)
 - Historia: Como curador/admin, quiero revisar propuestas de reclasificación antes de aplicarlas, para evitar cambios erróneos de taxonomía y mantener consistencia del catálogo.
 - Alcance:

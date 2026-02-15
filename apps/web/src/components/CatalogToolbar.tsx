@@ -230,7 +230,7 @@ export default function CatalogToolbar({
 
   return (
     <>
-      <div className="rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-3 lg:sticky lg:top-24 lg:z-30">
+      <div className="min-h-[68px] rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-3 lg:sticky lg:top-24 lg:z-30">
         <div className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-baseline gap-4">
             <p className="text-sm text-[color:var(--oda-ink)]">

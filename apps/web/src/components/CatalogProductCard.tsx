@@ -341,6 +341,7 @@ export default function CatalogProductCard({
       <div className={["absolute z-10", favInset].join(" ")}>
         <FavoriteToggle
           productId={product.id}
+          productName={product.name}
           ariaLabel={`Guardar ${product.name} en favoritos`}
           className={[cornerSize, "lg:h-10 lg:w-10"].join(" ")}
         />

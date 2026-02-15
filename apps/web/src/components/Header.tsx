@@ -30,11 +30,11 @@ export default function Header({ menu }: { menu: MegaMenuData }) {
           </div>
           <Link
             href="/buscar"
-            className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+            className="rounded-full px-3 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
           >
             Explorar
           </Link>
-          <AccountLink className="text-[color:var(--oda-ink)]" />
+          <AccountLink />
         </div>
       </div>
     </header>

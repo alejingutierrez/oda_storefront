@@ -33,7 +33,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+        className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label="Abrir menu"
@@ -49,13 +49,13 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
             <div className="fixed inset-0 z-[200] lg:hidden" role="dialog" aria-modal="true">
               <button
                 type="button"
-                className="absolute inset-0 bg-black/40"
+                className="absolute inset-0 bg-black/30 backdrop-blur-sm"
                 aria-label="Cerrar menu"
                 onClick={() => setOpen(false)}
               />
 
-              <div className="absolute inset-x-4 bottom-6 top-24 overflow-hidden rounded-3xl border border-[color:var(--oda-border)] bg-white shadow-[0_30px_90px_rgba(23,21,19,0.30)]">
-                <div className="flex items-center justify-between gap-3 border-b border-[color:var(--oda-border)] px-5 py-4">
+              <div className="absolute inset-x-4 bottom-6 top-24 overflow-hidden rounded-3xl border border-white/40 bg-white/70 shadow-[0_30px_90px_rgba(23,21,19,0.30)] backdrop-blur-xl">
+                <div className="flex items-center justify-between gap-3 border-b border-white/30 bg-white/55 px-5 py-4 backdrop-blur-xl">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
                     Menu
                   </p>
@@ -84,7 +84,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                     <span>Explorar</span>
                     <Link
                       href="/buscar"
-                      className="text-[color:var(--oda-ink)]"
+                      className="rounded-full px-3 py-2 text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                       onClick={() => setOpen(false)}
                     >
                       Ver todo
@@ -120,17 +120,18 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                                     <div key={item.key} className="flex flex-col gap-1">
                                       <Link
                                         href={item.href}
-                                        className="text-xs font-medium text-[color:var(--oda-ink)]"
+                                        className="rounded-xl px-3 py-2 text-xs font-medium text-[color:var(--oda-ink)] transition hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                                         onClick={() => setOpen(false)}
                                       >
                                         {item.label}
                                       </Link>
                                       {item.subcategories && item.subcategories.length > 0 ? (
-                                        <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.14em] text-[color:var(--oda-taupe)]">
+                                        <div className="flex flex-wrap gap-2 px-3 text-[10px] uppercase tracking-[0.14em] text-[color:var(--oda-taupe)]">
                                           {item.subcategories.map((sub) => (
                                             <Link
                                               key={sub.key}
                                               href={sub.href}
+                                              className="rounded-full px-2 py-1 transition hover:bg-white/70 hover:text-[color:var(--oda-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                                               onClick={() => setOpen(false)}
                                             >
                                               {sub.label}
@@ -145,7 +146,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                             ))}
                             <Link
                               href={`/g/${GENDER_ROUTE[gender]}`}
-                              className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]"
+                              className="inline-flex rounded-full px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)] transition hover:bg-white/70 hover:text-[color:var(--oda-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                               onClick={() => setOpen(false)}
                             >
                               Ver todo {gender}
@@ -158,7 +159,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
 
                   <div className="mt-8 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                     <span>Cuenta</span>
-                    <AccountLink className="text-[color:var(--oda-ink)]" />
+                    <AccountLink />
                   </div>
                 </div>
               </div>

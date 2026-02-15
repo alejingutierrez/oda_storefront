@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { SearchParams } from "@/lib/catalog-filters";
 import { mapLegacyCategoryToCanonicalCategories, resolveSearchParams } from "@/lib/catalog-filters";
 import { normalizeGender } from "@/lib/navigation";
@@ -10,6 +11,100 @@ type GenderRouteParams = {
   gender: string;
   segments?: string[];
 };
+
+function humanizeKey(value: string) {
+  const cleaned = String(value || "").trim().replace(/_/g, " ");
+  if (!cleaned) return "";
+  return cleaned.replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function isIndexableCatalog(params: URLSearchParams) {
+  const disallowKeys = [
+    "q",
+    "brandId",
+    "color",
+    "material",
+    "pattern",
+    "price_min",
+    "price_max",
+    "price_range",
+    "size",
+    "fit",
+    "occasion",
+    "season",
+    "style",
+  ];
+  return disallowKeys.every((key) => !params.has(key));
+}
+
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: GenderRouteParams | Promise<GenderRouteParams>;
+  searchParams: SearchParams;
+}): Promise<Metadata> {
+  const resolvedParams = await params;
+  const genderLabel = normalizeGender(resolvedParams.gender);
+  const segments = Array.isArray(resolvedParams.segments) ? resolvedParams.segments : [];
+
+  const merged = await resolveSearchParams(searchParams);
+  const next = new URLSearchParams(merged.toString());
+
+  next.delete("gender");
+  next.delete("category");
+  next.delete("subcategory");
+  next.append("gender", genderLabel);
+
+  const rawCategory = segments[0]?.trim() ?? "";
+  const rawSubcategory = segments[1]?.trim() ?? "";
+
+  const category = rawCategory ? rawCategory.toLowerCase() : null;
+  const subcategory = rawSubcategory ? rawSubcategory.toLowerCase() : null;
+
+  const appendCategories = (values: string[]) => {
+    for (const value of values) next.append("category", value);
+  };
+
+  const legacy = category ? mapLegacyCategoryToCanonicalCategories(category, subcategory ? [subcategory] : []) : null;
+  if (legacy) {
+    appendCategories(legacy);
+  } else {
+    if (rawCategory) next.append("category", rawCategory);
+    if (rawSubcategory) next.append("subcategory", rawSubcategory);
+  }
+
+  // Canonical: el path ya representa género/categoría/subcategoría.
+  const canonicalParams = new URLSearchParams(next.toString());
+  canonicalParams.delete("page");
+  if (canonicalParams.get("sort") === "new") canonicalParams.delete("sort");
+  canonicalParams.delete("gender");
+  canonicalParams.delete("category");
+  canonicalParams.delete("subcategory");
+
+  const basePath = `/g/${resolvedParams.gender}${segments.length ? `/${segments.join("/")}` : ""}`;
+  const query = canonicalParams.toString();
+  const canonical = query ? `${basePath}?${query}` : basePath;
+
+  const title = rawSubcategory
+    ? `${humanizeKey(rawSubcategory)} · ${humanizeKey(genderLabel)} | ODA`
+    : rawCategory
+      ? `${humanizeKey(rawCategory)} · ${humanizeKey(genderLabel)} | ODA`
+      : `Catálogo ${humanizeKey(genderLabel)} | ODA`;
+
+  const description =
+    "Descubre moda colombiana curada: marcas locales con inventario disponible y enlaces directos a tiendas oficiales.";
+
+  const indexable = isIndexableCatalog(canonicalParams);
+
+  return {
+    title,
+    description,
+    alternates: { canonical },
+    robots: indexable ? { index: true, follow: true } : { index: false, follow: true },
+    openGraph: { title, description, url: canonical, type: "website" },
+  };
+}
 
 export default async function GenderCatalogPage({
   params,

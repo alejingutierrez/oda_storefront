@@ -8,6 +8,7 @@ import { useFavorites } from "@/components/FavoritesProvider";
 type FavoriteToggleProps = {
   productId: string;
   variantId?: string | null;
+  productName?: string | null;
   className?: string;
   ariaLabel?: string;
 };
@@ -39,6 +40,7 @@ function HeartIcon({ filled }: { filled: boolean }) {
 export default function FavoriteToggle({
   productId,
   variantId,
+  productName,
   className,
   ariaLabel,
 }: FavoriteToggleProps) {
@@ -84,6 +86,19 @@ export default function FavoriteToggle({
       const result = await favorites.toggleFavorite(productId, variantId);
       if (!wasFavorite && result.action === "added") {
         setPulse(true);
+        try {
+          window.dispatchEvent(
+            new CustomEvent("oda:fav-added", {
+              detail: {
+                productId,
+                variantId: variantId ?? null,
+                productName: productName ?? null,
+              },
+            }),
+          );
+        } catch {
+          // ignore
+        }
       }
     } catch (error) {
       if (error instanceof Error && error.message === "unauthorized") {

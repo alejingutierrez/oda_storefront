@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import Link from "next/link";
 import { useSession, useUser } from "@descope/nextjs-sdk/client";
 import SignInLink from "@/components/SignInLink";
@@ -23,17 +22,26 @@ export default function AccountLink({ className }: AccountLinkProps) {
   const { isAuthenticated, isSessionLoading } = useSession();
   const { user, isUserLoading } = useUser();
 
-  const label = useMemo(() => {
+  const baseClass = [
+    "inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs uppercase tracking-[0.2em] transition",
+    "text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+    className ?? "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const label = (() => {
     if (user?.name) return user.name;
     if (typeof user?.email === "string" && user.email.includes("@")) {
       return user.email.split("@")[0] ?? "";
     }
     return "";
-  }, [user?.email, user?.name]);
+  })();
 
   if (isSessionLoading || isUserLoading) {
     return (
-      <span className={className} aria-live="polite">
+      <span className={baseClass} aria-live="polite">
         …
       </span>
     );
@@ -41,7 +49,7 @@ export default function AccountLink({ className }: AccountLinkProps) {
 
   if (!isAuthenticated) {
     return (
-      <SignInLink className={className}>
+      <SignInLink className={baseClass}>
         Ingresar
       </SignInLink>
     );
@@ -51,25 +59,21 @@ export default function AccountLink({ className }: AccountLinkProps) {
     typeof user?.picture === "string" && user.picture.length > 0 ? user.picture : null;
 
   return (
-    <Link href="/perfil" className={className}>
-      <span className="inline-flex items-center gap-2">
-        {picture ? (
-          // Usamos <img> para evitar allowlists de next/image en fotos de Google/Apple/Facebook.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={picture}
-            alt={label ? `Avatar de ${label}` : "Avatar"}
-            className="h-8 w-8 rounded-full border border-[color:var(--oda-border)] object-cover"
-            referrerPolicy="no-referrer"
-          />
-        ) : (
-          <span className="grid h-8 w-8 place-items-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--oda-ink)]">
-            {getInitials(label || "Usuario")}
-          </span>
-        )}
-        <span className="text-xs uppercase tracking-[0.2em]">Perfil</span>
-      </span>
+    <Link href="/perfil" className={baseClass} aria-label="Perfil" title="Perfil">
+      {picture ? (
+        // Usamos <img> para evitar allowlists de next/image en fotos de Google/Apple/Facebook.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={picture}
+          alt={label ? `Avatar de ${label}` : "Avatar"}
+          className="h-8 w-8 rounded-full border border-[color:var(--oda-border)] object-cover"
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <span className="grid h-8 w-8 place-items-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--oda-ink)]">
+          {getInitials(label || "Usuario")}
+        </span>
+      )}
     </Link>
   );
 }
-

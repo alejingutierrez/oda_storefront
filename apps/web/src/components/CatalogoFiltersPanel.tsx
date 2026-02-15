@@ -513,7 +513,9 @@ export default function CatalogoFiltersPanel({
     [facets.categories, selected.categories],
   );
   const visibleCategories = useMemo(() => {
-    if (!activeCategory) return sortedCategories;
+    if (!activeCategory) {
+      return categoriesExpanded ? sortedCategories : sortedCategories.slice(0, 10);
+    }
     if (categoriesExpanded) return sortedCategories;
     const only = sortedCategories.filter((item) => item.value === activeCategory);
     return only.length > 0 ? only : sortedCategories;
@@ -598,7 +600,7 @@ export default function CatalogoFiltersPanel({
           ) : null}
           <div
             data-oda-scroll-allow="true"
-            className="relative flex flex-col gap-2 lg:max-h-[18rem] lg:overflow-auto lg:pr-2"
+            className="relative flex flex-col gap-2"
           >
             {visibleCategories.map((item) => {
               const checked = isChecked(selected.categories, item.value);
@@ -624,12 +626,16 @@ export default function CatalogoFiltersPanel({
                 </label>
               );
             })}
+
             {!activeCategory && sortedCategories.length > 10 ? (
-              <div className="pointer-events-none sticky bottom-0 hidden justify-end bg-white/90 pt-2 lg:flex">
-                <div className="rounded-full border border-[color:var(--oda-border)] bg-white px-3 py-1 text-[9px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-                  Scroll ↓
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={() => setCategoriesExpanded((prev) => !prev)}
+                disabled={isPending}
+                className="mt-2 inline-flex items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {categoriesExpanded ? "Ver menos" : "Ver más"}
+              </button>
             ) : null}
           </div>
         </div>
