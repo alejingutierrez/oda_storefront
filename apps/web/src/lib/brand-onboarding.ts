@@ -282,9 +282,12 @@ const refreshBrandEnrichStep = async (brandId: string, state: OnboardingState, p
   if (!jobId) return;
   const job = await prisma.brandScrapeJob.findUnique({ where: { id: jobId } });
   if (!job) return;
+  const result = getMetadataObject(job.result);
+  const changeList = result.changes;
+  const changes = Array.isArray(changeList) ? changeList.length : 0;
   progress.brandEnrich = {
     jobStatus: job.status,
-    changes: Array.isArray((job.result as any)?.changes) ? (job.result as any)?.changes?.length ?? 0 : 0,
+    changes,
     jobId: job.id,
     startedAt: job.startedAt?.toISOString() ?? null,
     finishedAt: job.finishedAt?.toISOString() ?? null,
@@ -384,10 +387,7 @@ const startTechProfileStep = async (brandId: string, state: OnboardingState) => 
   step.startedAt = new Date().toISOString();
   await persistOnboarding(brandId, { ...state, updatedAt: new Date().toISOString() });
 
-  const brand = await prisma.brand.findUnique({
-    where: { id: brandId },
-    select: { id: true, name: true, siteUrl: true, manualReview: true, metadata: true },
-  });
+  const brand = await prisma.brand.findUnique({ where: { id: brandId } });
   if (!brand) {
     step.status = "failed";
     step.error = "brand_not_found";
@@ -408,7 +408,7 @@ const startTechProfileStep = async (brandId: string, state: OnboardingState) => 
   }
 
   try {
-    const profile = await profileBrandTechnology({ siteUrl: brand.siteUrl } as any);
+    const profile = await profileBrandTechnology(brand);
     const metadataBase = getMetadataObject(brand.metadata);
     const nextMetadata = {
       ...metadataBase,
@@ -474,7 +474,9 @@ const startCatalogExtractStep = async (brandId: string, state: OnboardingState) 
     await persistOnboarding(brandId, { ...state, updatedAt: new Date().toISOString() });
     return;
   }
-  if (!isCatalogQueueEnabled()) {
+  const queueEnabled = isCatalogQueueEnabled();
+  const drainEnabled = process.env.CATALOG_DRAIN_DISABLED !== "true";
+  if (!queueEnabled && !drainEnabled) {
     step.status = "blocked";
     step.error = "queue_disabled";
     step.finishedAt = new Date().toISOString();
@@ -531,8 +533,10 @@ const startCatalogExtractStep = async (brandId: string, state: OnboardingState) 
       existing.id,
       Math.max(10, enqueueLimit),
     );
-    await markCatalogItemsQueued(pendingItems.map((item) => item.id));
-    await enqueueCatalogItems(pendingItems);
+    if (queueEnabled) {
+      await markCatalogItemsQueued(pendingItems.map((item) => item.id));
+      await enqueueCatalogItems(pendingItems);
+    }
     const drainOnRun =
       process.env.CATALOG_DRAIN_ON_RUN !== "false" &&
       process.env.CATALOG_DRAIN_DISABLED !== "true";
@@ -607,8 +611,10 @@ const startCatalogExtractStep = async (brandId: string, state: OnboardingState) 
     Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
   );
   const items = await listPendingCatalogItems(run.id, Math.max(10, enqueueLimit));
-  await markCatalogItemsQueued(items.map((item) => item.id));
-  await enqueueCatalogItems(items);
+  if (queueEnabled) {
+    await markCatalogItemsQueued(items.map((item) => item.id));
+    await enqueueCatalogItems(items);
+  }
   const drainOnRun =
     process.env.CATALOG_DRAIN_ON_RUN !== "false" &&
     process.env.CATALOG_DRAIN_DISABLED !== "true";
@@ -647,7 +653,9 @@ const startProductEnrichStep = async (brandId: string, state: OnboardingState) =
   step.startedAt = new Date().toISOString();
   await persistOnboarding(brandId, { ...state, updatedAt: new Date().toISOString() });
 
-  if (!isEnrichmentQueueEnabled()) {
+  const queueEnabled = isEnrichmentQueueEnabled();
+  const drainEnabled = process.env.PRODUCT_ENRICHMENT_DRAIN_DISABLED !== "true";
+  if (!queueEnabled && !drainEnabled) {
     step.status = "blocked";
     step.error = "queue_disabled";
     step.finishedAt = new Date().toISOString();
@@ -665,6 +673,61 @@ const startProductEnrichStep = async (brandId: string, state: OnboardingState) =
       await persistOnboarding(brandId, { ...state, updatedAt: new Date().toISOString() });
       return;
     }
+    await prisma.productEnrichmentRun.update({
+      where: { id: existing.id },
+      data: {
+        status: "processing",
+        consecutiveErrors: 0,
+        lastError: null,
+        blockReason: null,
+        updatedAt: new Date(),
+      },
+    });
+    const queuedStaleMs = Math.max(
+      0,
+      Number(process.env.PRODUCT_ENRICHMENT_QUEUE_STALE_MINUTES ?? 15) * 60 * 1000,
+    );
+    const stuckMs = Math.max(
+      0,
+      Number(process.env.PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES ?? 30) * 60 * 1000,
+    );
+    const resumeStuckMs = Math.max(
+      0,
+      Number(process.env.PRODUCT_ENRICHMENT_RESUME_STUCK_MINUTES ?? 2) * 60 * 1000,
+    );
+    await resetEnrichmentQueuedItems(existing.id, queuedStaleMs);
+    await resetEnrichmentStuckItems(existing.id, resumeStuckMs ? Math.min(stuckMs, resumeStuckMs) : stuckMs);
+
+    const drainBatchDefault = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_BATCH ?? 0);
+    const drainConcurrencyDefault = Number(process.env.PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY ?? 20);
+    const drainMaxMsDefault = Number(
+      process.env.PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS ?? 20000,
+    );
+    const minConcurrency = Math.max(20, drainConcurrencyDefault);
+    const enqueueLimit = Math.max(
+      minConcurrency,
+      Number(process.env.PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT ?? 50),
+    );
+    const pendingItems = await listPendingEnrichmentItems(existing.id, enqueueLimit);
+    if (queueEnabled) {
+      await markEnrichmentItemsQueued(pendingItems.map((item) => item.id));
+      await enqueueEnrichmentItems(pendingItems);
+    }
+
+    const drainOnRunDefault =
+      process.env.PRODUCT_ENRICHMENT_DRAIN_ON_RUN !== "false" &&
+      process.env.PRODUCT_ENRICHMENT_DRAIN_DISABLED !== "true";
+    if (drainOnRunDefault) {
+      await drainEnrichmentRun({
+        runId: existing.id,
+        batch: drainBatchDefault <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, drainBatchDefault),
+        concurrency: Math.max(1, drainConcurrencyDefault),
+        maxMs: Math.max(1000, drainMaxMsDefault),
+        queuedStaleMs,
+        stuckMs,
+      });
+    }
+
     step.runId = existing.id;
     await persistOnboarding(brandId, { ...state, updatedAt: new Date().toISOString() });
     return;
@@ -712,8 +775,10 @@ const startProductEnrichStep = async (brandId: string, state: OnboardingState) =
   );
 
   const items = await listPendingEnrichmentItems(run.id, enqueueLimit);
-  await markEnrichmentItemsQueued(items.map((item) => item.id));
-  await enqueueEnrichmentItems(items);
+  if (queueEnabled) {
+    await markEnrichmentItemsQueued(items.map((item) => item.id));
+    await enqueueEnrichmentItems(items);
+  }
 
   if (drainOnRunDefault) {
     await drainEnrichmentRun({
@@ -862,13 +927,16 @@ export const processOnboarding = async (
   }
 
   await refreshBrandEnrichStep(brandId, onboarding, progress);
-  progress.techProfile = metadata.tech_profile
-    ? {
-        platform: (metadata.tech_profile as any)?.platform ?? null,
-        confidence: (metadata.tech_profile as any)?.confidence ?? null,
-        risks: (metadata.tech_profile as any)?.risks ?? [],
-      }
-    : undefined;
+  if (metadata.tech_profile) {
+    const techProfile = getMetadataObject(metadata.tech_profile);
+    progress.techProfile = {
+      platform: typeof techProfile.platform === "string" ? techProfile.platform : null,
+      confidence: typeof techProfile.confidence === "number" ? techProfile.confidence : null,
+      risks: Array.isArray(techProfile.risks)
+        ? techProfile.risks.filter((risk): risk is string => typeof risk === "string")
+        : [],
+    };
+  }
   await refreshCatalogSummary(brandId, onboarding, progress);
   await refreshEnrichmentSummary(brandId, onboarding, progress);
 
