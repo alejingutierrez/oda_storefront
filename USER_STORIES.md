@@ -641,16 +641,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: `updatedCount/unchangedCount`, número de bulk edits por día, distribución de campos editados, tasa de errores por validación.
 - Estado: **done (2026-02-05)**.
 
-### MC-127 Curación humana: filtro por SEO tags (top 100)
+### MC-127 Curación humana: filtro por SEO tags (top 300)
 - Historia: Como admin/curador, quiero filtrar en `/admin/product-curation` por `seoTags` del producto (y ver muchas opciones disponibles), para acelerar la curación al agrupar productos por intención/tema.
 - Alcance:
   - Se agrega facet `seoTags` y una caja de filtros “SEO tags” con buscador dentro del panel.
   - Query param repetible `seo_tag=<tag>` (multi-select OR dentro del mismo facet, AND con el resto de facets).
-  - Se listan hasta 100 tags principales por frecuencia (y se mantienen visibles los tags seleccionados aunque no estén en el top).
+  - Se listan hasta 300 tags principales por frecuencia (y se mantienen visibles los tags seleccionados aunque no estén en el top).
 - CA:
   - El panel muestra la caja “SEO tags” y permite buscar/seleccionar múltiples tags.
   - Al seleccionar un tag, los resultados y el resto de facets respetan el filtro.
-  - La caja muestra hasta 100 principales (más seleccionados si aplica) y mantiene el estado en la URL.
+  - La caja muestra hasta 300 principales (más seleccionados si aplica) y mantiene el estado en la URL.
 - Datos: `products.seoTags[]`.
 - NF: No habilita edición de campos SEO; solo filtrado.
 - Métricas: reducción de tiempo para aislar grupos (proxy: # de cambios bulk por sesión / tiempo), uso del facet `seo_tag`.

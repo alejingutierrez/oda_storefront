@@ -656,7 +656,7 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
       where tag is not null and tag <> ''
       group by tag
       order by cnt desc
-      limit 100
+      limit 300
     `),
     prisma.$queryRaw<Array<{ id: string; family: string; name: string; hex: string; cnt: bigint }>>(Prisma.sql`
       with color_counts as (
