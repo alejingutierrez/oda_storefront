@@ -445,21 +445,25 @@ const recoverCatalogRuns = async (config: ReturnType<typeof getRefreshConfig>) =
   );
 
   for (const run of runs) {
-    await prisma.catalogRun.update({
-      where: { id: run.id },
-      data: {
-        status: "processing",
-        consecutiveErrors: 0,
-        lastError: null,
-        blockReason: null,
-        updatedAt: new Date(),
-      },
-    });
-    await resetQueuedItems(run.id, 0);
-    await resetStuckItems(run.id, 0);
-    const pending = await listPendingItems(run.id, enqueueLimit);
-    await markItemsQueued(pending.map((item) => item.id));
-    await enqueueCatalogItems(pending);
+    try {
+      await prisma.catalogRun.update({
+        where: { id: run.id },
+        data: {
+          status: "processing",
+          consecutiveErrors: 0,
+          lastError: null,
+          blockReason: null,
+          updatedAt: new Date(),
+        },
+      });
+      await resetQueuedItems(run.id, 0);
+      await resetStuckItems(run.id, 0);
+      const pending = await listPendingItems(run.id, enqueueLimit);
+      await markItemsQueued(pending.map((item) => item.id));
+      await enqueueCatalogItems(pending);
+    } catch (error) {
+      console.warn("catalog.refresh.auto_recover_failed", run.id, error);
+    }
   }
 };
 
@@ -520,21 +524,25 @@ const recoverEnrichmentRuns = async (config: ReturnType<typeof getRefreshConfig>
   );
 
   for (const run of runs) {
-    await prisma.productEnrichmentRun.update({
-      where: { id: run.id },
-      data: {
-        status: "processing",
-        consecutiveErrors: 0,
-        lastError: null,
-        blockReason: null,
-        updatedAt: new Date(),
-      },
-    });
-    await resetEnrichmentQueuedItems(run.id, 0);
-    await resetEnrichmentStuckItems(run.id, 0);
-    const pending = await listPendingEnrichmentItems(run.id, enqueueLimit);
-    await markEnrichmentItemsQueued(pending.map((item) => item.id));
-    await enqueueEnrichmentItems(pending);
+    try {
+      await prisma.productEnrichmentRun.update({
+        where: { id: run.id },
+        data: {
+          status: "processing",
+          consecutiveErrors: 0,
+          lastError: null,
+          blockReason: null,
+          updatedAt: new Date(),
+        },
+      });
+      await resetEnrichmentQueuedItems(run.id, 0);
+      await resetEnrichmentStuckItems(run.id, 0);
+      const pending = await listPendingEnrichmentItems(run.id, enqueueLimit);
+      await markEnrichmentItemsQueued(pending.map((item) => item.id));
+      await enqueueEnrichmentItems(pending);
+    } catch (error) {
+      console.warn("catalog.refresh.enrichment_auto_recover_failed", run.id, error);
+    }
   }
 };
 

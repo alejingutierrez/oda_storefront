@@ -40,24 +40,30 @@ export async function GET(req: Request) {
     }
   }
 
-  const url = new URL(req.url);
-  const brandId = url.searchParams.get("brandId");
-  const force = url.searchParams.get("force") === "true";
-  const maxBrands = parseOptionalPositiveInt(url.searchParams.get("maxBrands"));
-  const brandConcurrency = parseOptionalPositiveInt(
-    url.searchParams.get("brandConcurrency"),
-  );
-  const maxRuntimeMs = parseOptionalPositiveInt(url.searchParams.get("maxRuntimeMs"));
+  try {
+    const url = new URL(req.url);
+    const brandId = url.searchParams.get("brandId");
+    const force = url.searchParams.get("force") === "true";
+    const maxBrands = parseOptionalPositiveInt(url.searchParams.get("maxBrands"));
+    const brandConcurrency = parseOptionalPositiveInt(
+      url.searchParams.get("brandConcurrency"),
+    );
+    const maxRuntimeMs = parseOptionalPositiveInt(url.searchParams.get("maxRuntimeMs"));
 
-  const result = await runCatalogRefreshBatch({
-    brandId: brandId ?? undefined,
-    force,
-    maxBrands,
-    brandConcurrency,
-    maxRuntimeMs,
-  });
+    const result = await runCatalogRefreshBatch({
+      brandId: brandId ?? undefined,
+      force,
+      maxBrands,
+      brandConcurrency,
+      maxRuntimeMs,
+    });
 
-  return NextResponse.json({ ok: true, ...result });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("catalog-refresh.cron_failed", message, error);
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {
