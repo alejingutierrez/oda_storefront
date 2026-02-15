@@ -130,6 +130,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 
 ## Auth usuarios (public)
 - Login en `/sign-in` con Descope (Google/Apple/Facebook).
+- En `/sign-in` el flow de Descope usa `redirectUrl=<origin>/sign-in` para que los proveedores OAuth redirijan en la misma pestaña (evita popups bloqueados y “click que no hace nada” en algunos navegadores/in-app browsers).
 - Perfil privado en `/perfil` (nombre, bio, favoritos + listas, borrado de cuenta). Botón "Guardar" en cards de `/catalogo` para agregar a favoritos.
 - Tokens: persistimos el **session token** en storage del browser (evita límites de tamaño de cookie) y el **refresh token** en cookie (`refreshTokenViaCookie`) para que el SDK pueda auto‑refrescar la sesión.
 - Backend: todas las rutas de usuario (`/api/user/*`) exigen `Authorization: Bearer <sessionToken>` y validan server‑side con Descope (`validateSession`). No dependen de la cookie `DS`.
