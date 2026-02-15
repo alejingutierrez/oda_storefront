@@ -778,6 +778,36 @@ const clampText = (value: string, maxLength: number) => {
   return cleaned.slice(0, maxLength).replace(/\s+\S*$/, "").trim();
 };
 
+const deriveSeoFallbackTagsFromName = (name: string) => {
+  const stop = new Set([
+    "de",
+    "del",
+    "la",
+    "el",
+    "los",
+    "las",
+    "con",
+    "para",
+    "y",
+    "en",
+    "por",
+    "x",
+    "ref",
+    "color",
+  ]);
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !stop.has(token))
+    .slice(0, 8);
+};
+
 const normalizeSeoTags = (tags: string[], fallback: Array<string | null | undefined>) => {
   const seen = new Set<string>();
   const output: string[] = [];
@@ -1152,12 +1182,7 @@ const normalizeEnrichment = (
   );
   const seoTags = normalizeSeoTags(input.seoTags ?? [], [
     context.brandName,
-    category,
-    subcategory,
-    ...fixedStyleTags,
-    ...materialTags,
-    ...patternTags,
-    ...occasionTags,
+    ...deriveSeoFallbackTagsFromName(context.productName),
   ]);
 
   return {

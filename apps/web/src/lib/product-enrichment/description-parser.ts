@@ -16,7 +16,11 @@ const toAsciiText = (value: string) =>
 export const stripHtmlToText = (value: string | null | undefined) => {
   if (!value) return "";
   const decoded = decodeHtmlEntities(value);
-  return toAsciiText(decoded.replace(/<[^>]*>/g, " "));
+  const withoutScriptStyle = decoded
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ");
+  return toAsciiText(withoutScriptStyle.replace(/<[^>]*>/g, " "));
 };
 
 const normalizeLower = (value: string) =>

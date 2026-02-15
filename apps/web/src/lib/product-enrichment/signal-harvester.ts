@@ -515,6 +515,8 @@ const SWIM_EVIDENCE = [
   "short de baño",
   "boardshort",
   "boardshorts",
+  "trunk",
+  "trunks",
   "swim trunk",
   "swim trunks",
 ];
@@ -835,6 +837,37 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
   }
   if (
     rule.category === "ropa_deportiva_y_performance" &&
+    hasAnyKeyword(text, ["biker", "ciclista"]) &&
+    !hasAnyKeyword(text, [
+      "camiseta",
+      "tshirt",
+      "t shirt",
+      "tee",
+      "top",
+      "crop top",
+      "croptop",
+      "tank top",
+      "brasier",
+      "bralette",
+      "bra",
+      "chaqueta",
+      "jacket",
+      "buzo",
+      "hoodie",
+      "sudadera",
+      "sweatshirt",
+      "sueter",
+      "suéter",
+      "sweater",
+      "jersey",
+    ])
+  ) {
+    // In this taxonomy, "biker/ciclista" usually points to shorts/bermudas (biker shorts),
+    // not to sports tops. Let shorts/bermudas win when no explicit top evidence exists.
+    return true;
+  }
+  if (
+    rule.category === "ropa_deportiva_y_performance" &&
     hasAnyKeyword(text, [
       "calzado",
       "footwear",
@@ -859,6 +892,54 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
     ])
   ) {
     // Footwear is handled by "calzado" even when it says "deportivo".
+    return true;
+  }
+  if (
+    rule.category === "camisetas_y_tops" &&
+    hasAnyKeyword(text, [
+      "pantaloneta",
+      "short",
+      "shorts",
+      "bermuda",
+      "bermudas",
+      "jort",
+      "jorts",
+      "pantalon",
+      "pantalones",
+      "pants",
+      "trouser",
+      "trousers",
+      "jean",
+      "jeans",
+      "denim",
+      "falda",
+      "skirt",
+      "vestido",
+      "dress",
+      "enterizo",
+      "jumpsuit",
+      "overol",
+    ]) &&
+    !hasAnyKeyword(text, [
+      "camiseta",
+      "tshirt",
+      "t shirt",
+      "tee",
+      "polo",
+      "henley",
+      "crop top",
+      "croptop",
+      "camisilla",
+      "esqueleto",
+      "tank top",
+      "bodysuit",
+      "blusa",
+      "blouse",
+      "camisa",
+      "shirt",
+    ])
+  ) {
+    // Prevent bottom garments from being pulled into tops due to noisy tokens in SEO/brands (e.g. "body", "top").
     return true;
   }
   if (
@@ -906,6 +987,31 @@ const shouldIgnoreRule = (rule: CategoryKeywordRule, text: string) => {
   ) {
     // Prevent "bikini top" / swimwear descriptions from being pulled into generic tops.
     return true;
+  }
+  if (
+    rule.category === "camisetas_y_tops" &&
+    (matchesWordWindow(text, "top", "shoe", 2) ||
+      matchesWordWindow(text, "top", "shoes", 2) ||
+      matchesWordWindow(text, "top", "sneaker", 2) ||
+      matchesWordWindow(text, "top", "sneakers", 2))
+  ) {
+    // Avoid misclassifying footwear marketing phrases ("top shoe engineers") as apparel tops.
+    const hasOtherTopEvidence = hasAnyKeyword(text, [
+      "camiseta",
+      "tshirt",
+      "t shirt",
+      "tee",
+      "crop top",
+      "croptop",
+      "camisilla",
+      "esqueleto",
+      "tank top",
+      "bodysuit",
+      "body",
+      "polo",
+      "henley",
+    ]);
+    if (!hasOtherTopEvidence) return true;
   }
   if (
     rule.category === "camisetas_y_tops" &&
@@ -1002,6 +1108,26 @@ const shouldIgnoreSubcategoryRule = (
   text: string,
 ) => {
   if (rule.subcategory.includes("denim") && !hasDenimEvidence(text)) {
+    return true;
+  }
+  if (
+    rule.category === "ropa_deportiva_y_performance" &&
+    rule.subcategory === "camiseta_deportiva" &&
+    hasAnyKeyword(text, ["pantaloneta", "short", "shorts", "bermuda", "bermudas"]) &&
+    !hasAnyKeyword(text, [
+      "camiseta",
+      "tshirt",
+      "t shirt",
+      "tee",
+      "top",
+      "crop top",
+      "croptop",
+      "tank top",
+      "polo",
+      "henley",
+    ])
+  ) {
+    // Prefer sports shorts when "pantaloneta/shorts" evidence exists and no explicit sports tee/top evidence.
     return true;
   }
   if (
@@ -1612,12 +1738,13 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     if (!inferredCategory) return null;
     const allowedSubs = allowedSubByCategory[inferredCategory] ?? [];
     if (!allowedSubs.length) return null;
-    type SubcategorySource = "description" | "seo" | "vendor_tags" | "name";
+    type SubcategorySource = "description" | "seo" | "vendor_tags" | "name" | "combined";
     const SUBCATEGORY_SOURCE_WEIGHTS: Record<SubcategorySource, number> = {
       description: 6,
       seo: 5,
       vendor_tags: 4,
       name: 3,
+      combined: 4,
     };
 
     const scores = new Map<string, { score: number; sources: Set<SubcategorySource> }>();
@@ -1635,6 +1762,20 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     bump(seoMatch.subcategory, "seo");
     bump(vendorTagMatch.subcategory, "vendor_tags");
     bump(nameMatch.subcategory, "name");
+    const combinedText = normalizeText(
+      [
+        safeName,
+        descriptionCleanText,
+        platform.vendorTags.join(" "),
+        params.seoTitle ?? "",
+        params.seoDescription ?? "",
+        (params.seoTags ?? []).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    const combinedSubcategory = pickSubcategorySignal(combinedText, inferredCategory, allowedSubByCategory).subcategory;
+    bump(combinedSubcategory, "combined");
 
     const ranked = [...scores.entries()].sort((a, b) => {
       const scoreDelta = b[1].score - a[1].score;

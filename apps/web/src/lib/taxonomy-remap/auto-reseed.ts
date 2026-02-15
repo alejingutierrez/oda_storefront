@@ -121,6 +121,33 @@ const normalizeKeywordKey = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+const sanitizeSeoTags = (params: {
+  seoTags: string[];
+  currentCategory: string | null;
+  currentSubcategory: string | null;
+}) => {
+  if (!params.seoTags.length) return [];
+  const toKey = (value: string | null) => (value ? normalizeKeywordKey(value) : "");
+  const currentKeySet = new Set<string>();
+  const currentCategoryKey = toKey(params.currentCategory);
+  const currentSubcategoryKey = toKey(params.currentSubcategory);
+  if (currentCategoryKey) currentKeySet.add(currentCategoryKey);
+  if (currentSubcategoryKey) currentKeySet.add(currentSubcategoryKey);
+
+  // Historical enrichment injected taxonomy slugs into `seoTags` as fallback
+  // (e.g. `camisetas_y_tops`, `crop_top`), which creates self-reinforcing remaps.
+  // For remap evidence, drop anything equal to current category/subcategory.
+  return params.seoTags
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .filter((value) => {
+      const key = normalizeKeywordKey(value);
+      if (!key) return false;
+      if (currentKeySet.has(key)) return false;
+      return true;
+    });
+};
+
 // Category remap is intentionally conservative: we only move into certain categories when
 // we have explicit evidence in name/description/SEO, not just ambiguous modifiers (e.g. "cargo", "top").
 const CATEGORY_MOVE_REQUIRED_EVIDENCE: Partial<Record<string, string[]>> = {
@@ -189,6 +216,8 @@ const CATEGORY_MOVE_REQUIRED_EVIDENCE: Partial<Record<string, string[]>> = {
     "short de baño",
     "boardshort",
     "boardshorts",
+    "trunk",
+    "trunks",
     "swim trunk",
     "swim trunks",
   ],
@@ -1344,7 +1373,18 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         typeof enrichment.original_description === "string"
           ? enrichment.original_description
           : row.description;
-      const seoTags = toStringArray(row.seoTags);
+
+      const currentCategory = normalizeEnumValue(row.category, CATEGORY_VALUES);
+      const currentGender = normalizeEnumValue(row.gender, GENDER_VALUES);
+      const allowedCurrentSub = currentCategory ? SUBCATEGORY_BY_CATEGORY[currentCategory] ?? [] : [];
+      const currentSubcategory = normalizeEnumValue(row.subcategory, allowedCurrentSub);
+
+      const rawSeoTags = toStringArray(row.seoTags);
+      const seoTags = sanitizeSeoTags({
+        seoTags: rawSeoTags,
+        currentCategory,
+        currentSubcategory,
+      });
       const evidenceText = [
         row.name,
         originalDescription ?? "",
@@ -1377,11 +1417,6 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         allowedCategoryValues: CATEGORY_VALUES,
         subcategoryByCategory: SUBCATEGORY_BY_CATEGORY,
       });
-
-      const currentCategory = normalizeEnumValue(row.category, CATEGORY_VALUES);
-      const currentGender = normalizeEnumValue(row.gender, GENDER_VALUES);
-      const allowedCurrentSub = currentCategory ? SUBCATEGORY_BY_CATEGORY[currentCategory] ?? [] : [];
-      const currentSubcategory = normalizeEnumValue(row.subcategory, allowedCurrentSub);
 
       let nextCategory = currentCategory;
       let categoryConfidence = 0;

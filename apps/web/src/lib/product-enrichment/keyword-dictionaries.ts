@@ -253,7 +253,17 @@ const PHRASE_SYNONYMS: Record<string, string[]> = {
   "gafas opticas formuladas": ["gafas formuladas", "gafas de formula", "eyeglasses"],
   "gafas de sol": ["sunglasses", "lentes de sol"],
   "dijes charms": ["charm", "dije", "colgante"],
-  "broches prendedores": ["broche", "prendedor", "pin"],
+  "broches prendedores": [
+    "broche",
+    "prendedor",
+    "pin",
+    "cufflink",
+    "cufflinks",
+    "gemelo",
+    "gemelos",
+    "mancuernilla",
+    "mancuernillas",
+  ],
   "sets de joyeria": ["set de joyas", "jewelry set"],
   "gift card": ["tarjeta de regalo", "voucher", "bono"],
   "textiles de mesa": ["mantel", "camino de mesa", "individual", "posavasos"],
@@ -367,6 +377,8 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "bermuda",
     "jort",
     "jorts",
+    "biker",
+    "ciclista",
     "biker short",
     "short cargo",
     "short deportivo",
@@ -489,6 +501,8 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "pantaloneta de baño",
     "short de bano",
     "short de baño",
+    "trunk",
+    "trunks",
     "swim trunk",
     "swim trunks",
     "boardshort",
@@ -546,8 +560,13 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "footwear",
     "zapato",
     "zapatos",
+    "shoe",
+    "shoes",
     "tenis",
     "sneaker",
+    "sneakers",
+    "zapatilla",
+    "zapatillas",
     "sandalia",
     "tacon",
     "tacones",
@@ -589,6 +608,8 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "duffel",
     "maleta",
     "equipaje",
+    "guayera",
+    "guayeras",
   ],
   gafas_y_optica: [
     "gafas",
@@ -618,6 +639,12 @@ const CATEGORY_ANCHOR_KEYWORDS: Record<string, string[]> = {
     "tobillera",
     "dije",
     "charm",
+    "cufflink",
+    "cufflinks",
+    "gemelo",
+    "gemelos",
+    "mancuernilla",
+    "mancuernillas",
     "llavero",
     "llaveros",
     "keychain",
@@ -896,6 +923,17 @@ const deriveSubcategoryKeywords = (
 
   if (categoryValue === "ropa_deportiva_y_performance") {
     keywords.push("dry fit", "quick dry", "transpirable", "breathable", "compresion");
+    if (subcategoryValue === "shorts_deportivos") {
+      keywords.push(
+        "pantaloneta",
+        "pantalonetas",
+        "short deportivo",
+        "shorts deportivo",
+        "training short",
+        "running short",
+        "gym short",
+      );
+    }
   }
 
   if (categoryValue === "trajes_de_bano_y_playa") {

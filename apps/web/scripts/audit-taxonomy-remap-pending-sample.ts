@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { prisma } from "@/lib/prisma";
 import { harvestProductSignals } from "@/lib/product-enrichment/signal-harvester";
+import { Prisma } from "@prisma/client";
 import {
   CATEGORY_LABELS,
   CATEGORY_VALUES,
@@ -41,6 +42,8 @@ type SampleRow = {
 };
 
 const nowKey = () => new Date().toISOString().replace(/[:.]/g, "-");
+
+type ChangeTypeFilter = "all" | "taxonomy" | "gender_only";
 
 const normalizeText = (value: unknown) =>
   String(value || "")
@@ -224,12 +227,38 @@ const scoreSubcategoryCandidates = (category: string, text: string) => {
   return scored;
 };
 
+const normalizeComparable = (value: string | null | undefined) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase();
+
+const hasChanged = (from: string | null | undefined, to: string | null | undefined) =>
+  normalizeComparable(from) !== normalizeComparable(to);
+
 const main = async () => {
   const sampleSize = Math.max(1, Number(process.env.TAXON_SAMPLE_SIZE || 100));
+  const changeType = String(process.env.TAXON_SAMPLE_CHANGE_TYPE || "all")
+    .trim()
+    .toLowerCase() as ChangeTypeFilter;
   const outRoot = path.join(process.cwd(), "..", "..", "reports");
   fs.mkdirSync(outRoot, { recursive: true });
   const outJson = path.join(outRoot, `taxonomy_remap_pending_sample_${nowKey()}.json`);
   const outMd = path.join(outRoot, `taxonomy_remap_pending_sample_${nowKey()}.md`);
+
+  const taxonomyChangedSql = Prisma.sql`(
+    COALESCE(r."toCategory", '') <> COALESCE(r."fromCategory", '')
+    OR COALESCE(r."toSubcategory", '') <> COALESCE(r."fromSubcategory", '')
+  )`;
+  const genderChangedSql = Prisma.sql`(
+    COALESCE(r."toGender", '') <> COALESCE(r."fromGender", '')
+  )`;
+
+  const changeTypeSql =
+    changeType === "taxonomy"
+      ? Prisma.sql`AND ${taxonomyChangedSql}`
+      : changeType === "gender_only"
+        ? Prisma.sql`AND (${genderChangedSql}) AND NOT (${taxonomyChangedSql})`
+        : Prisma.empty;
 
   const rows = await prisma.$queryRaw<SampleRow[]>`
     SELECT
@@ -264,6 +293,7 @@ const main = async () => {
     JOIN "brands" b ON b."id" = p."brandId"
     WHERE r."status" = 'pending'
       AND p."metadata"->'enrichment' IS NOT NULL
+      ${changeTypeSql}
     ORDER BY random()
     LIMIT ${sampleSize};
   `;
@@ -320,9 +350,9 @@ const main = async () => {
       subcategoryByCategory: SUBCATEGORY_BY_CATEGORY,
     });
 
-    const categoryChanged = (row.to_category ?? row.from_category) !== (row.from_category ?? null) && Boolean(row.to_category);
-    const subChanged = (row.to_subcategory ?? row.from_subcategory) !== (row.from_subcategory ?? null) && Boolean(row.to_subcategory);
-    const genderChanged = (row.to_gender ?? row.from_gender) !== (row.from_gender ?? null) && Boolean(row.to_gender);
+    const categoryChanged = hasChanged(row.from_category, row.to_category);
+    const subChanged = hasChanged(row.from_subcategory, row.to_subcategory);
+    const genderChanged = hasChanged(row.from_gender, row.to_gender);
     const changeCount = [categoryChanged, subChanged, genderChanged].filter(Boolean).length;
     if (changeCount > 1) summary.moveType.multi += 1;
     else if (categoryChanged) summary.moveType.category += 1;
