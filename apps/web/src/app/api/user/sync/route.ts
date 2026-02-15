@@ -37,19 +37,28 @@ export async function POST(req: Request) {
 
   let synced;
   try {
-    synced = await syncUserFromDescope(fallbackUser);
+    synced = await syncUserFromDescope(fallbackUser, req);
   } catch (error) {
     console.error("User sync failed", {
       requestId: await getRequestId(),
       cookieNames: await getCookieNames(),
+      hasAuthorization: Boolean(req.headers.get("authorization")),
+      hasInjectedSessionHeader: Boolean(req.headers.get("x-descope-session")),
       error,
     });
     throw error;
   }
   if (!synced) {
+    const authHeader = req.headers.get("authorization");
+    const authScheme = authHeader?.split(/\s+/)[0]?.toLowerCase() ?? null;
+    const authLength = authHeader ? authHeader.length : 0;
     console.warn("User sync unauthorized", {
       requestId: await getRequestId(),
       cookieNames: await getCookieNames(),
+      hasAuthorization: Boolean(authHeader),
+      authScheme,
+      authLength,
+      hasInjectedSessionHeader: Boolean(req.headers.get("x-descope-session")),
     });
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

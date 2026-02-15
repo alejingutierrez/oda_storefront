@@ -8,7 +8,7 @@ export async function PATCH(
   context: { params: Promise<{ listId: string }> },
 ) {
   const params = await context.params;
-  const session = await requireUser();
+  const session = await requireUser(req);
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
@@ -58,11 +58,11 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ listId: string }> },
 ) {
   const params = await context.params;
-  const session = await requireUser();
+  const session = await requireUser(req);
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

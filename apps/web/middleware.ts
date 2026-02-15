@@ -3,7 +3,10 @@ import type { NextRequest } from "next/server";
 import { authMiddleware } from "@descope/nextjs-sdk/server";
 
 const ADMIN_PROTECTED_PATHS = ["/api/normalize"];
-const DESCOPE_PROTECTED_PREFIXES = ["/perfil", "/api/user"];
+// Nota: las APIs de usuario (`/api/user/*`) se autentican a nivel de handler via `Authorization: Bearer ...`
+// (no via cookie de sesion), porque el session JWT puede exceder limites de cookie. `/perfil` se maneja
+// en el cliente (si no hay sesion, redirige a `/sign-in`).
+const DESCOPE_PROTECTED_PREFIXES: string[] = [];
 
 const descope = authMiddleware({
   projectId: process.env.NEXT_PUBLIC_DESCOPE_PROJECT_ID!,

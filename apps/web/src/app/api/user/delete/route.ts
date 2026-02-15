@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, getDescopeManagementSdk } from "@/lib/descope";
 import { logExperienceEvent } from "@/lib/experience";
 
-export async function POST() {
-  const session = await requireUser();
+export async function POST(req: Request) {
+  const session = await requireUser(req);
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

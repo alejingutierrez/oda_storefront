@@ -4,11 +4,11 @@ import { requireUser } from "@/lib/descope";
 import { logExperienceEvent } from "@/lib/experience";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ listId: string }> },
 ) {
   const params = await context.params;
-  const session = await requireUser();
+  const session = await requireUser(req);
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
@@ -58,7 +58,7 @@ export async function POST(
   context: { params: Promise<{ listId: string }> },
 ) {
   const params = await context.params;
-  const session = await requireUser();
+  const session = await requireUser(req);
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

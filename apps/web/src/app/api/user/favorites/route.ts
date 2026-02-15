@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/descope";
 import { logExperienceEvent } from "@/lib/experience";
 
-export async function GET() {
-  const session = await requireUser();
+export async function GET(req: Request) {
+  const session = await requireUser(req);
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
@@ -43,7 +43,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const session = await requireUser();
+  const session = await requireUser(req);
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

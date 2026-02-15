@@ -16,7 +16,7 @@ const LOGIN_NEXT_KEY = "oda_login_next_v1";
 export default function AuthCallbackPage() {
   const router = useRouter();
   const sdk = useDescope();
-  const { isAuthenticated, isSessionLoading } = useSession();
+  const { isSessionLoading } = useSession();
   const { user, isUserLoading } = useUser();
   const [next] = useState(() => {
     if (typeof window === "undefined") return "/perfil";
@@ -51,30 +51,24 @@ export default function AuthCallbackPage() {
   useEffect(() => {
     if (startedRef.current) return;
     if (isSessionLoading || isUserLoading) return;
-    // Justo después del redirect de OAuth, Descope puede tardar un instante en poblar isAuthenticated/sessionToken.
-    // Evitamos un redirect prematuro a /sign-in para no causar loops.
-    if (!isAuthenticated) {
-      const token = readSessionToken();
-      if (!token) {
-        const timeout = window.setTimeout(() => {
-          const qs = new URLSearchParams({ next, error: "not_authenticated" });
-          router.replace(`/sign-in?${qs.toString()}`);
-        }, 1200);
-        return () => window.clearTimeout(timeout);
-      }
-    }
-
     startedRef.current = true;
 
     let cancelled = false;
 
     const run = async () => {
-      const MAX_ATTEMPTS = 8;
+      const MAX_ATTEMPTS = 12;
+      let unauthorizedWithToken = 0;
       for (let i = 1; i <= MAX_ATTEMPTS; i += 1) {
         if (cancelled) return;
         setAttempt(i);
         try {
           const token = readSessionToken();
+          if (!token) {
+            setMessage("Confirmando sesion…");
+            await new Promise((resolve) => setTimeout(resolve, 250 * i));
+            continue;
+          }
+
           const headers: Record<string, string> = { "content-type": "application/json" };
           if (token) {
             headers.Authorization = `Bearer ${token}`;
@@ -94,14 +88,9 @@ export default function AuthCallbackPage() {
           }
 
           if (res.status === 401) {
-            // 401 puede ocurrir si el token aun no esta disponible justo despues del redirect.
-            // Solo hacemos logout si ya teniamos token y aun asi falla varias veces.
-            const UNAUTHORIZED_GRACE = 4;
-            if (!token && i < MAX_ATTEMPTS) {
-              console.warn("Auth callback unauthorized (missing token); will retry", {
-                attempt: i,
-              });
-            } else if (i < UNAUTHORIZED_GRACE) {
+            unauthorizedWithToken += 1;
+            const UNAUTHORIZED_GRACE = 3;
+            if (unauthorizedWithToken < UNAUTHORIZED_GRACE) {
               console.warn("Auth callback unauthorized; will retry", {
                 attempt: i,
                 hasSessionToken: Boolean(token),
@@ -138,8 +127,9 @@ export default function AuthCallbackPage() {
       }
 
       if (cancelled) return;
+      const finalToken = readSessionToken();
       setMessage("No se pudo completar el login.");
-      const qs = new URLSearchParams({ next, error: "sync_failed" });
+      const qs = new URLSearchParams({ next, error: finalToken ? "sync_failed" : "missing_token" });
       router.replace(`/sign-in?${qs.toString()}`);
     };
 
@@ -152,7 +142,6 @@ export default function AuthCallbackPage() {
     next,
     sdk,
     user,
-    isAuthenticated,
     isSessionLoading,
     isUserLoading,
     readSessionToken,
@@ -169,7 +158,7 @@ export default function AuthCallbackPage() {
         </h1>
         {attempt > 0 ? (
           <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-            Intento {attempt} de 8
+            Intento {attempt} de 12
           </p>
         ) : null}
         <p className="max-w-md text-sm text-[color:var(--oda-ink-soft)]">

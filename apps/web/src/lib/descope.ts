@@ -15,6 +15,44 @@ const getDescopeConfig = () => {
   };
 };
 
+const extractBearerToken = (value: string | null) => {
+  if (!value) return null;
+  const match = value.match(/^Bearer\s+(.+)$/i);
+  const token = match?.[1]?.trim();
+  return token && token.length > 0 ? token : null;
+};
+
+const getCookieValue = (cookieHeader: string | null, cookieName: string) => {
+  if (!cookieHeader) return null;
+  const match = cookieHeader.match(
+    new RegExp(`(?:^|;\\s*)${cookieName}=([^;]*)`),
+  );
+  const raw = match?.[1]?.trim();
+  return raw && raw.length > 0 ? raw : null;
+};
+
+const parseDescopeSessionHeader = (headerValue: string | null) => {
+  if (!headerValue) return null;
+  try {
+    const raw = Buffer.from(headerValue, "base64").toString("utf8");
+    const parsed = JSON.parse(raw) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.jwt !== "string") return null;
+    if (!parsed.token || typeof parsed.token !== "object") return null;
+    return parsed as { jwt: string; token: Record<string, unknown> };
+  } catch {
+    return null;
+  }
+};
+
+let validationSdk: ReturnType<typeof createSdk> | null = null;
+const getValidationSdk = () => {
+  if (validationSdk) return validationSdk;
+  const { projectId, baseUrl } = getDescopeConfig();
+  validationSdk = createSdk({ projectId, baseUrl });
+  return validationSdk;
+};
+
 const getManagementKey = () => {
   const key = process.env.DESCOPE_MANAGEMENT_KEY;
   if (!key) {
@@ -39,6 +77,42 @@ type DescopeUser = {
 export async function getDescopeSession() {
   const { projectId, baseUrl } = getDescopeConfig();
   return session({ projectId, baseUrl });
+}
+
+async function getDescopeSessionFromRequest(req?: Request) {
+  if (!req) {
+    return getDescopeSession();
+  }
+
+  // 1) If middleware already injected the session, trust it.
+  const headerSession = parseDescopeSessionHeader(
+    req.headers.get("x-descope-session"),
+  );
+  if (headerSession) {
+    return headerSession as unknown as Awaited<ReturnType<typeof getDescopeSession>>;
+  }
+
+  // 2) Otherwise, validate the Bearer token directly.
+  const bearer = extractBearerToken(req.headers.get("authorization"));
+  if (bearer) {
+    try {
+      return await getValidationSdk().validateSession(bearer);
+    } catch {
+      return undefined;
+    }
+  }
+
+  // 3) Fallback: validate DS cookie if present.
+  const dsCookie = getCookieValue(req.headers.get("cookie"), "DS");
+  if (dsCookie) {
+    try {
+      return await getValidationSdk().validateSession(dsCookie);
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
 }
 
 export function getDescopeManagementSdk() {
@@ -94,8 +168,9 @@ export async function loadDescopeUser(userId: string) {
 
 export async function syncUserFromDescope(
   fallbackUser?: Partial<DescopeUser> | null,
+  req?: Request,
 ) {
-  const authInfo = await getDescopeSession();
+  const authInfo = await getDescopeSessionFromRequest(req);
   if (!authInfo || !authInfo.token || typeof authInfo.token !== "object") {
     return null;
   }
@@ -256,8 +331,8 @@ export async function syncUserFromDescope(
   return { user, descopeUser: mergedUser, authInfo, subject };
 }
 
-export async function requireUser() {
-  const authInfo = await getDescopeSession();
+export async function requireUser(req?: Request) {
+  const authInfo = await getDescopeSessionFromRequest(req);
   if (!authInfo || !authInfo.token || typeof authInfo.token !== "object") {
     return null;
   }
@@ -304,7 +379,7 @@ export async function requireUser() {
     return { user, authInfo };
   }
 
-  const synced = await syncUserFromDescope();
+  const synced = await syncUserFromDescope(undefined, req);
   if (!synced) return null;
   return { user: synced.user, authInfo: synced.authInfo };
 }

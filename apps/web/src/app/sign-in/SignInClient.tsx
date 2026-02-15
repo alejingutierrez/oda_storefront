@@ -127,8 +127,8 @@ export default function SignInClient() {
               redirectAfterSuccess={redirectAfterSuccess}
               onSuccess={() => {
                 setFlowError(null);
-                // Navegacion hard para evitar edge-cases donde el SPA nav no dispare el callback.
-                window.location.assign(redirectAfterSuccess);
+                // Evitamos forzar navegacion: el flow ya tiene `redirectAfterSuccess` y, si el SDK
+                // marca la sesion como autenticada, el effect de arriba redirige a `/auth/callback`.
               }}
               onError={(error) => {
                 console.error("Descope login error", error);
