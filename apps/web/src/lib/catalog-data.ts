@@ -58,6 +58,9 @@ export type CatalogFacetItem = {
   count: number;
   swatch?: string | null;
   group?: string | null;
+  // Solo aplica a `subcategories` por ahora: permite renderizar chips con imagen representativa.
+  previewImageUrl?: string | null;
+  previewProductId?: string | null;
 };
 
 export type CatalogFacets = {
@@ -1336,7 +1339,37 @@ async function computeCatalogSubcategories(
     }
   }
 
-  return items;
+  const previewKeys = Array.from(new Set(items.map((item) => item.value).filter(Boolean)));
+  if (previewKeys.length === 0) return items;
+
+  const previewRows = await prisma.$queryRaw<
+    Array<{ subcategory: string; previewProductId: string; previewImageUrl: string | null }>
+  >(
+    Prisma.sql`
+      select distinct on (p.subcategory)
+        p.subcategory as subcategory,
+        p.id as "previewProductId",
+        p."imageCoverUrl" as "previewImageUrl"
+      from products p
+      join brands b on b.id = p."brandId"
+      ${subcategoryWhere}
+      and p.subcategory in (${Prisma.join(previewKeys)})
+      and p.subcategory is not null
+      and p.subcategory <> ''
+      and btrim(p."imageCoverUrl") <> ''
+      order by p.subcategory, p."createdAt" desc
+    `,
+  );
+
+  const previewMap = new Map(previewRows.map((row) => [row.subcategory, row]));
+  return items.map((item) => {
+    const preview = previewMap.get(item.value);
+    return {
+      ...item,
+      previewProductId: preview?.previewProductId ?? null,
+      previewImageUrl: preview?.previewImageUrl ?? null,
+    };
+  });
 }
 
 export async function getCatalogFacetsUncached(filters: CatalogFilters): Promise<CatalogFacets> {

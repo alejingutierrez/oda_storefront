@@ -25,6 +25,7 @@ type Facets = {
 type Props = {
   facets: Facets;
   subcategories: FacetItem[];
+  showSubcategoriesSection?: boolean;
   priceBounds: CatalogPriceBounds;
   priceHistogram?: CatalogPriceHistogram | null;
   priceStats?: CatalogPriceStats | null;
@@ -230,6 +231,7 @@ function getStep(max: number) {
 export default function CatalogoFiltersPanel({
   facets,
   subcategories,
+  showSubcategoriesSection = true,
   priceBounds,
   priceHistogram,
   priceStats,
@@ -460,6 +462,7 @@ export default function CatalogoFiltersPanel({
   useEffect(() => {
     if (isPending) return;
     if (typeof document !== "undefined" && document.hidden) return;
+    if (!showSubcategoriesSection) return;
     const next = new URLSearchParams(subcategoriesFetchKey);
     const categories = next.getAll("category").filter((value) => value.trim().length > 0);
     if (categories.length === 0) {
@@ -503,7 +506,7 @@ export default function CatalogoFiltersPanel({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [isPending, resumeTick, subcategoriesFetchKey, subcategoriesSessionKey]);
+  }, [isPending, resumeTick, showSubcategoriesSection, subcategoriesFetchKey, subcategoriesSessionKey]);
 
   useEffect(() => {
     if (isPending) return;
@@ -817,7 +820,7 @@ export default function CatalogoFiltersPanel({
         </div>
       </details>
 
-      {selected.categories.length > 0 ? (
+      {selected.categories.length > 0 && showSubcategoriesSection ? (
         <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
           <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
             <span className="flex items-center gap-3">

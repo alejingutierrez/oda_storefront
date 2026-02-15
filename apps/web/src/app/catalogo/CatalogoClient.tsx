@@ -6,6 +6,7 @@ import { getSessionToken, useSession } from "@descope/nextjs-sdk/client";
 import CatalogoFiltersPanel from "@/components/CatalogoFiltersPanel";
 import CatalogMobileDock from "@/components/CatalogMobileDock";
 import CatalogProductsInfinite from "@/components/CatalogProductsInfinite";
+import CatalogSubcategoryChips from "@/components/CatalogSubcategoryChips";
 import CatalogToolbar from "@/components/CatalogToolbar";
 import type { CatalogPriceBounds, CatalogPriceInsights, CatalogProduct } from "@/lib/catalog-data";
 
@@ -800,6 +801,7 @@ export default function CatalogoClient({
                   <CatalogoFiltersPanel
                     facets={facets}
                     subcategories={initialSubcats}
+                    showSubcategoriesSection={false}
                     priceBounds={priceBounds}
                     priceHistogram={priceHistogram}
                     priceStats={priceStats}
@@ -820,6 +822,8 @@ export default function CatalogoClient({
                   onToggleFiltersCollapsed={toggleFiltersCollapsed}
                 />
               </div>
+
+              <CatalogSubcategoryChips mode="mobile" />
 
               <CatalogProductsInfinite
                 key={initialSearchParams}

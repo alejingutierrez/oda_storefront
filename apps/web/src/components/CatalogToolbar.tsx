@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import CatalogSubcategoryChips from "@/components/CatalogSubcategoryChips";
 
 type SortOption = { value: string; label: string };
 
@@ -327,6 +328,8 @@ export default function CatalogToolbar({
             </button>
           </div>
         </div>
+
+        <CatalogSubcategoryChips mode="toolbar" />
       </div>
 
       {savedOpen ? (
