@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import CatalogoFiltersPanel from "@/components/CatalogoFiltersPanel";
-import type { CatalogPriceBounds } from "@/lib/catalog-data";
+import type { CatalogPriceBounds, CatalogPriceHistogram, CatalogPriceStats } from "@/lib/catalog-data";
 import { SORT_OPTIONS } from "@/components/CatalogToolbar";
 
 type FacetItem = {
@@ -45,6 +45,8 @@ export default function CatalogMobileDock({
   facets,
   subcategories,
   priceBounds,
+  priceHistogram,
+  priceStats,
   facetsLoading = false,
 }: {
   totalCount: number;
@@ -52,6 +54,8 @@ export default function CatalogMobileDock({
   facets: Facets | null;
   subcategories: FacetItem[];
   priceBounds: CatalogPriceBounds;
+  priceHistogram?: CatalogPriceHistogram | null;
+  priceStats?: CatalogPriceStats | null;
   facetsLoading?: boolean;
 }) {
   const params = useSearchParams();
@@ -99,6 +103,20 @@ export default function CatalogMobileDock({
 
   const [open, setOpen] = useState(false);
   const [draftParamsString, setDraftParamsString] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
 
   const openSheet = () => {
     const next = new URLSearchParams(params.toString());
@@ -257,12 +275,14 @@ export default function CatalogMobileDock({
               </button>
             </div>
 
-            <div className="max-h-[calc(85vh-10.5rem)] overflow-auto px-4 pb-6 pt-5">
+            <div className="max-h-[calc(85vh-10.5rem)] overscroll-contain overflow-auto px-4 pb-6 pt-5">
               {facets ? (
                 <CatalogoFiltersPanel
                   facets={facets}
                   subcategories={subcategories}
                   priceBounds={priceBounds}
+                  priceHistogram={priceHistogram}
+                  priceStats={priceStats}
                   mode="draft"
                   draftParamsString={draftParamsString}
                   onDraftParamsStringChange={setDraftParamsString}

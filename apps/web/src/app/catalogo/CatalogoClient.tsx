@@ -7,7 +7,7 @@ import CatalogoFiltersPanel from "@/components/CatalogoFiltersPanel";
 import CatalogMobileDock from "@/components/CatalogMobileDock";
 import CatalogProductsInfinite from "@/components/CatalogProductsInfinite";
 import CatalogToolbar from "@/components/CatalogToolbar";
-import type { CatalogPriceBounds, CatalogProduct } from "@/lib/catalog-data";
+import type { CatalogPriceBounds, CatalogPriceInsights, CatalogProduct } from "@/lib/catalog-data";
 
 type FacetItem = {
   value: string;
@@ -143,10 +143,16 @@ export default function CatalogoClient({
   initialItems,
   totalCount,
   initialSearchParams,
+  initialFacets,
+  initialPriceInsights,
+  initialSubcategories,
 }: {
   initialItems: CatalogProduct[];
   totalCount: number;
   initialSearchParams: string;
+  initialFacets?: FacetsLite | null;
+  initialPriceInsights?: CatalogPriceInsights | null;
+  initialSubcategories?: FacetItem[];
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -384,13 +390,39 @@ export default function CatalogoClient({
     [facetsFetchKey],
   );
   const [facets, setFacets] = useState<FacetsLite | null>(() => {
-    const cached = readSessionJson<unknown>(facetsSessionKey);
-    return isValidFacetsLite(cached) ? cached : null;
+    if (isValidFacetsLite(initialFacets)) return initialFacets;
+    return null;
   });
   const [facetsLoading, setFacetsLoading] = useState(false);
   const facetsAbortRef = useRef<AbortController | null>(null);
   const facetsLastAttemptAtRef = useRef<number>(0);
   const facetsLastOkAtRef = useRef<number>(0);
+  const facetsLastOkKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (navigationPending) {
+      const cached = readSessionJson<unknown>(facetsSessionKey);
+      if (!isValidFacetsLite(cached)) return;
+      setFacets(cached);
+      facetsLastOkAtRef.current = Date.now();
+      facetsLastOkKeyRef.current = facetsSessionKey;
+      return;
+    }
+
+    if (isValidFacetsLite(initialFacets)) {
+      setFacets(initialFacets);
+      writeSessionJson(facetsSessionKey, initialFacets);
+      facetsLastOkAtRef.current = Date.now();
+      facetsLastOkKeyRef.current = facetsSessionKey;
+      return;
+    }
+
+    const cached = readSessionJson<unknown>(facetsSessionKey);
+    if (!isValidFacetsLite(cached)) return;
+    setFacets(cached);
+    facetsLastOkAtRef.current = Date.now();
+    facetsLastOkKeyRef.current = facetsSessionKey;
+  }, [facetsSessionKey, initialFacets, navigationPending]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -414,8 +446,14 @@ export default function CatalogoClient({
   }, []);
 
   useEffect(() => {
+    if (navigationPending) return;
     if (typeof document !== "undefined" && document.hidden) return;
     const now = Date.now();
+    const isFresh =
+      Boolean(facets) &&
+      facetsLastOkKeyRef.current === facetsSessionKey &&
+      now - facetsLastOkAtRef.current < 60_000;
+    if (isFresh) return;
     // Evita loops si focus/visibility se disparan en ráfaga.
     if (now - facetsLastAttemptAtRef.current < 800) return;
     facetsLastAttemptAtRef.current = now;
@@ -441,6 +479,7 @@ export default function CatalogoClient({
           setFacets(nextFacets);
           writeSessionJson(facetsSessionKey, nextFacets);
           facetsLastOkAtRef.current = Date.now();
+          facetsLastOkKeyRef.current = facetsSessionKey;
         } else {
           // Mantén el último estado válido.
           setFacets((prev) => prev);
@@ -463,7 +502,7 @@ export default function CatalogoClient({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [facetsFetchKey, facetsSessionKey, resumeTick]);
+  }, [facets, facetsFetchKey, facetsSessionKey, navigationPending, resumeTick]);
 
   const closeListsDrawer = useCallback(() => {
     setListsOpen(false);
@@ -633,7 +672,10 @@ export default function CatalogoClient({
     return facets.brands.filter((brand) => brand.count > 0).length;
   }, [facets]);
 
-  const priceBounds: CatalogPriceBounds = { min: null, max: null };
+  const priceBounds: CatalogPriceBounds = initialPriceInsights?.bounds ?? { min: null, max: null };
+  const priceHistogram = initialPriceInsights?.histogram ?? null;
+  const priceStats = initialPriceInsights?.stats ?? null;
+  const initialSubcats = useMemo(() => initialSubcategories ?? [], [initialSubcategories]);
 
   return (
     <section
@@ -680,8 +722,10 @@ export default function CatalogoClient({
                 {facets ? (
                   <CatalogoFiltersPanel
                     facets={facets}
-                    subcategories={[]}
+                    subcategories={initialSubcats}
                     priceBounds={priceBounds}
+                    priceHistogram={priceHistogram}
+                    priceStats={priceStats}
                   />
                 ) : (
                   <FiltersSkeleton />
@@ -718,8 +762,10 @@ export default function CatalogoClient({
         totalCount={totalCount}
         activeBrandCount={activeBrandCount}
         facets={facets}
-        subcategories={[]}
+        subcategories={initialSubcats}
         priceBounds={priceBounds}
+        priceHistogram={priceHistogram}
+        priceStats={priceStats}
         facetsLoading={facetsLoading}
       />
 

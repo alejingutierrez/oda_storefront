@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { CatalogPriceBounds, CatalogPriceHistogram, CatalogPriceStats } from "@/lib/catalog-data";
+import { labelizeSubcategory } from "@/lib/navigation";
 
 type FacetItem = {
   value: string;
@@ -25,6 +26,8 @@ type Props = {
   facets: Facets;
   subcategories: FacetItem[];
   priceBounds: CatalogPriceBounds;
+  priceHistogram?: CatalogPriceHistogram | null;
+  priceStats?: CatalogPriceStats | null;
   mode?: "instant" | "draft";
   draftParamsString?: string;
   onDraftParamsStringChange?: (next: string) => void;
@@ -120,6 +123,30 @@ function sortFacetItems(items: FacetItem[], selectedValues: string[]) {
   });
 }
 
+function normalizeParamsString(raw: string) {
+  const input = (raw ?? "").trim();
+  if (!input) return "";
+
+  const params = new URLSearchParams(input);
+  const map = new Map<string, string[]>();
+  for (const [key, value] of params.entries()) {
+    const cleaned = value.trim();
+    if (!cleaned) continue;
+    const list = map.get(key) ?? [];
+    list.push(cleaned);
+    map.set(key, list);
+  }
+
+  const keys = Array.from(map.keys()).sort();
+  const out = new URLSearchParams();
+  for (const key of keys) {
+    const values = map.get(key) ?? [];
+    if (values.length > 1) values.sort();
+    for (const value of values) out.append(key, value);
+  }
+  return out.toString();
+}
+
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const raw = String(hex || "").trim().toLowerCase();
   const value = raw.startsWith("#") ? raw.slice(1) : raw;
@@ -204,6 +231,8 @@ export default function CatalogoFiltersPanel({
   facets,
   subcategories,
   priceBounds,
+  priceHistogram,
+  priceStats,
   mode = "instant",
   draftParamsString = "",
   onDraftParamsStringChange,
@@ -236,6 +265,19 @@ export default function CatalogoFiltersPanel({
 
   const searchParamsString = params.toString();
   const currentParamsString = mode === "draft" ? draftParamsString : searchParamsString;
+  const committedFiltersKey = useMemo(() => {
+    const next = new URLSearchParams(searchParamsString);
+    next.delete("page");
+    next.delete("sort");
+    return normalizeParamsString(next.toString());
+  }, [searchParamsString]);
+  const draftFiltersKey = useMemo(() => {
+    const next = new URLSearchParams(draftParamsString);
+    next.delete("page");
+    next.delete("sort");
+    return normalizeParamsString(next.toString());
+  }, [draftParamsString]);
+  const allowZeroCounts = mode === "draft" && draftFiltersKey !== committedFiltersKey;
 
   const selected = useMemo(() => {
     const current = new URLSearchParams(currentParamsString);
@@ -259,22 +301,53 @@ export default function CatalogoFiltersPanel({
   }, [currentParamsString]);
 
   const [brandSearch, setBrandSearch] = useState("");
+  const subcategoriesSeededPropsRef = useRef<FacetItem[] | null>(null);
   const [resolvedSubcategories, setResolvedSubcategories] = useState<FacetItem[]>(subcategories);
-  const [subcategoriesLoading, setSubcategoriesLoading] = useState(false);
   const subcategoriesAbortRef = useRef<AbortController | null>(null);
   const subcategoriesFetchKey = useMemo(() => {
-    const next = new URLSearchParams(currentParamsString);
-    next.delete("page");
-    next.delete("sort");
+    const next = new URLSearchParams();
+    const base = new URLSearchParams(currentParamsString);
+    const category = base
+      .getAll("category")
+      .map((value) => value.trim())
+      .find((value) => value.length > 0);
+    if (category) next.append("category", category);
+    for (const gender of base
+      .getAll("gender")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)) {
+      next.append("gender", gender);
+    }
     return next.toString();
   }, [currentParamsString]);
+  const subcategoriesSessionKey = useMemo(
+    () => `oda_catalog_subcategories_v1:${subcategoriesFetchKey || "base"}`,
+    [subcategoriesFetchKey],
+  );
+  const [subcategoriesResolvedKey, setSubcategoriesResolvedKey] = useState<string>(() => {
+    if (subcategories.length === 0) return "";
+    return subcategoriesSessionKey;
+  });
+  const [subcategoriesLoading, setSubcategoriesLoading] = useState(false);
   const [resolvedPriceBounds, setResolvedPriceBounds] = useState<CatalogPriceBounds>(priceBounds);
-  const [resolvedPriceHistogram, setResolvedPriceHistogram] = useState<CatalogPriceHistogram | null>(null);
-  const [resolvedPriceStats, setResolvedPriceStats] = useState<CatalogPriceStats | null>(null);
+  const [resolvedPriceHistogram, setResolvedPriceHistogram] = useState<CatalogPriceHistogram | null>(
+    priceHistogram ?? null,
+  );
+  const [resolvedPriceStats, setResolvedPriceStats] = useState<CatalogPriceStats | null>(
+    priceStats ?? null,
+  );
+  const priceInsightsLastOkAtRef = useRef<number>(0);
+  const priceInsightsLastOkKeyRef = useRef<string>("");
+  const priceInsightsSeededPropsRef = useRef<{
+    bounds: CatalogPriceBounds;
+    histogram: CatalogPriceHistogram | null | undefined;
+    stats: CatalogPriceStats | null | undefined;
+  } | null>(null);
   const [priceBoundsLoading, setPriceBoundsLoading] = useState(false);
   const priceBoundsAbortRef = useRef<AbortController | null>(null);
   const priceBoundsFetchKey = useMemo(() => {
-    const next = new URLSearchParams(currentParamsString);
+    const source = mode === "draft" ? searchParamsString : currentParamsString;
+    const next = new URLSearchParams(source);
     next.delete("page");
     next.delete("sort");
     // El slider muestra el rango disponible segun filtros, pero no debe re-contarse contra si mismo.
@@ -282,11 +355,7 @@ export default function CatalogoFiltersPanel({
     next.delete("price_max");
     next.delete("price_range");
     return next.toString();
-  }, [currentParamsString]);
-  const subcategoriesSessionKey = useMemo(
-    () => `oda_catalog_subcategories_v1:${subcategoriesFetchKey || "base"}`,
-    [subcategoriesFetchKey],
-  );
+  }, [currentParamsString, mode, searchParamsString]);
   const priceInsightsSessionKey = useMemo(
     () => `oda_catalog_price_insights_v1:${priceBoundsFetchKey || "base"}`,
     [priceBoundsFetchKey],
@@ -303,13 +372,39 @@ export default function CatalogoFiltersPanel({
 
   useEffect(() => {
     if (subcategories.length === 0) return;
+    if (subcategoriesSeededPropsRef.current === subcategories) return;
+    subcategoriesSeededPropsRef.current = subcategories;
     setResolvedSubcategories(subcategories);
-  }, [subcategories]);
+    writeSessionJson(subcategoriesSessionKey, subcategories);
+    setSubcategoriesResolvedKey(subcategoriesSessionKey);
+  }, [subcategories, subcategoriesSessionKey]);
 
   useEffect(() => {
-    if (typeof priceBounds.min !== "number" || typeof priceBounds.max !== "number") return;
+    const prev = priceInsightsSeededPropsRef.current;
+    if (prev && prev.bounds === priceBounds && prev.histogram === priceHistogram && prev.stats === priceStats) {
+      return;
+    }
+
+    priceInsightsSeededPropsRef.current = {
+      bounds: priceBounds,
+      histogram: priceHistogram,
+      stats: priceStats,
+    };
+
     setResolvedPriceBounds(priceBounds);
-  }, [priceBounds]);
+    setResolvedPriceHistogram(priceHistogram ?? null);
+    setResolvedPriceStats(priceStats ?? null);
+    writeSessionJson(priceInsightsSessionKey, {
+      bounds: priceBounds,
+      histogram: priceHistogram ?? null,
+      stats: priceStats ?? null,
+    });
+
+    if (typeof priceBounds.min === "number" && typeof priceBounds.max === "number") {
+      priceInsightsLastOkAtRef.current = Date.now();
+      priceInsightsLastOkKeyRef.current = priceInsightsSessionKey;
+    }
+  }, [priceBounds, priceHistogram, priceInsightsSessionKey, priceStats]);
 
   useEffect(() => {
     if (subcategories.length > 0) return;
@@ -328,7 +423,10 @@ export default function CatalogoFiltersPanel({
         } satisfies FacetItem;
       })
       .filter((item) => item.value && item.label);
-    if (next.length > 0) setResolvedSubcategories(next);
+    if (next.length > 0) {
+      setResolvedSubcategories(next);
+      setSubcategoriesResolvedKey(subcategoriesSessionKey);
+    }
   }, [subcategories.length, subcategoriesSessionKey]);
 
   useEffect(() => {
@@ -348,15 +446,26 @@ export default function CatalogoFiltersPanel({
     } else if (isValidPriceStats(obj.stats)) {
       setResolvedPriceStats(obj.stats);
     }
+
+    if (
+      isValidPriceBounds(obj.bounds) &&
+      typeof obj.bounds.min === "number" &&
+      typeof obj.bounds.max === "number"
+    ) {
+      priceInsightsLastOkAtRef.current = Date.now();
+      priceInsightsLastOkKeyRef.current = priceInsightsSessionKey;
+    }
   }, [priceInsightsSessionKey]);
 
   useEffect(() => {
+    if (isPending) return;
     if (typeof document !== "undefined" && document.hidden) return;
     const next = new URLSearchParams(subcategoriesFetchKey);
     const categories = next.getAll("category").filter((value) => value.trim().length > 0);
     if (categories.length === 0) {
       subcategoriesAbortRef.current?.abort();
       setResolvedSubcategories([]);
+      setSubcategoriesResolvedKey("");
       setSubcategoriesLoading(false);
       return;
     }
@@ -379,6 +488,7 @@ export default function CatalogoFiltersPanel({
         const items = Array.isArray(payload?.items) ? payload.items : [];
         setResolvedSubcategories(items);
         writeSessionJson(subcategoriesSessionKey, items);
+        setSubcategoriesResolvedKey(subcategoriesSessionKey);
       } catch (err) {
         if (isAbortError(err)) return;
         // Mantén el último estado válido (evita “parpadeo” al volver a una pestaña inactiva).
@@ -393,10 +503,17 @@ export default function CatalogoFiltersPanel({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [subcategoriesFetchKey, subcategoriesSessionKey, resumeTick]);
+  }, [isPending, resumeTick, subcategoriesFetchKey, subcategoriesSessionKey]);
 
   useEffect(() => {
+    if (isPending) return;
     if (typeof document !== "undefined" && document.hidden) return;
+    const now = Date.now();
+    const isFresh =
+      priceInsightsLastOkKeyRef.current === priceInsightsSessionKey &&
+      now - priceInsightsLastOkAtRef.current < 60_000;
+    if (isFresh) return;
+
     priceBoundsAbortRef.current?.abort();
     const controller = new AbortController();
     priceBoundsAbortRef.current = controller;
@@ -438,6 +555,8 @@ export default function CatalogoFiltersPanel({
           histogram: nextHistogram,
           stats: nextStats,
         });
+        priceInsightsLastOkAtRef.current = Date.now();
+        priceInsightsLastOkKeyRef.current = priceInsightsSessionKey;
       } catch (err) {
         if (isAbortError(err)) return;
         // Mantén el último estado válido (evita “romper” el filtro de precio al volver a una pestaña inactiva).
@@ -454,7 +573,7 @@ export default function CatalogoFiltersPanel({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [priceBoundsFetchKey, priceInsightsSessionKey, resumeTick]);
+  }, [isPending, priceBoundsFetchKey, priceInsightsSessionKey, resumeTick]);
 
   const applyParams = (next: URLSearchParams) => {
     if (selected.sort && !next.get("sort")) {
@@ -524,6 +643,45 @@ export default function CatalogoFiltersPanel({
     () => sortColorFacetItems(facets.colors, selected.colors),
     [facets.colors, selected.colors],
   );
+  const subcategoriesSettled = subcategoriesResolvedKey === subcategoriesSessionKey;
+  const injectedSelectedSubcategories = useMemo(() => {
+    const normalizedSelected = Array.from(
+      new Set(
+        (selected.subcategories ?? [])
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
+    if (normalizedSelected.length === 0) return [];
+
+    const map = new Map(resolvedSubcategories.map((item) => [item.value, item]));
+    return normalizedSelected
+      .filter((value) => !map.has(value))
+      .map(
+        (value) =>
+          ({
+            value,
+            label: labelizeSubcategory(value),
+            count: 0,
+          }) satisfies FacetItem,
+      );
+  }, [resolvedSubcategories, selected.subcategories]);
+  const displaySubcategories = useMemo(() => {
+    if (!subcategoriesSettled) return injectedSelectedSubcategories;
+    if (injectedSelectedSubcategories.length === 0) return resolvedSubcategories;
+    return [...resolvedSubcategories, ...injectedSelectedSubcategories];
+  }, [injectedSelectedSubcategories, resolvedSubcategories, subcategoriesSettled]);
+  const showSubcategoriesSkeleton =
+    displaySubcategories.length === 0 && (subcategoriesLoading || !subcategoriesSettled);
+  const showSubcategoriesEmpty =
+    displaySubcategories.length === 0 && subcategoriesSettled && !subcategoriesLoading;
+  const visibleBrands = useMemo(() => {
+    const query = brandSearch.trim().toLowerCase();
+    const list = query
+      ? facets.brands.filter((item) => item.label.toLowerCase().includes(query))
+      : facets.brands;
+    return sortFacetItems(list, []);
+  }, [brandSearch, facets.brands]);
 
   return (
     <aside className="flex flex-col gap-6">
@@ -544,13 +702,16 @@ export default function CatalogoFiltersPanel({
         <div className="mt-4 flex flex-col gap-2">
           {sortFacetItems(facets.genders, selected.genders).map((item) => {
             const checked = isChecked(selected.genders, item.value);
-            const disabled = (item.count === 0 && !checked) || isPending;
+            const countDisabled = item.count === 0 && !checked;
+            const disabled = isPending || (!allowZeroCounts && countDisabled);
+            const faded = !disabled && allowZeroCounts && countDisabled;
             return (
               <label
                 key={item.value}
                 className={[
                   "flex items-center justify-between gap-3 text-sm",
                   disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+                  faded ? "opacity-70" : "",
                 ].join(" ")}
               >
                 <span className="flex items-center gap-3">
@@ -604,13 +765,16 @@ export default function CatalogoFiltersPanel({
           >
             {visibleCategories.map((item) => {
               const checked = isChecked(selected.categories, item.value);
-              const disabled = (item.count === 0 && !checked) || isPending;
+              const countDisabled = item.count === 0 && !checked;
+              const disabled = isPending || (!allowZeroCounts && countDisabled);
+              const faded = !disabled && allowZeroCounts && countDisabled;
               return (
                 <label
                   key={item.value}
                   className={[
                     "flex items-center justify-between gap-3 text-sm",
                     disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+                    faded ? "opacity-70" : "",
                   ].join(" ")}
                 >
                   <span className="flex min-w-0 items-center gap-3">
@@ -657,7 +821,7 @@ export default function CatalogoFiltersPanel({
             </span>
           </summary>
           <div className="mt-4 flex flex-col gap-2">
-            {subcategoriesLoading && resolvedSubcategories.length === 0 ? (
+            {showSubcategoriesSkeleton ? (
               <div className="grid gap-2">
                 {Array.from({ length: 6 }).map((_, index) => (
                   <div
@@ -666,20 +830,23 @@ export default function CatalogoFiltersPanel({
                   />
                 ))}
               </div>
-            ) : resolvedSubcategories.length === 0 ? (
+            ) : showSubcategoriesEmpty ? (
               <p className="rounded-xl border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] p-4 text-sm text-[color:var(--oda-taupe)]">
                 No hay subcategorías disponibles con estos filtros.
               </p>
             ) : (
-              sortFacetItems(resolvedSubcategories, selected.subcategories).map((item) => {
+              sortFacetItems(displaySubcategories, selected.subcategories).map((item) => {
                 const checked = isChecked(selected.subcategories, item.value);
-                const disabled = (item.count === 0 && !checked) || isPending;
+                const countDisabled = item.count === 0 && !checked;
+                const disabled = isPending || (!allowZeroCounts && countDisabled);
+                const faded = !disabled && allowZeroCounts && countDisabled;
                 return (
                   <label
                     key={item.value}
                     className={[
                       "flex items-center justify-between gap-3 text-sm",
                       disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+                      faded ? "opacity-70" : "",
                     ].join(" ")}
                   >
                     <span className="flex min-w-0 items-center gap-3">
@@ -724,22 +891,18 @@ export default function CatalogoFiltersPanel({
           />
           <div data-oda-scroll-allow="true" className="max-h-64 overflow-auto pr-1">
             <div className="flex flex-col gap-2">
-              {sortFacetItems(
-                facets.brands.filter((item) => {
-                  const query = brandSearch.trim().toLowerCase();
-                  if (!query) return true;
-                  return item.label.toLowerCase().includes(query);
-                }),
-                selected.brandIds,
-              ).map((item) => {
+              {visibleBrands.map((item) => {
                 const checked = isChecked(selected.brandIds, item.value);
-                const disabled = (item.count === 0 && !checked) || isPending;
+                const countDisabled = item.count === 0 && !checked;
+                const disabled = isPending || (!allowZeroCounts && countDisabled);
+                const faded = !disabled && allowZeroCounts && countDisabled;
                 return (
                   <label
                     key={item.value}
                     className={[
                       "flex items-center justify-between gap-3 text-sm",
                       disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+                      faded ? "opacity-70" : "",
                     ].join(" ")}
                   >
                     <span className="flex items-center gap-3">
@@ -801,13 +964,17 @@ export default function CatalogoFiltersPanel({
         <div className="mt-4 flex flex-wrap gap-2">
           {sortedColors.map((item) => {
             const checked = isChecked(selected.colors, item.value);
-            const disabled = (item.count === 0 && !checked) || isPending;
+            const countDisabled = item.count === 0 && !checked;
+            const disabled = isPending || (!allowZeroCounts && countDisabled);
+            const faded = !disabled && allowZeroCounts && countDisabled;
             return (
               <label
                 key={item.value}
-                className={["relative", disabled ? "cursor-not-allowed opacity-35" : "cursor-pointer"].join(
-                  " ",
-                )}
+                className={[
+                  "relative",
+                  disabled ? "cursor-not-allowed opacity-35" : "cursor-pointer",
+                  faded ? "opacity-70" : "",
+                ].join(" ")}
                 title={item.label}
               >
                 <input
@@ -849,13 +1016,16 @@ export default function CatalogoFiltersPanel({
         <div className="mt-4 flex flex-col gap-2">
           {sortFacetItems(facets.materials, selected.materials).map((item) => {
             const checked = isChecked(selected.materials, item.value);
-            const disabled = (item.count === 0 && !checked) || isPending;
+            const countDisabled = item.count === 0 && !checked;
+            const disabled = isPending || (!allowZeroCounts && countDisabled);
+            const faded = !disabled && allowZeroCounts && countDisabled;
             return (
               <label
                 key={item.value}
                 className={[
                   "flex items-center justify-between gap-3 text-sm",
                   disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+                  faded ? "opacity-70" : "",
                 ].join(" ")}
               >
                 <span className="flex items-center gap-3">
@@ -891,13 +1061,16 @@ export default function CatalogoFiltersPanel({
         <div className="mt-4 flex flex-col gap-2">
           {sortFacetItems(facets.patterns, selected.patterns).map((item) => {
             const checked = isChecked(selected.patterns, item.value);
-            const disabled = (item.count === 0 && !checked) || isPending;
+            const countDisabled = item.count === 0 && !checked;
+            const disabled = isPending || (!allowZeroCounts && countDisabled);
+            const faded = !disabled && allowZeroCounts && countDisabled;
             return (
               <label
                 key={item.value}
                 className={[
                   "flex items-center justify-between gap-3 text-sm",
                   disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+                  faded ? "opacity-70" : "",
                 ].join(" ")}
               >
                 <span className="flex items-center gap-3">
