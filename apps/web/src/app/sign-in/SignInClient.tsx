@@ -2,8 +2,8 @@
 
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Descope as DescopeBase } from "@descope/nextjs-sdk";
 import { useSession } from "@descope/nextjs-sdk/client";
 
 const LOGIN_NEXT_KEY = "oda_login_next_v1";
@@ -42,42 +42,25 @@ export default function SignInClient() {
   const searchParams = useSearchParams();
   const { isAuthenticated, isSessionLoading } = useSession();
   const callbackError = searchParams.get("error")?.trim() || null;
-  // @descope/nextjs-sdk types do not expose flowId (aunque el componente sí lo soporta).
-  // Lo tipamos localmente para mantener build TS verde.
-  const DescopeFlow = dynamic<{
+  // Tipado local: `@descope/nextjs-sdk` no expone consistentemente `flowId` en sus types.
+  // No queremos bloquear el build por un gap de tipos en el SDK.
+  const DescopeFlow = DescopeBase as unknown as ComponentType<{
     flowId: string;
     theme?: string;
     debug?: boolean;
+    redirectUrl?: string;
     redirectAfterSuccess?: string;
     redirectAfterError?: string;
     onSuccess?: (...args: unknown[]) => void | Promise<void>;
     onError?: (...args: unknown[]) => void;
-  }>(
-    () =>
-      import("@descope/nextjs-sdk").then(
-        (mod) =>
-          mod.Descope as unknown as ComponentType<{
-            flowId: string;
-            theme?: string;
-            debug?: boolean;
-            redirectAfterSuccess?: string;
-            redirectAfterError?: string;
-            onSuccess?: (...args: unknown[]) => void | Promise<void>;
-            onError?: (...args: unknown[]) => void;
-          }>,
-      ),
-    {
-      ssr: false,
-      loading: () => (
-        <div className="flex min-h-[360px] items-center justify-center">
-          <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-            Cargando login…
-          </p>
-        </div>
-      ),
-    },
-  );
+  }>;
   const [returnTo] = useState<string | null>(() => computeReturnTo());
+  const [redirectUrl] = useState<string | undefined>(() => {
+    // Descope abre ciertos redirects (OAuth) en popup cuando no tiene un `redirect-url`.
+    // Forzamos un redirect de vuelta a `/sign-in` para evitar popups bloqueados y hacer el flujo confiable.
+    if (typeof window === "undefined") return undefined;
+    return `${window.location.origin}/sign-in`;
+  });
   const [flowOverride] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const flow = new URLSearchParams(window.location.search).get("flow");
@@ -124,13 +107,14 @@ export default function SignInClient() {
               flowId={flowId}
               theme="light"
               debug={debugFlow}
+              redirectUrl={redirectUrl}
               redirectAfterSuccess={redirectAfterSuccess}
               onSuccess={() => {
                 setFlowError(null);
                 // Evitamos forzar navegacion: el flow ya tiene `redirectAfterSuccess` y, si el SDK
                 // marca la sesion como autenticada, el effect de arriba redirige a `/auth/callback`.
               }}
-              onError={(error) => {
+              onError={(error: unknown) => {
                 console.error("Descope login error", error);
                 setFlowError("No pudimos cargar el login. Reintenta en unos segundos.");
               }}
