@@ -76,6 +76,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "missing_brand" }, { status: 400 });
   }
 
+  const queueEnabled = isCatalogQueueEnabled();
+
   try {
     const brand = await prisma.brand.findUnique({ where: { id: brandId } });
     if (!brand || !brand.siteUrl) {
@@ -89,19 +91,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "brand_finished", status: "finished" }, { status: 409 });
     }
 
-    if (!isCatalogQueueEnabled()) {
-      const existing = await findActiveRun(brandId);
-      if (existing) {
-        await prisma.catalogRun.update({
-          where: { id: existing.id },
-          data: {
-            status: "paused",
-            lastError: "queue_disabled",
-            blockReason: "queue_disabled",
-            updatedAt: new Date(),
-          },
-        });
-      }
+    if (!queueEnabled && !drainOnRun && process.env.CATALOG_DRAIN_DISABLED === "true") {
       return NextResponse.json({ error: "queue_disabled" }, { status: 503 });
     }
 
@@ -131,8 +121,10 @@ export async function POST(req: Request) {
         existing.id,
         Number.isFinite(batchSize) ? Math.max(batchSize, enqueueLimit) : enqueueLimit,
       );
-      await markItemsQueued(pendingItems.map((item) => item.id));
-      await enqueueCatalogItems(pendingItems);
+      if (queueEnabled) {
+        await markItemsQueued(pendingItems.map((item) => item.id));
+        await enqueueCatalogItems(pendingItems);
+      }
       if (drainOnRun) {
         await drainCatalogRun({
           runId: existing.id,
@@ -188,8 +180,10 @@ export async function POST(req: Request) {
       run.id,
       Number.isFinite(batchSize) ? Math.max(batchSize, enqueueLimit) : enqueueLimit,
     );
-    await markItemsQueued(items.map((item) => item.id));
-    await enqueueCatalogItems(items);
+    if (queueEnabled) {
+      await markItemsQueued(items.map((item) => item.id));
+      await enqueueCatalogItems(items);
+    }
     if (drainOnRun) {
       await drainCatalogRun({
         runId: run.id,

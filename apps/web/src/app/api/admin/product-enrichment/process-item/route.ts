@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { validateAdminRequest } from "@/lib/auth";
+import { isEnrichmentQueueEnabled } from "@/lib/product-enrichment/queue";
 import { processEnrichmentItemById } from "@/lib/product-enrichment/processor";
 
 export const runtime = "nodejs";
@@ -18,7 +19,9 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await processEnrichmentItemById(itemId, { allowQueueRefill: true });
+    const result = await processEnrichmentItemById(itemId, {
+      allowQueueRefill: isEnrichmentQueueEnabled(),
+    });
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(

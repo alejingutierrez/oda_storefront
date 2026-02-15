@@ -100,27 +100,17 @@ export async function POST(req: Request) {
     }
   }
 
-  if (!isEnrichmentQueueEnabled()) {
-    const existing = await findActiveRun({ scope, brandId });
-    if (existing) {
-      await prisma.productEnrichmentRun.update({
-        where: { id: existing.id },
-        data: {
-          status: "paused",
-          lastError: "queue_disabled",
-          blockReason: "queue_disabled",
-          updatedAt: new Date(),
-        },
-      });
-    }
-    return NextResponse.json({ error: "queue_disabled" }, { status: 503 });
-  }
+  const queueEnabled = isEnrichmentQueueEnabled();
 
   const drainOnRunDefault =
     process.env.PRODUCT_ENRICHMENT_DRAIN_ON_RUN !== "false" &&
     process.env.PRODUCT_ENRICHMENT_DRAIN_DISABLED !== "true";
   const drainOnRun =
     typeof requestDrainOnRun === "boolean" ? requestDrainOnRun : drainOnRunDefault;
+
+  if (!queueEnabled && !drainOnRun && process.env.PRODUCT_ENRICHMENT_DRAIN_DISABLED === "true") {
+    return NextResponse.json({ error: "queue_disabled" }, { status: 503 });
+  }
   const drainBatchDefault = Number(
     process.env.PRODUCT_ENRICHMENT_DRAIN_BATCH ?? 0,
   );
@@ -241,7 +231,9 @@ export async function POST(req: Request) {
         Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : enqueueLimit,
       );
       await markItemsQueued(pendingItems.map((item) => item.id));
-      await enqueueEnrichmentItems(pendingItems);
+      if (queueEnabled) {
+        await enqueueEnrichmentItems(pendingItems);
+      }
 
       if (drainOnRun) {
         await drainEnrichmentRun({
@@ -305,7 +297,9 @@ export async function POST(req: Request) {
     Number.isFinite(effectiveLimit) && effectiveLimit > 0 ? Math.max(effectiveLimit, enqueueLimit) : enqueueLimit,
   );
   await markItemsQueued(items.map((item) => item.id));
-  await enqueueEnrichmentItems(items);
+  if (queueEnabled) {
+    await enqueueEnrichmentItems(items);
+  }
 
   if (drainOnRun) {
     await drainEnrichmentRun({

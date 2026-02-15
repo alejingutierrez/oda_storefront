@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { validateAdminRequest } from "@/lib/auth";
+import { isCatalogQueueEnabled } from "@/lib/catalog/queue";
 import { processCatalogItemById } from "@/lib/catalog/processor";
 
 export const runtime = "nodejs";
@@ -16,6 +17,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "missing_item" }, { status: 400 });
   }
 
-  const result = await processCatalogItemById(itemId, { allowQueueRefill: true });
+  const result = await processCatalogItemById(itemId, {
+    allowQueueRefill: isCatalogQueueEnabled(),
+  });
   return NextResponse.json(result);
 }

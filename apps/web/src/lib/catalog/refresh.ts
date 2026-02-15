@@ -425,9 +425,9 @@ const computeCoverageMetrics = async (params: {
 
 const recoverCatalogRuns = async (config: ReturnType<typeof getRefreshConfig>) => {
   if (!config.autoRecover) return;
-  if (!isCatalogQueueEnabled()) return;
   if (config.recoverMaxRuns <= 0) return;
 
+  const queueEnabled = isCatalogQueueEnabled();
   const cutoff = new Date(Date.now() - config.recoverStuckMinutes * 60 * 1000);
   const runs = await prisma.catalogRun.findMany({
     where: {
@@ -459,8 +459,10 @@ const recoverCatalogRuns = async (config: ReturnType<typeof getRefreshConfig>) =
       await resetQueuedItems(run.id, 0);
       await resetStuckItems(run.id, 0);
       const pending = await listPendingItems(run.id, enqueueLimit);
-      await markItemsQueued(pending.map((item) => item.id));
-      await enqueueCatalogItems(pending);
+      if (queueEnabled) {
+        await markItemsQueued(pending.map((item) => item.id));
+        await enqueueCatalogItems(pending);
+      }
     } catch (error) {
       console.warn("catalog.refresh.auto_recover_failed", run.id, error);
     }
@@ -502,9 +504,9 @@ const pauseCatalogRefreshAutoStartDisabledRuns = async () => {
 
 const recoverEnrichmentRuns = async (config: ReturnType<typeof getRefreshConfig>) => {
   if (!config.autoRecover) return;
-  if (!isEnrichmentQueueEnabled()) return;
   if (config.recoverMaxRuns <= 0) return;
 
+  const queueEnabled = isEnrichmentQueueEnabled();
   const cutoff = new Date(Date.now() - config.recoverEnrichmentStuckMinutes * 60 * 1000);
   const runs = await prisma.productEnrichmentRun.findMany({
     where: {
@@ -538,8 +540,10 @@ const recoverEnrichmentRuns = async (config: ReturnType<typeof getRefreshConfig>
       await resetEnrichmentQueuedItems(run.id, 0);
       await resetEnrichmentStuckItems(run.id, 0);
       const pending = await listPendingEnrichmentItems(run.id, enqueueLimit);
-      await markEnrichmentItemsQueued(pending.map((item) => item.id));
-      await enqueueEnrichmentItems(pending);
+      if (queueEnabled) {
+        await markEnrichmentItemsQueued(pending.map((item) => item.id));
+        await enqueueEnrichmentItems(pending);
+      }
     } catch (error) {
       console.warn("catalog.refresh.enrichment_auto_recover_failed", run.id, error);
     }
@@ -791,9 +795,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   const now = new Date();
   const results: CatalogRefreshBatchResult[] = [];
 
-  if (!isCatalogQueueEnabled()) {
-    return { status: "queue_disabled", processed: 0, results };
-  }
+  const queueEnabled = isCatalogQueueEnabled();
 
   await recoverCatalogRuns(config);
   await pauseCatalogRefreshAutoStartDisabledRuns();
@@ -926,8 +928,10 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     // Avoid dumping thousands of jobs into Redis at once. The worker refills the queue
     // as items are completed/failed (allowQueueRefill=true).
     const pending = await listPendingItems(run.id, Math.max(10, enqueueLimit));
-    await markItemsQueued(pending.map((item) => item.id));
-    await enqueueCatalogItems(pending);
+    if (queueEnabled) {
+      await markItemsQueued(pending.map((item) => item.id));
+      await enqueueCatalogItems(pending);
+    }
 
     if (config.drainOnRun) {
       await drainCatalogRun({
