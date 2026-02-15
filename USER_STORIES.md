@@ -664,7 +664,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Categorías (desktop): mostrar primeras 10 en vista, resto en scroll interno con indicador visual.
   - Categoría es single-select: al elegir una, se colapsan las demás y queda visible solo la seleccionada (con acción “Cambiar”).
   - Scroll infinito (mobile): endurecer `IntersectionObserver` + fallback por scroll; sentinel con alto; prefetch más agresivo; botón “Cargar más” como backup.
-  - Cards: sin CTA de compra/cesta (no compite con marca/título/precio); mejorar legibilidad del glass en 1:1 y 3:4 (1 o 2 columnas). Enlaces a producto siempre abren en nueva pestaña.
+  - Cards: sin CTA de compra/cesta (no compite con marca/título/precio); mejorar legibilidad del glass en 3:4 (1 o 2 columnas). Enlaces a producto siempre abren en nueva pestaña.
   - Carrusel automático: transición más sutil sin flicker/flash blanco (crossfade cuando la nueva imagen carga).
   - Precio:
     - Histograma más legible sin aumentar altura del filtro.
@@ -674,7 +674,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Colores: ordenar swatches por gama/similaridad.
   - Comparador (mobile): previews 1:1 para usar mejor el espacio.
   - UX mobile: dock de filtros fijo abajo + padding de contenido para evitar overlap; botón “Arriba”.
-  - Layout mobile: toggle al inicio del listado para 1/2 columnas y aspect 1:1 / 3:4 (sin 4:5); en 2 columnas se oculta “Comparar”.
+  - Layout mobile: toggle de columnas (1/2) al nivel del título de “Catálogo”; formato fijo 3:4 (sin 1:1 ni 4:5). En 2 columnas se oculta “Comparar”.
   - UX desktop: panel de filtros más angosto, toolbar con iconos (guardar/limpiar), orden alfabético en marcas/categorías/subcategorías/materiales/patrones, sin conteos por opción en filtros.
   - Header: no reacciona al scroll; menú mobile con scroll interno (no desplaza la página) y search sin zoom iOS.
   - Resiliencia: cache corto (CDN) + fallback en `sessionStorage` para facets/subcategorías/precio al volver a una pestaña inactiva.
@@ -684,16 +684,16 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - El carrusel no parpadea ni muestra fundido a blanco al cambiar de imagen.
   - El filtro de precio permite manipular ambas “bolitas” (min/max) en mobile y responde bien a touch.
   - `price_range` aplica unión OR entre rangos seleccionados; al mover el slider se limpia `price_range` y se usa rango continuo.
-  - Toggle de layout mobile persiste por sesión y su default no cambia respecto al comportamiento previo.
+  - Toggle de columnas mobile persiste en `localStorage` y migra desde `oda_catalog_mobile_layout_v1`; el formato es siempre 3:4.
   - En el drawer de búsquedas guardadas, el botón eliminar no queda cortado por safe-area.
   - Enlaces de producto abren siempre en nueva pestaña.
 - Datos:
   - Query params: `price_range` (repetible, tokens `min:max`).
-  - Persistencia UI: `localStorage` key `oda_catalog_mobile_layout_v1`.
+  - Persistencia UI: `localStorage` key `oda_catalog_mobile_columns_v1` (migra desde `oda_catalog_mobile_layout_v1`).
 - NF: sin solapes del dock con CompareBar/ToTop; feedback de loading visible durante transiciones; no re-mount agresivo de filtros.
 - Riesgos: UX confusa si se mezclan `price_range` y slider; mitigación: el slider limpia `price_range` al interactuar y la UI lo indica.
 - Métricas: tasa de carga exitosa de páginas (infinite scroll), tiempo percibido al aplicar filtros/sort, interacción con toggles de layout.
-- Estado: **done (2026-02-14)**.
+- Estado: **done (2026-02-15)**.
 
 ### MC-126 PLP `/catalogo`: polish desktop + listas + SEO + header
 - Historia: Como usuario, quiero que el catálogo en desktop sea más ordenado y predecible (scroll de filtros por zonas, guardado en listas sin fricción y header consistente), y que la página tenga SEO más robusto, para explorar y compartir mejor.
