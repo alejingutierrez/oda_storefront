@@ -80,18 +80,23 @@ function buildCategoryAndGenderKey(paramsString: string) {
   return { category: category ?? "", key: next.toString() };
 }
 
-function RailSkeleton() {
+function RailSkeleton({ density }: { density: "desktop" | "mobile" }) {
+  const circle = density === "mobile" ? "h-7 w-7" : "h-8 w-8";
+  const label = density === "mobile" ? "h-3 w-20" : "h-3 w-28";
+  const chip = density === "mobile" ? "px-2.5 py-1.5" : "px-3 py-2";
   return (
     <div className="oda-no-scrollbar flex gap-2 overflow-x-auto py-1">
       {Array.from({ length: 7 }).map((_, idx) => (
         <div
           key={idx}
-          className="flex shrink-0 items-center gap-3 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-2"
+          className={[
+            "flex shrink-0 items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)]",
+            chip,
+          ].join(" ")}
         >
-          <div className="h-9 w-9 rounded-full bg-[color:var(--oda-stone)]" />
+          <div className={[circle, "rounded-full bg-[color:var(--oda-stone)]"].join(" ")} />
           <div className="grid gap-1">
-            <div className="h-3 w-24 rounded-full bg-[color:var(--oda-stone)]" />
-            <div className="h-2 w-14 rounded-full bg-[color:var(--oda-stone)]" />
+            <div className={[label, "rounded-full bg-[color:var(--oda-stone)]"].join(" ")} />
           </div>
         </div>
       ))}
@@ -265,34 +270,37 @@ export default function CatalogSubcategoryChips({
   const resolved = items ?? [];
   if (!loading && resolved.length === 0) return null;
 
+  const density = mode === "mobile" ? "mobile" : "desktop";
+  const showCounts = density === "desktop";
+  const labelMaxW = density === "mobile" ? "max-w-[8.5rem]" : "max-w-[10rem]";
+  const circle = density === "mobile" ? "h-7 w-7" : "h-8 w-8";
+  const circleSizes = density === "mobile" ? "28px" : "32px";
+  const chip = density === "mobile" ? "px-2.5 py-1.5" : "px-3 py-2";
+  const chipGap = density === "mobile" ? "gap-2" : "gap-2.5";
+  const labelClass = density === "mobile" ? "text-[12px]" : "text-[13px]";
+
   const wrapperClassName =
     mode === "toolbar"
-      ? "mt-3 border-t border-[color:var(--oda-border)] pt-3"
-      : "sticky top-20 z-30 rounded-2xl border border-[color:var(--oda-border)] bg-white/92 px-4 py-3 shadow-[0_18px_50px_rgba(23,21,19,0.10)] backdrop-blur lg:hidden";
+      ? "mt-2 border-t border-[color:var(--oda-border)] pt-2"
+      : [
+          "sticky top-20 z-30 -mx-6 border-b border-[color:var(--oda-border)]",
+          "bg-[color:var(--oda-cream)]/92 px-6 py-2 backdrop-blur",
+          "shadow-[0_12px_32px_rgba(23,21,19,0.08)]",
+          "lg:hidden",
+        ].join(" ");
 
   return (
-    <div className={wrapperClassName} aria-label="Subcategorías">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-          Subcategorías
-        </p>
-        {isPending || loading ? (
-          <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-            Actualizando...
-          </p>
-        ) : null}
-      </div>
-
-      <div className="relative mt-2">
+    <div className={wrapperClassName} aria-label="Subcategorías" aria-busy={isPending || loading}>
+      <div className="relative">
         {loading && resolved.length === 0 ? (
-          <RailSkeleton />
+          <RailSkeleton density={density} />
         ) : (
           <>
             <div
               ref={scrollerRef}
               className={[
                 "oda-no-scrollbar flex gap-2 overflow-x-auto py-1",
-                mode === "toolbar" ? "pr-8" : "",
+                mode === "toolbar" ? "pr-10" : "",
               ].join(" ")}
             >
               <button
@@ -300,7 +308,8 @@ export default function CatalogSubcategoryChips({
                 onClick={toggleAll}
                 aria-pressed={selected.length === 0}
                 className={[
-                  "group inline-flex shrink-0 items-center gap-3 rounded-full border px-3 py-2 text-left transition",
+                  `group inline-flex shrink-0 items-center ${chipGap} rounded-full border text-left transition`,
+                  chip,
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
                   selected.length === 0
                     ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
@@ -310,7 +319,7 @@ export default function CatalogSubcategoryChips({
               >
                 <span
                   className={[
-                    "flex h-9 w-9 items-center justify-center rounded-full border",
+                    `flex ${circle} items-center justify-center rounded-full border`,
                     selected.length === 0
                       ? "border-white/40 bg-white/10 text-[color:var(--oda-cream)]"
                       : "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-taupe)]",
@@ -320,14 +329,18 @@ export default function CatalogSubcategoryChips({
                   *
                 </span>
                 <span className="min-w-0">
-                  <span className="block max-w-[11rem] truncate text-sm font-semibold">Todas</span>
-                  <span
-                    className={[
-                      "mt-0.5 block text-[10px] uppercase tracking-[0.2em]",
-                      selected.length === 0 ? "text-white/80" : "text-[color:var(--oda-taupe)]",
-                    ].join(" ")}
-                  >
-                    {resolved.reduce((acc, item) => acc + (item.count ?? 0), 0).toLocaleString("es-CO")} productos
+                  <span className={["block truncate font-semibold leading-tight", labelMaxW, labelClass].join(" ")}>
+                    Todas
+                    {showCounts ? (
+                      <span
+                        className={[
+                          "ml-2 text-[11px] font-normal text-[color:var(--oda-taupe)]",
+                          selected.length === 0 ? "text-white/80" : "",
+                        ].join(" ")}
+                      >
+                        {resolved.reduce((acc, item) => acc + (item.count ?? 0), 0).toLocaleString("es-CO")}
+                      </span>
+                    ) : null}
                   </span>
                 </span>
               </button>
@@ -345,35 +358,45 @@ export default function CatalogSubcategoryChips({
                     onClick={() => toggleSubcategory(item.value)}
                     aria-pressed={active}
                     className={[
-                      "group inline-flex shrink-0 items-center gap-3 rounded-full border px-3 py-2 text-left transition",
+                      `group inline-flex shrink-0 items-center ${chipGap} rounded-full border text-left transition`,
+                      chip,
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
                       active
-                        ? "border-[color:var(--oda-ink)] bg-white text-[color:var(--oda-ink)] shadow-[0_14px_30px_rgba(23,21,19,0.10)]"
+                        ? "border-[color:var(--oda-ink)] bg-white text-[color:var(--oda-ink)] shadow-[0_14px_30px_rgba(23,21,19,0.08)]"
                         : "border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]",
                     ].join(" ")}
                     title={item.label}
                   >
-                    <span className="relative h-9 w-9 overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-stone)]">
+                    <span
+                      className={[
+                        "relative overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-stone)]",
+                        circle,
+                      ].join(" ")}
+                    >
                       {img ? (
                         <Image
                           src={img}
                           alt={item.label}
                           fill
-                          sizes="36px"
+                          sizes={circleSizes}
                           unoptimized={img.startsWith("/api/image-proxy")}
                           className="object-cover object-center transition duration-500 group-hover:scale-[1.08] motion-reduce:transition-none"
                           priority={false}
                         />
                       ) : (
-                        <span className="flex h-full w-full items-center justify-center text-[10px] text-[color:var(--oda-taupe)]">-</span>
+                        <span className="flex h-full w-full items-center justify-center text-[10px] text-[color:var(--oda-taupe)]">
+                          -
+                        </span>
                       )}
                     </span>
                     <span className="min-w-0">
-                      <span className="block max-w-[11rem] truncate text-sm font-semibold">
+                      <span className={["block truncate font-semibold leading-tight", labelMaxW, labelClass].join(" ")}>
                         {item.label}
-                      </span>
-                      <span className="mt-0.5 block text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                        {item.count.toLocaleString("es-CO")} productos
+                        {showCounts ? (
+                          <span className="ml-2 text-[11px] font-normal text-[color:var(--oda-taupe)]">
+                            {item.count.toLocaleString("es-CO")}
+                          </span>
+                        ) : null}
                       </span>
                     </span>
                   </button>
@@ -395,7 +418,7 @@ export default function CatalogSubcategoryChips({
                     type="button"
                     onClick={() => scrollBy(-1)}
                     className={[
-                      "inline-flex h-9 w-9 items-center justify-center rounded-full border bg-white shadow-[0_18px_50px_rgba(23,21,19,0.12)] transition",
+                      "inline-flex h-8 w-8 items-center justify-center rounded-full border bg-white shadow-[0_18px_50px_rgba(23,21,19,0.10)] transition",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
                       canScrollLeft
                         ? "border-[color:var(--oda-border)] text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]"
@@ -411,7 +434,7 @@ export default function CatalogSubcategoryChips({
                     type="button"
                     onClick={() => scrollBy(1)}
                     className={[
-                      "inline-flex h-9 w-9 items-center justify-center rounded-full border bg-white shadow-[0_18px_50px_rgba(23,21,19,0.12)] transition",
+                      "inline-flex h-8 w-8 items-center justify-center rounded-full border bg-white shadow-[0_18px_50px_rgba(23,21,19,0.10)] transition",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
                       canScrollRight
                         ? "border-[color:var(--oda-border)] text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]"
