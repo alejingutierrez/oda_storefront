@@ -49,7 +49,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
             <div className="fixed inset-0 z-[200] lg:hidden" role="dialog" aria-modal="true">
               <button
                 type="button"
-                className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+                className="absolute inset-0 bg-black/30 backdrop-blur-lg backdrop-saturate-150"
                 aria-label="Cerrar menu"
                 onClick={() => setOpen(false)}
               />

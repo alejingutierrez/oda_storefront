@@ -32,6 +32,15 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
               >
                 {gender}
               </Link>
+              {/* Backdrop scrim: blurs page content behind the mega menu (gaussian-like). */}
+              <div
+                aria-hidden="true"
+                className={[
+                  "pointer-events-none fixed inset-0 -z-10 opacity-0 transition-opacity duration-200",
+                  "bg-white/10 backdrop-blur-xl backdrop-saturate-150",
+                  "group-hover:opacity-100",
+                ].join(" ")}
+              />
               <div className="oda-glass-noise invisible absolute left-0 right-0 top-full rounded-2xl border border-white/50 bg-white/85 p-8 opacity-0 shadow-[0_30px_80px_rgba(23,21,19,0.18)] backdrop-blur-2xl transition-all duration-200 group-hover:visible group-hover:opacity-100">
                 <div className="grid grid-cols-4 gap-8">
                   <div className="col-span-2 flex flex-col gap-4">
