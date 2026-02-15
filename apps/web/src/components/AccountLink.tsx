@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useSession, useUser } from "@descope/nextjs-sdk/client";
 import SignInLink from "@/components/SignInLink";
 
@@ -21,6 +22,12 @@ const getInitials = (value: string) => {
 export default function AccountLink({ className }: AccountLinkProps) {
   const { isAuthenticated, isSessionLoading } = useSession();
   const { user, isUserLoading } = useUser();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Necesario para evitar hydration mismatch (SSR vs primer render cliente).
+    setMounted(true);
+  }, []);
 
   const baseClass = [
     "inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs uppercase tracking-[0.2em] transition",
@@ -38,6 +45,15 @@ export default function AccountLink({ className }: AccountLinkProps) {
     }
     return "";
   })();
+
+  // SSR + primer render en cliente deben ser deterministas para evitar hydration mismatch.
+  if (!mounted) {
+    return (
+      <span className={baseClass} aria-live="polite">
+        …
+      </span>
+    );
+  }
 
   if (isSessionLoading || isUserLoading) {
     return (
