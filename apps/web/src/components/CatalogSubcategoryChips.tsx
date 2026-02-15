@@ -231,9 +231,10 @@ export default function CatalogSubcategoryChips({
     mode === "toolbar"
       ? "mt-2 border-t border-[color:var(--oda-border)] pt-2"
       : [
-          "sticky top-20 z-30 w-full min-w-0 max-w-full overflow-x-hidden border-b border-[color:var(--oda-border)]",
-          "bg-[color:rgba(251,248,243,0.92)] py-2 backdrop-blur",
-          "shadow-[0_12px_32px_rgba(23,21,19,0.08)]",
+          // Avoid mobile horizontal overflow: Safari sometimes counts shadows/backdrop-filter
+          // towards the scrollable overflow area, which makes the whole PLP "wider".
+          "sticky top-20 z-30 w-full min-w-0 max-w-[100vw] overflow-x-hidden border-b border-[color:var(--oda-border)]",
+          "bg-[color:var(--oda-cream)] py-2",
           "lg:hidden",
         ].join(" ");
 
@@ -308,7 +309,10 @@ export default function CatalogSubcategoryChips({
                       chip,
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
                       active
-                        ? "border-[color:var(--oda-ink)] bg-white text-[color:var(--oda-ink)] shadow-[0_14px_30px_rgba(23,21,19,0.08)]"
+                        ? [
+                            "border-[color:var(--oda-ink)] bg-white text-[color:var(--oda-ink)]",
+                            density === "desktop" ? "shadow-[0_14px_30px_rgba(23,21,19,0.08)]" : "",
+                          ].join(" ")
                         : "border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]",
                     ].join(" ")}
                     title={item.label}
