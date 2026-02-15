@@ -463,7 +463,7 @@ export default function CatalogProductsInfinite({
       <div className="flex flex-col gap-6">
           <div id="catalog-results" className="scroll-mt-32">
             <div className="lg:hidden">
-              <div className="mb-4 rounded-2xl border border-[color:var(--oda-border)] bg-white px-4 py-3 shadow-[0_16px_40px_rgba(23,21,19,0.06)]">
+              <div className="mb-4 rounded-2xl border border-[color:var(--oda-border)] bg-white px-4 py-3 shadow-[0_10px_22px_rgba(23,21,19,0.06)]">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
