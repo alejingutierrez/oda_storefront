@@ -42,6 +42,44 @@ type UserListSummary = {
 };
 
 const FAVORITE_ADDED_EVENT = "oda:fav-added";
+const MOBILE_COLUMNS_KEY = "oda_catalog_mobile_columns_v1";
+const LEGACY_MOBILE_LAYOUT_KEY = "oda_catalog_mobile_layout_v1";
+
+type MobileColumns = 1 | 2;
+
+function coerceMobileColumns(input: unknown): MobileColumns {
+  return input === 2 || input === "2" ? 2 : 1;
+}
+
+function readMobileColumns(): MobileColumns {
+  if (typeof window === "undefined") return 1;
+  try {
+    const raw = window.localStorage.getItem(MOBILE_COLUMNS_KEY);
+    if (raw === "2") return 2;
+    if (raw === "1") return 1;
+  } catch {
+    // ignore
+  }
+
+  // Migration path from the previous persisted shape.
+  try {
+    const legacyRaw = window.localStorage.getItem(LEGACY_MOBILE_LAYOUT_KEY);
+    if (!legacyRaw) return 1;
+    const parsed = JSON.parse(legacyRaw) as { columns?: unknown } | null;
+    return coerceMobileColumns(parsed?.columns);
+  } catch {
+    return 1;
+  }
+}
+
+function writeMobileColumns(columns: MobileColumns) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(MOBILE_COLUMNS_KEY, columns === 2 ? "2" : "1");
+  } catch {
+    // ignore
+  }
+}
 
 function buildSignInHref(next: string) {
   const params = new URLSearchParams();
@@ -159,6 +197,7 @@ export default function CatalogoClient({
   const params = useSearchParams();
   const { isAuthenticated, isSessionLoading, sessionToken } = useSession();
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const [mobileColumns, setMobileColumns] = useState<MobileColumns>(1);
   const [resumeTick, setResumeTick] = useState(0);
 
   useEffect(() => {
@@ -169,6 +208,18 @@ export default function CatalogoClient({
       // ignore
     }
   }, []);
+
+  useEffect(() => {
+    const next = readMobileColumns();
+    setMobileColumns(next);
+    // Ensure migration persists the normalized value under the new key.
+    writeMobileColumns(next);
+  }, []);
+
+  const updateMobileColumns = (columns: MobileColumns) => {
+    setMobileColumns(columns);
+    writeMobileColumns(columns);
+  };
 
   const toggleFiltersCollapsed = () => {
     setFiltersCollapsed((prev) => {
@@ -762,18 +813,59 @@ export default function CatalogoClient({
     >
       <div className="oda-container">
         <div className="flex flex-col gap-6">
-          <header className="flex items-end justify-between gap-6">
-            <div>
-              <h1 className="font-display text-4xl text-[color:var(--oda-ink)]">Catálogo</h1>
-              <p className="mt-2 text-sm text-[color:var(--oda-ink-soft)]">
-                Descubre marcas locales con inventario disponible.
-              </p>
+          <header className="flex flex-col">
+            <div className="flex items-end justify-between gap-4">
+              <div className="min-w-0">
+                <h1 className="font-display text-4xl text-[color:var(--oda-ink)]">Catálogo</h1>
+              </div>
+
+              <div className="lg:hidden">
+                <div
+                  className="inline-flex overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)]"
+                  aria-label="Columnas"
+                >
+                  <button
+                    type="button"
+                    onClick={() => updateMobileColumns(1)}
+                    className={[
+                      "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--oda-cream)]",
+                      mobileColumns === 1
+                        ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                        : "text-[color:var(--oda-ink)]",
+                    ].join(" ")}
+                    aria-pressed={mobileColumns === 1}
+                    title="1 por fila"
+                  >
+                    1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateMobileColumns(2)}
+                    className={[
+                      "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--oda-cream)]",
+                      mobileColumns === 2
+                        ? "bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                        : "text-[color:var(--oda-ink)]",
+                    ].join(" ")}
+                    aria-pressed={mobileColumns === 2}
+                    title="2 por fila"
+                  >
+                    2
+                  </button>
+                </div>
+              </div>
             </div>
+
+            <p className="mt-2 text-sm text-[color:var(--oda-ink-soft)]">
+              Descubre marcas locales con inventario disponible.
+            </p>
           </header>
 
           <div
             className={[
-              "grid gap-8",
+              "grid grid-cols-1 gap-8",
               filtersCollapsed ? "lg:grid-cols-1" : "lg:grid-cols-[260px_minmax(0,1fr)]",
             ].join(" ")}
           >
@@ -812,7 +904,7 @@ export default function CatalogoClient({
               </div>
             ) : null}
 
-            <section aria-label="Resultados" className="flex flex-col gap-6">
+            <section aria-label="Resultados" className="flex min-w-0 flex-col gap-6">
               <div className="hidden lg:block">
                 <CatalogToolbar
                   totalCount={resolvedTotalCount}
@@ -833,6 +925,7 @@ export default function CatalogoClient({
                 navigationPending={navigationPending}
                 optimisticSearchParams={uiSearchKey}
                 filtersCollapsed={filtersCollapsed}
+                mobileColumns={mobileColumns}
               />
             </section>
           </div>
