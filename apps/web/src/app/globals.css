@@ -28,6 +28,22 @@ body {
   min-height: 100%;
 }
 
+/* Mobile Safari: tiny visual overflows (filters/shadows/subpixel rounding) can create horizontal
+   scroll even when layout widths are correct. We never want page-level horizontal scrolling. */
+@media (max-width: 1023px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  @supports (overflow: clip) {
+    html,
+    body {
+      overflow-x: clip;
+    }
+  }
+}
+
 h1,
 h2,
 h3,
