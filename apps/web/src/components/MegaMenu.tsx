@@ -16,6 +16,18 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
   return (
     <nav className="w-full">
       <ul className="flex items-center gap-6 text-sm uppercase tracking-[0.18em] text-[color:var(--oda-ink)]">
+        <li>
+          <Link
+            href="/novedades"
+            className={[
+              "relative block py-6 text-xs font-medium transition-colors hover:text-[color:var(--oda-ink-soft)]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+              "after:absolute after:left-1/2 after:bottom-4 after:h-[2px] after:w-0 after:-translate-x-1/2 after:rounded-full after:bg-[color:var(--oda-ink)] after:transition-all after:duration-200 hover:after:w-10",
+            ].join(" ")}
+          >
+            Novedades
+          </Link>
+        </li>
         {GENDERS.map((gender) => {
           const route = GENDER_ROUTE[gender];
           const data = menu[gender];

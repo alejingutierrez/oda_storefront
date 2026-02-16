@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import CatalogoFiltersPanel from "@/components/CatalogoFiltersPanel";
 import type { CatalogPriceBounds, CatalogPriceHistogram, CatalogPriceStats } from "@/lib/catalog-data";
 import { SORT_OPTIONS } from "@/components/CatalogToolbar";
@@ -48,6 +48,9 @@ export default function CatalogMobileDock({
   priceHistogram,
   priceStats,
   facetsLoading = false,
+  paramsString,
+  lockedKeys: lockedKeysList = [],
+  hideSections,
 }: {
   totalCount: number | null;
   activeBrandCount?: number | null;
@@ -57,12 +60,21 @@ export default function CatalogMobileDock({
   priceHistogram?: CatalogPriceHistogram | null;
   priceStats?: CatalogPriceStats | null;
   facetsLoading?: boolean;
+  paramsString: string;
+  lockedKeys?: string[];
+  hideSections?: { gender?: boolean; category?: boolean; brand?: boolean };
 }) {
-  const params = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const dockRef = useRef<HTMLDivElement | null>(null);
+  const lockedKeysKey = lockedKeysList.join("|");
+  const lockedKeys = useMemo(
+    () => new Set(lockedKeysList.filter(Boolean)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lockedKeysKey],
+  );
+  const params = useMemo(() => new URLSearchParams(paramsString), [paramsString]);
 
   useEffect(() => {
     const node = dockRef.current;
@@ -97,9 +109,14 @@ export default function CatalogMobileDock({
     const next = new URLSearchParams(params.toString());
     next.delete("sort");
     next.delete("page");
+    for (const key of lockedKeys) next.delete(key);
     return next.toString().length > 0;
-  }, [params]);
-  const filterCount = useMemo(() => countActiveFilters(new URLSearchParams(params.toString())), [params]);
+  }, [lockedKeys, params]);
+  const filterCount = useMemo(() => {
+    const next = new URLSearchParams(params.toString());
+    for (const key of lockedKeys) next.delete(key);
+    return countActiveFilters(next);
+  }, [lockedKeys, params]);
 
   const [open, setOpen] = useState(false);
   const [draftParamsString, setDraftParamsString] = useState("");
@@ -128,7 +145,9 @@ export default function CatalogMobileDock({
   const applyDraft = () => {
     const next = new URLSearchParams(draftParamsString);
     next.delete("page");
-    const query = next.toString();
+    const urlParams = new URLSearchParams(next.toString());
+    for (const key of lockedKeys) urlParams.delete(key);
+    const query = urlParams.toString();
     const url = query ? `${pathname}?${query}` : pathname;
     startTransition(() => {
       router.replace(url, { scroll: false });
@@ -145,7 +164,13 @@ export default function CatalogMobileDock({
   };
 
   const clearAll = () => {
-    setDraftParamsString("");
+    const current = new URLSearchParams(draftParamsString);
+    const kept = new URLSearchParams();
+    for (const key of lockedKeys) {
+      const values = current.getAll(key);
+      for (const value of values) kept.append(key, value);
+    }
+    setDraftParamsString(kept.toString());
   };
 
   const handleSortChange = (value: string) => {
@@ -153,7 +178,9 @@ export default function CatalogMobileDock({
     if (!value || value === "new") next.delete("sort");
     else next.set("sort", value);
     next.set("page", "1");
-    const query = next.toString();
+    const urlParams = new URLSearchParams(next.toString());
+    for (const key of lockedKeys) urlParams.delete(key);
+    const query = urlParams.toString();
     const url = query ? `${pathname}?${query}` : pathname;
     startTransition(() => {
       router.replace(url, { scroll: false });
@@ -290,6 +317,9 @@ export default function CatalogMobileDock({
                   mode="draft"
                   draftParamsString={draftParamsString}
                   onDraftParamsStringChange={setDraftParamsString}
+                  paramsString={paramsString}
+                  lockedKeys={lockedKeysList}
+                  hideSections={hideSections}
                 />
               ) : (
                 <div className="grid gap-3">

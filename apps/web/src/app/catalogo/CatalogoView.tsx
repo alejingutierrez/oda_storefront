@@ -2,6 +2,7 @@ import Header from "@/components/Header";
 import CatalogoClient from "@/app/catalogo/CatalogoClient";
 import { getCatalogProductsPage, type CatalogFilters } from "@/lib/catalog-data";
 import { getMegaMenuData } from "@/lib/home-data";
+import type { CatalogPlpContext } from "@/lib/catalog-plp";
 import {
   canonicalizeCatalogSearchParams,
   resolveSearchParams,
@@ -10,9 +11,30 @@ import {
   type SearchParams,
 } from "@/lib/catalog-filters";
 
-export default async function CatalogoView({ searchParams }: { searchParams: SearchParams }) {
+function applyPlpLockedParams(params: URLSearchParams, plp?: CatalogPlpContext | null): URLSearchParams {
+  const next = new URLSearchParams(params.toString());
+  if (!plp) return next;
+
+  const lockedKeys = Array.from(new Set((plp.lockedKeys ?? []).map((key) => key.trim()).filter(Boolean)));
+  const lockedParams = new URLSearchParams(plp.lockedParams || "");
+
+  // SSR guardrail: el contexto PLP manda, aunque la URL query llegue sin esos params.
+  for (const key of lockedKeys) next.delete(key);
+  for (const [key, value] of lockedParams.entries()) next.append(key, value);
+
+  return next;
+}
+
+export default async function CatalogoView({
+  searchParams,
+  plp,
+}: {
+  searchParams: SearchParams;
+  plp?: CatalogPlpContext | null;
+}) {
   const rawParams = await resolveSearchParams(searchParams);
-  const { params } = canonicalizeCatalogSearchParams(rawParams);
+  const effectiveRawParams = applyPlpLockedParams(rawParams, plp);
+  const { params } = canonicalizeCatalogSearchParams(effectiveRawParams);
 
   const sort = parseCatalogSortFromSearchParams(params, "new");
   const parsedFilters = parseCatalogFiltersFromSearchParams(params, { categoryMode: "single" });
@@ -30,6 +52,7 @@ export default async function CatalogoView({ searchParams }: { searchParams: Sea
         initialItems={page.items}
         totalCount={null}
         initialSearchParams={searchKey}
+        plpContext={plp ?? null}
       />
     </main>
   );

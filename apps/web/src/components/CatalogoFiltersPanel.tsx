@@ -29,6 +29,12 @@ type Props = {
   priceBounds: CatalogPriceBounds;
   priceHistogram?: CatalogPriceHistogram | null;
   priceStats?: CatalogPriceStats | null;
+  // Effective params (URL query + locked PLP params). If omitted, falls back to `useSearchParams()`.
+  paramsString?: string;
+  // Keys controlled by the PLP path. Any occurrences should be ignored in the URL query.
+  lockedKeys?: string[];
+  // Hide filter sections that would be redundant within a PLP (e.g. gender PLP hides Gender section).
+  hideSections?: { gender?: boolean; category?: boolean; brand?: boolean };
   mode?: "instant" | "draft";
   draftParamsString?: string;
   onDraftParamsStringChange?: (next: string) => void;
@@ -235,6 +241,9 @@ export default function CatalogoFiltersPanel({
   priceBounds,
   priceHistogram,
   priceStats,
+  paramsString,
+  lockedKeys: lockedKeysList = [],
+  hideSections,
   mode = "instant",
   draftParamsString = "",
   onDraftParamsStringChange,
@@ -265,7 +274,13 @@ export default function CatalogoFiltersPanel({
     };
   }, []);
 
-  const searchParamsString = params.toString();
+  const lockedKeysKey = lockedKeysList.join("|");
+  const lockedKeys = useMemo(
+    () => new Set(lockedKeysList.filter(Boolean)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lockedKeysKey],
+  );
+  const searchParamsString = (paramsString ?? params.toString()).trim();
   const currentParamsString = mode === "draft" ? draftParamsString : searchParamsString;
   const committedFiltersKey = useMemo(() => {
     const next = new URLSearchParams(searchParamsString);
@@ -583,7 +598,9 @@ export default function CatalogoFiltersPanel({
       next.set("sort", selected.sort);
     }
     next.set("page", "1");
-    const query = next.toString();
+    const urlParams = new URLSearchParams(next.toString());
+    for (const key of lockedKeys) urlParams.delete(key);
+    const query = urlParams.toString();
     const url = query ? `${pathname}?${query}` : pathname;
     startTransition(() => {
       router.replace(url, { scroll: false });
@@ -700,86 +717,24 @@ export default function CatalogoFiltersPanel({
 
   return (
     <aside className="flex flex-col gap-6">
-      <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
-        <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
-          <span className="flex items-center gap-3">
-            Género
-            {isPending ? (
-              <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                Actualizando…
-              </span>
-            ) : null}
-          </span>
-          <span className="text-[10px] text-[color:var(--oda-taupe)]">
-            {buildSelectedLabel(selected.genders.length)}
-          </span>
-        </summary>
-        <div className="mt-4 flex flex-col gap-2">
-          {sortFacetItems(facets.genders, selected.genders).map((item) => {
-            const checked = isChecked(selected.genders, item.value);
-            const countDisabled = item.count === 0 && !checked;
-            const disabled = isPending || (!allowZeroCounts && countDisabled);
-            const faded = !disabled && allowZeroCounts && countDisabled;
-            return (
-              <label
-                key={item.value}
-                className={[
-                  "flex items-center justify-between gap-3 text-sm",
-                  disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
-                  faded ? "opacity-70" : "",
-                ].join(" ")}
-              >
-                <span className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleMulti("gender", item.value)}
-                    className="h-4 w-4 accent-[color:var(--oda-ink)]"
-                    disabled={disabled}
-                  />
-                  {item.label}
+      {!hideSections?.gender ? (
+        <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
+          <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
+            <span className="flex items-center gap-3">
+              Género
+              {isPending ? (
+                <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                  Actualizando…
                 </span>
-              </label>
-            );
-          })}
-        </div>
-      </details>
-
-      <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
-        <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
-          <span className="flex items-center gap-3">
-            Categoría
-            {isPending ? (
-              <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                Actualizando…
-              </span>
-            ) : null}
-          </span>
-          <span className="text-[10px] text-[color:var(--oda-taupe)]">
-            {buildSelectedLabel(selected.categories.length)}
-          </span>
-        </summary>
-        <div className="mt-4">
-          {activeCategory && !categoriesExpanded ? (
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-                Categoría seleccionada
-              </p>
-              <button
-                type="button"
-                onClick={() => setCategoriesExpanded(true)}
-                className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
-              >
-                Cambiar
-              </button>
-            </div>
-          ) : null}
-          <div
-            data-oda-scroll-allow="true"
-            className="relative flex flex-col gap-2"
-          >
-            {visibleCategories.map((item) => {
-              const checked = isChecked(selected.categories, item.value);
+              ) : null}
+            </span>
+            <span className="text-[10px] text-[color:var(--oda-taupe)]">
+              {buildSelectedLabel(selected.genders.length)}
+            </span>
+          </summary>
+          <div className="mt-4 flex flex-col gap-2">
+            {sortFacetItems(facets.genders, selected.genders).map((item) => {
+              const checked = isChecked(selected.genders, item.value);
               const countDisabled = item.count === 0 && !checked;
               const disabled = isPending || (!allowZeroCounts && countDisabled);
               const faded = !disabled && allowZeroCounts && countDisabled;
@@ -792,33 +747,96 @@ export default function CatalogoFiltersPanel({
                     faded ? "opacity-70" : "",
                   ].join(" ")}
                 >
-                  <span className="flex min-w-0 items-center gap-3">
+                  <span className="flex items-center gap-3">
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => toggleCategory(item.value)}
+                      onChange={() => toggleMulti("gender", item.value)}
                       className="h-4 w-4 accent-[color:var(--oda-ink)]"
                       disabled={disabled}
                     />
-                    <span className="truncate">{item.label}</span>
+                    {item.label}
                   </span>
                 </label>
               );
             })}
-
-            {!activeCategory && sortedCategories.length > 10 ? (
-              <button
-                type="button"
-                onClick={() => setCategoriesExpanded((prev) => !prev)}
-                disabled={isPending}
-                className="mt-2 inline-flex items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {categoriesExpanded ? "Ver menos" : "Ver más"}
-              </button>
-            ) : null}
           </div>
-        </div>
-      </details>
+        </details>
+      ) : null}
+
+      {!hideSections?.category ? (
+        <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
+          <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
+            <span className="flex items-center gap-3">
+              Categoría
+              {isPending ? (
+                <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                  Actualizando…
+                </span>
+              ) : null}
+            </span>
+            <span className="text-[10px] text-[color:var(--oda-taupe)]">
+              {buildSelectedLabel(selected.categories.length)}
+            </span>
+          </summary>
+          <div className="mt-4">
+            {activeCategory && !categoriesExpanded ? (
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                  Categoría seleccionada
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setCategoriesExpanded(true)}
+                  className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
+                >
+                  Cambiar
+                </button>
+              </div>
+            ) : null}
+            <div data-oda-scroll-allow="true" className="relative flex flex-col gap-2">
+              {visibleCategories.map((item) => {
+                const checked = isChecked(selected.categories, item.value);
+                const countDisabled = item.count === 0 && !checked;
+                const disabled = isPending || (!allowZeroCounts && countDisabled);
+                const faded = !disabled && allowZeroCounts && countDisabled;
+                return (
+                  <label
+                    key={item.value}
+                    className={[
+                      "flex items-center justify-between gap-3 text-sm",
+                      disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+                      faded ? "opacity-70" : "",
+                    ].join(" ")}
+                  >
+                    <span className="flex min-w-0 items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleCategory(item.value)}
+                        className="h-4 w-4 accent-[color:var(--oda-ink)]"
+                        disabled={disabled}
+                      />
+                      <span className="truncate">{item.label}</span>
+                    </span>
+                  </label>
+                );
+              })}
+
+              {!activeCategory && sortedCategories.length > 10 ? (
+                <button
+                  type="button"
+                  onClick={() => setCategoriesExpanded((prev) => !prev)}
+                  disabled={isPending}
+                  className="mt-2 inline-flex items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {categoriesExpanded ? "Ver menos" : "Ver más"}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </details>
+      ) : null}
 
       {selected.categories.length > 0 && showSubcategoriesSection ? (
         <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
@@ -882,61 +900,63 @@ export default function CatalogoFiltersPanel({
         </details>
       ) : null}
 
-      <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
-        <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
-          <span className="flex items-center gap-3">
-            Marca
-            {isPending ? (
-              <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                Actualizando…
-              </span>
-            ) : null}
-          </span>
-          <span className="text-[10px] text-[color:var(--oda-taupe)]">
-            {buildSelectedLabel(selected.brandIds.length)}
-          </span>
-        </summary>
-        <div className="mt-4 grid gap-3">
-          <input
-            value={brandSearch}
-            onChange={(event) => setBrandSearch(event.target.value)}
-            placeholder="Buscar marca…"
-            className="w-full rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-sm"
-            disabled={isPending}
-          />
-          <div data-oda-scroll-allow="true" className="max-h-64 overflow-auto pr-1">
-            <div className="flex flex-col gap-2">
-              {visibleBrands.map((item) => {
-                const checked = isChecked(selected.brandIds, item.value);
-                const countDisabled = item.count === 0 && !checked;
-                const disabled = isPending || (!allowZeroCounts && countDisabled);
-                const faded = !disabled && allowZeroCounts && countDisabled;
-                return (
-                  <label
-                    key={item.value}
-                    className={[
-                      "flex items-center justify-between gap-3 text-sm",
-                      disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
-                      faded ? "opacity-70" : "",
-                    ].join(" ")}
-                  >
-                    <span className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleMulti("brandId", item.value)}
-                        className="h-4 w-4 accent-[color:var(--oda-ink)]"
-                        disabled={disabled}
-                      />
-                      <span className="truncate">{item.label}</span>
-                    </span>
-                  </label>
-                );
-              })}
+      {!hideSections?.brand ? (
+        <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
+          <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
+            <span className="flex items-center gap-3">
+              Marca
+              {isPending ? (
+                <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                  Actualizando…
+                </span>
+              ) : null}
+            </span>
+            <span className="text-[10px] text-[color:var(--oda-taupe)]">
+              {buildSelectedLabel(selected.brandIds.length)}
+            </span>
+          </summary>
+          <div className="mt-4 grid gap-3">
+            <input
+              value={brandSearch}
+              onChange={(event) => setBrandSearch(event.target.value)}
+              placeholder="Buscar marca…"
+              className="w-full rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-sm"
+              disabled={isPending}
+            />
+            <div data-oda-scroll-allow="true" className="max-h-64 overflow-auto pr-1">
+              <div className="flex flex-col gap-2">
+                {visibleBrands.map((item) => {
+                  const checked = isChecked(selected.brandIds, item.value);
+                  const countDisabled = item.count === 0 && !checked;
+                  const disabled = isPending || (!allowZeroCounts && countDisabled);
+                  const faded = !disabled && allowZeroCounts && countDisabled;
+                  return (
+                    <label
+                      key={item.value}
+                      className={[
+                        "flex items-center justify-between gap-3 text-sm",
+                        disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+                        faded ? "opacity-70" : "",
+                      ].join(" ")}
+                    >
+                      <span className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleMulti("brandId", item.value)}
+                          className="h-4 w-4 accent-[color:var(--oda-ink)]"
+                          disabled={disabled}
+                        />
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      </details>
+        </details>
+      ) : null}
 
       <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5" open>
         <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">

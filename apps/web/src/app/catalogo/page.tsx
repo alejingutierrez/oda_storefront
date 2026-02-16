@@ -18,6 +18,7 @@ function humanizeKey(value: string) {
 
 function isIndexableCatalog(params: URLSearchParams) {
   const disallowKeys = [
+    "sort",
     "q",
     "brandId",
     "color",

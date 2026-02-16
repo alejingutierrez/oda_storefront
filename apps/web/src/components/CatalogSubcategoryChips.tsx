@@ -106,28 +106,47 @@ function RailSkeleton({ density }: { density: "desktop" | "mobile" }) {
 
 export default function CatalogSubcategoryChips({
   mode = "toolbar",
+  paramsString,
+  lockedKeys: lockedKeysList = [],
 }: {
   mode?: "toolbar" | "mobile";
+  paramsString?: string;
+  lockedKeys?: string[];
 }) {
   const params = useSearchParams();
-  const paramsString = params.toString();
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const { category, key } = useMemo(() => buildCategoryAndGenderKey(paramsString), [paramsString]);
+  const lockedKeysKey = lockedKeysList.join("|");
+  const lockedKeys = useMemo(
+    () => new Set(lockedKeysList.filter(Boolean)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lockedKeysKey],
+  );
+  const paramsStringResolved = (paramsString ?? params.toString()).trim();
+
+  // Si la subcategoría está bloqueada por el path (p.ej. /g/.../ropa_deportiva_y_performance/<sub>),
+  // los chips serían engañosos porque no pueden cambiar el resultado.
+  const pathParts = useMemo(() => pathname.split("/").filter(Boolean), [pathname]);
+  const isLockedSubcategoryRoute = pathParts[0] === "g" && pathParts.length >= 4;
+
+  const { category, key } = useMemo(() => {
+    if (isLockedSubcategoryRoute) return { category: "", key: "" };
+    return buildCategoryAndGenderKey(paramsStringResolved);
+  }, [isLockedSubcategoryRoute, paramsStringResolved]);
   const sessionKey = useMemo(
     () => `oda_catalog_subcategories_chips_v1:${key || "base"}`,
     [key],
   );
 
   const selected = useMemo(() => {
-    const current = new URLSearchParams(paramsString);
+    const current = new URLSearchParams(paramsStringResolved);
     return current
       .getAll("subcategory")
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
-  }, [paramsString]);
+  }, [paramsStringResolved]);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
 
   const [items, setItems] = useState<SubcategoryItem[] | null>(() => {
@@ -187,7 +206,9 @@ export default function CatalogSubcategoryChips({
 
   const applyParams = (next: URLSearchParams) => {
     next.set("page", "1");
-    const query = next.toString();
+    const urlParams = new URLSearchParams(next.toString());
+    for (const key of lockedKeys) urlParams.delete(key);
+    const query = urlParams.toString();
     const url = query ? `${pathname}?${query}` : pathname;
     startTransition(() => {
       router.replace(url, { scroll: false });
@@ -195,13 +216,13 @@ export default function CatalogSubcategoryChips({
   };
 
   const toggleAll = () => {
-    const next = new URLSearchParams(paramsString);
+    const next = new URLSearchParams(paramsStringResolved);
     next.delete("subcategory");
     applyParams(next);
   };
 
   const toggleSubcategory = (value: string) => {
-    const next = new URLSearchParams(paramsString);
+    const next = new URLSearchParams(paramsStringResolved);
     const current = next
       .getAll("subcategory")
       .map((item) => item.trim())
@@ -213,6 +234,7 @@ export default function CatalogSubcategoryChips({
     applyParams(next);
   };
 
+  if (isLockedSubcategoryRoute) return null;
   if (!category) return null;
 
   const resolved = items ?? [];

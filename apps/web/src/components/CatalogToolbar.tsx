@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import CatalogSubcategoryChips from "@/components/CatalogSubcategoryChips";
 
 type SortOption = { value: string; label: string };
@@ -98,32 +98,44 @@ export default function CatalogToolbar({
   totalCount,
   activeBrandCount,
   searchKey,
+  paramsString,
+  lockedKeys: lockedKeysList = [],
   filtersCollapsed = false,
   onToggleFiltersCollapsed,
 }: {
   totalCount: number | null;
   activeBrandCount?: number | null;
   searchKey: string;
+  paramsString: string;
+  lockedKeys?: string[];
   filtersCollapsed?: boolean;
   onToggleFiltersCollapsed?: () => void;
 }) {
-  const params = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const lockedKeysKey = lockedKeysList.join("|");
+  const lockedKeys = useMemo(
+    () => new Set(lockedKeysList.filter(Boolean)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lockedKeysKey],
+  );
+  const params = useMemo(() => new URLSearchParams(paramsString), [paramsString]);
 
   const sort = params.get("sort") ?? "new";
   const hasFilters = useMemo(() => {
     const next = new URLSearchParams(params.toString());
     next.delete("sort");
     next.delete("page");
+    for (const key of lockedKeys) next.delete(key);
     return next.toString().length > 0;
-  }, [params]);
+  }, [lockedKeys, params]);
 
   const activeFiltersCount = useMemo(() => {
     const next = new URLSearchParams(params.toString());
     next.delete("sort");
     next.delete("page");
+    for (const key of lockedKeys) next.delete(key);
 
     let count = 0;
 
@@ -137,6 +149,10 @@ export default function CatalogToolbar({
 
     const keys = ["gender", "category", "subcategory", "brandId", "color", "material", "pattern"];
     for (const key of keys) {
+      if (lockedKeys.has(key)) {
+        next.delete(key);
+        continue;
+      }
       const values = next.getAll(key).filter((value) => value.trim().length > 0);
       count += values.length;
       next.delete(key);
@@ -145,11 +161,13 @@ export default function CatalogToolbar({
     // Cuenta cualquier filtro extra no contemplado arriba.
     count += Array.from(next).length;
     return count;
-  }, [params]);
+  }, [lockedKeys, params]);
 
   const applyParams = (next: URLSearchParams) => {
     next.set("page", "1");
-    const query = next.toString();
+    const urlParams = new URLSearchParams(next.toString());
+    for (const key of lockedKeys) urlParams.delete(key);
+    const query = urlParams.toString();
     const url = query ? `${pathname}?${query}` : pathname;
     startTransition(() => {
       router.replace(url, { scroll: false });
@@ -329,7 +347,11 @@ export default function CatalogToolbar({
           </div>
         </div>
 
-        <CatalogSubcategoryChips mode="toolbar" />
+        <CatalogSubcategoryChips
+          mode="toolbar"
+          paramsString={paramsString}
+          lockedKeys={lockedKeysList}
+        />
       </div>
 
       {savedOpen ? (

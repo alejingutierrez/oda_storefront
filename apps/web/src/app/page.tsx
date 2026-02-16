@@ -91,7 +91,7 @@ export default async function Home() {
         <SectionHeading
           title="Novedades que rotan cada 3 dias"
           subtitle="Nuevo"
-          ctaHref="/buscar"
+          ctaHref="/novedades"
           ctaLabel="Ver todo"
         />
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -144,7 +144,7 @@ export default async function Home() {
                   {group.label}
                 </h3>
                 <Link
-                  href="/buscar"
+                  href={`/estilo/${encodeURIComponent(group.styleKey)}`}
                   className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]"
                 >
                   Ver mas
@@ -201,9 +201,11 @@ export default async function Home() {
         <SectionHeading title="Marcas destacadas" subtitle="Marcas" />
         <div className="grid grid-cols-2 gap-6 rounded-2xl border border-[color:var(--oda-border)] bg-white p-10 sm:grid-cols-3 lg:grid-cols-6">
           {brandLogos.map((brand) => (
-            <div
+            <Link
               key={brand.id}
-              className="relative flex h-16 items-center justify-center"
+              href={`/marca/${encodeURIComponent(brand.slug)}`}
+              className="relative flex h-16 items-center justify-center transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+              aria-label={brand.name}
             >
               <Image
                 src={brand.logoUrl}
@@ -213,7 +215,7 @@ export default async function Home() {
                 className="object-contain"
                 unoptimized
               />
-            </div>
+            </Link>
           ))}
         </div>
       </section>
@@ -271,6 +273,7 @@ export default async function Home() {
             </p>
           </div>
           <div className="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+            <Link href="/novedades">Novedades</Link>
             <Link href="/g/femenino">Femenino</Link>
             <Link href="/g/masculino">Masculino</Link>
             <Link href="/g/unisex">Unisex</Link>

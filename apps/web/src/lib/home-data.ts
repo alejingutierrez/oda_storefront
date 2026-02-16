@@ -79,6 +79,7 @@ export type ColorCombo = {
 
 export type BrandLogo = {
   id: string;
+  slug: string;
   name: string;
   logoUrl: string;
 };
@@ -370,10 +371,30 @@ export async function getCategoryHighlights(
       >(
         Prisma.sql`
           with categories as (
-            select category, count(*) as cnt
-            from products
-            where category is not null and category <> ''
-            group by category
+            select
+              case
+                when p.category='tops' and p.subcategory='camisetas' then 'camisetas_y_tops'
+                when p.category='tops' and p.subcategory in ('blusas','camisas') then 'camisas_y_blusas'
+                when p.category='bottoms' and p.subcategory='jeans' then 'jeans_y_denim'
+                when p.category='bottoms' and p.subcategory='pantalones' then 'pantalones_no_denim'
+                when p.category='bottoms' and p.subcategory='faldas' then 'faldas'
+                when p.category='bottoms' and p.subcategory='shorts' then 'shorts_y_bermudas'
+                when p.category='outerwear' and p.subcategory='blazers' then 'blazers_y_sastreria'
+                when p.category='outerwear' and p.subcategory='buzos' then 'buzos_hoodies_y_sueteres'
+                when p.category='outerwear' and p.subcategory in ('chaquetas','abrigos') then 'chaquetas_y_abrigos'
+                when p.category='knitwear' then 'buzos_hoodies_y_sueteres'
+                when p.category in ('ropa_interior','ropa interior') then 'ropa_interior_basica'
+                when p.category='trajes_de_bano' then 'trajes_de_bano_y_playa'
+                when p.category='deportivo' then 'ropa_deportiva_y_performance'
+                when p.category='enterizos' then 'enterizos_y_overoles'
+                when p.category='accesorios' and p.subcategory='bolsos' then 'bolsos_y_marroquineria'
+                else p.category
+              end as category,
+              count(*) as cnt
+            from products p
+            where p.category is not null and p.category <> ''
+              and p."imageCoverUrl" is not null
+            group by 1
             order by cnt desc
             limit ${limit}
           ), picked as (
@@ -382,13 +403,34 @@ export async function getCategoryHighlights(
               (
                 select p.id
                 from products p
-                where p.category = c.category and p."imageCoverUrl" is not null
+                where
+                  (
+                    case
+                      when p.category='tops' and p.subcategory='camisetas' then 'camisetas_y_tops'
+                      when p.category='tops' and p.subcategory in ('blusas','camisas') then 'camisas_y_blusas'
+                      when p.category='bottoms' and p.subcategory='jeans' then 'jeans_y_denim'
+                      when p.category='bottoms' and p.subcategory='pantalones' then 'pantalones_no_denim'
+                      when p.category='bottoms' and p.subcategory='faldas' then 'faldas'
+                      when p.category='bottoms' and p.subcategory='shorts' then 'shorts_y_bermudas'
+                      when p.category='outerwear' and p.subcategory='blazers' then 'blazers_y_sastreria'
+                      when p.category='outerwear' and p.subcategory='buzos' then 'buzos_hoodies_y_sueteres'
+                      when p.category='outerwear' and p.subcategory in ('chaquetas','abrigos') then 'chaquetas_y_abrigos'
+                      when p.category='knitwear' then 'buzos_hoodies_y_sueteres'
+                      when p.category in ('ropa_interior','ropa interior') then 'ropa_interior_basica'
+                      when p.category='trajes_de_bano' then 'trajes_de_bano_y_playa'
+                      when p.category='deportivo' then 'ropa_deportiva_y_performance'
+                      when p.category='enterizos' then 'enterizos_y_overoles'
+                      when p.category='accesorios' and p.subcategory='bolsos' then 'bolsos_y_marroquineria'
+                      else p.category
+                    end
+                  ) = c.category
+                  and p."imageCoverUrl" is not null
                 order by md5(concat(p.id::text, ${seed}::text, c.category))
                 limit 1
               ) as product_id
             from categories c
           )
-          select p.category, p."imageCoverUrl"
+          select pk.category, p."imageCoverUrl"
           from picked pk
           join products p on p.id = pk.product_id
         `
@@ -536,9 +578,11 @@ export async function getBrandLogos(seed: number, limit = 24): Promise<BrandLogo
     async () => {
       return prisma.$queryRaw<BrandLogo[]>(
         Prisma.sql`
-          select id, name, "logoUrl"
+          select id, slug, name, "logoUrl"
           from brands
           where "logoUrl" is not null
+            and slug is not null
+            and slug <> ''
           order by md5(concat(id::text, ${seed}::text, 'brands'))
           limit ${limit}
         `

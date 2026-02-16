@@ -82,13 +82,22 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
 
                   <div className="mt-6 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                     <span>Explorar</span>
-                    <Link
-                      href="/buscar"
-                      className="rounded-full px-3 py-2 text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                      onClick={() => setOpen(false)}
-                    >
-                      Ver todo
-                    </Link>
+                    <div className="flex items-center gap-1">
+                      <Link
+                        href="/novedades"
+                        className="rounded-full px-3 py-2 text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                        onClick={() => setOpen(false)}
+                      >
+                        Novedades
+                      </Link>
+                      <Link
+                        href="/buscar"
+                        className="rounded-full px-3 py-2 text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                        onClick={() => setOpen(false)}
+                      >
+                        Ver todo
+                      </Link>
+                    </div>
                   </div>
 
                   <div className="mt-4 flex flex-col gap-4">

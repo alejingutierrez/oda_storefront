@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import type { SearchParams } from "@/lib/catalog-filters";
 import { mapLegacyCategoryToCanonicalCategories, resolveSearchParams } from "@/lib/catalog-filters";
-import { normalizeGender } from "@/lib/navigation";
+import { GENDER_ROUTE, labelize, labelizeSubcategory, normalizeGender } from "@/lib/navigation";
+import type { CatalogPlpContext } from "@/lib/catalog-plp";
 import CatalogoView from "@/app/catalogo/CatalogoView";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ function humanizeKey(value: string) {
 
 function isIndexableCatalog(params: URLSearchParams) {
   const disallowKeys = [
+    "sort",
     "q",
     "brandId",
     "color",
@@ -82,7 +84,11 @@ export async function generateMetadata({
   canonicalParams.delete("category");
   canonicalParams.delete("subcategory");
 
-  const basePath = `/g/${resolvedParams.gender}${segments.length ? `/${segments.join("/")}` : ""}`;
+  const safeSegments = segments
+    .map((segment) => segment.trim().toLowerCase())
+    .filter((segment) => segment.length > 0)
+    .slice(0, 2);
+  const basePath = `/g/${GENDER_ROUTE[genderLabel]}${safeSegments.length ? `/${safeSegments.join("/")}` : ""}`;
   const query = canonicalParams.toString();
   const canonical = query ? `${basePath}?${query}` : basePath;
 
@@ -116,16 +122,7 @@ export default async function GenderCatalogPage({
   const resolvedParams = await params;
   const gender = normalizeGender(resolvedParams.gender);
   const segments = Array.isArray(resolvedParams.segments) ? resolvedParams.segments : [];
-
   const merged = await resolveSearchParams(searchParams);
-  const next = new URLSearchParams(merged.toString());
-
-  // El path manda sobre los filtros: evita acumulaciones (e.g. /g/unisex + ?gender=femenino).
-  next.delete("gender");
-  next.delete("category");
-  next.delete("subcategory");
-
-  next.append("gender", gender);
 
   const rawCategory = segments[0]?.trim();
   const rawSubcategory = segments[1]?.trim();
@@ -133,8 +130,11 @@ export default async function GenderCatalogPage({
   const category = rawCategory ? rawCategory.toLowerCase() : null;
   const subcategory = rawSubcategory ? rawSubcategory.toLowerCase() : null;
 
-  const appendCategories = (values: string[]) => {
-    for (const value of values) next.append("category", value);
+  const locked = new URLSearchParams();
+  locked.append("gender", gender);
+
+  const appendLockedCategories = (values: string[]) => {
+    for (const value of values) locked.append("category", value);
   };
 
   // Back-compat: legacy URLs/categories (pre-taxonomy cleanup) should still work.
@@ -143,11 +143,29 @@ export default async function GenderCatalogPage({
   const legacy = category ? mapLegacyCategoryToCanonicalCategories(category, subcategory ? [subcategory] : []) : null;
 
   if (legacy) {
-    appendCategories(legacy);
+    appendLockedCategories(legacy);
   } else {
-    if (rawCategory) next.append("category", rawCategory);
-    if (rawSubcategory) next.append("subcategory", rawSubcategory);
+    if (rawCategory) locked.append("category", rawCategory);
+    if (rawSubcategory) locked.append("subcategory", rawSubcategory);
   }
 
-  return CatalogoView({ searchParams: next });
+  const rawCategoryLabel = rawCategory ? labelize(rawCategory) : "";
+  const rawSubcategoryLabel = rawSubcategory ? labelizeSubcategory(rawSubcategory) : "";
+
+  const plpTitle = rawSubcategory
+    ? `${rawSubcategoryLabel} · ${gender}`
+    : rawCategory
+      ? `${rawCategoryLabel} · ${gender}`
+      : `Catálogo ${gender}`;
+
+  const plp: CatalogPlpContext = {
+    title: plpTitle,
+    subtitle: "Moda colombiana curada con inventario disponible.",
+    lockedParams: locked.toString(),
+    // En rutas /g/* el path manda y no permitimos que query intente re-definir estos filtros.
+    lockedKeys: ["gender", "category", "subcategory"],
+    hideFilters: { gender: true, category: Boolean(rawCategory) },
+  };
+
+  return CatalogoView({ searchParams: merged, plp });
 }

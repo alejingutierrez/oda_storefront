@@ -9,6 +9,7 @@ import CatalogProductsInfinite from "@/components/CatalogProductsInfinite";
 import CatalogSubcategoryChips from "@/components/CatalogSubcategoryChips";
 import CatalogToolbar from "@/components/CatalogToolbar";
 import type { CatalogPriceBounds, CatalogPriceInsights, CatalogProduct } from "@/lib/catalog-data";
+import type { CatalogPlpContext } from "@/lib/catalog-plp";
 
 type FacetItem = {
   value: string;
@@ -185,6 +186,7 @@ export default function CatalogoClient({
   initialFacets,
   initialPriceInsights,
   initialSubcategories,
+  plpContext,
 }: {
   initialItems: CatalogProduct[];
   totalCount: number | null;
@@ -192,6 +194,7 @@ export default function CatalogoClient({
   initialFacets?: FacetsLite | null;
   initialPriceInsights?: CatalogPriceInsights | null;
   initialSubcategories?: FacetItem[];
+  plpContext?: CatalogPlpContext | null;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -413,11 +416,30 @@ export default function CatalogoClient({
     };
   }, []);
 
-  const uiSearchKeyRaw = useMemo(() => {
+  const lockedKeysKey = (plpContext?.lockedKeys ?? []).join("|");
+  const lockedParamsString = plpContext?.lockedParams ?? "";
+  const lockedParams = useMemo(() => new URLSearchParams(lockedParamsString), [lockedParamsString]);
+  const lockedKeys = useMemo(
+    () => new Set((plpContext?.lockedKeys ?? []).filter(Boolean)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lockedKeysKey],
+  );
+  const effectiveParamsString = useMemo(() => {
     const next = new URLSearchParams(params.toString());
+    // El path manda sobre estos filtros: ignoramos overrides en query.
+    for (const key of lockedKeys) next.delete(key);
+    // Aplica contexto bloqueado (aunque no esté en query).
+    for (const [key, value] of lockedParams.entries()) {
+      next.append(key, value);
+    }
+    return next.toString();
+  }, [lockedKeys, lockedParams, params]);
+
+  const uiSearchKeyRaw = useMemo(() => {
+    const next = new URLSearchParams(effectiveParamsString);
     next.delete("page");
     return next.toString();
-  }, [params]);
+  }, [effectiveParamsString]);
 
   const uiSearchKey = useMemo(() => normalizeSearchKey(uiSearchKeyRaw), [uiSearchKeyRaw]);
   const initialSearchKey = useMemo(
@@ -431,11 +453,11 @@ export default function CatalogoClient({
   const navigationPending = uiSearchKey !== initialSearchKey;
 
   const totalCountFetchKey = useMemo(() => {
-    const next = new URLSearchParams(params.toString());
+    const next = new URLSearchParams(effectiveParamsString);
     next.delete("page");
     next.delete("sort");
     return normalizeSearchKey(next.toString());
-  }, [params]);
+  }, [effectiveParamsString]);
   const totalCountSessionKey = useMemo(
     () => `oda_catalog_products_count_v1:${totalCountFetchKey || "base"}`,
     [totalCountFetchKey],
@@ -805,6 +827,32 @@ export default function CatalogoClient({
   const priceHistogram = initialPriceInsights?.histogram ?? null;
   const priceStats = initialPriceInsights?.stats ?? null;
   const initialSubcats = useMemo(() => initialSubcategories ?? [], [initialSubcategories]);
+  const lockedKeysList = plpContext?.lockedKeys ?? [];
+  const inferredHideFilters = useMemo(() => {
+    const locked = new URLSearchParams(lockedParamsString);
+    return {
+      gender: locked.getAll("gender").length > 0,
+      category: locked.getAll("category").length > 0,
+      brand: locked.getAll("brandId").length > 0,
+    };
+  }, [lockedParamsString]);
+  const hideFilters = {
+    gender: Boolean(inferredHideFilters.gender || plpContext?.hideFilters?.gender),
+    category: Boolean(inferredHideFilters.category || plpContext?.hideFilters?.category),
+    brand: Boolean(inferredHideFilters.brand || plpContext?.hideFilters?.brand),
+  };
+  const plpTitle = plpContext?.title?.trim() || "Catálogo";
+  const plpSubtitle =
+    typeof plpContext?.subtitle === "string" && plpContext.subtitle.trim().length > 0
+      ? plpContext.subtitle.trim()
+      : "Descubre marcas locales con inventario disponible.";
+
+  const unlockedSearchKey = useMemo(() => {
+    const next = new URLSearchParams(params.toString());
+    next.delete("page");
+    for (const key of lockedKeys) next.delete(key);
+    return normalizeSearchKey(next.toString());
+  }, [lockedKeys, params]);
 
   return (
     <section
@@ -816,7 +864,7 @@ export default function CatalogoClient({
           <header className="flex flex-col">
             <div className="flex items-end justify-between gap-4">
               <div className="min-w-0">
-                <h1 className="font-display text-4xl text-[color:var(--oda-ink)]">Catálogo</h1>
+                <h1 className="font-display text-4xl text-[color:var(--oda-ink)]">{plpTitle}</h1>
               </div>
 
               <div className="lg:hidden">
@@ -859,7 +907,7 @@ export default function CatalogoClient({
             </div>
 
             <p className="mt-2 text-sm text-[color:var(--oda-ink-soft)]">
-              Descubre marcas locales con inventario disponible.
+              {plpSubtitle}
             </p>
           </header>
 
@@ -897,6 +945,9 @@ export default function CatalogoClient({
                     priceBounds={priceBounds}
                     priceHistogram={priceHistogram}
                     priceStats={priceStats}
+                    paramsString={effectiveParamsString}
+                    lockedKeys={lockedKeysList}
+                    hideSections={hideFilters}
                   />
                 ) : (
                   <FiltersSkeleton />
@@ -909,19 +960,25 @@ export default function CatalogoClient({
                 <CatalogToolbar
                   totalCount={resolvedTotalCount}
                   activeBrandCount={activeBrandCount}
-                  searchKey={uiSearchKey || initialSearchKey}
+                  searchKey={unlockedSearchKey}
+                  paramsString={effectiveParamsString}
+                  lockedKeys={lockedKeysList}
                   filtersCollapsed={filtersCollapsed}
                   onToggleFiltersCollapsed={toggleFiltersCollapsed}
                 />
               </div>
 
-              <CatalogSubcategoryChips mode="mobile" />
+              <CatalogSubcategoryChips
+                mode="mobile"
+                paramsString={effectiveParamsString}
+                lockedKeys={lockedKeysList}
+              />
 
               <CatalogProductsInfinite
-                key={initialSearchParams}
+                key={uiSearchKey || initialSearchKey}
                 initialItems={initialItems}
                 totalCount={resolvedTotalCount}
-                initialSearchParams={initialSearchParams}
+                initialSearchParams={uiSearchKey || initialSearchKey}
                 navigationPending={navigationPending}
                 optimisticSearchParams={uiSearchKey}
                 filtersCollapsed={filtersCollapsed}
@@ -941,6 +998,9 @@ export default function CatalogoClient({
         priceHistogram={priceHistogram}
         priceStats={priceStats}
         facetsLoading={facetsLoading}
+        paramsString={effectiveParamsString}
+        lockedKeys={lockedKeysList}
+        hideSections={hideFilters}
       />
 
       {favoriteToast ? (
