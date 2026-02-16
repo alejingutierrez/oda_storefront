@@ -14,6 +14,21 @@ type RefreshSummary = {
   stockStatusChanges: number;
 };
 
+type RefreshMeta = {
+  lastCompletedAt?: string | null;
+  lastStatus?: string | null;
+  lastError?: string | null;
+  lastRunSuccessRate?: number | null;
+  lastRunCompletedItems?: number | null;
+  lastRunTotalItems?: number | null;
+  lastRunFailedItems?: number | null;
+  lastNewProducts?: number | null;
+  lastCombinedCoverage?: number | null;
+  lastPriceChanges?: number | null;
+  lastStockChanges?: number | null;
+  lastStockStatusChanges?: number | null;
+};
+
 type RefreshBrand = {
   id: string;
   name: string;
@@ -21,7 +36,7 @@ type RefreshBrand = {
   ecommercePlatform: string | null;
   manualReview: boolean;
   productCount: number;
-  refresh: Record<string, any>;
+  refresh: RefreshMeta;
   due: boolean;
 };
 
@@ -64,7 +79,14 @@ export default function CatalogRefreshPanel() {
   const fetchState = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/catalog-refresh/state", { cache: "no-store" });
+      const res = await fetch("/api/admin/catalog-refresh/state", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (res.status === 401) {
+        window.location.href = "/admin";
+        return;
+      }
       if (!res.ok) throw new Error("No se pudo cargar el estado de refresh.");
       const payload = (await res.json()) as RefreshState;
       setState(payload);
