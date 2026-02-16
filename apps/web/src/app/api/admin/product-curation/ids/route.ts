@@ -31,8 +31,8 @@ export async function GET(req: Request) {
 
   const sort = parseCatalogSortFromSearchParams(params, "relevancia");
   const parsedFilters = parseCatalogFiltersFromSearchParams(params);
-  // Curación humana solo aplica a productos ya enriquecidos.
-  const filters = { ...parsedFilters, enrichedOnly: true };
+  // Curación humana se alinea con catálogo público: solo enriquecidos y en stock.
+  const filters = { ...parsedFilters, enrichedOnly: true, inStock: true };
   const where = buildWhere(filters);
   const orderBy = buildOrderBy(sort);
 

@@ -624,12 +624,14 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Historia: Como admin/curador, quiero filtrar y seleccionar productos y luego editar características en masa (sin tocar descripción ni SEO), para corregir y completar la clasificación rápidamente sin romper el enrichment automático.
 - Alcance: Nuevo módulo `/admin/product-curation` con look&feel admin y experiencia similar a `/catalogo`:
   - Reutiliza la misma lógica de filtros (mismos query params) y facets.
+  - Alinea el universo por defecto con `/catalogo`: solo productos enriquecidos y con inventario disponible (`enrichedOnly=true`, `inStock=true`).
   - Listado con scroll infinito (sin paginación UI) usando `IntersectionObserver`.
   - Selección multi-producto persistente por sesión y barra fija de acciones.
   - Modal de bulk edit con selector de campo, operación y UI dinámica (dropdowns para valores del catálogo y selección múltiple para tags).
   - Auditoría de cambios en `products.metadata.enrichment_human` sin tocar `products.metadata.enrichment`.
 - CA:
   - Se puede navegar con los mismos filtros de `/catalogo` y ver facets consistentes.
+  - Sin filtros adicionales, `/admin/product-curation` y `/catalogo` exponen el mismo conjunto base de productos (enriquecidos + en stock).
   - Al hacer scroll se cargan más productos sin perder el estado de selección.
   - El bulk edit permite operaciones `replace/add/remove/clear` según el tipo de campo, con validación server-side contra catálogos cerrados.
   - No es posible editar `description`, `seoTitle`, `seoDescription` ni `seoTags`.

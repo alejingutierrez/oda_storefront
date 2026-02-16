@@ -29,8 +29,8 @@ export async function GET(req: Request) {
   const pageSize = Math.min(60, Math.max(1, parsePositiveInt(params.get("pageSize"), 36)));
   const sort = parseCatalogSortFromSearchParams(params, "relevancia");
   const parsedFilters = parseCatalogFiltersFromSearchParams(params);
-  // Curación humana solo aplica a productos ya enriquecidos.
-  const filters = { ...parsedFilters, enrichedOnly: true };
+  // Curación humana se alinea con catálogo público: solo enriquecidos y en stock.
+  const filters = { ...parsedFilters, enrichedOnly: true, inStock: true };
 
   const offset = Math.max(0, (page - 1) * pageSize);
   const where = buildWhere(filters);

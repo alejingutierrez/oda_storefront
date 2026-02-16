@@ -109,6 +109,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Directorio de productos scrapeados con cards (carrusel de imágenes si hay múltiples fotos), modal de detalle enriquecido (precio/stock, tallas y colores visibles con swatches, fit/material por variante) y filtros por marca.
 - Panel `/admin/product-curation` (curación humana):
   - Experiencia similar a `/catalogo` pero en admin (mismos filtros/query params), sin paginación UI y con scroll infinito.
+  - Universo de productos alineado con `/catalogo`: por defecto muestra solo productos enriquecidos y con inventario disponible (`enrichedOnly=true`, `inStock=true`).
   - Mobile: grilla 2-up (2 cards por fila) y cards compactas (menos detalle) para selección más rápida.
   - Filtro adicional: **SEO tags** (hasta 300 principales por frecuencia) dentro de la columna de filtros, para curación más rápida.
   - Bulk edit: la modal puede aplicar cambios a la **selección** o directamente al **filtro actual** (sin seleccionar manualmente), con límite de 1200 productos por request.
@@ -253,6 +254,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - `GET /api/admin/product-curation/products`: listado paginado (interno) para scroll infinito (query: filtros del catálogo + `page`, `pageSize`, `sort`).
 - `GET /api/admin/product-curation/facets`: facets + subcategorías sin cache (se recalculan tras bulk edits).
 - `GET /api/admin/product-curation/ids`: devuelve IDs de productos que cumplen los filtros (hasta `limit`, default 1200) para "Seleccionar todos".
+- Endpoints de curación (`products`, `facets`, `ids`) fuerzan el mismo gating de catálogo público: `enrichedOnly=true` e `inStock=true`.
 - `POST /api/admin/product-curation/selection-summary`: resumen de la selección actual (categorías) para guiar la modal y hacer preflight (body: `{ productIds[] }`, límite 1200).
 - `POST /api/admin/product-curation/bulk`: bulk edit de características de productos. Body: `{ productIds, changes: [{ field, op, value }] }` (legacy: `{ field, op, value }`) (límite default: 1200 IDs).
   - No modifica `description` ni campos SEO.
