@@ -12,7 +12,14 @@ const readJsonRecord = (value: unknown): Record<string, unknown> => {
   return value as Record<string, unknown>;
 };
 
+const isCatalogRefreshAutoStartEnabled = () =>
+  process.env.CATALOG_REFRESH_ENRICH_AUTO_START === "true";
+
 const isCatalogRefreshAutoStartDisabledRun = (metadata: unknown) => {
+  // If the environment explicitly enables auto-start for catalog-refresh enrichment,
+  // never auto-pause these runs (even if metadata is legacy auto_start=false).
+  if (isCatalogRefreshAutoStartEnabled()) return false;
+
   const meta = readJsonRecord(metadata);
   const createdBy = typeof meta.created_by === "string" ? meta.created_by : null;
   const autoStart = meta.auto_start;

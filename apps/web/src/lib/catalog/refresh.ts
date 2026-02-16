@@ -147,6 +147,7 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     0,
     Number(process.env.CATALOG_REFRESH_ENRICH_MAX_PRODUCTS ?? 1500),
   );
+  const enrichAutoStart = process.env.CATALOG_REFRESH_ENRICH_AUTO_START === "true";
   return {
     intervalDays,
     jitterHours,
@@ -165,6 +166,7 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     failedUrlLimit,
     enrichLookbackDays,
     enrichMaxProducts,
+    enrichAutoStart,
   };
 };
 
@@ -502,6 +504,38 @@ const pauseCatalogRefreshAutoStartDisabledRuns = async () => {
   return { paused: ids.length };
 };
 
+const resumeCatalogRefreshEnrichmentRuns = async () => {
+  const runs = await prisma.$queryRaw<{ id: string }[]>(
+    Prisma.sql`
+      SELECT id
+      FROM "product_enrichment_runs"
+      WHERE status = 'paused'
+        AND COALESCE(metadata->>'created_by', '') = 'catalog_refresh'
+        AND COALESCE(metadata->>'auto_start', 'false') = 'false'
+      LIMIT 500
+    `,
+  );
+
+  if (!runs.length) return { resumed: 0 };
+  const ids = runs.map((run) => run.id);
+  const now = new Date();
+
+  await prisma.productEnrichmentItem.updateMany({
+    where: { runId: { in: ids }, status: { in: ["queued", "in_progress"] } },
+    data: { status: "pending", startedAt: null, updatedAt: now },
+  });
+  await prisma.productEnrichmentRun.updateMany({
+    where: { id: { in: ids } },
+    data: {
+      status: "processing",
+      blockReason: null,
+      updatedAt: now,
+    },
+  });
+
+  return { resumed: ids.length };
+};
+
 const recoverEnrichmentRuns = async (config: ReturnType<typeof getRefreshConfig>) => {
   if (!config.autoRecover) return;
   if (config.recoverMaxRuns <= 0) return;
@@ -611,6 +645,12 @@ const getProductsMissingEnrichment = async (
 
 const enqueueNewProductEnrichment = async (brandId: string, startedAt: Date) => {
   const config = getRefreshConfig();
+  const autoStart = config.enrichAutoStart;
+  const queueEnabled = isEnrichmentQueueEnabled();
+  const enqueueLimit = Math.max(
+    1,
+    Number(process.env.PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT ?? 50),
+  );
   const existing = await findActiveEnrichmentRun({ scope: "brand", brandId });
 
   const rows = await getProductsMissingEnrichment(
@@ -621,47 +661,75 @@ const enqueueNewProductEnrichment = async (brandId: string, startedAt: Date) => 
   const ids = rows.map((row) => row.id);
   if (!ids.length) return { queued: 0, skipped: "no_new_products" };
 
-  // If there's already a non-completed run, append new products to it but keep the
-  // run non-processing unless it was already processing.
+  const readJsonRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+  };
+
+  const isCatalogRefreshRun = (run: { metadata: unknown }) => {
+    const meta = readJsonRecord(run.metadata);
+    return (meta.created_by ?? null) === "catalog_refresh";
+  };
+
+  // If there's already a run executing, append new products to it.
+  // If there's a paused/stopped/blocked run created by catalog_refresh, reuse it so the
+  // pipeline remains single-run and can auto-start when enabled.
   if (existing) {
-    if (existing.status === "processing") {
-      return { queued: 0, skipped: "existing_processing_run", runId: existing.id };
-    }
-
-    const inserted = await prisma.productEnrichmentItem.createMany({
-      data: ids.map((productId) => ({
-        runId: existing.id,
-        productId,
-        status: "pending",
-        attempts: 0,
-      })),
-      skipDuplicates: true,
-    });
-
-    if (inserted.count > 0) {
-      await prisma.productEnrichmentRun.update({
-        where: { id: existing.id },
-        data: {
-          totalItems: { increment: inserted.count },
-          updatedAt: new Date(),
-        },
+    const reuseExisting = existing.status === "processing" || isCatalogRefreshRun(existing);
+    if (reuseExisting) {
+      const inserted = await prisma.productEnrichmentItem.createMany({
+        data: ids.map((productId) => ({
+          runId: existing.id,
+          productId,
+          status: "pending",
+          attempts: 0,
+        })),
+        skipDuplicates: true,
       });
-    }
 
-    return { queued: inserted.count, runId: existing.id, appended: true };
+      if (inserted.count > 0) {
+        await prisma.productEnrichmentRun.update({
+          where: { id: existing.id },
+          data: {
+            totalItems: { increment: inserted.count },
+            updatedAt: new Date(),
+          },
+        });
+      }
+
+      // Only auto-resume catalog_refresh runs. Manual runs stay manual unless already processing.
+      if (autoStart && existing.status !== "processing" && isCatalogRefreshRun(existing)) {
+        await prisma.productEnrichmentRun.update({
+          where: { id: existing.id },
+          data: {
+            status: "processing",
+            blockReason: null,
+            updatedAt: new Date(),
+          },
+        });
+      }
+
+      if (autoStart && queueEnabled) {
+        const pending = await listPendingEnrichmentItems(existing.id, Math.max(10, enqueueLimit));
+        if (pending.length) {
+          await markEnrichmentItemsQueued(pending.map((item) => item.id));
+          await enqueueEnrichmentItems(pending);
+        }
+      }
+
+      return { queued: inserted.count, runId: existing.id, appended: true };
+    }
   }
 
+  const runStatus = autoStart ? ("processing" as const) : ("paused" as const);
   const run = await createEnrichmentRun({
     scope: "brand",
     brandId,
     productIds: ids,
-    // The refresh pipeline should only queue pending enrichment work, not execute it.
-    // This avoids unexpected OpenAI quota usage. Admin/workers can resume the run
-    // explicitly via /api/admin/product-enrichment/run.
-    status: "paused",
+    status: runStatus,
     metadata: {
       mode: "new_products",
-      auto_start: false,
+      auto_start: autoStart,
       created_by: "catalog_refresh",
       created_at: new Date().toISOString(),
       provider: productEnrichmentProvider,
@@ -671,9 +739,15 @@ const enqueueNewProductEnrichment = async (brandId: string, startedAt: Date) => 
     },
   });
 
-  // Keep items as "pending" and do not enqueue them into BullMQ. This ensures the
-  // Vercel cron drain doesn't pick up the run (it only drains status=processing).
-  return { queued: ids.length, runId: run.id, status: "paused" };
+  if (autoStart && queueEnabled) {
+    const pending = await listPendingEnrichmentItems(run.id, Math.max(10, enqueueLimit));
+    if (pending.length) {
+      await markEnrichmentItemsQueued(pending.map((item) => item.id));
+      await enqueueEnrichmentItems(pending);
+    }
+  }
+
+  return { queued: ids.length, runId: run.id, status: runStatus };
 };
 
 export const finalizeRefreshForRun = async (params: {
@@ -798,7 +872,11 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   const queueEnabled = isCatalogQueueEnabled();
 
   await recoverCatalogRuns(config);
-  await pauseCatalogRefreshAutoStartDisabledRuns();
+  if (!config.enrichAutoStart) {
+    await pauseCatalogRefreshAutoStartDisabledRuns();
+  } else {
+    await resumeCatalogRefreshEnrichmentRuns();
+  }
   await recoverEnrichmentRuns(config);
   await reconcileStaleRefreshStates();
 
