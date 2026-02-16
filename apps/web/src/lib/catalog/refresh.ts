@@ -147,7 +147,8 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     0,
     Number(process.env.CATALOG_REFRESH_ENRICH_MAX_PRODUCTS ?? 1500),
   );
-  const enrichAutoStart = process.env.CATALOG_REFRESH_ENRICH_AUTO_START === "true";
+  const enrichAutoStart =
+    (process.env.CATALOG_REFRESH_ENRICH_AUTO_START ?? "").trim().toLowerCase() === "true";
   return {
     intervalDays,
     jitterHours,

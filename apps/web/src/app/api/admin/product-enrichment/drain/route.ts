@@ -13,7 +13,7 @@ const readJsonRecord = (value: unknown): Record<string, unknown> => {
 };
 
 const isCatalogRefreshAutoStartEnabled = () =>
-  process.env.CATALOG_REFRESH_ENRICH_AUTO_START === "true";
+  (process.env.CATALOG_REFRESH_ENRICH_AUTO_START ?? "").trim().toLowerCase() === "true";
 
 const isCatalogRefreshAutoStartDisabledRun = (metadata: unknown) => {
   // If the environment explicitly enables auto-start for catalog-refresh enrichment,
