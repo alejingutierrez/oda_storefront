@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import CatalogoFiltersPanel from "@/components/CatalogoFiltersPanel";
 import type { CatalogPriceBounds, CatalogPriceHistogram, CatalogPriceStats } from "@/lib/catalog-data";
@@ -22,6 +22,8 @@ type Facets = {
   materials: FacetItem[];
   patterns: FacetItem[];
 };
+
+const INTERACTION_PENDING_TIMEOUT_MS = 4500;
 
 function countActiveFilters(params: URLSearchParams) {
   let count = 0;
@@ -66,7 +68,9 @@ export default function CatalogMobileDock({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [transitionPending, startTransition] = useTransition();
+  const [isInteractionPending, setIsInteractionPending] = useState(false);
+  const pendingUnlockTimeoutRef = useRef<number | null>(null);
   const dockRef = useRef<HTMLDivElement | null>(null);
   const lockedKeysKey = lockedKeysList.join("|");
   const lockedKeys = useMemo(
@@ -121,6 +125,56 @@ export default function CatalogMobileDock({
   const [open, setOpen] = useState(false);
   const [draftParamsString, setDraftParamsString] = useState("");
 
+  const releaseInteractionLock = useCallback(() => {
+    if (pendingUnlockTimeoutRef.current !== null) {
+      window.clearTimeout(pendingUnlockTimeoutRef.current);
+      pendingUnlockTimeoutRef.current = null;
+    }
+    setIsInteractionPending(false);
+  }, []);
+
+  useEffect(() => {
+    if (!transitionPending) {
+      releaseInteractionLock();
+      return;
+    }
+    setIsInteractionPending(true);
+    if (pendingUnlockTimeoutRef.current !== null) {
+      window.clearTimeout(pendingUnlockTimeoutRef.current);
+    }
+    pendingUnlockTimeoutRef.current = window.setTimeout(() => {
+      pendingUnlockTimeoutRef.current = null;
+      setIsInteractionPending(false);
+    }, INTERACTION_PENDING_TIMEOUT_MS);
+  }, [releaseInteractionLock, transitionPending]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onFocus = () => releaseInteractionLock();
+    const onVis = () => {
+      if (!document.hidden) releaseInteractionLock();
+    };
+    const onPageShow = () => releaseInteractionLock();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [releaseInteractionLock]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingUnlockTimeoutRef.current !== null) {
+        window.clearTimeout(pendingUnlockTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const isPending = transitionPending && isInteractionPending;
+
   useEffect(() => {
     if (!open) return;
     const prevOverflow = document.body.style.overflow;
@@ -148,6 +202,13 @@ export default function CatalogMobileDock({
     const urlParams = new URLSearchParams(next.toString());
     for (const key of lockedKeys) urlParams.delete(key);
     const query = urlParams.toString();
+    const currentUrlParams = new URLSearchParams(params.toString());
+    for (const key of lockedKeys) currentUrlParams.delete(key);
+    if (query === currentUrlParams.toString()) {
+      setOpen(false);
+      return;
+    }
+
     const url = query ? `${pathname}?${query}` : pathname;
     startTransition(() => {
       router.replace(url, { scroll: false });
@@ -181,6 +242,10 @@ export default function CatalogMobileDock({
     const urlParams = new URLSearchParams(next.toString());
     for (const key of lockedKeys) urlParams.delete(key);
     const query = urlParams.toString();
+    const currentUrlParams = new URLSearchParams(params.toString());
+    for (const key of lockedKeys) currentUrlParams.delete(key);
+    if (query === currentUrlParams.toString()) return;
+
     const url = query ? `${pathname}?${query}` : pathname;
     startTransition(() => {
       router.replace(url, { scroll: false });
@@ -188,6 +253,9 @@ export default function CatalogMobileDock({
   };
 
   const handleClearCommitted = () => {
+    const currentUrlParams = new URLSearchParams(params.toString());
+    for (const key of lockedKeys) currentUrlParams.delete(key);
+    if (currentUrlParams.toString().length === 0) return;
     startTransition(() => {
       router.replace(pathname, { scroll: false });
     });

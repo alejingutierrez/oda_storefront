@@ -144,6 +144,10 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 ## Catalogo (public)
 - Ruta `/catalogo` (y aliases `/buscar`, `/g/*`) con filtros, facets y scroll infinito.
 - El catálogo público fuerza `inStock=true` y `enrichedOnly=true` (no muestra productos sin `products.metadata.enrichment`).
+- Hardening de estabilidad en pestañas inactivas:
+  - Filtros (desktop/mobile): lock transitorio de interacción con timeout + liberación automática al volver (`focus`, `visibilitychange`, `pageshow`) para evitar estados “pegados” en `Aplicando/Actualizando`.
+  - Infinite scroll: `loadMore` y prefetch con timeout/abort; reintento automático al recuperar foco/conectividad (`focus`, `online`, `pageshow`) y fallback por proximidad al sentinel.
+  - Navegación defensiva: se evita `router.replace` cuando el query final no cambia (reduce transiciones no-op y estados pendientes innecesarios).
 - Filtro de precio:
   - Slider (rango continuo): `price_min` y `price_max`.
   - Rangos múltiples (unión disjunta real): `price_range=min:max` (parámetro repetible). Si existe al menos un `price_range`, tiene prioridad sobre `price_min/price_max` (la UI limpia `price_range` al interactuar con el slider).

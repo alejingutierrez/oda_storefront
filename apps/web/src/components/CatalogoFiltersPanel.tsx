@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { CatalogPriceBounds, CatalogPriceHistogram, CatalogPriceStats } from "@/lib/catalog-data";
 import { labelizeSubcategory } from "@/lib/navigation";
@@ -234,6 +234,8 @@ function getStep(max: number) {
   return 10_000;
 }
 
+const INTERACTION_PENDING_TIMEOUT_MS = 4500;
+
 export default function CatalogoFiltersPanel({
   facets,
   subcategories,
@@ -251,12 +253,50 @@ export default function CatalogoFiltersPanel({
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const [isPending, startTransition] = useTransition();
+  const [transitionPending, startTransition] = useTransition();
+  const [isInteractionPending, setIsInteractionPending] = useState(false);
+  const pendingUnlockTimeoutRef = useRef<number | null>(null);
   const [resumeTick, setResumeTick] = useState(0);
+
+  const releaseInteractionLock = useCallback(() => {
+    if (pendingUnlockTimeoutRef.current !== null) {
+      window.clearTimeout(pendingUnlockTimeoutRef.current);
+      pendingUnlockTimeoutRef.current = null;
+    }
+    setIsInteractionPending(false);
+  }, []);
+
+  useEffect(() => {
+    if (!transitionPending) {
+      releaseInteractionLock();
+      return;
+    }
+    setIsInteractionPending(true);
+    if (pendingUnlockTimeoutRef.current !== null) {
+      window.clearTimeout(pendingUnlockTimeoutRef.current);
+    }
+    pendingUnlockTimeoutRef.current = window.setTimeout(() => {
+      pendingUnlockTimeoutRef.current = null;
+      setIsInteractionPending(false);
+    }, INTERACTION_PENDING_TIMEOUT_MS);
+  }, [releaseInteractionLock, transitionPending]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingUnlockTimeoutRef.current !== null) {
+        window.clearTimeout(pendingUnlockTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const isPending = transitionPending && isInteractionPending;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const bump = () => setResumeTick((prev) => prev + 1);
+    const bump = () => {
+      releaseInteractionLock();
+      setResumeTick((prev) => prev + 1);
+    };
     const onFocus = () => bump();
     const onVis = () => {
       if (!document.hidden) bump();
@@ -272,7 +312,7 @@ export default function CatalogoFiltersPanel({
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("pageshow", onPageShow);
     };
-  }, []);
+  }, [releaseInteractionLock]);
 
   const lockedKeysKey = lockedKeysList.join("|");
   const lockedKeys = useMemo(
@@ -520,6 +560,7 @@ export default function CatalogoFiltersPanel({
     return () => {
       window.clearTimeout(timeout);
       controller.abort();
+      setSubcategoriesLoading(false);
     };
   }, [isPending, resumeTick, showSubcategoriesSection, subcategoriesFetchKey, subcategoriesSessionKey]);
 
@@ -590,6 +631,7 @@ export default function CatalogoFiltersPanel({
     return () => {
       window.clearTimeout(timeout);
       controller.abort();
+      setPriceBoundsLoading(false);
     };
   }, [isPending, priceBoundsFetchKey, priceInsightsSessionKey, resumeTick]);
 
@@ -601,6 +643,11 @@ export default function CatalogoFiltersPanel({
     const urlParams = new URLSearchParams(next.toString());
     for (const key of lockedKeys) urlParams.delete(key);
     const query = urlParams.toString();
+    const currentUrlParams = new URLSearchParams(searchParamsString);
+    for (const key of lockedKeys) currentUrlParams.delete(key);
+    const currentQuery = currentUrlParams.toString();
+    if (normalizeParamsString(currentQuery) === normalizeParamsString(query)) return;
+
     const url = query ? `${pathname}?${query}` : pathname;
     startTransition(() => {
       router.replace(url, { scroll: false });

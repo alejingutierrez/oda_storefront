@@ -603,6 +603,7 @@ export default function CatalogoClient({
     return () => {
       window.clearTimeout(timeout);
       controller.abort();
+      setFacetsLoading(false);
     };
   }, [facets, facetsSessionKey, navigationPending, resumeTick]);
 

@@ -657,6 +657,10 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: No habilita edición de campos SEO; solo filtrado.
 - Métricas: reducción de tiempo para aislar grupos (proxy: # de cambios bulk por sesión / tiempo), uso del facet `seo_tag`.
 - Estado: **done (2026-02-15)**.
+- Actualización (2026-02-16, fix):
+  - Se endureció la navegación de filtros para evitar bloqueo al volver de una pestaña inactiva: timeout de interacción pendiente + desbloqueo en `focus/visibility/pageshow`.
+  - Se evitaron transiciones no-op (`router.replace`) en panel de filtros y dock mobile.
+  - Infinite scroll más robusto: timeout/abort de requests (`loadMore` y prefetch), recuperación en `focus/online/pageshow` y fallback por proximidad al sentinel para mobile/desktop.
 
 ### MC-116 Catálogo público: ocultar no enriquecidos + fix imágenes proxy
 - Historia: Como usuario, quiero que el catálogo público muestre solo productos enriquecidos y que las imágenes carguen sin errores, para navegar sin fricción.

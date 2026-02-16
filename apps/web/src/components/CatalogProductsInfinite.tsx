@@ -22,6 +22,16 @@ type PersistedState = {
 type MobileColumns = 1 | 2;
 
 const DEFAULT_PAGE_SIZE = 24;
+const LOAD_MORE_TIMEOUT_MS = 12_000;
+const PREFETCH_TIMEOUT_MS = 8_000;
+const AUTO_LOAD_THRESHOLD_PX = 1200;
+
+function isAbortError(err: unknown) {
+  if (!err) return false;
+  if (err instanceof DOMException) return err.name === "AbortError";
+  if (err instanceof Error) return err.name === "AbortError";
+  return false;
+}
 
 function readPersisted(key: string): PersistedState | null {
   if (typeof window === "undefined") return null;
@@ -134,6 +144,73 @@ export default function CatalogProductsInfinite({
   const scrollYRef = useRef(restored?.scrollY ?? 0);
   const persistTimeoutRef = useRef<number | null>(null);
   const loadingRef = useRef(false);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const prefetchAbortRef = useRef<AbortController | null>(null);
+  const [resumeTick, setResumeTick] = useState(0);
+
+  const fetchPageData = useCallback(
+    async (pageNumber: number, options?: { signal?: AbortSignal; timeoutMs?: number }) => {
+      const timeoutMs =
+        typeof options?.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
+          ? Math.max(500, Math.floor(options.timeoutMs))
+          : LOAD_MORE_TIMEOUT_MS;
+      const nextParams = new URLSearchParams(initialSearchParams);
+      nextParams.delete("page");
+      nextParams.set("page", String(pageNumber));
+
+      const timeoutController = new AbortController();
+      const externalSignal = options?.signal;
+      const abortFromExternal = () => timeoutController.abort();
+      if (externalSignal) {
+        if (externalSignal.aborted) timeoutController.abort();
+        else externalSignal.addEventListener("abort", abortFromExternal, { once: true });
+      }
+
+      let timedOut = false;
+      const watchdog = window.setTimeout(() => {
+        timedOut = true;
+        timeoutController.abort();
+      }, timeoutMs);
+
+      try {
+        const res = await fetch(`/api/catalog/products-page?${nextParams.toString()}`, {
+          signal: timeoutController.signal,
+        });
+        if (!res.ok) {
+          throw new Error(`http_${res.status}`);
+        }
+        return (await res.json()) as ApiResponse;
+      } catch (err) {
+        if (timedOut) throw new Error("timeout");
+        throw err;
+      } finally {
+        window.clearTimeout(watchdog);
+        if (externalSignal) externalSignal.removeEventListener("abort", abortFromExternal);
+      }
+    },
+    [initialSearchParams],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const bump = () => setResumeTick((prev) => prev + 1);
+    const onFocus = () => bump();
+    const onOnline = () => bump();
+    const onVis = () => {
+      if (!document.hidden) bump();
+    };
+    const onPageShow = () => bump();
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, []);
 
   useEffect(() => {
     if (!navigationPending) {
@@ -150,16 +227,12 @@ export default function CatalogProductsInfinite({
     previewAbortRef.current = controller;
     setPreview(null);
 
-    const nextParams = new URLSearchParams(key);
-    nextParams.delete("page");
-    nextParams.set("page", "1");
-
-    void fetch(`/api/catalog/products-page?${nextParams.toString()}`, {
+    void fetchPageData(1, {
       signal: controller.signal,
+      timeoutMs: PREFETCH_TIMEOUT_MS,
     })
       .then(async (res) => {
-        if (!res.ok) return null;
-        const data = (await res.json()) as ApiResponse;
+        const data = res;
         const nextItems = Array.isArray(data.items) ? data.items : [];
         const nextPageSize =
           typeof data.pageSize === "number" && Number.isFinite(data.pageSize) && data.pageSize > 0
@@ -169,15 +242,21 @@ export default function CatalogProductsInfinite({
       })
       .then((payload) => {
         if (!payload) return;
+        if (controller.signal.aborted) return;
         setPreview({ key, items: payload.items, pageSize: payload.pageSize });
         setPageSize(payload.pageSize);
       })
       .catch((err) => {
-        if ((err as { name?: unknown })?.name === "AbortError") return;
+        if (isAbortError(err)) return;
       });
-  }, [initialSearchParams, navigationPending, optimisticSearchParams, preview?.key]);
+  }, [fetchPageData, initialSearchParams, navigationPending, optimisticSearchParams, preview?.key]);
 
   useEffect(() => {
+    loadAbortRef.current?.abort();
+    loadAbortRef.current = null;
+    prefetchAbortRef.current?.abort();
+    prefetchAbortRef.current = null;
+    loadingRef.current = false;
     const persisted = readPersisted(stateKey);
     const usable =
       persisted &&
@@ -262,6 +341,7 @@ export default function CatalogProductsInfinite({
 
   const loadMore = useCallback(async () => {
     if (navigationPending) return;
+    if (typeof document !== "undefined" && document.hidden) return;
     if (loadingRef.current || loading || !hasMore) return;
     loadingRef.current = true;
     setLoading(true);
@@ -269,20 +349,19 @@ export default function CatalogProductsInfinite({
 
     const nextPage = page + 1;
     const prefetched = prefetchRef.current[nextPage];
+    const controller = new AbortController();
+    loadAbortRef.current?.abort();
+    loadAbortRef.current = controller;
 
     try {
       const data: ApiResponse = prefetched
         ? prefetched
-        : await (async () => {
-            const nextParams = new URLSearchParams(initialSearchParams);
-            nextParams.delete("page");
-            nextParams.set("page", String(nextPage));
-            const res = await fetch(`/api/catalog/products-page?${nextParams.toString()}`);
-            if (!res.ok) {
-              throw new Error(`http_${res.status}`);
-            }
-            return (await res.json()) as ApiResponse;
-          })();
+        : await fetchPageData(nextPage, {
+            signal: controller.signal,
+            timeoutMs: LOAD_MORE_TIMEOUT_MS,
+          });
+
+      if (controller.signal.aborted) return;
 
       delete prefetchRef.current[nextPage];
       const nextItems = Array.isArray(data.items) ? data.items : [];
@@ -304,24 +383,29 @@ export default function CatalogProductsInfinite({
       setPageSize(nextPageSize);
       setHasMoreFallback(nextItems.length >= nextPageSize);
     } catch (err) {
+      if (isAbortError(err)) return;
       const message = err instanceof Error ? err.message : "load_failed";
       setError(message);
     } finally {
+      if (loadAbortRef.current === controller) {
+        loadAbortRef.current = null;
+      }
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [hasMore, initialSearchParams, loading, navigationPending, page, pageSize]);
+  }, [fetchPageData, hasMore, loading, navigationPending, page, pageSize]);
 
   useEffect(() => {
     if (navigationPending) return;
     if (!hasMore) return;
     if (loading) return;
+    if (typeof document !== "undefined" && document.hidden) return;
     const nextPage = page + 1;
     if (prefetchRef.current[nextPage]) return;
 
-    const nextParams = new URLSearchParams(initialSearchParams);
-    nextParams.delete("page");
-    nextParams.set("page", String(nextPage));
+    prefetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    prefetchAbortRef.current = controller;
 
     const schedule = (fn: () => void) => {
       if (typeof window === "undefined") return;
@@ -335,25 +419,32 @@ export default function CatalogProductsInfinite({
     };
 
     schedule(() => {
-      void fetch(`/api/catalog/products-page?${nextParams.toString()}`)
-        .then(async (res) => {
-          if (!res.ok) return null;
-          const payload = (await res.json()) as ApiResponse;
-          return payload;
-        })
+      if (controller.signal.aborted) return;
+      void fetchPageData(nextPage, {
+        signal: controller.signal,
+        timeoutMs: PREFETCH_TIMEOUT_MS,
+      })
         .then((payload) => {
-          if (!payload) return;
+          if (controller.signal.aborted) return;
+          if (prefetchRef.current[nextPage]) return;
           prefetchRef.current[nextPage] = payload;
         })
         .catch(() => {});
     });
-  }, [hasMore, initialSearchParams, loading, navigationPending, page]);
+    return () => {
+      controller.abort();
+      if (prefetchAbortRef.current === controller) {
+        prefetchAbortRef.current = null;
+      }
+    };
+  }, [fetchPageData, hasMore, loading, navigationPending, page, resumeTick]);
 
   useEffect(() => {
     const node = sentinelRef.current;
     if (!node) return;
     if (!hasMore) return;
     if (navigationPending) return;
+    if (typeof document !== "undefined" && document.hidden) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -363,30 +454,31 @@ export default function CatalogProductsInfinite({
           void loadMore();
         }
       },
-      { rootMargin: "1200px" },
+      { rootMargin: `${AUTO_LOAD_THRESHOLD_PX}px` },
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore, loadMore, navigationPending]);
+  }, [hasMore, loadMore, navigationPending, resumeTick]);
 
   // Fallback: en algunos móviles el IntersectionObserver puede ser intermitente (targets sin alto, iOS quirks).
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (navigationPending) return;
     if (!hasMore) return;
+    if (document.hidden) return;
 
-    const thresholdPx = 1200;
+    const thresholdPx = AUTO_LOAD_THRESHOLD_PX;
     let raf: number | null = null;
 
     const check = () => {
       raf = null;
       if (loadingRef.current) return;
-      const doc = document.documentElement;
-      const scrollY = window.scrollY || 0;
+      const sentinel = sentinelRef.current;
+      if (!sentinel) return;
       const viewport = window.innerHeight || 0;
-      const height = doc.scrollHeight || 0;
-      if (!height) return;
-      if (scrollY + viewport >= height - thresholdPx) {
+      const top = sentinel.getBoundingClientRect().top;
+      if (!Number.isFinite(top)) return;
+      if (top - viewport <= thresholdPx) {
         void loadMore();
       }
     };
@@ -398,13 +490,29 @@ export default function CatalogProductsInfinite({
 
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
+    window.addEventListener("focus", onScroll);
+    window.addEventListener("online", onScroll);
+    window.addEventListener("pageshow", onScroll);
+    document.addEventListener("visibilitychange", onScroll);
     check();
     return () => {
       if (raf) window.cancelAnimationFrame(raf);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
+      window.removeEventListener("focus", onScroll);
+      window.removeEventListener("online", onScroll);
+      window.removeEventListener("pageshow", onScroll);
+      document.removeEventListener("visibilitychange", onScroll);
     };
-  }, [hasMore, loadMore, navigationPending]);
+  }, [hasMore, loadMore, navigationPending, resumeTick]);
+
+  useEffect(() => {
+    return () => {
+      loadAbortRef.current?.abort();
+      prefetchAbortRef.current?.abort();
+      previewAbortRef.current?.abort();
+    };
+  }, []);
 
   if (!navigationPending && displayItems.length === 0) {
     return (
