@@ -483,7 +483,7 @@ export default function ProductCurationPanel() {
             <p className="mt-2 text-sm text-slate-600">Ajusta filtros o limpia para ampliar resultados.</p>
           </div>
         ) : (
-          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {products.map((product) => {
               const selected = selectedIds.has(product.id);
               return (
@@ -497,7 +497,7 @@ export default function ProductCurationPanel() {
                   <button
                     type="button"
                     onClick={() => toggleSelection(product.id)}
-                    className="absolute left-3 top-3 z-10 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm"
+                    className="absolute left-2 top-2 z-10 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm sm:left-3 sm:top-3 sm:px-3 sm:text-xs"
                   >
                     <span
                       className={classNames(
@@ -510,7 +510,7 @@ export default function ProductCurationPanel() {
                   </button>
 
                   {product.hasEnrichment ? (
-                    <span className="absolute right-3 top-3 z-10 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                    <span className="absolute right-2 top-2 z-10 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-emerald-700 sm:right-3 sm:top-3 sm:px-3 sm:text-[10px]">
                       Enriquecido
                     </span>
                   ) : null}
@@ -522,7 +522,7 @@ export default function ProductCurationPanel() {
                         alt={product.name}
                         fill
                         className="object-cover object-center"
-                        sizes="(min-width: 1280px) 30vw, (min-width: 768px) 45vw, 90vw"
+                        sizes="(min-width: 1280px) 30vw, (min-width: 640px) 45vw, 50vw"
                         unoptimized
                       />
                     ) : (
@@ -532,17 +532,24 @@ export default function ProductCurationPanel() {
                     )}
                   </div>
 
-                  <div className="space-y-3 p-5">
+                  <div className="space-y-2 p-3 sm:space-y-3 sm:p-5">
                     <div className="space-y-1">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{product.brandName}</p>
-                      <h3 className="text-sm font-semibold text-slate-900 line-clamp-2">{product.name}</h3>
-                      <p className="text-xs text-slate-600">
-                        {formatPriceRange(product.minPrice, product.maxPrice, product.currency)} ·{" "}
-                        {product.inStockCount}/{product.variantCount} en stock
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 sm:text-xs">
+                        {product.brandName}
+                      </p>
+                      <h3 className="text-xs font-semibold text-slate-900 line-clamp-2 sm:text-sm">
+                        {product.name}
+                      </h3>
+                      <p className="text-[11px] text-slate-600 sm:text-xs">
+                        {formatPriceRange(product.minPrice, product.maxPrice, product.currency)}
+                        <span className="hidden sm:inline">
+                          {" "}
+                          · {product.inStockCount}/{product.variantCount} en stock
+                        </span>
                       </p>
                     </div>
 
-                    <div className="grid gap-2 text-xs text-slate-700">
+                    <div className="hidden gap-2 text-xs text-slate-700 sm:grid">
                       <p>
                         <span className="font-semibold text-slate-800">Categoría:</span>{" "}
                         {formatLabel(product.category, taxonomyOptions?.categoryLabels ?? {})}
@@ -565,7 +572,7 @@ export default function ProductCurationPanel() {
                       </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="hidden flex-wrap items-center justify-between gap-2 text-xs sm:flex">
                       {product.sourceUrl ? (
                         <a
                           href={product.sourceUrl}
