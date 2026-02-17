@@ -14,6 +14,7 @@ import {
   buildWhere,
   type CatalogFilters,
 } from "@/lib/catalog-query";
+import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
 
 const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 // Products can change frequently (stock/price), but we still want to avoid DB spikes on filters.
@@ -21,7 +22,7 @@ const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 const CATALOG_PRODUCTS_REVALIDATE_SECONDS = 60;
 export const CATALOG_PAGE_SIZE = 24;
 // Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
-const CATALOG_CACHE_VERSION = 5;
+const CATALOG_CACHE_VERSION = 6;
 
 const buildCatalogCacheOptions = (revalidate: number) => ({
   revalidate,
@@ -378,6 +379,7 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
           ${productWhere}
           ${variantWhere}
           and v.price > 0
+          and v.price <= ${CATALOG_MAX_VALID_PRICE}
         `,
       );
       const row = rows[0];
@@ -430,6 +432,7 @@ export async function getCatalogPriceInsights(
           ${productWhere}
           ${variantWhere}
           and v.price > 0
+          and v.price <= ${CATALOG_MAX_VALID_PRICE}
         )
         select
           count(*) as n,
@@ -551,6 +554,7 @@ export async function getCatalogPriceInsights(
           ${productWhere}
           ${variantWhere}
           and v.price > 0
+          and v.price <= ${CATALOG_MAX_VALID_PRICE}
         )
         select
           least(${resolvedBucketCount}, greatest(1, width_bucket(price, ${bounds.min}, ${bounds.max}, ${resolvedBucketCount}))) as bucket,
@@ -1574,8 +1578,8 @@ async function computeCatalogProductsPage(params: {
             p."imageCoverUrl",
             b.name as "brandName",
             p."sourceUrl",
-            min(case when v.price > 0 then v.price end) as "minPrice",
-            max(case when v.price > 0 then v.price end) as "maxPrice",
+            min(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "minPrice",
+            max(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "maxPrice",
             max(v.currency) as currency
           from products p
           join brands b on b.id = p."brandId"
@@ -1648,8 +1652,8 @@ async function computeCatalogProductsPage(params: {
         join brands b on b.id = p."brandId"
         left join lateral (
           select
-            min(case when v.price > 0 then v.price end) as "minPrice",
-            max(case when v.price > 0 then v.price end) as "maxPrice",
+            min(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "minPrice",
+            max(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "maxPrice",
             max(v.currency) as currency
           from variants v
           where v."productId" = p.id
@@ -1740,8 +1744,8 @@ async function computeCatalogProducts(params: {
             p."imageCoverUrl",
             b.name as "brandName",
             p."sourceUrl",
-            min(case when v.price > 0 then v.price end) as "minPrice",
-            max(case when v.price > 0 then v.price end) as "maxPrice",
+            min(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "minPrice",
+            max(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "maxPrice",
             max(v.currency) as currency
           from products p
           join brands b on b.id = p."brandId"
@@ -1814,8 +1818,8 @@ async function computeCatalogProducts(params: {
         join brands b on b.id = p."brandId"
         left join lateral (
           select
-            min(case when v.price > 0 then v.price end) as "minPrice",
-            max(case when v.price > 0 then v.price end) as "maxPrice",
+            min(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "minPrice",
+            max(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "maxPrice",
             max(v.currency) as currency
           from variants v
           where v."productId" = p.id

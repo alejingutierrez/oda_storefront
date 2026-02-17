@@ -24,8 +24,9 @@ import {
   pickOption,
   safeOrigin,
 } from "@/lib/catalog/utils";
+import { sanitizeCatalogPrice } from "@/lib/catalog-price";
 
-const toNumber = (value: unknown) => parsePriceValue(value);
+const toNumber = (value: unknown) => sanitizeCatalogPrice(parsePriceValue(value));
 const chooseString = (
   existing: string | null | undefined,
   next: string | null | undefined,

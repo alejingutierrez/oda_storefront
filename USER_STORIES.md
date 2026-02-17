@@ -718,6 +718,9 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Actualización (2026-02-17, fix):
   - Se desactivó el prefetch automático (`prefetch={false}`) en los links del header/mega menu (desktop y mobile) para evitar saturación de requests `_rsc` durante transiciones de filtros en `/catalogo`.
   - Impacto esperado: menor probabilidad de estados de carga largos/intermitentes al aplicar filtros de precio bajo red/conexión inestable.
+- Actualización (2026-02-17, fix precio outliers):
+  - Se agregó guardia de precio válido en backend (`CATALOG_PRICE_MAX_VALID`, default `100000000`) para que PLP/filtro/sort ignoren variantes con precios anómalos (ej. miles de millones por errores de origen).
+  - `/api/catalog/price-bounds` vuelve a responder `bounds + stats + histogram`, y la ingestión (`catalog/extractor` + normalizador) ahora sanea precios fuera de rango para evitar reintroducir outliers en corridas futuras.
 
 ### MC-126 PLP `/catalogo`: polish desktop + listas + SEO + header
 - Historia: Como usuario, quiero que el catálogo en desktop sea más ordenado y predecible (scroll de filtros por zonas, guardado en listas sin fricción y header consistente), y que la página tenga SEO más robusto, para explorar y compartir mejor.

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getOpenAIClient } from "@/lib/openai";
 import { guessCurrency, normalizeSize, pickOption } from "@/lib/catalog/utils";
+import { sanitizeCatalogPrice } from "@/lib/catalog-price";
 import type { CanonicalProduct, CanonicalVariant, RawProduct, RawVariant } from "@/lib/catalog/types";
 import {
   CATEGORY_VALUES,
@@ -663,7 +664,7 @@ const buildCanonicalVariants = (
 ) => {
   const variants: CanonicalVariant[] = [];
   rawVariants.forEach((variant) => {
-    const price = typeof variant.price === "number" ? variant.price : null;
+    const price = sanitizeCatalogPrice(typeof variant.price === "number" ? variant.price : null);
     const currency = guessCurrency(price, variant.currency ?? fallbackCurrency ?? null);
     variants.push({
       sku: variant.sku ?? null,
@@ -912,9 +913,9 @@ export const normalizeCatalogProductWithOpenAI = async (rawProduct: RawProduct) 
       }
       if (Array.isArray(product.variants)) {
         product.variants = product.variants.map((variant) => {
-          const price = typeof variant.price === "number" ? variant.price : null;
+          const price = sanitizeCatalogPrice(typeof variant.price === "number" ? variant.price : null);
           const currency = guessCurrency(price, variant.currency ?? null);
-          return { ...variant, currency: currency ?? variant.currency ?? null };
+          return { ...variant, price, currency: currency ?? variant.currency ?? null };
         });
       }
       return product;

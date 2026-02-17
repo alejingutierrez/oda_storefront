@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { type GenderKey } from "@/lib/navigation";
+import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
 
 export type CatalogFilters = {
   q?: string;
@@ -198,6 +199,9 @@ export function buildVariantConditions(filters: CatalogFilters): Prisma.Sql[] {
       variantConditions.push(Prisma.sql`v.price <= ${filters.priceMax}`);
     }
   }
+  if (filters.priceRanges?.length || filters.priceMin !== undefined || filters.priceMax !== undefined) {
+    variantConditions.push(Prisma.sql`v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE}`);
+  }
   if (filters.inStock) {
     variantConditions.push(
       Prisma.sql`(v.stock > 0 or v."stockStatus" in ('in_stock','preorder'))`
@@ -230,9 +234,9 @@ export function buildOrderBy(sort: string, filters?: CatalogFilters): Prisma.Sql
   const q = filters?.q ? `%${filters.q}%` : null;
   switch (sort) {
     case "price_asc":
-      return Prisma.sql`order by min(case when v.price > 0 then v.price end) asc nulls last, p."createdAt" desc`;
+      return Prisma.sql`order by min(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) asc nulls last, p."createdAt" desc`;
     case "price_desc":
-      return Prisma.sql`order by max(case when v.price > 0 then v.price end) desc nulls last, p."createdAt" desc`;
+      return Prisma.sql`order by max(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) desc nulls last, p."createdAt" desc`;
     case "relevancia":
       if (q) {
         return Prisma.sql`

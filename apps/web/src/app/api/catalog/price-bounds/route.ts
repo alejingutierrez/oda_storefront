@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCatalogPriceBounds } from "@/lib/catalog-data";
+import { getCatalogPriceInsights } from "@/lib/catalog-data";
 import { parseCatalogFiltersFromSearchParams } from "@/lib/catalog-filters";
 
 export const runtime = "nodejs";
@@ -10,10 +10,10 @@ export async function GET(req: Request) {
   const parsedFilters = parseCatalogFiltersFromSearchParams(url.searchParams, { categoryMode: "single" });
   const filters = { ...parsedFilters, inStock: true, enrichedOnly: true };
 
-  const bounds = await getCatalogPriceBounds(filters);
+  const insights = await getCatalogPriceInsights(filters);
 
   return NextResponse.json(
-    { bounds, histogram: null, stats: null },
+    insights,
     {
       headers: {
         // Cache corto en CDN para estabilidad (pestañas inactivas / back-forward).

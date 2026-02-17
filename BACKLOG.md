@@ -34,6 +34,7 @@
 - MC-034 | todo | P2 | Performance & resiliencia front | Budgets CWV, fallbacks, manejo de errores de catálogo.
 
 ## Done (2026-02)
+- MC-125 | done | P1 | PLP `/catalogo`: corregir outliers de precio (rangos astronómicos) y estabilizar orden por precio | Se aplicó guardia de precio válido (`CATALOG_PRICE_MAX_VALID`, default 100M COP) en cálculo de bounds, min/max de cards y sort `price_asc/price_desc`; además, `/api/catalog/price-bounds` vuelve a exponer `bounds+stats+histogram` y la ingestión sanea precios fuera de rango para no persistir nuevos outliers.
 - MC-125 | done | P1 | PLP `/catalogo`: estabilizar filtro de precio evitando saturación por prefetch de navegación | Se desactivó `prefetch` en links del header/mega menu (desktop + mobile) para evitar ráfagas de requests `_rsc` que competían con transiciones de filtros y dejaban estados “Actualizando…” prolongados.
 - MC-125 | done | P1 | PLP `/catalogo`: hardening de filtros al volver de pestaña inactiva + scroll infinito más estable | Se agregó guardia anti-bloqueo en transiciones de filtros (timeout + release en focus/visibility/pageshow), se evitaron `router.replace` no-op en filtros/dock mobile, y se reforzó infinite scroll con timeout/abort en `loadMore/prefetch`, reintento por eventos `focus/online/pageshow` y fallback por proximidad real al sentinel.
 - MC-016 | done | P1 | ISR/Cache y performance | PLP `/catalogo`: filtros <2s con índices DB (Neon) + hardening UI de subcategorías; benchmark reproducible.
