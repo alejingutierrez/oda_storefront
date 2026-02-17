@@ -715,6 +715,9 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: UX confusa si se mezclan `price_range` y slider; mitigación: el slider limpia `price_range` al interactuar y la UI lo indica.
 - Métricas: tasa de carga exitosa de páginas (infinite scroll), tiempo percibido al aplicar filtros/sort, interacción con toggles de layout.
 - Estado: **done (2026-02-15)**.
+- Actualización (2026-02-17, fix):
+  - Se desactivó el prefetch automático (`prefetch={false}`) en los links del header/mega menu (desktop y mobile) para evitar saturación de requests `_rsc` durante transiciones de filtros en `/catalogo`.
+  - Impacto esperado: menor probabilidad de estados de carga largos/intermitentes al aplicar filtros de precio bajo red/conexión inestable.
 
 ### MC-126 PLP `/catalogo`: polish desktop + listas + SEO + header
 - Historia: Como usuario, quiero que el catálogo en desktop sea más ordenado y predecible (scroll de filtros por zonas, guardado en listas sin fricción y header consistente), y que la página tenga SEO más robusto, para explorar y compartir mejor.

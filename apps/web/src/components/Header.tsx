@@ -8,7 +8,7 @@ export default function Header({ menu }: { menu: MegaMenuData }) {
   return (
     <header className="sticky top-0 z-40 border-b border-[color:var(--oda-border)] bg-white/90 backdrop-blur">
       <div className="oda-container relative flex items-center gap-8">
-        <Link
+        <Link prefetch={false}
           href="/"
           className="flex items-center py-6 text-lg font-semibold uppercase tracking-[0.32em]"
         >
@@ -28,7 +28,7 @@ export default function Header({ menu }: { menu: MegaMenuData }) {
               className="w-[28rem] bg-transparent text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] placeholder:text-[color:var(--oda-taupe)] focus:outline-none"
             />
           </div>
-          <Link
+          <Link prefetch={false}
             href="/buscar"
             className="rounded-full px-3 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
           >

@@ -83,14 +83,14 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                   <div className="mt-6 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                     <span>Explorar</span>
                     <div className="flex items-center gap-1">
-                      <Link
+                      <Link prefetch={false}
                         href="/novedades"
                         className="rounded-full px-3 py-2 text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                         onClick={() => setOpen(false)}
                       >
                         Novedades
                       </Link>
-                      <Link
+                      <Link prefetch={false}
                         href="/buscar"
                         className="rounded-full px-3 py-2 text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                         onClick={() => setOpen(false)}
@@ -127,7 +127,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                                 <div className="flex flex-col gap-2">
                                   {items.map((item) => (
                                     <div key={item.key} className="flex flex-col gap-1">
-                                      <Link
+                                      <Link prefetch={false}
                                         href={item.href}
                                         className="rounded-xl px-3 py-2 text-xs font-medium text-[color:var(--oda-ink)] transition hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                                         onClick={() => setOpen(false)}
@@ -137,7 +137,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                                       {item.subcategories && item.subcategories.length > 0 ? (
                                         <div className="flex flex-wrap gap-2 px-3 text-[10px] uppercase tracking-[0.14em] text-[color:var(--oda-taupe)]">
                                           {item.subcategories.map((sub) => (
-                                            <Link
+                                            <Link prefetch={false}
                                               key={sub.key}
                                               href={sub.href}
                                               className="rounded-full px-2 py-1 transition hover:bg-white/70 hover:text-[color:var(--oda-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
@@ -153,7 +153,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                                 </div>
                               </div>
                             ))}
-                            <Link
+                            <Link prefetch={false}
                               href={`/g/${GENDER_ROUTE[gender]}`}
                               className="inline-flex rounded-full px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)] transition hover:bg-white/70 hover:text-[color:var(--oda-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                               onClick={() => setOpen(false)}

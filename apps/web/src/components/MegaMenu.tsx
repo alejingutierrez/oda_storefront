@@ -17,7 +17,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
     <nav className="w-full">
       <ul className="flex items-center gap-6 text-sm uppercase tracking-[0.18em] text-[color:var(--oda-ink)]">
         <li>
-          <Link
+          <Link prefetch={false}
             href="/novedades"
             className={[
               "relative block py-6 text-xs font-medium transition-colors hover:text-[color:var(--oda-ink-soft)]",
@@ -34,7 +34,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
           const superioresColumns = splitColumns(data.Superiores, 2);
           return (
             <li key={gender} className="group">
-              <Link
+              <Link prefetch={false}
                 href={`/g/${route}`}
                 className={[
                   "relative block py-6 text-xs font-medium transition-colors hover:text-[color:var(--oda-ink-soft)]",
@@ -67,7 +67,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                         >
                           {items.map((item) => (
                             <div key={item.key} className="flex flex-col gap-2">
-                              <Link
+                              <Link prefetch={false}
                                 href={item.href}
                                 className={[
                                   "-mx-2 inline-flex rounded-lg px-2 py-1 text-sm font-medium text-[color:var(--oda-ink)] transition",
@@ -80,7 +80,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                               {item.subcategories && item.subcategories.length > 0 ? (
                                 <div className="grid gap-1 border-l border-[color:var(--oda-border)] pl-3">
                                   {item.subcategories.map((sub) => (
-                                    <Link
+                                    <Link prefetch={false}
                                       key={sub.key}
                                       href={sub.href}
                                       className={[
@@ -107,7 +107,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                     <div className="flex max-h-[52vh] flex-col gap-3 overflow-y-auto pr-2">
                       {data.Inferiores.map((item) => (
                         <div key={item.key} className="flex flex-col gap-2">
-                          <Link
+                          <Link prefetch={false}
                             href={item.href}
                             className={[
                               "-mx-2 inline-flex rounded-lg px-2 py-1 text-sm font-medium text-[color:var(--oda-ink)] transition",
@@ -120,7 +120,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                           {item.subcategories && item.subcategories.length > 0 ? (
                             <div className="grid gap-1 border-l border-[color:var(--oda-border)] pl-3">
                               {item.subcategories.map((sub) => (
-                                <Link
+                                <Link prefetch={false}
                                   key={sub.key}
                                   href={sub.href}
                                   className={[
@@ -145,7 +145,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                     <div className="flex max-h-[52vh] flex-col gap-3 overflow-y-auto pr-2">
                       {data.Accesorios.map((item) => (
                         <div key={item.key} className="flex flex-col gap-2">
-                          <Link
+                          <Link prefetch={false}
                             href={item.href}
                             className={[
                               "-mx-2 inline-flex rounded-lg px-2 py-1 text-sm font-medium text-[color:var(--oda-ink)] transition",
@@ -158,7 +158,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                           {item.subcategories && item.subcategories.length > 0 ? (
                             <div className="grid gap-1 border-l border-[color:var(--oda-border)] pl-3">
                               {item.subcategories.map((sub) => (
-                                <Link
+                                <Link prefetch={false}
                                   key={sub.key}
                                   href={sub.href}
                                   className={[
@@ -178,7 +178,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                   </div>
                 </div>
                 <div className="mt-6 border-t border-[color:var(--oda-border)] pt-4 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                  <Link
+                  <Link prefetch={false}
                     href={`/g/${route}`}
                     className="inline-flex items-center gap-2 hover:text-[color:var(--oda-ink)]"
                   >
