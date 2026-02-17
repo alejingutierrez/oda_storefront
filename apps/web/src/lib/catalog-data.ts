@@ -3,6 +3,7 @@ import "server-only";
 import { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { CATALOG_CACHE_TAG } from "@/lib/catalog-cache";
 import { labelize, labelizeSubcategory, normalizeGender, type GenderKey } from "@/lib/navigation";
 import { getPublishedTaxonomyOptions } from "@/lib/taxonomy/server";
 import type { TaxonomyOptions } from "@/lib/taxonomy/types";
@@ -20,7 +21,12 @@ const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 const CATALOG_PRODUCTS_REVALIDATE_SECONDS = 60;
 export const CATALOG_PAGE_SIZE = 24;
 // Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
-const CATALOG_CACHE_VERSION = 4;
+const CATALOG_CACHE_VERSION = 5;
+
+const buildCatalogCacheOptions = (revalidate: number) => ({
+  revalidate,
+  tags: [CATALOG_CACHE_TAG],
+});
 
 // Canonicalize legacy category keys at query time so facets/filters stay consistent without rewriting the DB.
 const CATEGORY_CANON_EXPR = Prisma.sql`
@@ -243,7 +249,7 @@ export async function getCatalogStats(): Promise<CatalogStats> {
       };
     },
     ["catalog-stats", `cache-v${CATALOG_CACHE_VERSION}`],
-    { revalidate: CATALOG_REVALIDATE_SECONDS }
+    buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS)
   );
 
   return cached();
@@ -255,7 +261,7 @@ export async function getCatalogFacets(filters: CatalogFilters): Promise<Catalog
   const cached = unstable_cache(
     async () => computeCatalogFacets(filters, taxonomy),
     ["catalog-facets", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`, cacheKey],
-    { revalidate: CATALOG_REVALIDATE_SECONDS },
+    buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS),
   );
 
   return cached();
@@ -267,7 +273,7 @@ export async function getCatalogFacetsLite(filters: CatalogFilters): Promise<Cat
   const cached = unstable_cache(
     async () => computeCatalogFacetsLite(filters, taxonomy),
     ["catalog-facets-lite", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`, cacheKey],
-    { revalidate: CATALOG_REVALIDATE_SECONDS },
+    buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS),
   );
 
   return cached();
@@ -333,7 +339,7 @@ export async function getCatalogFacetsStatic(): Promise<CatalogFacetsLite> {
       };
     },
     ["catalog-facets-static", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`],
-    { revalidate: CATALOG_REVALIDATE_SECONDS },
+    buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS),
   );
 
   return cached();
@@ -348,7 +354,7 @@ export async function getCatalogSubcategories(filters: CatalogFilters): Promise<
   const cached = unstable_cache(
     async () => computeCatalogSubcategories(filters, taxonomy),
     ["catalog-subcategories", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`, cacheKey],
-    { revalidate: CATALOG_REVALIDATE_SECONDS },
+    buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS),
   );
 
   return cached();
@@ -383,7 +389,7 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
       };
     },
     ["catalog-price-bounds", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
-    { revalidate: CATALOG_REVALIDATE_SECONDS },
+    buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS),
   );
 
   return cached();
@@ -567,7 +573,7 @@ export async function getCatalogPriceInsights(
       };
     },
     ["catalog-price-insights", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
-    { revalidate: CATALOG_REVALIDATE_SECONDS },
+    buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS),
   );
 
   return cached();
@@ -1444,7 +1450,7 @@ export async function getCatalogProductsPage(params: {
   const cached = unstable_cache(
     () => computeCatalogProductsPage(params),
     ["catalog-products-page", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
-    { revalidate: CATALOG_PRODUCTS_REVALIDATE_SECONDS },
+    buildCatalogCacheOptions(CATALOG_PRODUCTS_REVALIDATE_SECONDS),
   );
 
   const items = await cached();
@@ -1458,7 +1464,7 @@ export async function getCatalogProductsCount(params: { filters: CatalogFilters 
   const cached = unstable_cache(
     () => computeCatalogProductsCount(params.filters),
     ["catalog-products-count", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
-    { revalidate: CATALOG_PRODUCTS_REVALIDATE_SECONDS },
+    buildCatalogCacheOptions(CATALOG_PRODUCTS_REVALIDATE_SECONDS),
   );
 
   return cached();
@@ -1477,7 +1483,7 @@ export async function getCatalogProducts(params: {
   const cached = unstable_cache(
     () => computeCatalogProducts(params),
     ["catalog-products", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
-    { revalidate: CATALOG_PRODUCTS_REVALIDATE_SECONDS },
+    buildCatalogCacheOptions(CATALOG_PRODUCTS_REVALIDATE_SECONDS),
   );
   return cached();
 }

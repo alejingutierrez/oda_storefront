@@ -132,7 +132,7 @@ Reglas estrictas:
 - color_pantone debe ser codigo TCX NN-NNNN (1 a 3 valores por variante, orden de predominancia).
 
 Reglas de evidencia:
-- Prioriza texto en este orden: product.name_original, product.description_original, signals.vendor_category/vendor_tags, signals.og_title/og_description.
+- Prioriza texto en este orden: product.name_original, product.description_original, signals.vendor_category/vendor_tags, signals.seo_hints, signals.og_title/og_description, signals.source_url_text y product.sourceUrl.
 - Usa signals.description_clean como base para redactar description y SEO.
 - Si signals.detected_materials tiene valores, reflejalos en material_tags cuando sean compatibles.
 - Si signals.signal_strength = "strong", confia en signals.inferred_category salvo evidencia fuerte en contra.

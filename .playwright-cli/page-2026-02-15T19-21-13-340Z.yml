@@ -1,0 +1,369 @@
+- main [ref=e2]:
+  - generic [ref=e4]:
+    - link "ODA" [ref=e5] [cursor=pointer]:
+      - /url: /
+    - navigation [ref=e7]:
+      - list [ref=e8]:
+        - listitem [ref=e9]:
+          - link "Femenino" [ref=e10] [cursor=pointer]:
+            - /url: /g/femenino
+        - listitem [ref=e11]:
+          - link "Masculino" [ref=e12] [cursor=pointer]:
+            - /url: /g/masculino
+        - listitem [ref=e13]:
+          - link "Unisex" [ref=e14] [cursor=pointer]:
+            - /url: /g/unisex
+        - listitem [ref=e15]:
+          - link "Infantil" [ref=e16] [cursor=pointer]:
+            - /url: /g/infantil
+    - generic [ref=e17]:
+      - textbox "Buscar" [ref=e19]
+      - link "Explorar" [ref=e20] [cursor=pointer]:
+        - /url: /buscar
+      - generic [ref=e21]: …
+  - generic [ref=e24]:
+    - generic [ref=e26]:
+      - heading "Catálogo" [level=1] [ref=e27]
+      - paragraph [ref=e28]: Descubre marcas locales con inventario disponible.
+    - generic [ref=e29]:
+      - generic "Filtros" [ref=e30]:
+        - generic [ref=e32]:
+          - paragraph [ref=e33]: Filtros
+          - button "Ocultar" [ref=e34]
+      - region "Resultados" [ref=e96]:
+        - generic [ref=e99]:
+          - generic [ref=e100]:
+            - paragraph [ref=e101]:
+              - generic "Cargando conteo" [ref=e102]
+              - text: productos
+            - generic "Cargando marcas" [ref=e103]
+          - generic [ref=e104]:
+            - generic [ref=e105]:
+              - text: Ordenar
+              - generic [ref=e106]:
+                - combobox "Ordenar" [ref=e107]:
+                  - option "Relevancia"
+                  - option "Nuevos" [selected]
+                  - 'option "Precio: menor"'
+                  - 'option "Precio: mayor"'
+                - generic: ▾
+            - button "Guardados" [ref=e108]:
+              - img [ref=e109]
+            - button "Limpiar filtros" [ref=e113]: ×
+        - generic [ref=e114]:
+          - list "Productos" [ref=e116]:
+            - listitem [ref=e117]:
+              - article [ref=e118]:
+                - button "Agregar a comparar" [ref=e120]:
+                  - img [ref=e121]
+                - button "Guardar Camisa crudo tejida con diseño de flores para mujer en favoritos" [ref=e127]:
+                  - img [ref=e129]
+                - link "Camisa crudo tejida con diseño de flores para mujer Tennis Camisa crudo tejida con diseño de flores para mujer $ 125.937" [ref=e131] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-crudo-cam-ent-mco-0003412/p
+                  - img "Camisa crudo tejida con diseño de flores para mujer" [ref=e132]
+                  - generic [ref=e134]:
+                    - paragraph [ref=e135]: Tennis
+                    - heading "Camisa crudo tejida con diseño de flores para mujer" [level=3] [ref=e136]
+                    - paragraph [ref=e137]: $ 125.937
+            - listitem [ref=e138]:
+              - article [ref=e139]:
+                - button "Agregar a comparar" [ref=e141]:
+                  - img [ref=e142]
+                - button "Guardar Cover Up largo de diseño a rayas para mujer en favoritos" [ref=e148]:
+                  - img [ref=e150]
+                - link "Cover Up largo de diseño a rayas para mujer Tennis Cover Up largo de diseño a rayas para mujer $ 85.455" [ref=e152] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/cover-up-crudo-tpi-cov-0001152/p
+                  - img "Cover Up largo de diseño a rayas para mujer" [ref=e153]
+                  - generic [ref=e155]:
+                    - paragraph [ref=e156]: Tennis
+                    - heading "Cover Up largo de diseño a rayas para mujer" [level=3] [ref=e157]
+                    - paragraph [ref=e158]: $ 85.455
+            - listitem [ref=e159]:
+              - article [ref=e160]:
+                - button "Agregar a comparar" [ref=e162]:
+                  - img [ref=e163]
+                - button "Guardar Camisa Oxford manga larga rosada para hombre en favoritos" [ref=e169]:
+                  - img [ref=e171]
+                - link "Camisa Oxford manga larga rosada para hombre Tennis Camisa Oxford manga larga rosada para hombre $ 71.955" [ref=e173] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-rosado-cam-ent-mla-0003440/p
+                  - img "Camisa Oxford manga larga rosada para hombre" [ref=e174]
+                  - generic [ref=e176]:
+                    - paragraph [ref=e177]: Tennis
+                    - heading "Camisa Oxford manga larga rosada para hombre" [level=3] [ref=e178]
+                    - paragraph [ref=e179]: $ 71.955
+            - listitem [ref=e180]:
+              - article [ref=e181]:
+                - button "Agregar a comparar" [ref=e183]:
+                  - img [ref=e184]
+                - button "Guardar Camisa en encaje con boleros para mujer en favoritos" [ref=e190]:
+                  - img [ref=e192]
+                - link "Camisa en encaje con boleros para mujer Tennis Camisa en encaje con boleros para mujer $ 125.937" [ref=e194] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-crudo-cam-ent-mla-0003455/p
+                  - img "Camisa en encaje con boleros para mujer" [ref=e195]
+                  - generic [ref=e197]:
+                    - paragraph [ref=e198]: Tennis
+                    - heading "Camisa en encaje con boleros para mujer" [level=3] [ref=e199]
+                    - paragraph [ref=e200]: $ 125.937
+            - listitem [ref=e201]:
+              - article [ref=e202]:
+                - button "Agregar a comparar" [ref=e204]:
+                  - img [ref=e205]
+                - button "Guardar Camisa en tela bordada negra para mujer en favoritos" [ref=e211]:
+                  - img [ref=e213]
+                - link "Camisa en tela bordada negra para mujer Tennis Camisa en tela bordada negra para mujer $ 76.455" [ref=e215] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-negro-cam-ent-mco-0003487/p
+                  - img "Camisa en tela bordada negra para mujer" [ref=e216]
+                  - generic [ref=e218]:
+                    - paragraph [ref=e219]: Tennis
+                    - heading "Camisa en tela bordada negra para mujer" [level=3] [ref=e220]
+                    - paragraph [ref=e221]: $ 76.455
+            - listitem [ref=e222]:
+              - article [ref=e223]:
+                - button "Agregar a comparar" [ref=e225]:
+                  - img [ref=e226]
+                - button "Guardar Camisa manga sisa de botones crudo para mujer en favoritos" [ref=e232]:
+                  - img [ref=e234]
+                - link "Camisa manga sisa de botones crudo para mujer Tennis Camisa manga sisa de botones crudo para mujer $ 67.455" [ref=e236] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-crudo-cam-ent-msi-0003503/p
+                  - img "Camisa manga sisa de botones crudo para mujer" [ref=e237]
+                  - generic [ref=e239]:
+                    - paragraph [ref=e240]: Tennis
+                    - heading "Camisa manga sisa de botones crudo para mujer" [level=3] [ref=e241]
+                    - paragraph [ref=e242]: $ 67.455
+            - listitem [ref=e243]:
+              - article [ref=e244]:
+                - button "Agregar a comparar" [ref=e246]:
+                  - img [ref=e247]
+                - button "Guardar Camisa en 100% lino negra para mujer en favoritos" [ref=e253]:
+                  - img [ref=e255]
+                - link "Camisa en 100% lino negra para mujer Tennis Camisa en 100% lino negra para mujer $ 76.455" [ref=e257] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-negro-cam-ent-mco-0003506/p
+                  - img "Camisa en 100% lino negra para mujer" [ref=e258]
+                  - generic [ref=e260]:
+                    - paragraph [ref=e261]: Tennis
+                    - heading "Camisa en 100% lino negra para mujer" [level=3] [ref=e262]
+                    - paragraph [ref=e263]: $ 76.455
+            - listitem [ref=e264]:
+              - article [ref=e265]:
+                - button "Agregar a comparar" [ref=e267]:
+                  - img [ref=e268]
+                - button "Guardar Camisa en tejido de punto crudo para mujer en favoritos" [ref=e274]:
+                  - img [ref=e276]
+                - link "Camisa en tejido de punto crudo para mujer Tennis Camisa en tejido de punto crudo para mujer $ 67.455" [ref=e278] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-crudo-cam-ent-mla-0003481/p
+                  - img "Camisa en tejido de punto crudo para mujer" [ref=e279]
+                  - generic [ref=e281]:
+                    - paragraph [ref=e282]: Tennis
+                    - heading "Camisa en tejido de punto crudo para mujer" [level=3] [ref=e283]
+                    - paragraph [ref=e284]: $ 67.455
+            - listitem [ref=e285]:
+              - article [ref=e286]:
+                - button "Agregar a comparar" [ref=e288]:
+                  - img [ref=e289]
+                - button "Guardar Camisa Burnette Tabaco en favoritos" [ref=e295]:
+                  - img [ref=e297]
+                - link "Camisa Burnette Tabaco Whitman Store Camisa Burnette Tabaco $ 399.000" [ref=e299] [cursor=pointer]:
+                  - /url: https://whitmanstore.com.co/products/camisa-burnette-tabaco
+                  - img "Camisa Burnette Tabaco" [ref=e300]
+                  - generic [ref=e302]:
+                    - paragraph [ref=e303]: Whitman Store
+                    - heading "Camisa Burnette Tabaco" [level=3] [ref=e304]
+                    - paragraph [ref=e305]: $ 399.000
+            - listitem [ref=e306]:
+              - article [ref=e307]:
+                - button "Agregar a comparar" [ref=e309]:
+                  - img [ref=e310]
+                - button "Guardar Camisa crudo con textura y bolero para mujer en favoritos" [ref=e316]:
+                  - img [ref=e318]
+                - link "Camisa crudo con textura y bolero para mujer Tennis Camisa crudo con textura y bolero para mujer $ 35.955" [ref=e320] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-crudo-cam-ent-tir-0003511/p
+                  - img "Camisa crudo con textura y bolero para mujer" [ref=e321]
+                  - generic [ref=e323]:
+                    - paragraph [ref=e324]: Tennis
+                    - heading "Camisa crudo con textura y bolero para mujer" [level=3] [ref=e325]
+                    - paragraph [ref=e326]: $ 35.955
+            - listitem [ref=e327]:
+              - article [ref=e328]:
+                - button "Agregar a comparar" [ref=e330]:
+                  - img [ref=e331]
+                - button "Guardar Camisa amplia en lino 100% negra para mujer en favoritos" [ref=e337]:
+                  - img [ref=e339]
+                - link "Camisa amplia en lino 100% negra para mujer Tennis Camisa amplia en lino 100% negra para mujer $ 76.455" [ref=e341] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-negro-cam-ent-msi-0003530/p
+                  - img "Camisa amplia en lino 100% negra para mujer" [ref=e342]
+                  - generic [ref=e344]:
+                    - paragraph [ref=e345]: Tennis
+                    - heading "Camisa amplia en lino 100% negra para mujer" [level=3] [ref=e346]
+                    - paragraph [ref=e347]: $ 76.455
+            - listitem [ref=e348]:
+              - article [ref=e349]:
+                - button "Agregar a comparar" [ref=e351]:
+                  - img [ref=e352]
+                - button "Guardar Camisa con diseño a rayas para hombre en favoritos" [ref=e358]:
+                  - img [ref=e360]
+                - link "Camisa con diseño a rayas para hombre Tennis Camisa con diseño a rayas para hombre $ 80.955" [ref=e362] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-cafe-cam-ent-mco-0003476/p
+                  - img "Camisa con diseño a rayas para hombre" [ref=e363]
+                  - generic [ref=e365]:
+                    - paragraph [ref=e366]: Tennis
+                    - heading "Camisa con diseño a rayas para hombre" [level=3] [ref=e367]
+                    - paragraph [ref=e368]: $ 80.955
+            - listitem [ref=e369]:
+              - article [ref=e370]:
+                - button "Agregar a comparar" [ref=e372]:
+                  - img [ref=e373]
+                - button "Guardar Camisa crop en ojalillo crudo para mujer en favoritos" [ref=e379]:
+                  - img [ref=e381]
+                - link "Camisa crop en ojalillo crudo para mujer Tennis Camisa crop en ojalillo crudo para mujer $ 58.455" [ref=e383] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-crudo-cam-ent-tir-0003515/p
+                  - img "Camisa crop en ojalillo crudo para mujer" [ref=e384]
+                  - generic [ref=e386]:
+                    - paragraph [ref=e387]: Tennis
+                    - heading "Camisa crop en ojalillo crudo para mujer" [level=3] [ref=e388]
+                    - paragraph [ref=e389]: $ 58.455
+            - listitem [ref=e390]:
+              - article [ref=e391]:
+                - button "Agregar a comparar" [ref=e393]:
+                  - img [ref=e394]
+                - button "Guardar Camisa en malla bordada cruda para mujer en favoritos" [ref=e400]:
+                  - img [ref=e402]
+                - link "Camisa en malla bordada cruda para mujer Tennis Camisa en malla bordada cruda para mujer $ 76.455" [ref=e404] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-crudo-cam-ent-mla-0003517/p
+                  - img "Camisa en malla bordada cruda para mujer" [ref=e405]
+                  - generic [ref=e407]:
+                    - paragraph [ref=e408]: Tennis
+                    - heading "Camisa en malla bordada cruda para mujer" [level=3] [ref=e409]
+                    - paragraph [ref=e410]: $ 76.455
+            - listitem [ref=e411]:
+              - article [ref=e412]:
+                - button "Agregar a comparar" [ref=e414]:
+                  - img [ref=e415]
+                - button "Guardar Buzo tipo camisa café para hombre en favoritos" [ref=e421]:
+                  - img [ref=e423]
+                - link "Buzo tipo camisa café para hombre Tennis Buzo tipo camisa café para hombre $ 85.455" [ref=e425] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/buzos-cafe-buz-pun-0001998/p
+                  - img "Buzo tipo camisa café para hombre" [ref=e426]
+                  - generic [ref=e428]:
+                    - paragraph [ref=e429]: Tennis
+                    - heading "Buzo tipo camisa café para hombre" [level=3] [ref=e430]
+                    - paragraph [ref=e431]: $ 85.455
+            - listitem [ref=e432]:
+              - article [ref=e433]:
+                - button "Agregar a comparar" [ref=e435]:
+                  - img [ref=e436]
+                - button "Guardar Camisa strapless de silueta A crudo para mujer en favoritos" [ref=e442]:
+                  - img [ref=e444]
+                - link "Camisa strapless de silueta A crudo para mujer Tennis Camisa strapless de silueta A crudo para mujer $ 94.437" [ref=e446] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-crudo-cam-ent-mco-0003612/p
+                  - img "Camisa strapless de silueta A crudo para mujer" [ref=e447]
+                  - generic [ref=e449]:
+                    - paragraph [ref=e450]: Tennis
+                    - heading "Camisa strapless de silueta A crudo para mujer" [level=3] [ref=e451]
+                    - paragraph [ref=e452]: $ 94.437
+            - listitem [ref=e453]:
+              - article [ref=e454]:
+                - button "Agregar a comparar" [ref=e456]:
+                  - img [ref=e457]
+                - button "Guardar Camisa con estampado de flores para niña en favoritos" [ref=e463]:
+                  - img [ref=e465]
+                - link "Camisa con estampado de flores para niña Tennis Camisa con estampado de flores para niña $ 35.955" [ref=e467] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-rojo-cam-est-tir-0003231/p
+                  - img "Camisa con estampado de flores para niña" [ref=e468]
+                  - generic [ref=e470]:
+                    - paragraph [ref=e471]: Tennis
+                    - heading "Camisa con estampado de flores para niña" [level=3] [ref=e472]
+                    - paragraph [ref=e473]: $ 35.955
+            - listitem [ref=e474]:
+              - article [ref=e475]:
+                - button "Agregar a comparar" [ref=e477]:
+                  - img [ref=e478]
+                - button "Guardar Camisa azul a rayas manga larga para hombre en favoritos" [ref=e484]:
+                  - img [ref=e486]
+                - link "Camisa azul a rayas manga larga para hombre Tennis Camisa azul a rayas manga larga para hombre $ 80.955" [ref=e488] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-azul-cam-pre-mla-0003216/p
+                  - img "Camisa azul a rayas manga larga para hombre" [ref=e489]
+                  - generic [ref=e491]:
+                    - paragraph [ref=e492]: Tennis
+                    - heading "Camisa azul a rayas manga larga para hombre" [level=3] [ref=e493]
+                    - paragraph [ref=e494]: $ 80.955
+            - listitem [ref=e495]:
+              - article [ref=e496]:
+                - button "Agregar a comparar" [ref=e498]:
+                  - img [ref=e499]
+                - button "Guardar Camisa azul con diseño preteñido manga larga para hombre en favoritos" [ref=e505]:
+                  - img [ref=e507]
+                - link "Camisa azul con diseño preteñido manga larga para hombre Tennis Camisa azul con diseño preteñido manga larga para hombre $ 71.955" [ref=e509] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-azul-cam-pre-mla-0003223/p
+                  - img "Camisa azul con diseño preteñido manga larga para hombre" [ref=e510]
+                  - generic [ref=e512]:
+                    - paragraph [ref=e513]: Tennis
+                    - heading "Camisa azul con diseño preteñido manga larga para hombre" [level=3] [ref=e514]
+                    - paragraph [ref=e515]: $ 71.955
+            - listitem [ref=e516]:
+              - article [ref=e517]:
+                - button "Agregar a comparar" [ref=e519]:
+                  - img [ref=e520]
+                - button "Guardar Camisa negra con tiras graduables para mujer en favoritos" [ref=e526]:
+                  - img [ref=e528]
+                - link "Camisa negra con tiras graduables para mujer Tennis Camisa negra con tiras graduables para mujer $ 40.455" [ref=e530] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-negro-cam-ent-tir-0003188/p
+                  - img "Camisa negra con tiras graduables para mujer" [ref=e531]
+                  - generic [ref=e533]:
+                    - paragraph [ref=e534]: Tennis
+                    - heading "Camisa negra con tiras graduables para mujer" [level=3] [ref=e535]
+                    - paragraph [ref=e536]: $ 40.455
+            - listitem [ref=e537]:
+              - article [ref=e538]:
+                - button "Agregar a comparar" [ref=e540]:
+                  - img [ref=e541]
+                - button "Guardar Camisa manga larga a rayas de color para hombre en favoritos" [ref=e547]:
+                  - img [ref=e549]
+                - link "Camisa manga larga a rayas de color para hombre Tennis Camisa manga larga a rayas de color para hombre $ 71.955" [ref=e551] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-azul-cam-ent-mla-0003225/p
+                  - img "Camisa manga larga a rayas de color para hombre" [ref=e552]
+                  - generic [ref=e554]:
+                    - paragraph [ref=e555]: Tennis
+                    - heading "Camisa manga larga a rayas de color para hombre" [level=3] [ref=e556]
+                    - paragraph [ref=e557]: $ 71.955
+            - listitem [ref=e558]:
+              - article [ref=e559]:
+                - button "Agregar a comparar" [ref=e561]:
+                  - img [ref=e562]
+                - button "Guardar Kimono en encaje crudo para mujer en favoritos" [ref=e568]:
+                  - img [ref=e570]
+                - link "Kimono en encaje crudo para mujer Tennis Kimono en encaje crudo para mujer $ 97.164" [ref=e572] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/cover-up-crudo-tpi-cov-0001077/p
+                  - img "Kimono en encaje crudo para mujer" [ref=e573]
+                  - generic [ref=e575]:
+                    - paragraph [ref=e576]: Tennis
+                    - heading "Kimono en encaje crudo para mujer" [level=3] [ref=e577]
+                    - paragraph [ref=e578]: $ 97.164
+            - listitem [ref=e579]:
+              - article [ref=e580]:
+                - button "Agregar a comparar" [ref=e582]:
+                  - img [ref=e583]
+                - button "Guardar Camisa crudo en lino 100% para mujer en favoritos" [ref=e589]:
+                  - img [ref=e591]
+                - link "Camisa crudo en lino 100% para mujer Tennis Camisa crudo en lino 100% para mujer $ 67.455" [ref=e593] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-crudo-cam-ent-mco-0003205/p
+                  - img "Camisa crudo en lino 100% para mujer" [ref=e594]
+                  - generic [ref=e596]:
+                    - paragraph [ref=e597]: Tennis
+                    - heading "Camisa crudo en lino 100% para mujer" [level=3] [ref=e598]
+                    - paragraph [ref=e599]: $ 67.455
+            - listitem [ref=e600]:
+              - article [ref=e601]:
+                - button "Agregar a comparar" [ref=e603]:
+                  - img [ref=e604]
+                - button "Guardar Camisa crudo cuello clásico en algodón 100% para mujer en favoritos" [ref=e610]:
+                  - img [ref=e612]
+                - link "Camisa crudo cuello clásico en algodón 100% para mujer Tennis Camisa crudo cuello clásico en algodón 100% para mujer $ 67.455" [ref=e614] [cursor=pointer]:
+                  - /url: https://www.tennis.com.co/camisas-crudo-cam-ent-mla-0003210/p
+                  - img "Camisa crudo cuello clásico en algodón 100% para mujer" [ref=e615]
+                  - generic [ref=e617]:
+                    - paragraph [ref=e618]: Tennis
+                    - heading "Camisa crudo cuello clásico en algodón 100% para mujer" [level=3] [ref=e619]
+                    - paragraph [ref=e620]: $ 67.455
+          - generic [ref=e621]:
+            - paragraph [ref=e624]: Mostrando 24
+            - button "Cargar más" [ref=e629]

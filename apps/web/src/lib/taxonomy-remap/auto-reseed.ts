@@ -31,7 +31,7 @@ type CandidateRow = {
 };
 
 type AutoReseedRunStatus = "running" | "completed" | "skipped" | "failed";
-type AutoReseedMode = "default" | "refresh_pending";
+type AutoReseedMode = "default" | "refresh_pending" | "seed_missing_pending";
 
 type AutoReseedRunRow = {
   id: string;
@@ -93,6 +93,7 @@ export type TaxonomyAutoReseedResult = {
   executionId: string | null;
   source: string | null;
   runKey: string | null;
+  nextCursorId?: string | null;
   learningAcceptedSamples: number;
   learningRejectedSamples: number;
   error?: string;
@@ -1201,11 +1202,17 @@ export const runTaxonomyAutoReseedBatch = async (params: {
   force?: boolean;
   limit?: number;
   mode?: AutoReseedMode;
+  cursorId?: string;
 }): Promise<TaxonomyAutoReseedResult> => {
   const phase = await getTaxonomyAutoReseedPhaseState();
   const defaultLimit = params.trigger === "manual" ? AUTO_LIMIT : Math.min(2_000, AUTO_LIMIT);
   const requestedLimit = Math.max(100, params.limit ?? defaultLimit);
-  const mode: AutoReseedMode = params.mode === "refresh_pending" ? "refresh_pending" : "default";
+  const mode: AutoReseedMode =
+    params.mode === "refresh_pending"
+      ? "refresh_pending"
+      : params.mode === "seed_missing_pending"
+        ? "seed_missing_pending"
+        : "default";
   if (!phase.enabled) {
     return {
       triggered: false,
@@ -1244,7 +1251,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
   const lastAuto = await getLastAutoReseedMeta();
   // `refresh_pending` is an iterative hygiene operation. It must be able to run even inside cooldown,
   // otherwise false positives remain stuck in the queue while we refine rules.
-  if (mode !== "refresh_pending" && !params.force && lastAuto?.createdAt) {
+  if (mode !== "refresh_pending" && mode !== "seed_missing_pending" && !params.force && lastAuto?.createdAt) {
     const cooldownMs = AUTO_COOLDOWN_MINUTES * 60_000;
     const ageMs = Date.now() - lastAuto.createdAt.getTime();
     if (ageMs < cooldownMs) {
@@ -1296,7 +1303,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
   const runKey = buildRunKey();
   const source = createSourceLabel(params.trigger, runKey);
   try {
-    const refreshPendingSql =
+    const pendingScopeSql =
       mode === "refresh_pending"
         ? Prisma.sql`
           AND EXISTS (
@@ -1306,7 +1313,33 @@ export const runTaxonomyAutoReseedBatch = async (params: {
               AND r_pending_only."status" = 'pending'
           )
         `
-        : Prisma.empty;
+        : mode === "seed_missing_pending"
+          ? Prisma.sql`
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "taxonomy_remap_reviews" r_pending_only
+            WHERE r_pending_only."productId" = p.id
+              AND r_pending_only."status" = 'pending'
+          )
+        `
+          : Prisma.empty;
+
+    const cursorId = typeof params.cursorId === "string" ? params.cursorId.trim() : "";
+    const cursorSql =
+      mode === "seed_missing_pending" && cursorId ? Prisma.sql`AND p.id > ${cursorId}` : Prisma.empty;
+
+    const orderSql =
+      mode === "seed_missing_pending"
+        ? Prisma.sql`p.id ASC`
+        : Prisma.sql`
+          EXISTS (
+            SELECT 1
+            FROM "taxonomy_remap_reviews" r_pending
+            WHERE r_pending."productId" = p.id
+              AND r_pending."status" = 'pending'
+          ) DESC,
+          p."updatedAt" DESC
+        `;
     const candidates = await prisma.$queryRaw<CandidateRow[]>(Prisma.sql`
       SELECT
         p.id,
@@ -1329,23 +1362,21 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         p.metadata
       FROM "products" p
       WHERE (p.metadata -> 'enrichment') IS NOT NULL
-        ${refreshPendingSql}
+        ${pendingScopeSql}
+        ${cursorSql}
         AND NOT EXISTS (
           SELECT 1
           FROM "taxonomy_remap_reviews" r
           WHERE r."productId" = p.id
             AND r."status" IN ('accepted', 'rejected')
         )
-      ORDER BY
-        EXISTS (
-          SELECT 1
-          FROM "taxonomy_remap_reviews" r_pending
-          WHERE r_pending."productId" = p.id
-            AND r_pending."status" = 'pending'
-        ) DESC,
-        p."updatedAt" DESC
+      ORDER BY ${orderSql}
       LIMIT ${requestedLimit}
     `);
+    const nextCursorId =
+      mode === "seed_missing_pending" && candidates.length
+        ? candidates[candidates.length - 1].id
+        : null;
 
     const proposals: Array<{
       id: string;
@@ -1413,6 +1444,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         seoDescription: row.seoDescription,
         seoTags,
         currentCategory: row.category,
+        currentSubcategory,
         currentGender: row.gender,
         allowedCategoryValues: CATEGORY_VALUES,
         subcategoryByCategory: SUBCATEGORY_BY_CATEGORY,
@@ -1696,6 +1728,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         executionId,
         source,
         runKey,
+        nextCursorId,
         learningAcceptedSamples: 0,
         learningRejectedSamples: 0,
       };
@@ -1764,6 +1797,7 @@ export const runTaxonomyAutoReseedBatch = async (params: {
       executionId,
       source,
       runKey,
+      nextCursorId,
       learningAcceptedSamples: 0,
       learningRejectedSamples: 0,
     };

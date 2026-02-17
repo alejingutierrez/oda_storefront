@@ -51,7 +51,12 @@ const buildOriginalVendorSignals = (metadata: Record<string, unknown> | null | u
     output.meta = {
       "og:title": typeof meta["og:title"] === "string" ? meta["og:title"] : null,
       "og:description": typeof meta["og:description"] === "string" ? meta["og:description"] : null,
+      "twitter:title": typeof meta["twitter:title"] === "string" ? meta["twitter:title"] : null,
+      "twitter:description":
+        typeof meta["twitter:description"] === "string" ? meta["twitter:description"] : null,
+      title: typeof meta.title === "string" ? meta.title : null,
       description: typeof meta.description === "string" ? meta.description : null,
+      keywords: typeof meta.keywords === "string" ? meta.keywords : null,
     };
   }
   return output;

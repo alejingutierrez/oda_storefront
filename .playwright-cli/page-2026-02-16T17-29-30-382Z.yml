@@ -1,0 +1,2240 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e4]:
+      - link "ODA" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=e7]:
+        - list [ref=e8]:
+          - listitem [ref=e9]:
+            - link "Novedades" [ref=e10] [cursor=pointer]:
+              - /url: /novedades
+          - listitem [ref=e11]:
+            - link "Femenino" [ref=e12] [cursor=pointer]:
+              - /url: /g/femenino
+          - listitem [ref=e13]:
+            - link "Masculino" [ref=e14] [cursor=pointer]:
+              - /url: /g/masculino
+          - listitem [ref=e15]:
+            - link "Unisex" [ref=e16] [cursor=pointer]:
+              - /url: /g/unisex
+          - listitem [ref=e17]:
+            - link "Infantil" [ref=e18] [cursor=pointer]:
+              - /url: /g/infantil
+      - generic [ref=e19]:
+        - textbox "Buscar" [ref=e21]
+        - link "Explorar" [ref=e22] [cursor=pointer]:
+          - /url: /buscar
+        - link "Ingresar" [ref=e633] [cursor=pointer]:
+          - /url: /sign-in?next=%2Fcatalogo
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - heading "Catálogo" [level=1] [ref=e30]
+        - paragraph [ref=e31]: Descubre marcas locales con inventario disponible.
+      - generic [ref=e32]:
+        - generic "Filtros" [ref=e33]:
+          - generic [ref=e35]:
+            - paragraph [ref=e36]: Filtros
+            - button "Ocultar" [ref=e37]
+          - complementary [ref=e634]:
+            - group [ref=e635]:
+              - generic "Género" [ref=e636] [cursor=pointer]:
+                - generic [ref=e637]: Género
+              - generic [ref=e638]:
+                - generic [ref=e640] [cursor=pointer]:
+                  - checkbox "Femenino" [ref=e641]
+                  - text: Femenino
+                - generic [ref=e643] [cursor=pointer]:
+                  - checkbox "Infantil" [ref=e644]
+                  - text: Infantil
+                - generic [ref=e646] [cursor=pointer]:
+                  - checkbox "Masculino" [ref=e647]
+                  - text: Masculino
+                - generic [ref=e649] [cursor=pointer]:
+                  - checkbox "Unisex" [ref=e650]
+                  - text: Unisex
+            - group [ref=e651]:
+              - generic "Categoría" [ref=e652] [cursor=pointer]:
+                - generic [ref=e653]: Categoría
+              - generic [ref=e655]:
+                - generic [ref=e657] [cursor=pointer]:
+                  - checkbox "Accesorios textiles y medias" [ref=e658]
+                  - generic [ref=e659]: Accesorios textiles y medias
+                - generic [ref=e661] [cursor=pointer]:
+                  - checkbox "Blazers y sastrería" [ref=e662]
+                  - generic [ref=e663]: Blazers y sastrería
+                - generic [ref=e665] [cursor=pointer]:
+                  - checkbox "Bolsos y marroquinería" [ref=e666]
+                  - generic [ref=e667]: Bolsos y marroquinería
+                - generic [ref=e669] [cursor=pointer]:
+                  - checkbox "Buzos, hoodies y suéteres" [ref=e670]
+                  - generic [ref=e671]: Buzos, hoodies y suéteres
+                - generic [ref=e673] [cursor=pointer]:
+                  - checkbox "Calzado" [ref=e674]
+                  - generic [ref=e675]: Calzado
+                - generic [ref=e677] [cursor=pointer]:
+                  - checkbox "Camisas y blusas" [ref=e678]
+                  - generic [ref=e679]: Camisas y blusas
+                - generic [ref=e681] [cursor=pointer]:
+                  - checkbox "Camisetas y tops" [ref=e682]
+                  - generic [ref=e683]: Camisetas y tops
+                - generic [ref=e685] [cursor=pointer]:
+                  - checkbox "Chaquetas y abrigos" [ref=e686]
+                  - generic [ref=e687]: Chaquetas y abrigos
+                - generic [ref=e689] [cursor=pointer]:
+                  - checkbox "Conjuntos y sets (2+ piezas)" [ref=e690]
+                  - generic [ref=e691]: Conjuntos y sets (2+ piezas)
+                - generic [ref=e693] [cursor=pointer]:
+                  - checkbox "Enterizos y overoles" [ref=e694]
+                  - generic [ref=e695]: Enterizos y overoles
+                - button "Ver más" [ref=e696]
+            - group [ref=e697]:
+              - generic "Marca" [ref=e698] [cursor=pointer]:
+                - generic [ref=e699]: Marca
+              - generic [ref=e700]:
+                - textbox "Buscar marca…" [ref=e701]
+                - generic [ref=e703]:
+                  - generic [ref=e705] [cursor=pointer]:
+                    - checkbox "404 Streetwear" [ref=e706]
+                    - generic [ref=e707]: 404 Streetwear
+                  - generic [ref=e709] [cursor=pointer]:
+                    - checkbox "A Modo Mio" [ref=e710]
+                    - generic [ref=e711]: A Modo Mio
+                  - generic [ref=e713] [cursor=pointer]:
+                    - checkbox "Abril Flores Mil" [ref=e714]
+                    - generic [ref=e715]: Abril Flores Mil
+                  - generic [ref=e717] [cursor=pointer]:
+                    - checkbox "Acshoesman" [ref=e718]
+                    - generic [ref=e719]: Acshoesman
+                  - generic [ref=e721] [cursor=pointer]:
+                    - checkbox "Adriana Castro" [ref=e722]
+                    - generic [ref=e723]: Adriana Castro
+                  - generic [ref=e725] [cursor=pointer]:
+                    - checkbox "Adriana Fernández" [ref=e726]
+                    - generic [ref=e727]: Adriana Fernández
+                  - generic [ref=e729] [cursor=pointer]:
+                    - checkbox "Adriana Santacruz" [ref=e730]
+                    - generic [ref=e731]: Adriana Santacruz
+                  - generic [ref=e733] [cursor=pointer]:
+                    - checkbox "Ágata María" [ref=e734]
+                    - generic [ref=e735]: Ágata María
+                  - generic [ref=e737] [cursor=pointer]:
+                    - checkbox "Agua by Agua Bendita" [ref=e738]
+                    - generic [ref=e739]: Agua by Agua Bendita
+                  - generic [ref=e741] [cursor=pointer]:
+                    - checkbox "Aguel Resortwear" [ref=e742]
+                    - generic [ref=e743]: Aguel Resortwear
+                  - generic [ref=e745] [cursor=pointer]:
+                    - checkbox "Agybo" [ref=e746]
+                    - generic [ref=e747]: Agybo
+                  - generic [ref=e749] [cursor=pointer]:
+                    - checkbox "Aitná Diseño" [ref=e750]
+                    - generic [ref=e751]: Aitná Diseño
+                  - generic [ref=e753] [cursor=pointer]:
+                    - checkbox "Alado" [ref=e754]
+                    - generic [ref=e755]: Alado
+                  - generic [ref=e757] [cursor=pointer]:
+                    - checkbox "Alanna" [ref=e758]
+                    - generic [ref=e759]: Alanna
+                  - generic [ref=e761] [cursor=pointer]:
+                    - checkbox "Alda&Romera" [ref=e762]
+                    - generic [ref=e763]: Alda&Romera
+                  - generic [ref=e765] [cursor=pointer]:
+                    - checkbox "Aldora Studio" [ref=e766]
+                    - generic [ref=e767]: Aldora Studio
+                  - generic [ref=e769] [cursor=pointer]:
+                    - checkbox "Alejandra Valdivieso" [ref=e770]
+                    - generic [ref=e771]: Alejandra Valdivieso
+                  - generic [ref=e773] [cursor=pointer]:
+                    - checkbox "Alexandra Bueno" [ref=e774]
+                    - generic [ref=e775]: Alexandra Bueno
+                  - generic [ref=e777] [cursor=pointer]:
+                    - checkbox "Alma Joyería" [ref=e778]
+                    - generic [ref=e779]: Alma Joyería
+                  - generic [ref=e781] [cursor=pointer]:
+                    - checkbox "ALTA Shoes" [ref=e782]
+                    - generic [ref=e783]: ALTA Shoes
+                  - generic [ref=e785] [cursor=pointer]:
+                    - checkbox "Ámatti" [ref=e786]
+                    - generic [ref=e787]: Ámatti
+                  - generic [ref=e789] [cursor=pointer]:
+                    - checkbox "Amo Bethel" [ref=e790]
+                    - generic [ref=e791]: Amo Bethel
+                  - generic [ref=e793] [cursor=pointer]:
+                    - checkbox "Amor De Mis Amores" [ref=e794]
+                    - generic [ref=e795]: Amor De Mis Amores
+                  - generic [ref=e797] [cursor=pointer]:
+                    - checkbox "Amores Filosóficos" [ref=e798]
+                    - generic [ref=e799]: Amores Filosóficos
+                  - generic [ref=e801] [cursor=pointer]:
+                    - checkbox "Ana Buendía Official" [ref=e802]
+                    - generic [ref=e803]: Ana Buendía Official
+                  - generic [ref=e805] [cursor=pointer]:
+                    - checkbox "Ana Laverde" [ref=e806]
+                    - generic [ref=e807]: Ana Laverde
+                  - generic [ref=e809] [cursor=pointer]:
+                    - checkbox "Anarias Atelier" [ref=e810]
+                    - generic [ref=e811]: Anarias Atelier
+                  - generic [ref=e813] [cursor=pointer]:
+                    - checkbox "Anclas Cartagena" [ref=e814]
+                    - generic [ref=e815]: Anclas Cartagena
+                  - generic [ref=e817] [cursor=pointer]:
+                    - checkbox "Andrea Landa" [ref=e818]
+                    - generic [ref=e819]: Andrea Landa
+                  - generic [ref=e821] [cursor=pointer]:
+                    - checkbox "Andrés Otálora" [ref=e822]
+                    - generic [ref=e823]: Andrés Otálora
+                  - generic [ref=e825] [cursor=pointer]:
+                    - checkbox "Andrés Pajón" [ref=e826]
+                    - generic [ref=e827]: Andrés Pajón
+                  - generic [ref=e829] [cursor=pointer]:
+                    - checkbox "Angel Kujaban" [ref=e830]
+                    - generic [ref=e831]: Angel Kujaban
+                  - generic [ref=e833] [cursor=pointer]:
+                    - checkbox "Animalista" [ref=e834]
+                    - generic [ref=e835]: Animalista
+                  - generic [ref=e837] [cursor=pointer]:
+                    - checkbox "Ann Chery" [ref=e838]
+                    - generic [ref=e839]: Ann Chery
+                  - generic [ref=e841] [cursor=pointer]:
+                    - checkbox "Antoine Atelier" [ref=e842]
+                    - generic [ref=e843]: Antoine Atelier
+                  - generic [ref=e845] [cursor=pointer]:
+                    - checkbox "Ap Crown" [ref=e846]
+                    - generic [ref=e847]: Ap Crown
+                  - generic [ref=e849] [cursor=pointer]:
+                    - checkbox "Argemiro Sierra" [ref=e850]
+                    - generic [ref=e851]: Argemiro Sierra
+                  - generic [ref=e853] [cursor=pointer]:
+                    - checkbox "Argento & Bourbon" [ref=e854]
+                    - generic [ref=e855]: Argento & Bourbon
+                  - generic [ref=e857] [cursor=pointer]:
+                    - checkbox "Armantia" [ref=e858]
+                    - generic [ref=e859]: Armantia
+                  - generic [ref=e861] [cursor=pointer]:
+                    - checkbox "Armatura" [ref=e862]
+                    - generic [ref=e863]: Armatura
+                  - generic [ref=e865] [cursor=pointer]:
+                    - checkbox "Arrecife Colombia" [ref=e866]
+                    - generic [ref=e867]: Arrecife Colombia
+                  - generic [ref=e869] [cursor=pointer]:
+                    - checkbox "Arte Estampado" [ref=e870]
+                    - generic [ref=e871]: Arte Estampado
+                  - generic [ref=e873] [cursor=pointer]:
+                    - checkbox "Atelier 17-56" [ref=e874]
+                    - generic [ref=e875]: Atelier 17-56
+                  - generic [ref=e877] [cursor=pointer]:
+                    - checkbox "Atelier Crump" [ref=e878]
+                    - generic [ref=e879]: Atelier Crump
+                  - generic [ref=e881] [cursor=pointer]:
+                    - checkbox "Atelier Jeys" [ref=e882]
+                    - generic [ref=e883]: Atelier Jeys
+                  - generic [ref=e885] [cursor=pointer]:
+                    - checkbox "Avanfit" [ref=e886]
+                    - generic [ref=e887]: Avanfit
+                  - generic [ref=e889] [cursor=pointer]:
+                    - checkbox "Avemaría" [ref=e890]
+                    - generic [ref=e891]: Avemaría
+                  - generic [ref=e893] [cursor=pointer]:
+                    - checkbox "Axspen" [ref=e894]
+                    - generic [ref=e895]: Axspen
+                  - generic [ref=e897] [cursor=pointer]:
+                    - checkbox "Aysha Bilgrami" [ref=e898]
+                    - generic [ref=e899]: Aysha Bilgrami
+                  - generic [ref=e901] [cursor=pointer]:
+                    - checkbox "AZULU" [ref=e902]
+                    - generic [ref=e903]: AZULU
+                  - generic [ref=e905] [cursor=pointer]:
+                    - checkbox "Bachué Joyería" [ref=e906]
+                    - generic [ref=e907]: Bachué Joyería
+                  - generic [ref=e909] [cursor=pointer]:
+                    - checkbox "Bad Influencer" [ref=e910]
+                    - generic [ref=e911]: Bad Influencer
+                  - generic [ref=e913] [cursor=pointer]:
+                    - checkbox "Badass" [ref=e914]
+                    - generic [ref=e915]: Badass
+                  - generic [ref=e917] [cursor=pointer]:
+                    - checkbox "Bahama Mama" [ref=e918]
+                    - generic [ref=e919]: Bahama Mama
+                  - generic [ref=e921] [cursor=pointer]:
+                    - checkbox "Bajo Cero" [ref=e922]
+                    - generic [ref=e923]: Bajo Cero
+                  - generic [ref=e925] [cursor=pointer]:
+                    - checkbox "Baletti" [ref=e926]
+                    - generic [ref=e927]: Baletti
+                  - generic [ref=e929] [cursor=pointer]:
+                    - checkbox "Ballen" [ref=e930]
+                    - generic [ref=e931]: Ballen
+                  - generic [ref=e933] [cursor=pointer]:
+                    - checkbox "Balnearios" [ref=e934]
+                    - generic [ref=e935]: Balnearios
+                  - generic [ref=e937] [cursor=pointer]:
+                    - checkbox "Bamboleira" [ref=e938]
+                    - generic [ref=e939]: Bamboleira
+                  - generic [ref=e941] [cursor=pointer]:
+                    - checkbox "Ban All Brand" [ref=e942]
+                    - generic [ref=e943]: Ban All Brand
+                  - generic [ref=e945] [cursor=pointer]:
+                    - checkbox "Baobab" [ref=e946]
+                    - generic [ref=e947]: Baobab
+                  - generic [ref=e949] [cursor=pointer]:
+                    - checkbox "Barmont" [ref=e950]
+                    - generic [ref=e951]: Barmont
+                  - generic [ref=e953] [cursor=pointer]:
+                    - checkbox "Baroq Oficial" [ref=e954]
+                    - generic [ref=e955]: Baroq Oficial
+                  - generic [ref=e957] [cursor=pointer]:
+                    - checkbox "Barú Swimwear" [ref=e958]
+                    - generic [ref=e959]: Barú Swimwear
+                  - generic [ref=e961] [cursor=pointer]:
+                    - checkbox "Bauhinia" [ref=e962]
+                    - generic [ref=e963]: Bauhinia
+                  - generic [ref=e965] [cursor=pointer]:
+                    - checkbox "Baula" [ref=e966]
+                    - generic [ref=e967]: Baula
+                  - generic [ref=e969] [cursor=pointer]:
+                    - checkbox "Bemonocromo" [ref=e970]
+                    - generic [ref=e971]: Bemonocromo
+                  - generic [ref=e973] [cursor=pointer]:
+                    - checkbox "Bendita Seas" [ref=e974]
+                    - generic [ref=e975]: Bendita Seas
+                  - generic [ref=e977] [cursor=pointer]:
+                    - checkbox "Bésame" [ref=e978]
+                    - generic [ref=e979]: Bésame
+                  - generic [ref=e981] [cursor=pointer]:
+                    - checkbox "Bethel Minimal" [ref=e982]
+                    - generic [ref=e983]: Bethel Minimal
+                  - generic [ref=e985] [cursor=pointer]:
+                    - checkbox "Beto Santana" [ref=e986]
+                    - generic [ref=e987]: Beto Santana
+                  - generic [ref=e989] [cursor=pointer]:
+                    - checkbox "Bibi Marini" [ref=e990]
+                    - generic [ref=e991]: Bibi Marini
+                  - generic [ref=e993] [cursor=pointer]:
+                    - checkbox "Bibiana Hernández" [ref=e994]
+                    - generic [ref=e995]: Bibiana Hernández
+                  - generic [ref=e997] [cursor=pointer]:
+                    - checkbox "Bibiana Pineda Joyas" [ref=e998]
+                    - generic [ref=e999]: Bibiana Pineda Joyas
+                  - generic [ref=e1001] [cursor=pointer]:
+                    - checkbox "Biónica" [ref=e1002]
+                    - generic [ref=e1003]: Biónica
+                  - generic [ref=e1005] [cursor=pointer]:
+                    - checkbox "Bissoni" [ref=e1006]
+                    - generic [ref=e1007]: Bissoni
+                  - generic [ref=e1009] [cursor=pointer]:
+                    - checkbox "Bless HS" [ref=e1010]
+                    - generic [ref=e1011]: Bless HS
+                  - generic [ref=e1013] [cursor=pointer]:
+                    - checkbox "Blulé Brand" [ref=e1014]
+                    - generic [ref=e1015]: Blulé Brand
+                  - generic [ref=e1017] [cursor=pointer]:
+                    - checkbox "Blumart" [ref=e1018]
+                    - generic [ref=e1019]: Blumart
+                  - generic [ref=e1021] [cursor=pointer]:
+                    - checkbox "Blunua Joyería" [ref=e1022]
+                    - generic [ref=e1023]: Blunua Joyería
+                  - generic [ref=e1025] [cursor=pointer]:
+                    - checkbox "Bocanegra" [ref=e1026]
+                    - generic [ref=e1027]: Bocanegra
+                  - generic [ref=e1029] [cursor=pointer]:
+                    - checkbox "Body Army Clothing" [ref=e1030]
+                    - generic [ref=e1031]: Body Army Clothing
+                  - generic [ref=e1033] [cursor=pointer]:
+                    - checkbox "Bolsch Designs" [ref=e1034]
+                    - generic [ref=e1035]: Bolsch Designs
+                  - generic [ref=e1037] [cursor=pointer]:
+                    - checkbox "Borneo Men" [ref=e1038]
+                    - generic [ref=e1039]: Borneo Men
+                  - generic [ref=e1041] [cursor=pointer]:
+                    - checkbox "Bosi" [ref=e1042]
+                    - generic [ref=e1043]: Bosi
+                  - generic [ref=e1045] [cursor=pointer]:
+                    - checkbox "Breath" [ref=e1046]
+                    - generic [ref=e1047]: Breath
+                  - generic [ref=e1049] [cursor=pointer]:
+                    - checkbox "Breathe Eyewear" [ref=e1050]
+                    - generic [ref=e1051]: Breathe Eyewear
+                  - generic [ref=e1053] [cursor=pointer]:
+                    - checkbox "Brezo Jewelry" [ref=e1054]
+                    - generic [ref=e1055]: Brezo Jewelry
+                  - generic [ref=e1057] [cursor=pointer]:
+                    - checkbox "BRKL Brooklyn" [ref=e1058]
+                    - generic [ref=e1059]: BRKL Brooklyn
+                  - generic [ref=e1061] [cursor=pointer]:
+                    - checkbox "Bruna Lingerie" [ref=e1062]
+                    - generic [ref=e1063]: Bruna Lingerie
+                  - generic [ref=e1065] [cursor=pointer]:
+                    - checkbox "By Claudia Trejos" [ref=e1066]
+                    - generic [ref=e1067]: By Claudia Trejos
+                  - generic [ref=e1069] [cursor=pointer]:
+                    - checkbox "By Francis Martínez" [ref=e1070]
+                    - generic [ref=e1071]: By Francis Martínez
+                  - generic [ref=e1073] [cursor=pointer]:
+                    - checkbox "Cachet Ropa Interior" [ref=e1074]
+                    - generic [ref=e1075]: Cachet Ropa Interior
+                  - generic [ref=e1077] [cursor=pointer]:
+                    - checkbox "Cala de la Cruz" [ref=e1078]
+                    - generic [ref=e1079]: Cala de la Cruz
+                  - generic [ref=e1081] [cursor=pointer]:
+                    - checkbox "Camellet" [ref=e1082]
+                    - generic [ref=e1083]: Camellet
+                  - generic [ref=e1085] [cursor=pointer]:
+                    - checkbox "Camelo Leather Co" [ref=e1086]
+                    - generic [ref=e1087]: Camelo Leather Co
+                  - generic [ref=e1089] [cursor=pointer]:
+                    - checkbox "Camila Tamara" [ref=e1090]
+                    - generic [ref=e1091]: Camila Tamara
+                  - generic [ref=e1093] [cursor=pointer]:
+                    - checkbox "Camilo Álvarez" [ref=e1094]
+                    - generic [ref=e1095]: Camilo Álvarez
+                  - generic [ref=e1097] [cursor=pointer]:
+                    - checkbox "Capra Leather" [ref=e1098]
+                    - generic [ref=e1099]: Capra Leather
+                  - generic [ref=e1101] [cursor=pointer]:
+                    - checkbox "Carddo Mistón" [ref=e1102]
+                    - generic [ref=e1103]: Carddo Mistón
+                  - generic [ref=e1105] [cursor=pointer]:
+                    - checkbox "Carlo Carrizosa" [ref=e1106]
+                    - generic [ref=e1107]: Carlo Carrizosa
+                  - generic [ref=e1109] [cursor=pointer]:
+                    - checkbox "Casa Precis" [ref=e1110]
+                    - generic [ref=e1111]: Casa Precis
+                  - generic [ref=e1113] [cursor=pointer]:
+                    - checkbox "Castellano Ethnic Origins" [ref=e1114]
+                    - generic [ref=e1115]: Castellano Ethnic Origins
+                  - generic [ref=e1117] [cursor=pointer]:
+                    - checkbox "Caulé Happy Plants" [ref=e1118]
+                    - generic [ref=e1119]: Caulé Happy Plants
+                  - generic [ref=e1121] [cursor=pointer]:
+                    - checkbox "Cávilar" [ref=e1122]
+                    - generic [ref=e1123]: Cávilar
+                  - generic [ref=e1125] [cursor=pointer]:
+                    - checkbox "CEDRO" [ref=e1126]
+                    - generic [ref=e1127]: CEDRO
+                  - generic [ref=e1129] [cursor=pointer]:
+                    - checkbox "Celeste" [ref=e1130]
+                    - generic [ref=e1131]: Celeste
+                  - generic [ref=e1133] [cursor=pointer]:
+                    - checkbox "Celestino" [ref=e1134]
+                    - generic [ref=e1135]: Celestino
+                  - generic [ref=e1137] [cursor=pointer]:
+                    - checkbox "Cemadier Design" [ref=e1138]
+                    - generic [ref=e1139]: Cemadier Design
+                  - generic [ref=e1141] [cursor=pointer]:
+                    - checkbox "Chamela" [ref=e1142]
+                    - generic [ref=e1143]: Chamela
+                  - generic [ref=e1145] [cursor=pointer]:
+                    - checkbox "CHD Moda" [ref=e1146]
+                    - generic [ref=e1147]: CHD Moda
+                  - generic [ref=e1149] [cursor=pointer]:
+                    - checkbox "Chila Bags" [ref=e1150]
+                    - generic [ref=e1151]: Chila Bags
+                  - generic [ref=e1153] [cursor=pointer]:
+                    - checkbox "CHILL" [ref=e1154]
+                    - generic [ref=e1155]: CHILL
+                  - generic [ref=e1157] [cursor=pointer]:
+                    - checkbox "Christian Colorado" [ref=e1158]
+                    - generic [ref=e1159]: Christian Colorado
+                  - generic [ref=e1161] [cursor=pointer]:
+                    - checkbox "CIAMPINO" [ref=e1162]
+                    - generic [ref=e1163]: CIAMPINO
+                  - generic [ref=e1165] [cursor=pointer]:
+                    - checkbox "Cíclico" [ref=e1166]
+                    - generic [ref=e1167]: Cíclico
+                  - generic [ref=e1169] [cursor=pointer]:
+                    - checkbox "Citybags" [ref=e1170]
+                    - generic [ref=e1171]: Citybags
+                  - generic [ref=e1173] [cursor=pointer]:
+                    - checkbox "Clarissa Rosanía" [ref=e1174]
+                    - generic [ref=e1175]: Clarissa Rosanía
+                  - generic [ref=e1177] [cursor=pointer]:
+                    - checkbox "Clark Shop" [ref=e1178]
+                    - generic [ref=e1179]: Clark Shop
+                  - generic [ref=e1181] [cursor=pointer]:
+                    - checkbox "Claudia Akel" [ref=e1182]
+                    - generic [ref=e1183]: Claudia Akel
+                  - generic [ref=e1185] [cursor=pointer]:
+                    - checkbox "Claudia Morelli" [ref=e1186]
+                    - generic [ref=e1187]: Claudia Morelli
+                  - generic [ref=e1189] [cursor=pointer]:
+                    - checkbox "Cloud" [ref=e1190]
+                    - generic [ref=e1191]: Cloud
+                  - generic [ref=e1193] [cursor=pointer]:
+                    - checkbox "Color Blue" [ref=e1194]
+                    - generic [ref=e1195]: Color Blue
+                  - generic [ref=e1197] [cursor=pointer]:
+                    - checkbox "CRBA Studio" [ref=e1198]
+                    - generic [ref=e1199]: CRBA Studio
+                  - generic [ref=e1201] [cursor=pointer]:
+                    - checkbox "Creaciones Sx Underwear" [ref=e1202]
+                    - generic [ref=e1203]: Creaciones Sx Underwear
+                  - generic [ref=e1205] [cursor=pointer]:
+                    - checkbox "Creep Brand" [ref=e1206]
+                    - generic [ref=e1207]: Creep Brand
+                  - generic [ref=e1209] [cursor=pointer]:
+                    - checkbox "Cristian Tula" [ref=e1210]
+                    - generic [ref=e1211]: Cristian Tula
+                  - generic [ref=e1213] [cursor=pointer]:
+                    - checkbox "Croydon" [ref=e1214]
+                    - generic [ref=e1215]: Croydon
+                  - generic [ref=e1217] [cursor=pointer]:
+                    - checkbox "Cubel" [ref=e1218]
+                    - generic [ref=e1219]: Cubel
+                  - generic [ref=e1221] [cursor=pointer]:
+                    - checkbox "Cuento.Animal" [ref=e1222]
+                    - generic [ref=e1223]: Cuento.Animal
+                  - generic [ref=e1225] [cursor=pointer]:
+                    - checkbox "D’Lingerie Colombia" [ref=e1226]
+                    - generic [ref=e1227]: D’Lingerie Colombia
+                  - generic [ref=e1229] [cursor=pointer]:
+                    - checkbox "D8VR LAB" [ref=e1230]
+                    - generic [ref=e1231]: D8VR LAB
+                  - generic [ref=e1233] [cursor=pointer]:
+                    - checkbox "Dalius" [ref=e1234]
+                    - generic [ref=e1235]: Dalius
+                  - generic [ref=e1237] [cursor=pointer]:
+                    - checkbox "Danfive" [ref=e1238]
+                    - generic [ref=e1239]: Danfive
+                  - generic [ref=e1241] [cursor=pointer]:
+                    - checkbox "Daniela Salcedo" [ref=e1242]
+                    - generic [ref=e1243]: Daniela Salcedo
+                  - generic [ref=e1245] [cursor=pointer]:
+                    - checkbox "Daniels Clo" [ref=e1246]
+                    - generic [ref=e1247]: Daniels Clo
+                  - generic [ref=e1249] [cursor=pointer]:
+                    - checkbox "Dante" [ref=e1250]
+                    - generic [ref=e1251]: Dante
+                  - generic [ref=e1253] [cursor=pointer]:
+                    - checkbox "Dauntless NYC" [ref=e1254]
+                    - generic [ref=e1255]: Dauntless NYC
+                  - generic [ref=e1257] [cursor=pointer]:
+                    - checkbox "De Las Car" [ref=e1258]
+                    - generic [ref=e1259]: De Las Car
+                  - generic [ref=e1261] [cursor=pointer]:
+                    - checkbox "DEGODOY" [ref=e1262]
+                    - generic [ref=e1263]: DEGODOY
+                  - generic [ref=e1265] [cursor=pointer]:
+                    - checkbox "Deisci Barrientos Accesorios" [ref=e1266]
+                    - generic [ref=e1267]: Deisci Barrientos Accesorios
+                  - generic [ref=e1269] [cursor=pointer]:
+                    - checkbox "Del Verde" [ref=e1270]
+                    - generic [ref=e1271]: Del Verde
+                  - generic [ref=e1273] [cursor=pointer]:
+                    - checkbox "Della Terra" [ref=e1274]
+                    - generic [ref=e1275]: Della Terra
+                  - generic [ref=e1277] [cursor=pointer]:
+                    - checkbox "Delux Lencería Colombia" [ref=e1278]
+                    - generic [ref=e1279]: Delux Lencería Colombia
+                  - generic [ref=e1281] [cursor=pointer]:
+                    - checkbox "Derive af Buren" [ref=e1282]
+                    - generic [ref=e1283]: Derive af Buren
+                  - generic [ref=e1285] [cursor=pointer]:
+                    - checkbox "Desatín" [ref=e1286]
+                    - generic [ref=e1287]: Desatín
+                  - generic [ref=e1289] [cursor=pointer]:
+                    - checkbox "Despertar" [ref=e1290]
+                    - generic [ref=e1291]: Despertar
+                  - generic [ref=e1293] [cursor=pointer]:
+                    - checkbox "Diane & Geordi" [ref=e1294]
+                    - generic [ref=e1295]: Diane & Geordi
+                  - generic [ref=e1297] [cursor=pointer]:
+                    - checkbox "Diantres" [ref=e1298]
+                    - generic [ref=e1299]: Diantres
+                  - generic [ref=e1301] [cursor=pointer]:
+                    - checkbox "DiCreem" [ref=e1302]
+                    - generic [ref=e1303]: DiCreem
+                  - generic [ref=e1305] [cursor=pointer]:
+                    - checkbox "Diluvio Raincoats" [ref=e1306]
+                    - generic [ref=e1307]: Diluvio Raincoats
+                  - generic [ref=e1309] [cursor=pointer]:
+                    - checkbox "Divina Castidad" [ref=e1310]
+                    - generic [ref=e1311]: Divina Castidad
+                  - generic [ref=e1313] [cursor=pointer]:
+                    - checkbox "Do Over Lab" [ref=e1314]
+                    - generic [ref=e1315]: Do Over Lab
+                  - generic [ref=e1317] [cursor=pointer]:
+                    - checkbox "Dolce Intimidad" [ref=e1318]
+                    - generic [ref=e1319]: Dolce Intimidad
+                  - generic [ref=e1321] [cursor=pointer]:
+                    - checkbox "Domenica" [ref=e1322]
+                    - generic [ref=e1323]: Domenica
+                  - generic [ref=e1325] [cursor=pointer]:
+                    - checkbox "Dos Marquesas" [ref=e1326]
+                    - generic [ref=e1327]: Dos Marquesas
+                  - generic [ref=e1329] [cursor=pointer]:
+                    - checkbox "Duneshka Joyas" [ref=e1330]
+                    - generic [ref=e1331]: Duneshka Joyas
+                  - generic [ref=e1333] [cursor=pointer]:
+                    - checkbox "Durando Atelier" [ref=e1334]
+                    - generic [ref=e1335]: Durando Atelier
+                  - generic [ref=e1337] [cursor=pointer]:
+                    - checkbox "Duzca" [ref=e1338]
+                    - generic [ref=e1339]: Duzca
+                  - generic [ref=e1341] [cursor=pointer]:
+                    - checkbox "easy people" [ref=e1342]
+                    - generic [ref=e1343]: easy people
+                  - generic [ref=e1345] [cursor=pointer]:
+                    - checkbox "Efecto Shop" [ref=e1346]
+                    - generic [ref=e1347]: Efecto Shop
+                  - generic [ref=e1349] [cursor=pointer]:
+                    - checkbox "Ekaa Wayuu" [ref=e1350]
+                    - generic [ref=e1351]: Ekaa Wayuu
+                  - generic [ref=e1353] [cursor=pointer]:
+                    - checkbox "El Dorado Edit" [ref=e1354]
+                    - generic [ref=e1355]: El Dorado Edit
+                  - generic [ref=e1357] [cursor=pointer]:
+                    - checkbox "Elena" [ref=e1358]
+                    - generic [ref=e1359]: Elena
+                  - generic [ref=e1361] [cursor=pointer]:
+                    - checkbox "Elena Lencería" [ref=e1362]
+                    - generic [ref=e1363]: Elena Lencería
+                  - generic [ref=e1365] [cursor=pointer]:
+                    - checkbox "Ellipse Lingerie" [ref=e1366]
+                    - generic [ref=e1367]: Ellipse Lingerie
+                  - generic [ref=e1369] [cursor=pointer]:
+                    - checkbox "Ema" [ref=e1370]
+                    - generic [ref=e1371]: Ema
+                  - generic [ref=e1373] [cursor=pointer]:
+                    - checkbox "Emilia" [ref=e1374]
+                    - generic [ref=e1375]: Emilia
+                  - generic [ref=e1377] [cursor=pointer]:
+                    - checkbox "Enigma Joyería" [ref=e1378]
+                    - generic [ref=e1379]: Enigma Joyería
+                  - generic [ref=e1381] [cursor=pointer]:
+                    - checkbox "Entreaguas" [ref=e1382]
+                    - generic [ref=e1383]: Entreaguas
+                  - generic [ref=e1385] [cursor=pointer]:
+                    - checkbox "Esmeraldas Colombia" [ref=e1386]
+                    - generic [ref=e1387]: Esmeraldas Colombia
+                  - generic [ref=e1389] [cursor=pointer]:
+                    - checkbox "Especia" [ref=e1390]
+                    - generic [ref=e1391]: Especia
+                  - generic [ref=e1393] [cursor=pointer]:
+                    - checkbox "ÉTĖREA" [ref=e1394]
+                    - generic [ref=e1395]: ÉTĖREA
+                  - generic [ref=e1397] [cursor=pointer]:
+                    - checkbox "ETN Design" [ref=e1398]
+                    - generic [ref=e1399]: ETN Design
+                  - generic [ref=e1401] [cursor=pointer]:
+                    - checkbox "Ette de Oro" [ref=e1402]
+                    - generic [ref=e1403]: Ette de Oro
+                  - generic [ref=e1405] [cursor=pointer]:
+                    - checkbox "Eugenia Fernandez" [ref=e1406]
+                    - generic [ref=e1407]: Eugenia Fernandez
+                  - generic [ref=e1409] [cursor=pointer]:
+                    - checkbox "Eugenia Ospina" [ref=e1410]
+                    - generic [ref=e1411]: Eugenia Ospina
+                  - generic [ref=e1413] [cursor=pointer]:
+                    - checkbox "Ezential" [ref=e1414]
+                    - generic [ref=e1415]: Ezential
+                  - generic [ref=e1417] [cursor=pointer]:
+                    - checkbox "Faride Ramos" [ref=e1418]
+                    - generic [ref=e1419]: Faride Ramos
+                  - generic [ref=e1421] [cursor=pointer]:
+                    - checkbox "FDS" [ref=e1422]
+                    - generic [ref=e1423]: FDS
+                  - generic [ref=e1425] [cursor=pointer]:
+                    - checkbox "Fenáreta" [ref=e1426]
+                    - generic [ref=e1427]: Fenáreta
+                  - generic [ref=e1429] [cursor=pointer]:
+                    - checkbox "Fenomena" [ref=e1430]
+                    - generic [ref=e1431]: Fenomena
+                  - generic [ref=e1433] [cursor=pointer]:
+                    - checkbox "Fernanda Arias" [ref=e1434]
+                    - generic [ref=e1435]: Fernanda Arias
+                  - generic [ref=e1437] [cursor=pointer]:
+                    - checkbox "Fiber" [ref=e1438]
+                    - generic [ref=e1439]: Fiber
+                  - generic [ref=e1441] [cursor=pointer]:
+                    - checkbox "Fierros Men Underwear" [ref=e1442]
+                    - generic [ref=e1443]: Fierros Men Underwear
+                  - generic [ref=e1445] [cursor=pointer]:
+                    - checkbox "Fifty Three Lencería" [ref=e1446]
+                    - generic [ref=e1447]: Fifty Three Lencería
+                  - generic [ref=e1449] [cursor=pointer]:
+                    - checkbox "Figo" [ref=e1450]
+                    - generic [ref=e1451]: Figo
+                  - generic [ref=e1453] [cursor=pointer]:
+                    - checkbox "Filamental" [ref=e1454]
+                    - generic [ref=e1455]: Filamental
+                  - generic [ref=e1457] [cursor=pointer]:
+                    - checkbox "Filarte Colombia" [ref=e1458]
+                    - generic [ref=e1459]: Filarte Colombia
+                  - generic [ref=e1461] [cursor=pointer]:
+                    - checkbox "Fiory Beach & Street" [ref=e1462]
+                    - generic [ref=e1463]: Fiory Beach & Street
+                  - generic [ref=e1465] [cursor=pointer]:
+                    - checkbox "FIST / ROPA / ACCESORIOS" [ref=e1466]
+                    - generic [ref=e1467]: FIST / ROPA / ACCESORIOS
+                  - generic [ref=e1469] [cursor=pointer]:
+                    - checkbox "Flor Amazona" [ref=e1470]
+                    - generic [ref=e1471]: Flor Amazona
+                  - generic [ref=e1473] [cursor=pointer]:
+                    - checkbox "Flor De Agua" [ref=e1474]
+                    - generic [ref=e1475]: Flor De Agua
+                  - generic [ref=e1477] [cursor=pointer]:
+                    - checkbox "For me too" [ref=e1478]
+                    - generic [ref=e1479]: For me too
+                  - generic [ref=e1481] [cursor=pointer]:
+                    - checkbox "Formfit Rogers" [ref=e1482]
+                    - generic [ref=e1483]: Formfit Rogers
+                  - generic [ref=e1485] [cursor=pointer]:
+                    - checkbox "FOU – Fuera de lo Común" [ref=e1486]
+                    - generic [ref=e1487]: FOU – Fuera de lo Común
+                  - generic [ref=e1489] [cursor=pointer]:
+                    - checkbox "Fractalis Astra" [ref=e1490]
+                    - generic [ref=e1491]: Fractalis Astra
+                  - generic [ref=e1493] [cursor=pointer]:
+                    - checkbox "Franchi E Punto" [ref=e1494]
+                    - generic [ref=e1495]: Franchi E Punto
+                  - generic [ref=e1497] [cursor=pointer]:
+                    - checkbox "Fratelli Clothes" [ref=e1498]
+                    - generic [ref=e1499]: Fratelli Clothes
+                  - generic [ref=e1501] [cursor=pointer]:
+                    - checkbox "Fugitiva Outdoor" [ref=e1502]
+                    - generic [ref=e1503]: Fugitiva Outdoor
+                  - generic [ref=e1505] [cursor=pointer]:
+                    - checkbox "Full Of Grace Jewelry" [ref=e1506]
+                    - generic [ref=e1507]: Full Of Grace Jewelry
+                  - generic [ref=e1509] [cursor=pointer]:
+                    - checkbox "FUN SOCIETY inc." [ref=e1510]
+                    - generic [ref=e1511]: FUN SOCIETY inc.
+                  - generic [ref=e1513] [cursor=pointer]:
+                    - checkbox "Garage Sale by EM" [ref=e1514]
+                    - generic [ref=e1515]: Garage Sale by EM
+                  - generic [ref=e1517] [cursor=pointer]:
+                    - checkbox "Garces Bottier" [ref=e1518]
+                    - generic [ref=e1519]: Garces Bottier
+                  - generic [ref=e1521] [cursor=pointer]:
+                    - checkbox "Gef" [ref=e1522]
+                    - generic [ref=e1523]: Gef
+                  - generic [ref=e1525] [cursor=pointer]:
+                    - checkbox "Ghetto" [ref=e1526]
+                    - generic [ref=e1527]: Ghetto
+                  - generic [ref=e1529] [cursor=pointer]:
+                    - checkbox "Giive" [ref=e1530]
+                    - generic [ref=e1531]: Giive
+                  - generic [ref=e1533] [cursor=pointer]:
+                    - checkbox "Godo" [ref=e1534]
+                    - generic [ref=e1535]: Godo
+                  - generic [ref=e1537] [cursor=pointer]:
+                    - checkbox "Goretty Medina" [ref=e1538]
+                    - generic [ref=e1539]: Goretty Medina
+                  - generic [ref=e1541] [cursor=pointer]:
+                    - checkbox "Greenfit" [ref=e1542]
+                    - generic [ref=e1543]: Greenfit
+                  - generic [ref=e1545] [cursor=pointer]:
+                    - checkbox "Guayaba Agria" [ref=e1546]
+                    - generic [ref=e1547]: Guayaba Agria
+                  - generic [ref=e1549] [cursor=pointer]:
+                    - checkbox "Guillotina" [ref=e1550]
+                    - generic [ref=e1551]: Guillotina
+                  - generic [ref=e1553] [cursor=pointer]:
+                    - checkbox "Guzo Atelier" [ref=e1554]
+                    - generic [ref=e1555]: Guzo Atelier
+                  - generic [ref=e1557] [cursor=pointer]:
+                    - checkbox "Haby Ropa Íntima" [ref=e1558]
+                    - generic [ref=e1559]: Haby Ropa Íntima
+                  - generic [ref=e1561] [cursor=pointer]:
+                    - checkbox "Hakistorm" [ref=e1562]
+                    - generic [ref=e1563]: Hakistorm
+                  - generic [ref=e1565] [cursor=pointer]:
+                    - checkbox "Hannia Char Artwear" [ref=e1566]
+                    - generic [ref=e1567]: Hannia Char Artwear
+                  - generic [ref=e1569] [cursor=pointer]:
+                    - checkbox "Heliconia Boutique" [ref=e1570]
+                    - generic [ref=e1571]: Heliconia Boutique
+                  - generic [ref=e1573] [cursor=pointer]:
+                    - checkbox "Heroica" [ref=e1574]
+                    - generic [ref=e1575]: Heroica
+                  - generic [ref=e1577] [cursor=pointer]:
+                    - checkbox "Hers Clothing" [ref=e1578]
+                    - generic [ref=e1579]: Hers Clothing
+                  - generic [ref=e1581] [cursor=pointer]:
+                    - checkbox "Hilo Sagrado" [ref=e1582]
+                    - generic [ref=e1583]: Hilo Sagrado
+                  - generic [ref=e1585] [cursor=pointer]:
+                    - checkbox "Hipnos" [ref=e1586]
+                    - generic [ref=e1587]: Hipnos
+                  - generic [ref=e1589] [cursor=pointer]:
+                    - checkbox "Hooks" [ref=e1590]
+                    - generic [ref=e1591]: Hooks
+                  - generic [ref=e1593] [cursor=pointer]:
+                    - checkbox "Hunk Menswear" [ref=e1594]
+                    - generic [ref=e1595]: Hunk Menswear
+                  - generic [ref=e1597] [cursor=pointer]:
+                    - checkbox "Iguaraya" [ref=e1598]
+                    - generic [ref=e1599]: Iguaraya
+                  - generic [ref=e1601] [cursor=pointer]:
+                    - checkbox "Îlot" [ref=e1602]
+                    - generic [ref=e1603]: Îlot
+                  - generic [ref=e1605] [cursor=pointer]:
+                    - checkbox "Infinita es Infinita" [ref=e1606]
+                    - generic [ref=e1607]: Infinita es Infinita
+                  - generic [ref=e1609] [cursor=pointer]:
+                    - checkbox "Inizio Active" [ref=e1610]
+                    - generic [ref=e1611]: Inizio Active
+                  - generic [ref=e1613] [cursor=pointer]:
+                    - checkbox "Inmaculada VJ" [ref=e1614]
+                    - generic [ref=e1615]: Inmaculada VJ
+                  - generic [ref=e1617] [cursor=pointer]:
+                    - checkbox "Insignia Dsgn" [ref=e1618]
+                    - generic [ref=e1619]: Insignia Dsgn
+                  - generic [ref=e1621] [cursor=pointer]:
+                    - checkbox "Isabella Aswad" [ref=e1622]
+                    - generic [ref=e1623]: Isabella Aswad
+                  - generic [ref=e1625] [cursor=pointer]:
+                    - checkbox "Isidora Malva" [ref=e1626]
+                    - generic [ref=e1627]: Isidora Malva
+                  - generic [ref=e1629] [cursor=pointer]:
+                    - checkbox "Islazul" [ref=e1630]
+                    - generic [ref=e1631]: Islazul
+                  - generic [ref=e1633] [cursor=pointer]:
+                    - checkbox "Jaiza Joyería" [ref=e1634]
+                    - generic [ref=e1635]: Jaiza Joyería
+                  - generic [ref=e1637] [cursor=pointer]:
+                    - checkbox "JCH COMPANY" [ref=e1638]
+                    - generic [ref=e1639]: JCH COMPANY
+                  - generic [ref=e1641] [cursor=pointer]:
+                    - checkbox "Jetlagmode" [ref=e1642]
+                    - generic [ref=e1643]: Jetlagmode
+                  - generic [ref=e1645] [cursor=pointer]:
+                    - checkbox "JOEG" [ref=e1646]
+                    - generic [ref=e1647]: JOEG
+                  - generic [ref=e1649] [cursor=pointer]:
+                    - checkbox "Johanna De La Cruz" [ref=e1650]
+                    - generic [ref=e1651]: Johanna De La Cruz
+                  - generic [ref=e1653] [cursor=pointer]:
+                    - checkbox "Johanna Ortiz" [ref=e1654]
+                    - generic [ref=e1655]: Johanna Ortiz
+                  - generic [ref=e1657] [cursor=pointer]:
+                    - checkbox "Jon Sonen" [ref=e1658]
+                    - generic [ref=e1659]: Jon Sonen
+                  - generic [ref=e1661] [cursor=pointer]:
+                    - checkbox "Josh" [ref=e1662]
+                    - generic [ref=e1663]: Josh
+                  - generic [ref=e1665] [cursor=pointer]:
+                    - checkbox "Juan de Dios" [ref=e1666]
+                    - generic [ref=e1667]: Juan de Dios
+                  - generic [ref=e1669] [cursor=pointer]:
+                    - checkbox "JUAN®" [ref=e1670]
+                    - generic [ref=e1671]: JUAN®
+                  - generic [ref=e1673] [cursor=pointer]:
+                    - checkbox "Juana Gómez" [ref=e1674]
+                    - generic [ref=e1675]: Juana Gómez
+                  - generic [ref=e1677] [cursor=pointer]:
+                    - checkbox "Juanito No Friends" [ref=e1678]
+                    - generic [ref=e1679]: Juanito No Friends
+                  - generic [ref=e1681] [cursor=pointer]:
+                    - checkbox "Juliana Hurtado" [ref=e1682]
+                    - generic [ref=e1683]: Juliana Hurtado
+                  - generic [ref=e1685] [cursor=pointer]:
+                    - checkbox "Juliana Vergara" [ref=e1686]
+                    - generic [ref=e1687]: Juliana Vergara
+                  - generic [ref=e1689] [cursor=pointer]:
+                    - checkbox "Kaftan" [ref=e1690]
+                    - generic [ref=e1691]: Kaftan
+                  - generic [ref=e1693] [cursor=pointer]:
+                    - checkbox "Kamila Íntima" [ref=e1694]
+                    - generic [ref=e1695]: Kamila Íntima
+                  - generic [ref=e1697] [cursor=pointer]:
+                    - checkbox "Kannibal Shoes" [ref=e1698]
+                    - generic [ref=e1699]: Kannibal Shoes
+                  - generic [ref=e1701] [cursor=pointer]:
+                    - checkbox "Kaybu" [ref=e1702]
+                    - generic [ref=e1703]: Kaybu
+                  - generic [ref=e1705] [cursor=pointer]:
+                    - checkbox "Kenzo Jeans" [ref=e1706]
+                    - generic [ref=e1707]: Kenzo Jeans
+                  - generic [ref=e1709] [cursor=pointer]:
+                    - checkbox "Kibys" [ref=e1710]
+                    - generic [ref=e1711]: Kibys
+                  - generic [ref=e1713] [cursor=pointer]:
+                    - checkbox "Kleid" [ref=e1714]
+                    - generic [ref=e1715]: Kleid
+                  - generic [ref=e1717] [cursor=pointer]:
+                    - checkbox "KNL" [ref=e1718]
+                    - generic [ref=e1719]: KNL
+                  - generic [ref=e1721] [cursor=pointer]:
+                    - checkbox "KOM Sportswear" [ref=e1722]
+                    - generic [ref=e1723]: KOM Sportswear
+                  - generic [ref=e1725] [cursor=pointer]:
+                    - checkbox "Kowü" [ref=e1726]
+                    - generic [ref=e1727]: Kowü
+                  - generic [ref=e1729] [cursor=pointer]:
+                    - checkbox "KUPA" [ref=e1730]
+                    - generic [ref=e1731]: KUPA
+                  - generic [ref=e1733] [cursor=pointer]:
+                    - checkbox "La Bloom Clothing" [ref=e1734]
+                    - generic [ref=e1735]: La Bloom Clothing
+                  - generic [ref=e1737] [cursor=pointer]:
+                    - checkbox "La Figueretti" [ref=e1738]
+                    - generic [ref=e1739]: La Figueretti
+                  - generic [ref=e1741] [cursor=pointer]:
+                    - checkbox "La Mar Shop" [ref=e1742]
+                    - generic [ref=e1743]: La Mar Shop
+                  - generic [ref=e1745] [cursor=pointer]:
+                    - checkbox "La Oculta" [ref=e1746]
+                    - generic [ref=e1747]: La Oculta
+                  - generic [ref=e1749] [cursor=pointer]:
+                    - checkbox "La Petite Mort" [ref=e1750]
+                    - generic [ref=e1751]: La Petite Mort
+                  - generic [ref=e1753] [cursor=pointer]:
+                    - checkbox "La Petite Mort Studio" [ref=e1754]
+                    - generic [ref=e1755]: La Petite Mort Studio
+                  - generic [ref=e1757] [cursor=pointer]:
+                    - checkbox "La Taguería" [ref=e1758]
+                    - generic [ref=e1759]: La Taguería
+                  - generic [ref=e1761] [cursor=pointer]:
+                    - checkbox "Lakras" [ref=e1762]
+                    - generic [ref=e1763]: Lakras
+                  - generic [ref=e1765] [cursor=pointer]:
+                    - checkbox "Láska" [ref=e1766]
+                    - generic [ref=e1767]: Láska
+                  - generic [ref=e1769] [cursor=pointer]:
+                    - checkbox "Laura (Ropa Interior)" [ref=e1770]
+                    - generic [ref=e1771]: Laura (Ropa Interior)
+                  - generic [ref=e1773] [cursor=pointer]:
+                    - checkbox "Laura Áñez" [ref=e1774]
+                    - generic [ref=e1775]: Laura Áñez
+                  - generic [ref=e1777] [cursor=pointer]:
+                    - checkbox "Laura Aparicio" [ref=e1778]
+                    - generic [ref=e1779]: Laura Aparicio
+                  - generic [ref=e1781] [cursor=pointer]:
+                    - checkbox "Lauval" [ref=e1782]
+                    - generic [ref=e1783]: Lauval
+                  - generic [ref=e1785] [cursor=pointer]:
+                    - checkbox "Lavi by Majolavi" [ref=e1786]
+                    - generic [ref=e1787]: Lavi by Majolavi
+                  - generic [ref=e1789] [cursor=pointer]:
+                    - checkbox "LAZO" [ref=e1790]
+                    - generic [ref=e1791]: LAZO
+                  - generic [ref=e1793] [cursor=pointer]:
+                    - checkbox "Leo" [ref=e1794]
+                    - generic [ref=e1795]: Leo
+                  - generic [ref=e1797] [cursor=pointer]:
+                    - checkbox "Leonisa" [ref=e1798]
+                    - generic [ref=e1799]: Leonisa
+                  - generic [ref=e1801] [cursor=pointer]:
+                    - checkbox "Liebestod Studio" [ref=e1802]
+                    - generic [ref=e1803]: Liebestod Studio
+                  - generic [ref=e1805] [cursor=pointer]:
+                    - checkbox "Lievre" [ref=e1806]
+                    - generic [ref=e1807]: Lievre
+                  - generic [ref=e1809] [cursor=pointer]:
+                    - checkbox "Like a Bird" [ref=e1810]
+                    - generic [ref=e1811]: Like a Bird
+                  - generic [ref=e1813] [cursor=pointer]:
+                    - checkbox "Lina Cantillo" [ref=e1814]
+                    - generic [ref=e1815]: Lina Cantillo
+                  - generic [ref=e1817] [cursor=pointer]:
+                    - checkbox "Lingerie Colombia" [ref=e1818]
+                    - generic [ref=e1819]: Lingerie Colombia
+                  - generic [ref=e1821] [cursor=pointer]:
+                    - checkbox "Lirio Morelo" [ref=e1822]
+                    - generic [ref=e1823]: Lirio Morelo
+                  - generic [ref=e1825] [cursor=pointer]:
+                    - checkbox "LOBSTER mini" [ref=e1826]
+                    - generic [ref=e1827]: LOBSTER mini
+                  - generic [ref=e1829] [cursor=pointer]:
+                    - checkbox "Lola Jeans" [ref=e1830]
+                    - generic [ref=e1831]: Lola Jeans
+                  - generic [ref=e1833] [cursor=pointer]:
+                    - checkbox "Lolita Boutique Colombia" [ref=e1834]
+                    - generic [ref=e1835]: Lolita Boutique Colombia
+                  - generic [ref=e1837] [cursor=pointer]:
+                    - checkbox "Loopzu" [ref=e1838]
+                    - generic [ref=e1839]: Loopzu
+                  - generic [ref=e1841] [cursor=pointer]:
+                    - checkbox "Los Caballeros" [ref=e1842]
+                    - generic [ref=e1843]: Los Caballeros
+                  - generic [ref=e1845] [cursor=pointer]:
+                    - checkbox "Love Culture" [ref=e1846]
+                    - generic [ref=e1847]: Love Culture
+                  - generic [ref=e1849] [cursor=pointer]:
+                    - checkbox "Lowkey World Studio" [ref=e1850]
+                    - generic [ref=e1851]: Lowkey World Studio
+                  - generic [ref=e1853] [cursor=pointer]:
+                    - checkbox "LUCHADOR COLOMBIA" [ref=e1854]
+                    - generic [ref=e1855]: LUCHADOR COLOMBIA
+                  - generic [ref=e1857] [cursor=pointer]:
+                    - checkbox "Luck & Load" [ref=e1858]
+                    - generic [ref=e1859]: Luck & Load
+                  - generic [ref=e1861] [cursor=pointer]:
+                    - checkbox "Lugo Lugo Diseñadores de moda masculina" [ref=e1862]
+                    - generic [ref=e1863]: Lugo Lugo Diseñadores de moda masculina
+                  - generic [ref=e1865] [cursor=pointer]:
+                    - checkbox "Lunamar" [ref=e1866]
+                    - generic [ref=e1867]: Lunamar
+                  - generic [ref=e1869] [cursor=pointer]:
+                    - checkbox "Lunia Shapewear" [ref=e1870]
+                    - generic [ref=e1871]: Lunia Shapewear
+                  - generic [ref=e1873] [cursor=pointer]:
+                    - checkbox "Luxofilus" [ref=e1874]
+                    - generic [ref=e1875]: Luxofilus
+                  - generic [ref=e1877] [cursor=pointer]:
+                    - checkbox "Luxur" [ref=e1878]
+                    - generic [ref=e1879]: Luxur
+                  - generic [ref=e1881] [cursor=pointer]:
+                    - checkbox "Maaji" [ref=e1882]
+                    - generic [ref=e1883]: Maaji
+                  - generic [ref=e1885] [cursor=pointer]:
+                    - checkbox "Macho Alfa Underwear" [ref=e1886]
+                    - generic [ref=e1887]: Macho Alfa Underwear
+                  - generic [ref=e1889] [cursor=pointer]:
+                    - checkbox "Macondia" [ref=e1890]
+                    - generic [ref=e1891]: Macondia
+                  - generic [ref=e1893] [cursor=pointer]:
+                    - checkbox "Mad & Cute" [ref=e1894]
+                    - generic [ref=e1895]: Mad & Cute
+                  - generic [ref=e1897] [cursor=pointer]:
+                    - checkbox "Magno Chocolates" [ref=e1898]
+                    - generic [ref=e1899]: Magno Chocolates
+                  - generic [ref=e1901] [cursor=pointer]:
+                    - checkbox "Mákara Joyería" [ref=e1902]
+                    - generic [ref=e1903]: Mákara Joyería
+                  - generic [ref=e1905] [cursor=pointer]:
+                    - checkbox "Makua" [ref=e1906]
+                    - generic [ref=e1907]: Makua
+                  - generic [ref=e1909] [cursor=pointer]:
+                    - checkbox "Mala Hora Society" [ref=e1910]
+                    - generic [ref=e1911]: Mala Hora Society
+                  - generic [ref=e1913] [cursor=pointer]:
+                    - checkbox "Malai" [ref=e1914]
+                    - generic [ref=e1915]: Malai
+                  - generic [ref=e1917] [cursor=pointer]:
+                    - checkbox "Manchado" [ref=e1918]
+                    - generic [ref=e1919]: Manchado
+                  - generic [ref=e1921] [cursor=pointer]:
+                    - checkbox "Mano Sagrada" [ref=e1922]
+                    - generic [ref=e1923]: Mano Sagrada
+                  - generic [ref=e1925] [cursor=pointer]:
+                    - checkbox "Mar De Indias Swimwear" [ref=e1926]
+                    - generic [ref=e1927]: Mar De Indias Swimwear
+                  - generic [ref=e1929] [cursor=pointer]:
+                    - checkbox "Mar De Leva" [ref=e1930]
+                    - generic [ref=e1931]: Mar De Leva
+                  - generic [ref=e1933] [cursor=pointer]:
+                    - checkbox "Mar de Lua" [ref=e1934]
+                    - generic [ref=e1935]: Mar de Lua
+                  - generic [ref=e1937] [cursor=pointer]:
+                    - checkbox "Mara" [ref=e1938]
+                    - generic [ref=e1939]: Mara
+                  - generic [ref=e1941] [cursor=pointer]:
+                    - checkbox "Maralta Colombia" [ref=e1942]
+                    - generic [ref=e1943]: Maralta Colombia
+                  - generic [ref=e1945] [cursor=pointer]:
+                    - checkbox "Marargent" [ref=e1946]
+                    - generic [ref=e1947]: Marargent
+                  - generic [ref=e1949] [cursor=pointer]:
+                    - checkbox "María Cabrera" [ref=e1950]
+                    - generic [ref=e1951]: María Cabrera
+                  - generic [ref=e1953] [cursor=pointer]:
+                    - checkbox "María Elena Villamil" [ref=e1954]
+                    - generic [ref=e1955]: María Elena Villamil
+                  - generic [ref=e1957] [cursor=pointer]:
+                    - checkbox "Mario Hernández" [ref=e1958]
+                    - generic [ref=e1959]: Mario Hernández
+                  - generic [ref=e1961] [cursor=pointer]:
+                    - checkbox "Marsanti" [ref=e1962]
+                    - generic [ref=e1963]: Marsanti
+                  - generic [ref=e1965] [cursor=pointer]:
+                    - checkbox "Marta Martínez Joyería" [ref=e1966]
+                    - generic [ref=e1967]: Marta Martínez Joyería
+                  - generic [ref=e1969] [cursor=pointer]:
+                    - checkbox "Martin Pescador" [ref=e1970]
+                    - generic [ref=e1971]: Martin Pescador
+                  - generic [ref=e1973] [cursor=pointer]:
+                    - checkbox "Martina" [ref=e1974]
+                    - generic [ref=e1975]: Martina
+                  - generic [ref=e1977] [cursor=pointer]:
+                    - checkbox "Mas Wear Underwear" [ref=e1978]
+                    - generic [ref=e1979]: Mas Wear Underwear
+                  - generic [ref=e1981] [cursor=pointer]:
+                    - checkbox "Matergea" [ref=e1982]
+                    - generic [ref=e1983]: Matergea
+                  - generic [ref=e1985] [cursor=pointer]:
+                    - checkbox "Matilda" [ref=e1986]
+                    - generic [ref=e1987]: Matilda
+                  - generic [ref=e1989] [cursor=pointer]:
+                    - checkbox "Maygel Coronel" [ref=e1990]
+                    - generic [ref=e1991]: Maygel Coronel
+                  - generic [ref=e1993] [cursor=pointer]:
+                    - checkbox "Mayorga Shop" [ref=e1994]
+                    - generic [ref=e1995]: Mayorga Shop
+                  - generic [ref=e1997] [cursor=pointer]:
+                    - checkbox "MAZ Manuela Álvarez" [ref=e1998]
+                    - generic [ref=e1999]: MAZ Manuela Álvarez
+                  - generic [ref=e2001] [cursor=pointer]:
+                    - checkbox "Me Active Wear" [ref=e2002]
+                    - generic [ref=e2003]: Me Active Wear
+                  - generic [ref=e2005] [cursor=pointer]:
+                    - checkbox "Memento Clothing" [ref=e2006]
+                    - generic [ref=e2007]: Memento Clothing
+                  - generic [ref=e2009] [cursor=pointer]:
+                    - checkbox "Mercedes Salazar" [ref=e2010]
+                    - generic [ref=e2011]: Mercedes Salazar
+                  - generic [ref=e2013] [cursor=pointer]:
+                    - checkbox "Merci Markett" [ref=e2014]
+                    - generic [ref=e2015]: Merci Markett
+                  - generic [ref=e2017] [cursor=pointer]:
+                    - checkbox "Milagros" [ref=e2018]
+                    - generic [ref=e2019]: Milagros
+                  - generic [ref=e2021] [cursor=pointer]:
+                    - checkbox "Minka" [ref=e2022]
+                    - generic [ref=e2023]: Minka
+                  - generic [ref=e2025] [cursor=pointer]:
+                    - checkbox "Mio Coral" [ref=e2026]
+                    - generic [ref=e2027]: Mio Coral
+                  - generic [ref=e2029] [cursor=pointer]:
+                    - checkbox "Mister Jack" [ref=e2030]
+                    - generic [ref=e2031]: Mister Jack
+                  - generic [ref=e2033] [cursor=pointer]:
+                    - checkbox "Mola Mola" [ref=e2034]
+                    - generic [ref=e2035]: Mola Mola
+                  - generic [ref=e2037] [cursor=pointer]:
+                    - checkbox "Mon & Velarde" [ref=e2038]
+                    - generic [ref=e2039]: Mon & Velarde
+                  - generic [ref=e2041] [cursor=pointer]:
+                    - checkbox "Monkey Hide" [ref=e2042]
+                    - generic [ref=e2043]: Monkey Hide
+                  - generic [ref=e2045] [cursor=pointer]:
+                    - checkbox "Monoic Studios" [ref=e2046]
+                    - generic [ref=e2047]: Monoic Studios
+                  - generic [ref=e2049] [cursor=pointer]:
+                    - checkbox "Mopa Moda" [ref=e2050]
+                    - generic [ref=e2051]: Mopa Moda
+                  - generic [ref=e2053] [cursor=pointer]:
+                    - checkbox "Morpho Shop" [ref=e2054]
+                    - generic [ref=e2055]: Morpho Shop
+                  - generic [ref=e2057] [cursor=pointer]:
+                    - checkbox "MP Patricia Mejía" [ref=e2058]
+                    - generic [ref=e2059]: MP Patricia Mejía
+                  - generic [ref=e2061] [cursor=pointer]:
+                    - checkbox "Mr Boho" [ref=e2062]
+                    - generic [ref=e2063]: Mr Boho
+                  - generic [ref=e2065] [cursor=pointer]:
+                    - checkbox "Múcura Jewelry" [ref=e2066]
+                    - generic [ref=e2067]: Múcura Jewelry
+                  - generic [ref=e2069] [cursor=pointer]:
+                    - checkbox "Mundo Único" [ref=e2070]
+                    - generic [ref=e2071]: Mundo Único
+                  - generic [ref=e2073] [cursor=pointer]:
+                    - checkbox "Mundosombreros" [ref=e2074]
+                    - generic [ref=e2075]: Mundosombreros
+                  - generic [ref=e2077] [cursor=pointer]:
+                    - checkbox "Münn" [ref=e2078]
+                    - generic [ref=e2079]: Münn
+                  - generic [ref=e2081] [cursor=pointer]:
+                    - checkbox "Muzaluci" [ref=e2082]
+                    - generic [ref=e2083]: Muzaluci
+                  - generic [ref=e2085] [cursor=pointer]:
+                    - checkbox "Naf Naf" [ref=e2086]
+                    - generic [ref=e2087]: Naf Naf
+                  - generic [ref=e2089] [cursor=pointer]:
+                    - checkbox "Najash" [ref=e2090]
+                    - generic [ref=e2091]: Najash
+                  - generic [ref=e2093] [cursor=pointer]:
+                    - checkbox "NAÖS" [ref=e2094]
+                    - generic [ref=e2095]: NAÖS
+                  - generic [ref=e2097] [cursor=pointer]:
+                    - checkbox "Napa Online Store" [ref=e2098]
+                    - generic [ref=e2099]: Napa Online Store
+                  - generic [ref=e2101] [cursor=pointer]:
+                    - checkbox "NEW ANCHOR" [ref=e2102]
+                    - generic [ref=e2103]: NEW ANCHOR
+                  - generic [ref=e2105] [cursor=pointer]:
+                    - checkbox "NO LABEL" [ref=e2106]
+                    - generic [ref=e2107]: NO LABEL
+                  - generic [ref=e2109] [cursor=pointer]:
+                    - checkbox "Nora Lozza" [ref=e2110]
+                    - generic [ref=e2111]: Nora Lozza
+                  - generic [ref=e2113] [cursor=pointer]:
+                    - checkbox "Nuestro Encanto" [ref=e2114]
+                    - generic [ref=e2115]: Nuestro Encanto
+                  - generic [ref=e2117] [cursor=pointer]:
+                    - checkbox "Oasis del Alma" [ref=e2118]
+                    - generic [ref=e2119]: Oasis del Alma
+                  - generic [ref=e2121] [cursor=pointer]:
+                    - checkbox "Ocre" [ref=e2122]
+                    - generic [ref=e2123]: Ocre
+                  - generic [ref=e2125] [cursor=pointer]:
+                    - checkbox "Ola Azul Beach Lab" [ref=e2126]
+                    - generic [ref=e2127]: Ola Azul Beach Lab
+                  - generic [ref=e2129] [cursor=pointer]:
+                    - checkbox "Old Maquiina" [ref=e2130]
+                    - generic [ref=e2131]: Old Maquiina
+                  - generic [ref=e2133] [cursor=pointer]:
+                    - checkbox "Olivia Watts" [ref=e2134]
+                    - generic [ref=e2135]: Olivia Watts
+                  - generic [ref=e2137] [cursor=pointer]:
+                    - checkbox "OndadeMar" [ref=e2138]
+                    - generic [ref=e2139]: OndadeMar
+                  - generic [ref=e2141] [cursor=pointer]:
+                    - checkbox "One Half" [ref=e2142]
+                    - generic [ref=e2143]: One Half
+                  - generic [ref=e2145] [cursor=pointer]:
+                    - checkbox "Onefoldbody" [ref=e2146]
+                    - generic [ref=e2147]: Onefoldbody
+                  - generic [ref=e2149] [cursor=pointer]:
+                    - checkbox "Oropéndola" [ref=e2150]
+                    - generic [ref=e2151]: Oropéndola
+                  - generic [ref=e2153] [cursor=pointer]:
+                    - checkbox "Otraforma.co" [ref=e2154]
+                    - generic [ref=e2155]: Otraforma.co
+                  - generic [ref=e2157] [cursor=pointer]:
+                    - checkbox "Oxford Jeans" [ref=e2158]
+                    - generic [ref=e2159]: Oxford Jeans
+                  - generic [ref=e2161] [cursor=pointer]:
+                    - checkbox "Pachas" [ref=e2162]
+                    - generic [ref=e2163]: Pachas
+                  - generic [ref=e2165] [cursor=pointer]:
+                    - checkbox "Padova" [ref=e2166]
+                    - generic [ref=e2167]: Padova
+                  - generic [ref=e2169] [cursor=pointer]:
+                    - checkbox "Paisaje Latino" [ref=e2170]
+                    - generic [ref=e2171]: Paisaje Latino
+                  - generic [ref=e2173] [cursor=pointer]:
+                    - checkbox "PÁJARA PINTA®" [ref=e2174]
+                    - generic [ref=e2175]: PÁJARA PINTA®
+                  - generic [ref=e2177] [cursor=pointer]:
+                    - checkbox "Pájaro Limón" [ref=e2178]
+                    - generic [ref=e2179]: Pájaro Limón
+                  - generic [ref=e2181] [cursor=pointer]:
+                    - checkbox "Palaa" [ref=e2182]
+                    - generic [ref=e2183]: Palaa
+                  - generic [ref=e2185] [cursor=pointer]:
+                    - checkbox "Palma Canaria" [ref=e2186]
+                    - generic [ref=e2187]: Palma Canaria
+                  - generic [ref=e2189] [cursor=pointer]:
+                    - checkbox "Palmacea" [ref=e2190]
+                    - generic [ref=e2191]: Palmacea
+                  - generic [ref=e2193] [cursor=pointer]:
+                    - checkbox "Palo Rosa" [ref=e2194]
+                    - generic [ref=e2195]: Palo Rosa
+                  - generic [ref=e2197] [cursor=pointer]:
+                    - checkbox "Pamela Stevenson" [ref=e2198]
+                    - generic [ref=e2199]: Pamela Stevenson
+                  - generic [ref=e2201] [cursor=pointer]:
+                    - checkbox "Papel de Punto" [ref=e2202]
+                    - generic [ref=e2203]: Papel de Punto
+                  - generic [ref=e2205] [cursor=pointer]:
+                    - checkbox "Paprika Pepper Me" [ref=e2206]
+                    - generic [ref=e2207]: Paprika Pepper Me
+                  - generic [ref=e2209] [cursor=pointer]:
+                    - checkbox "Paradizia" [ref=e2210]
+                    - generic [ref=e2211]: Paradizia
+                  - generic [ref=e2213] [cursor=pointer]:
+                    - checkbox "Pardo" [ref=e2214]
+                    - generic [ref=e2215]: Pardo
+                  - generic [ref=e2217] [cursor=pointer]:
+                    - checkbox "Parrhouse" [ref=e2218]
+                    - generic [ref=e2219]: Parrhouse
+                  - generic [ref=e2221] [cursor=pointer]:
+                    - checkbox "Paula" [ref=e2222]
+                    - generic [ref=e2223]: Paula
+                  - generic [ref=e2225] [cursor=pointer]:
+                    - checkbox "Paula Mendoza" [ref=e2226]
+                    - generic [ref=e2227]: Paula Mendoza
+                  - generic [ref=e2229] [cursor=pointer]:
+                    - checkbox "Pawscrewstreet" [ref=e2230]
+                    - generic [ref=e2231]: Pawscrewstreet
+                  - generic [ref=e2233] [cursor=pointer]:
+                    - checkbox "Peace of Mind" [ref=e2234]
+                    - generic [ref=e2235]: Peace of Mind
+                  - generic [ref=e2237] [cursor=pointer]:
+                    - checkbox "Peccatore" [ref=e2238]
+                    - generic [ref=e2239]: Peccatore
+                  - generic [ref=e2241] [cursor=pointer]:
+                    - checkbox "Pepa Pombo" [ref=e2242]
+                    - generic [ref=e2243]: Pepa Pombo
+                  - generic [ref=e2245] [cursor=pointer]:
+                    - checkbox "Pepita Pérez" [ref=e2246]
+                    - generic [ref=e2247]: Pepita Pérez
+                  - generic [ref=e2249] [cursor=pointer]:
+                    - checkbox "Perla Pacífica" [ref=e2250]
+                    - generic [ref=e2251]: Perla Pacífica
+                  - generic [ref=e2253] [cursor=pointer]:
+                    - checkbox "Pi Project by Pilar Restrepo" [ref=e2254]
+                    - generic [ref=e2255]: Pi Project by Pilar Restrepo
+                  - generic [ref=e2257] [cursor=pointer]:
+                    - checkbox "Pink Filosofy" [ref=e2258]
+                    - generic [ref=e2259]: Pink Filosofy
+                  - generic [ref=e2261] [cursor=pointer]:
+                    - checkbox "Please Rain" [ref=e2262]
+                    - generic [ref=e2263]: Please Rain
+                  - generic [ref=e2265] [cursor=pointer]:
+                    - checkbox "Plegados Tsuru" [ref=e2266]
+                    - generic [ref=e2267]: Plegados Tsuru
+                  - generic [ref=e2269] [cursor=pointer]:
+                    - checkbox "Plur Store" [ref=e2270]
+                    - generic [ref=e2271]: Plur Store
+                  - generic [ref=e2273] [cursor=pointer]:
+                    - checkbox "Pluvo" [ref=e2274]
+                    - generic [ref=e2275]: Pluvo
+                  - generic [ref=e2277] [cursor=pointer]:
+                    - checkbox "Polite" [ref=e2278]
+                    - generic [ref=e2279]: Polite
+                  - generic [ref=e2281] [cursor=pointer]:
+                    - checkbox "Pomba" [ref=e2282]
+                    - generic [ref=e2283]: Pomba
+                  - generic [ref=e2285] [cursor=pointer]:
+                    - checkbox "Project Adamo" [ref=e2286]
+                    - generic [ref=e2287]: Project Adamo
+                  - generic [ref=e2289] [cursor=pointer]:
+                    - checkbox "Pure" [ref=e2290]
+                    - generic [ref=e2291]: Pure
+                  - generic [ref=e2293] [cursor=pointer]:
+                    - checkbox "QST" [ref=e2294]
+                    - generic [ref=e2295]: QST
+                  - generic [ref=e2297] [cursor=pointer]:
+                    - checkbox "Quiero June" [ref=e2298]
+                    - generic [ref=e2299]: Quiero June
+                  - generic [ref=e2301] [cursor=pointer]:
+                    - checkbox "Quimeras" [ref=e2302]
+                    - generic [ref=e2303]: Quimeras
+                  - generic [ref=e2305] [cursor=pointer]:
+                    - checkbox "Rafael Cure Men" [ref=e2306]
+                    - generic [ref=e2307]: Rafael Cure Men
+                  - generic [ref=e2309] [cursor=pointer]:
+                    - checkbox "Rappaz Colombia" [ref=e2310]
+                    - generic [ref=e2311]: Rappaz Colombia
+                  - generic [ref=e2313] [cursor=pointer]:
+                    - checkbox "Rëiliër" [ref=e2314]
+                    - generic [ref=e2315]: Rëiliër
+                  - generic [ref=e2317] [cursor=pointer]:
+                    - checkbox "Renasce" [ref=e2318]
+                    - generic [ref=e2319]: Renasce
+                  - generic [ref=e2321] [cursor=pointer]:
+                    - checkbox "Renata Lozano" [ref=e2322]
+                    - generic [ref=e2323]: Renata Lozano
+                  - generic [ref=e2325] [cursor=pointer]:
+                    - checkbox "Renzo" [ref=e2326]
+                    - generic [ref=e2327]: Renzo
+                  - generic [ref=e2329] [cursor=pointer]:
+                    - checkbox "Reymon Underwear" [ref=e2330]
+                    - generic [ref=e2331]: Reymon Underwear
+                  - generic [ref=e2333] [cursor=pointer]:
+                    - checkbox "Ribot Casual Wear" [ref=e2334]
+                    - generic [ref=e2335]: Ribot Casual Wear
+                  - generic [ref=e2337] [cursor=pointer]:
+                    - checkbox "Rocky Pardo / Like Pardo" [ref=e2338]
+                    - generic [ref=e2339]: Rocky Pardo / Like Pardo
+                  - generic [ref=e2341] [cursor=pointer]:
+                    - checkbox "Rodner" [ref=e2342]
+                    - generic [ref=e2343]: Rodner
+                  - generic [ref=e2345] [cursor=pointer]:
+                    - checkbox "Roland" [ref=e2346]
+                    - generic [ref=e2347]: Roland
+                  - generic [ref=e2349] [cursor=pointer]:
+                    - checkbox "Ropanegra" [ref=e2350]
+                    - generic [ref=e2351]: Ropanegra
+                  - generic [ref=e2353] [cursor=pointer]:
+                    - checkbox "Rosaem" [ref=e2354]
+                    - generic [ref=e2355]: Rosaem
+                  - generic [ref=e2357] [cursor=pointer]:
+                    - checkbox "Rosslyn Swimwear" [ref=e2358]
+                    - generic [ref=e2359]: Rosslyn Swimwear
+                  - generic [ref=e2361] [cursor=pointer]:
+                    - checkbox "Rott+Co" [ref=e2362]
+                    - generic [ref=e2363]: Rott+Co
+                  - generic [ref=e2365] [cursor=pointer]:
+                    - checkbox "Roxswim" [ref=e2366]
+                    - generic [ref=e2367]: Roxswim
+                  - generic [ref=e2369] [cursor=pointer]:
+                    - checkbox "Sabandija" [ref=e2370]
+                    - generic [ref=e2371]: Sabandija
+                  - generic [ref=e2373] [cursor=pointer]:
+                    - checkbox "Sacré" [ref=e2374]
+                    - generic [ref=e2375]: Sacré
+                  - generic [ref=e2377] [cursor=pointer]:
+                    - checkbox "Sal De Mar" [ref=e2378]
+                    - generic [ref=e2379]: Sal De Mar
+                  - generic [ref=e2381] [cursor=pointer]:
+                    - checkbox "Salomé" [ref=e2382]
+                    - generic [ref=e2383]: Salomé
+                  - generic [ref=e2385] [cursor=pointer]:
+                    - checkbox "Salonmixte" [ref=e2386]
+                    - generic [ref=e2387]: Salonmixte
+                  - generic [ref=e2389] [cursor=pointer]:
+                    - checkbox "Salvador Beachwear" [ref=e2390]
+                    - generic [ref=e2391]: Salvador Beachwear
+                  - generic [ref=e2393] [cursor=pointer]:
+                    - checkbox "Salvarea" [ref=e2394]
+                    - generic [ref=e2395]: Salvarea
+                  - generic [ref=e2397] [cursor=pointer]:
+                    - checkbox "Samar Zarzour" [ref=e2398]
+                    - generic [ref=e2399]: Samar Zarzour
+                  - generic [ref=e2401] [cursor=pointer]:
+                    - checkbox "San Basilio" [ref=e2402]
+                    - generic [ref=e2403]: San Basilio
+                  - generic [ref=e2405] [cursor=pointer]:
+                    - checkbox "San Malo" [ref=e2406]
+                    - generic [ref=e2407]: San Malo
+                  - generic [ref=e2409] [cursor=pointer]:
+                    - checkbox "Sanangel" [ref=e2410]
+                    - generic [ref=e2411]: Sanangel
+                  - generic [ref=e2413] [cursor=pointer]:
+                    - checkbox "Sándalo Ropa Interior" [ref=e2414]
+                    - generic [ref=e2415]: Sándalo Ropa Interior
+                  - generic [ref=e2417] [cursor=pointer]:
+                    - checkbox "Sandra Weil" [ref=e2418]
+                    - generic [ref=e2419]: Sandra Weil
+                  - generic [ref=e2421] [cursor=pointer]:
+                    - checkbox "Santísimas Ropa Íntima" [ref=e2422]
+                    - generic [ref=e2423]: Santísimas Ropa Íntima
+                  - generic [ref=e2425] [cursor=pointer]:
+                    - checkbox "Sara & Flora" [ref=e2426]
+                    - generic [ref=e2427]: Sara & Flora
+                  - generic [ref=e2429] [cursor=pointer]:
+                    - checkbox "Satori" [ref=e2430]
+                    - generic [ref=e2431]: Satori
+                  - generic [ref=e2433] [cursor=pointer]:
+                    - checkbox "Saudade De Você" [ref=e2434]
+                    - generic [ref=e2435]: Saudade De Você
+                  - generic [ref=e2437] [cursor=pointer]:
+                    - checkbox "Savage" [ref=e2438]
+                    - generic [ref=e2439]: Savage
+                  - generic [ref=e2441] [cursor=pointer]:
+                    - checkbox "Savage Colombia" [ref=e2442]
+                    - generic [ref=e2443]: Savage Colombia
+                  - generic [ref=e2445] [cursor=pointer]:
+                    - checkbox "Scalpers Colombia" [ref=e2446]
+                    - generic [ref=e2447]: Scalpers Colombia
+                  - generic [ref=e2449] [cursor=pointer]:
+                    - checkbox "Scarsa" [ref=e2450]
+                    - generic [ref=e2451]: Scarsa
+                  - generic [ref=e2453] [cursor=pointer]:
+                    - checkbox "Sea Salt" [ref=e2454]
+                    - generic [ref=e2455]: Sea Salt
+                  - generic [ref=e2457] [cursor=pointer]:
+                    - checkbox "Seahorse" [ref=e2458]
+                    - generic [ref=e2459]: Seahorse
+                  - generic [ref=e2461] [cursor=pointer]:
+                    - checkbox "Seasonal Inc" [ref=e2462]
+                    - generic [ref=e2463]: Seasonal Inc
+                  - generic [ref=e2465] [cursor=pointer]:
+                    - checkbox "Selva & Flora" [ref=e2466]
+                    - generic [ref=e2467]: Selva & Flora
+                  - generic [ref=e2469] [cursor=pointer]:
+                    - checkbox "Serranía Blazers" [ref=e2470]
+                    - generic [ref=e2471]: Serranía Blazers
+                  - generic [ref=e2473] [cursor=pointer]:
+                    - checkbox "Seta Apparel" [ref=e2474]
+                    - generic [ref=e2475]: Seta Apparel
+                  - generic [ref=e2477] [cursor=pointer]:
+                    - checkbox "Silvia Cobos" [ref=e2478]
+                    - generic [ref=e2479]: Silvia Cobos
+                  - generic [ref=e2481] [cursor=pointer]:
+                    - checkbox "Silvia Tcherassi CO" [ref=e2482]
+                    - generic [ref=e2483]: Silvia Tcherassi CO
+                  - generic [ref=e2485] [cursor=pointer]:
+                    - checkbox "SIMÓN" [ref=e2486]
+                    - generic [ref=e2487]: SIMÓN
+                  - generic [ref=e2489] [cursor=pointer]:
+                    - checkbox "Sinigual" [ref=e2490]
+                    - generic [ref=e2491]: Sinigual
+                  - generic [ref=e2493] [cursor=pointer]:
+                    - checkbox "Sixxta" [ref=e2494]
+                    - generic [ref=e2495]: Sixxta
+                  - generic [ref=e2497] [cursor=pointer]:
+                    - checkbox "SKN Accesorios" [ref=e2498]
+                    - generic [ref=e2499]: SKN Accesorios
+                  - generic [ref=e2501] [cursor=pointer]:
+                    - checkbox "Society Bags" [ref=e2502]
+                    - generic [ref=e2503]: Society Bags
+                  - generic [ref=e2505] [cursor=pointer]:
+                    - checkbox "Sofía Llanos Accessories" [ref=e2506]
+                    - generic [ref=e2507]: Sofía Llanos Accessories
+                  - generic [ref=e2509] [cursor=pointer]:
+                    - checkbox "Sogno" [ref=e2510]
+                    - generic [ref=e2511]: Sogno
+                  - generic [ref=e2513] [cursor=pointer]:
+                    - checkbox "Solo Con Once" [ref=e2514]
+                    - generic [ref=e2515]: Solo Con Once
+                  - generic [ref=e2517] [cursor=pointer]:
+                    - checkbox "Soloio" [ref=e2518]
+                    - generic [ref=e2519]: Soloio
+                  - generic [ref=e2521] [cursor=pointer]:
+                    - checkbox "Somos Martina" [ref=e2522]
+                    - generic [ref=e2523]: Somos Martina
+                  - generic [ref=e2525] [cursor=pointer]:
+                    - checkbox "Somos Muiscas" [ref=e2526]
+                    - generic [ref=e2527]: Somos Muiscas
+                  - generic [ref=e2529] [cursor=pointer]:
+                    - checkbox "Soreil" [ref=e2530]
+                    - generic [ref=e2531]: Soreil
+                  - generic [ref=e2533] [cursor=pointer]:
+                    - checkbox "Soul Intimates" [ref=e2534]
+                    - generic [ref=e2535]: Soul Intimates
+                  - generic [ref=e2537] [cursor=pointer]:
+                    - checkbox "St. Even" [ref=e2538]
+                    - generic [ref=e2539]: St. Even
+                  - generic [ref=e2541] [cursor=pointer]:
+                    - checkbox "Stevan Valencia" [ref=e2542]
+                    - generic [ref=e2543]: Stevan Valencia
+                  - generic [ref=e2545] [cursor=pointer]:
+                    - checkbox "Strabe" [ref=e2546]
+                    - generic [ref=e2547]: Strabe
+                  - generic [ref=e2549] [cursor=pointer]:
+                    - checkbox "Street Genderless" [ref=e2550]
+                    - generic [ref=e2551]: Street Genderless
+                  - generic [ref=e2553] [cursor=pointer]:
+                    - checkbox "Studio F" [ref=e2554]
+                    - generic [ref=e2555]: Studio F
+                  - generic [ref=e2557] [cursor=pointer]:
+                    - checkbox "Suetto" [ref=e2558]
+                    - generic [ref=e2559]: Suetto
+                  - generic [ref=e2561] [cursor=pointer]:
+                    - checkbox "Sunset The Journey" [ref=e2562]
+                    - generic [ref=e2563]: Sunset The Journey
+                  - generic [ref=e2565] [cursor=pointer]:
+                    - checkbox "Tania" [ref=e2566]
+                    - generic [ref=e2567]: Tania
+                  - generic [ref=e2569] [cursor=pointer]:
+                    - checkbox "Tarrao Underwear Co" [ref=e2570]
+                    - generic [ref=e2571]: Tarrao Underwear Co
+                  - generic [ref=e2573] [cursor=pointer]:
+                    - checkbox "Tayrona Accesorios" [ref=e2574]
+                    - generic [ref=e2575]: Tayrona Accesorios
+                  - generic [ref=e2577] [cursor=pointer]:
+                    - checkbox "Teiruma" [ref=e2578]
+                    - generic [ref=e2579]: Teiruma
+                  - generic [ref=e2581] [cursor=pointer]:
+                    - checkbox "Tejido Sagrado" [ref=e2582]
+                    - generic [ref=e2583]: Tejido Sagrado
+                  - generic [ref=e2585] [cursor=pointer]:
+                    - checkbox "Tejidos Pallay" [ref=e2586]
+                    - generic [ref=e2587]: Tejidos Pallay
+                  - generic [ref=e2589] [cursor=pointer]:
+                    - checkbox "Tennis" [ref=e2590]
+                    - generic [ref=e2591]: Tennis
+                  - generic [ref=e2593] [cursor=pointer]:
+                    - checkbox "Teresa, Esencia entre Hilos" [ref=e2594]
+                    - generic [ref=e2595]: Teresa, Esencia entre Hilos
+                  - generic [ref=e2597] [cursor=pointer]:
+                    - checkbox "Terra" [ref=e2598]
+                    - generic [ref=e2599]: Terra
+                  - generic [ref=e2601] [cursor=pointer]:
+                    - checkbox "Test Clothes" [ref=e2602]
+                    - generic [ref=e2603]: Test Clothes
+                  - generic [ref=e2605] [cursor=pointer]:
+                    - checkbox "The 5 Brand" [ref=e2606]
+                    - generic [ref=e2607]: The 5 Brand
+                  - generic [ref=e2609] [cursor=pointer]:
+                    - checkbox "The Bosa York Dream" [ref=e2610]
+                    - generic [ref=e2611]: The Bosa York Dream
+                  - generic [ref=e2613] [cursor=pointer]:
+                    - checkbox "The Frenchie" [ref=e2614]
+                    - generic [ref=e2615]: The Frenchie
+                  - generic [ref=e2617] [cursor=pointer]:
+                    - checkbox "The Last Lollipop" [ref=e2618]
+                    - generic [ref=e2619]: The Last Lollipop
+                  - generic [ref=e2621] [cursor=pointer]:
+                    - checkbox "The Nylon Club" [ref=e2622]
+                    - generic [ref=e2623]: The Nylon Club
+                  - generic [ref=e2625] [cursor=pointer]:
+                    - checkbox "The Shirt Lab" [ref=e2626]
+                    - generic [ref=e2627]: The Shirt Lab
+                  - generic [ref=e2629] [cursor=pointer]:
+                    - checkbox "The Sinners Gallery" [ref=e2630]
+                    - generic [ref=e2631]: The Sinners Gallery
+                  - generic [ref=e2633] [cursor=pointer]:
+                    - checkbox "Thunder Jeans" [ref=e2634]
+                    - generic [ref=e2635]: Thunder Jeans
+                  - generic [ref=e2637] [cursor=pointer]:
+                    - checkbox "Tierramont" [ref=e2638]
+                    - generic [ref=e2639]: Tierramont
+                  - generic [ref=e2641] [cursor=pointer]:
+                    - checkbox "Tigre de Salón" [ref=e2642]
+                    - generic [ref=e2643]: Tigre de Salón
+                  - generic [ref=e2645] [cursor=pointer]:
+                    - checkbox "Tinta Latina" [ref=e2646]
+                    - generic [ref=e2647]: Tinta Latina
+                  - generic [ref=e2649] [cursor=pointer]:
+                    - checkbox "Tisbé Joyería" [ref=e2650]
+                    - generic [ref=e2651]: Tisbé Joyería
+                  - generic [ref=e2653] [cursor=pointer]:
+                    - checkbox "Titta Lencería" [ref=e2654]
+                    - generic [ref=e2655]: Titta Lencería
+                  - generic [ref=e2657] [cursor=pointer]:
+                    - checkbox "Toque De Sensualidad Lingerie" [ref=e2658]
+                    - generic [ref=e2659]: Toque De Sensualidad Lingerie
+                  - generic [ref=e2661] [cursor=pointer]:
+                    - checkbox "Totto" [ref=e2662]
+                    - generic [ref=e2663]: Totto
+                  - generic [ref=e2665] [cursor=pointer]:
+                    - checkbox "Touche" [ref=e2666]
+                    - generic [ref=e2667]: Touche
+                  - generic [ref=e2669] [cursor=pointer]:
+                    - checkbox "True." [ref=e2670]
+                    - generic [ref=e2671]: True.
+                  - generic [ref=e2673] [cursor=pointer]:
+                    - checkbox "Trueshop" [ref=e2674]
+                    - generic [ref=e2675]: Trueshop
+                  - generic [ref=e2677] [cursor=pointer]:
+                    - checkbox "Tunatú / Tutantú" [ref=e2678]
+                    - generic [ref=e2679]: Tunatú / Tutantú
+                  - generic [ref=e2681] [cursor=pointer]:
+                    - checkbox "Tλzkvel" [ref=e2682]
+                    - generic [ref=e2683]: Tλzkvel
+                  - generic [ref=e2685] [cursor=pointer]:
+                    - checkbox "Ualá By Vanessa Rojas" [ref=e2686]
+                    - generic [ref=e2687]: Ualá By Vanessa Rojas
+                  - generic [ref=e2689] [cursor=pointer]:
+                    - checkbox "Undergold Apparel" [ref=e2690]
+                    - generic [ref=e2691]: Undergold Apparel
+                  - generic [ref=e2693] [cursor=pointer]:
+                    - checkbox "Unicafem" [ref=e2694]
+                    - generic [ref=e2695]: Unicafem
+                  - generic [ref=e2697] [cursor=pointer]:
+                    - checkbox "Union Tailors" [ref=e2698]
+                    - generic [ref=e2699]: Union Tailors
+                  - generic [ref=e2701] [cursor=pointer]:
+                    - checkbox "Ura" [ref=e2702]
+                    - generic [ref=e2703]: Ura
+                  - generic [ref=e2705] [cursor=pointer]:
+                    - checkbox "Urban Rock" [ref=e2706]
+                    - generic [ref=e2707]: Urban Rock
+                  - generic [ref=e2709] [cursor=pointer]:
+                    - checkbox "Valentina" [ref=e2710]
+                    - generic [ref=e2711]: Valentina
+                  - generic [ref=e2713] [cursor=pointer]:
+                    - checkbox "Vamarú Stencils" [ref=e2714]
+                    - generic [ref=e2715]: Vamarú Stencils
+                  - generic [ref=e2717] [cursor=pointer]:
+                    - checkbox "Vanessa Ropa Interior" [ref=e2718]
+                    - generic [ref=e2719]: Vanessa Ropa Interior
+                  - generic [ref=e2721] [cursor=pointer]:
+                    - checkbox "Vattea" [ref=e2722]
+                    - generic [ref=e2723]: Vattea
+                  - generic [ref=e2725] [cursor=pointer]:
+                    - checkbox "Vaza Jewelry" [ref=e2726]
+                    - generic [ref=e2727]: Vaza Jewelry
+                  - generic [ref=e2729] [cursor=pointer]:
+                    - checkbox "Velmost" [ref=e2730]
+                    - generic [ref=e2731]: Velmost
+                  - generic [ref=e2733] [cursor=pointer]:
+                    - checkbox "VENENO" [ref=e2734]
+                    - generic [ref=e2735]: VENENO
+                  - generic [ref=e2737] [cursor=pointer]:
+                    - checkbox "VERA" [ref=e2738]
+                    - generic [ref=e2739]: VERA
+                  - generic [ref=e2741] [cursor=pointer]:
+                    - checkbox "Vera & Estopa" [ref=e2742]
+                    - generic [ref=e2743]: Vera & Estopa
+                  - generic [ref=e2745] [cursor=pointer]:
+                    - checkbox "Versura" [ref=e2746]
+                    - generic [ref=e2747]: Versura
+                  - generic [ref=e2749] [cursor=pointer]:
+                    - checkbox "Víctor" [ref=e2750]
+                    - generic [ref=e2751]: Víctor
+                  - generic [ref=e2753] [cursor=pointer]:
+                    - checkbox "Victoria Montañez Joyería" [ref=e2754]
+                    - generic [ref=e2755]: Victoria Montañez Joyería
+                  - generic [ref=e2757] [cursor=pointer]:
+                    - checkbox "Vintro Store" [ref=e2758]
+                    - generic [ref=e2759]: Vintro Store
+                  - generic [ref=e2761] [cursor=pointer]:
+                    - checkbox "Virtuosa Íntima" [ref=e2762]
+                    - generic [ref=e2763]: Virtuosa Íntima
+                  - generic [ref=e2765] [cursor=pointer]:
+                    - checkbox "Viva La Vida" [ref=e2766]
+                    - generic [ref=e2767]: Viva La Vida
+                  - generic [ref=e2769] [cursor=pointer]:
+                    - checkbox "Viviana Ramírez Atelier" [ref=e2770]
+                    - generic [ref=e2771]: Viviana Ramírez Atelier
+                  - generic [ref=e2773] [cursor=pointer]:
+                    - checkbox "Vold.Jewels" [ref=e2774]
+                    - generic [ref=e2775]: Vold.Jewels
+                  - generic [ref=e2777] [cursor=pointer]:
+                    - checkbox "Vyshniauskas" [ref=e2778]
+                    - generic [ref=e2779]: Vyshniauskas
+                  - generic [ref=e2781] [cursor=pointer]:
+                    - checkbox "Waimari" [ref=e2782]
+                    - generic [ref=e2783]: Waimari
+                  - generic [ref=e2785] [cursor=pointer]:
+                    - checkbox "Wanaa Waa" [ref=e2786]
+                    - generic [ref=e2787]: Wanaa Waa
+                  - generic [ref=e2789] [cursor=pointer]:
+                    - checkbox "Wanitta" [ref=e2790]
+                    - generic [ref=e2791]: Wanitta
+                  - generic [ref=e2793] [cursor=pointer]:
+                    - checkbox "Whitman Store" [ref=e2794]
+                    - generic [ref=e2795]: Whitman Store
+                  - generic [ref=e2797] [cursor=pointer]:
+                    - checkbox "X2 Underwear" [ref=e2798]
+                    - generic [ref=e2799]: X2 Underwear
+                  - generic [ref=e2801] [cursor=pointer]:
+                    - checkbox "Xr By Ana Plata" [ref=e2802]
+                    - generic [ref=e2803]: Xr By Ana Plata
+                  - generic [ref=e2805] [cursor=pointer]:
+                    - checkbox "Xtremen Underwear" [ref=e2806]
+                    - generic [ref=e2807]: Xtremen Underwear
+                  - generic [ref=e2809] [cursor=pointer]:
+                    - checkbox "Yama By His Grace" [ref=e2810]
+                    - generic [ref=e2811]: Yama By His Grace
+                  - generic [ref=e2813] [cursor=pointer]:
+                    - checkbox "Yaquut" [ref=e2814]
+                    - generic [ref=e2815]: Yaquut
+                  - generic [ref=e2817] [cursor=pointer]:
+                    - checkbox "Yerbabuena" [ref=e2818]
+                    - generic [ref=e2819]: Yerbabuena
+                  - generic [ref=e2821] [cursor=pointer]:
+                    - checkbox "Yourself" [ref=e2822]
+                    - generic [ref=e2823]: Yourself
+                  - generic [ref=e2825] [cursor=pointer]:
+                    - checkbox "Yurika Lencería" [ref=e2826]
+                    - generic [ref=e2827]: Yurika Lencería
+                  - generic [ref=e2829] [cursor=pointer]:
+                    - checkbox "Zhamia Atelier Joyero" [ref=e2830]
+                    - generic [ref=e2831]: Zhamia Atelier Joyero
+                  - generic [ref=e2833] [cursor=pointer]:
+                    - checkbox "Zorro Gris" [ref=e2834]
+                    - generic [ref=e2835]: Zorro Gris
+                  - generic [ref=e2837] [cursor=pointer]:
+                    - checkbox "ZUT" [ref=e2838]
+                    - generic [ref=e2839]: ZUT
+            - group [ref=e2840]:
+              - generic "Precio" [ref=e2841] [cursor=pointer]:
+                - generic [ref=e2842]: Precio
+              - generic [ref=e2843]:
+                - generic [ref=e2845]: $ 1 · $ 5.797.627.398
+                - generic [ref=e2846]:
+                  - button "Hasta $ 1.449.410.001" [ref=e2847]
+                  - button "$ 1.449.410.001 a $ 2.898.810.001" [ref=e2848]
+                  - button "$ 2.898.810.001 a $ 4.348.220.001" [ref=e2849]
+                  - button "Desde $ 4.348.220.001" [ref=e2850]
+                  - button "Todos" [ref=e2851]
+                - generic [ref=e2852]:
+                  - slider: "1"
+                  - slider: "5797620001"
+                - generic [ref=e2855]: "Rango disponible: $ 1 a $ 5.797.627.398"
+            - group [ref=e2856]:
+              - generic "Color" [ref=e2857] [cursor=pointer]:
+                - generic [ref=e2858]: Color
+              - generic [ref=e2859]:
+                - generic "Negro" [ref=e2860] [cursor=pointer]:
+                  - checkbox "Negro" [ref=e2861]
+                  - generic [ref=e2863]: Negro
+                - generic "Carbon" [ref=e2864] [cursor=pointer]:
+                  - checkbox "Carbon" [ref=e2865]
+                  - generic [ref=e2867]: Carbon
+                - generic "Grafito" [ref=e2868] [cursor=pointer]:
+                  - checkbox "Grafito" [ref=e2869]
+                  - generic [ref=e2871]: Grafito
+                - generic "Gris oscuro" [ref=e2872] [cursor=pointer]:
+                  - checkbox "Gris oscuro" [ref=e2873]
+                  - generic [ref=e2875]: Gris oscuro
+                - generic "Gris" [ref=e2876] [cursor=pointer]:
+                  - checkbox "Gris" [ref=e2877]
+                  - generic [ref=e2879]: Gris
+                - generic "Plata" [ref=e2880] [cursor=pointer]:
+                  - checkbox "Plata" [ref=e2881]
+                  - generic [ref=e2883]: Plata
+                - generic "Gris claro" [ref=e2884] [cursor=pointer]:
+                  - checkbox "Gris claro" [ref=e2885]
+                  - generic [ref=e2887]: Gris claro
+                - generic "Blanco roto" [ref=e2888] [cursor=pointer]:
+                  - checkbox "Blanco roto" [ref=e2889]
+                  - generic [ref=e2891]: Blanco roto
+                - generic "Blanco" [ref=e2892] [cursor=pointer]:
+                  - checkbox "Blanco" [ref=e2893]
+                  - generic [ref=e2895]: Blanco
+                - generic "Rojo" [ref=e2896] [cursor=pointer]:
+                  - checkbox "Rojo" [ref=e2897]
+                  - generic [ref=e2899]: Rojo
+                - generic "Rosa palido" [ref=e2900] [cursor=pointer]:
+                  - checkbox "Rosa palido" [ref=e2901]
+                  - generic [ref=e2903]: Rosa palido
+                - generic "Rojo intenso" [ref=e2904] [cursor=pointer]:
+                  - checkbox "Rojo intenso" [ref=e2905]
+                  - generic [ref=e2907]: Rojo intenso
+                - generic "Mandarina" [ref=e2908] [cursor=pointer]:
+                  - checkbox "Mandarina" [ref=e2909]
+                  - generic [ref=e2911]: Mandarina
+                - generic "Coral" [ref=e2912] [cursor=pointer]:
+                  - checkbox "Coral" [ref=e2913]
+                  - generic [ref=e2915]: Coral
+                - generic "Cuero" [ref=e2916] [cursor=pointer]:
+                  - checkbox "Cuero" [ref=e2917]
+                  - generic [ref=e2919]: Cuero
+                - generic "Cafe" [ref=e2920] [cursor=pointer]:
+                  - checkbox "Cafe" [ref=e2921]
+                  - generic [ref=e2923]: Cafe
+                - generic "Siena" [ref=e2924] [cursor=pointer]:
+                  - checkbox "Siena" [ref=e2925]
+                  - generic [ref=e2927]: Siena
+                - generic "Chocolate" [ref=e2928] [cursor=pointer]:
+                  - checkbox "Chocolate" [ref=e2929]
+                  - generic [ref=e2931]: Chocolate
+                - generic "Espresso" [ref=e2932] [cursor=pointer]:
+                  - checkbox "Espresso" [ref=e2933]
+                  - generic [ref=e2935]: Espresso
+                - generic "Nogal" [ref=e2936] [cursor=pointer]:
+                  - checkbox "Nogal" [ref=e2937]
+                  - generic [ref=e2939]: Nogal
+                - generic "Arena" [ref=e2940] [cursor=pointer]:
+                  - checkbox "Arena" [ref=e2941]
+                  - generic [ref=e2943]: Arena
+                - generic "Cobre" [ref=e2944] [cursor=pointer]:
+                  - checkbox "Cobre" [ref=e2945]
+                  - generic [ref=e2947]: Cobre
+                - generic "Camel" [ref=e2948] [cursor=pointer]:
+                  - checkbox "Camel" [ref=e2949]
+                  - generic [ref=e2951]: Camel
+                - generic "Tan" [ref=e2952] [cursor=pointer]:
+                  - checkbox "Tan" [ref=e2953]
+                  - generic [ref=e2955]: Tan
+                - generic "Naranja oscuro" [ref=e2956] [cursor=pointer]:
+                  - checkbox "Naranja oscuro" [ref=e2957]
+                  - generic [ref=e2959]: Naranja oscuro
+                - generic "Crema" [ref=e2960] [cursor=pointer]:
+                  - checkbox "Crema" [ref=e2961]
+                  - generic [ref=e2963]: Crema
+                - generic "Avena" [ref=e2964] [cursor=pointer]:
+                  - checkbox "Avena" [ref=e2965]
+                  - generic [ref=e2967]: Avena
+                - generic "Lino" [ref=e2968] [cursor=pointer]:
+                  - checkbox "Lino" [ref=e2969]
+                  - generic [ref=e2971]: Lino
+                - generic "Greige" [ref=e2972] [cursor=pointer]:
+                  - checkbox "Greige" [ref=e2973]
+                  - generic [ref=e2975]: Greige
+                - generic "Naranja" [ref=e2976] [cursor=pointer]:
+                  - checkbox "Naranja" [ref=e2977]
+                  - generic [ref=e2979]: Naranja
+                - generic "Oro champana" [ref=e2980] [cursor=pointer]:
+                  - checkbox "Oro champana" [ref=e2981]
+                  - generic [ref=e2983]: Oro champana
+                - generic "Amarillo" [ref=e2984] [cursor=pointer]:
+                  - checkbox "Amarillo" [ref=e2985]
+                  - generic [ref=e2987]: Amarillo
+                - generic "Oro" [ref=e2988] [cursor=pointer]:
+                  - checkbox "Oro" [ref=e2989]
+                  - generic [ref=e2991]: Oro
+                - generic "Marfil" [ref=e2992] [cursor=pointer]:
+                  - checkbox "Marfil" [ref=e2993]
+                  - generic [ref=e2995]: Marfil
+                - generic "Beige" [ref=e2996] [cursor=pointer]:
+                  - checkbox "Beige" [ref=e2997]
+                  - generic [ref=e2999]: Beige
+                - generic "Oliva" [ref=e3000] [cursor=pointer]:
+                  - checkbox "Oliva" [ref=e3001]
+                  - generic [ref=e3003]: Oliva
+                - generic "Oliva oscuro" [ref=e3004] [cursor=pointer]:
+                  - checkbox "Oliva oscuro" [ref=e3005]
+                  - generic [ref=e3007]: Oliva oscuro
+                - generic "Menta" [ref=e3008] [cursor=pointer]:
+                  - checkbox "Menta" [ref=e3009]
+                  - generic [ref=e3011]: Menta
+                - generic "Bosque" [ref=e3012] [cursor=pointer]:
+                  - checkbox "Bosque" [ref=e3013]
+                  - generic [ref=e3015]: Bosque
+                - generic "Verde" [ref=e3016] [cursor=pointer]:
+                  - checkbox "Verde" [ref=e3017]
+                  - generic [ref=e3019]: Verde
+                - generic "Esmeralda" [ref=e3020] [cursor=pointer]:
+                  - checkbox "Esmeralda" [ref=e3021]
+                  - generic [ref=e3023]: Esmeralda
+                - generic "Turquesa" [ref=e3024] [cursor=pointer]:
+                  - checkbox "Turquesa" [ref=e3025]
+                  - generic [ref=e3027]: Turquesa
+                - generic "Cian oscuro" [ref=e3028] [cursor=pointer]:
+                  - checkbox "Cian oscuro" [ref=e3029]
+                  - generic [ref=e3031]: Cian oscuro
+                - generic "Azul cielo" [ref=e3032] [cursor=pointer]:
+                  - checkbox "Azul cielo" [ref=e3033]
+                  - generic [ref=e3035]: Azul cielo
+                - generic "Azul pizarra" [ref=e3036] [cursor=pointer]:
+                  - checkbox "Azul pizarra" [ref=e3037]
+                  - generic [ref=e3039]: Azul pizarra
+                - generic "Azul noche" [ref=e3040] [cursor=pointer]:
+                  - checkbox "Azul noche" [ref=e3041]
+                  - generic [ref=e3043]: Azul noche
+                - generic "Azul brillante" [ref=e3044] [cursor=pointer]:
+                  - checkbox "Azul brillante" [ref=e3045]
+                  - generic [ref=e3047]: Azul brillante
+                - generic "Azul profundo" [ref=e3048] [cursor=pointer]:
+                  - checkbox "Azul profundo" [ref=e3049]
+                  - generic [ref=e3051]: Azul profundo
+                - generic "Cobalto" [ref=e3052] [cursor=pointer]:
+                  - checkbox "Cobalto" [ref=e3053]
+                  - generic [ref=e3055]: Cobalto
+                - generic "Azul real" [ref=e3056] [cursor=pointer]:
+                  - checkbox "Azul real" [ref=e3057]
+                  - generic [ref=e3059]: Azul real
+                - generic "Azul marino" [ref=e3060] [cursor=pointer]:
+                  - checkbox "Azul marino" [ref=e3061]
+                  - generic [ref=e3063]: Azul marino
+                - generic "Indigo" [ref=e3064] [cursor=pointer]:
+                  - checkbox "Indigo" [ref=e3065]
+                  - generic [ref=e3067]: Indigo
+                - generic "Magenta" [ref=e3068] [cursor=pointer]:
+                  - checkbox "Magenta" [ref=e3069]
+                  - generic [ref=e3071]: Magenta
+                - generic "Lila" [ref=e3072] [cursor=pointer]:
+                  - checkbox "Lila" [ref=e3073]
+                  - generic [ref=e3075]: Lila
+                - generic "Lavanda" [ref=e3076] [cursor=pointer]:
+                  - checkbox "Lavanda" [ref=e3077]
+                  - generic [ref=e3079]: Lavanda
+                - generic "Rosa profundo" [ref=e3080] [cursor=pointer]:
+                  - checkbox "Rosa profundo" [ref=e3081]
+                  - generic [ref=e3083]: Rosa profundo
+                - generic "Rosa fuerte" [ref=e3084] [cursor=pointer]:
+                  - checkbox "Rosa fuerte" [ref=e3085]
+                  - generic [ref=e3087]: Rosa fuerte
+                - generic "Carmesi" [ref=e3088] [cursor=pointer]:
+                  - checkbox "Carmesi" [ref=e3089]
+                  - generic [ref=e3091]: Carmesi
+                - generic "Rosa" [ref=e3092] [cursor=pointer]:
+                  - checkbox "Rosa" [ref=e3093]
+                  - generic [ref=e3095]: Rosa
+                - generic "Vino" [ref=e3096] [cursor=pointer]:
+                  - checkbox "Vino" [ref=e3097]
+                  - generic [ref=e3099]: Vino
+            - group [ref=e3100]:
+              - generic "Material" [ref=e3101] [cursor=pointer]:
+                - generic [ref=e3102]: Material
+            - group [ref=e3103]:
+              - generic "Patrón" [ref=e3104] [cursor=pointer]:
+                - generic [ref=e3105]: Patrón
+        - region "Resultados" [ref=e99]:
+          - generic [ref=e102]:
+            - generic [ref=e103]:
+              - paragraph [ref=e104]: 98.009 productos
+              - paragraph [ref=e3106]: 534 marcas
+            - generic [ref=e107]:
+              - generic [ref=e108]:
+                - text: Ordenar
+                - generic [ref=e109]:
+                  - combobox "Ordenar" [ref=e110]:
+                    - option "Relevancia"
+                    - option "Nuevos" [selected]
+                    - 'option "Precio: menor"'
+                    - 'option "Precio: mayor"'
+                  - generic: ▾
+              - button "Guardados" [ref=e111]:
+                - img [ref=e112]
+              - button "Limpiar filtros" [disabled] [ref=e116]: ×
+          - generic [ref=e117]:
+            - list "Productos" [ref=e119]:
+              - listitem [ref=e120]:
+                - article [ref=e121]:
+                  - button "Agregar a comparar" [ref=e123]:
+                    - img [ref=e124]
+                  - button "Guardar Nómada XL Océano Noche Laptop 16&#8243; en favoritos" [ref=e130]:
+                    - img [ref=e132]
+                  - link "Nómada XL Océano Noche Laptop 16&#8243; Monkey Hide Nómada XL Océano Noche Laptop 16&#8243; $ 329.900" [ref=e134] [cursor=pointer]:
+                    - /url: https://www.monkeyhide.com/tienda/nomada-xl-oceano-negro/
+                    - img "Nómada XL Océano Noche Laptop 16&#8243;" [ref=e135]
+                    - generic [ref=e137]:
+                      - paragraph [ref=e138]: Monkey Hide
+                      - heading "Nómada XL Océano Noche Laptop 16&#8243;" [level=3] [ref=e139]
+                      - paragraph [ref=e140]: $ 329.900
+              - listitem [ref=e141]:
+                - article [ref=e142]:
+                  - button "Agregar a comparar" [ref=e144]:
+                    - img [ref=e145]
+                  - button "Guardar Body Evans Negro Santísimas Ref. S-615 en favoritos" [ref=e151]:
+                    - img [ref=e153]
+                  - link "Body Evans Negro Santísimas Ref. S-615 Santísimas Ropa Íntima Body Evans Negro Santísimas Ref. S-615 $ 240.000" [ref=e155] [cursor=pointer]:
+                    - /url: https://santisimasropaintima.com/products/body-oca-nude-santisimas-ref-s-565-copia
+                    - img "Body Evans Negro Santísimas Ref. S-615" [ref=e156]
+                    - generic [ref=e158]:
+                      - paragraph [ref=e159]: Santísimas Ropa Íntima
+                      - heading "Body Evans Negro Santísimas Ref. S-615" [level=3] [ref=e160]
+                      - paragraph [ref=e161]: $ 240.000
+              - listitem [ref=e162]:
+                - article [ref=e163]:
+                  - button "Agregar a comparar" [ref=e165]:
+                    - img [ref=e166]
+                  - button "Guardar BRASIER RITA NEGRO en favoritos" [ref=e172]:
+                    - img [ref=e174]
+                  - link "BRASIER RITA NEGRO Soreil BRASIER RITA NEGRO $ 215.000" [ref=e176] [cursor=pointer]:
+                    - /url: https://soreil.co/products/brasier-rita-negro
+                    - img "BRASIER RITA NEGRO" [ref=e177]
+                    - generic [ref=e179]:
+                      - paragraph [ref=e180]: Soreil
+                      - heading "BRASIER RITA NEGRO" [level=3] [ref=e181]
+                      - paragraph [ref=e182]: $ 215.000
+              - listitem [ref=e183]:
+                - article [ref=e184]:
+                  - button "Agregar a comparar" [ref=e186]:
+                    - img [ref=e187]
+                  - button "Guardar TANGA RITA NEGRO en favoritos" [ref=e193]:
+                    - img [ref=e195]
+                  - link "TANGA RITA NEGRO Soreil TANGA RITA NEGRO $ 129.000" [ref=e197] [cursor=pointer]:
+                    - /url: https://soreil.co/products/tanga-rita-negro
+                    - img "TANGA RITA NEGRO" [ref=e198]
+                    - generic [ref=e200]:
+                      - paragraph [ref=e201]: Soreil
+                      - heading "TANGA RITA NEGRO" [level=3] [ref=e202]
+                      - paragraph [ref=e203]: $ 129.000
+              - listitem [ref=e204]:
+                - article [ref=e205]:
+                  - button "Agregar a comparar" [ref=e207]:
+                    - img [ref=e208]
+                  - button "Guardar VENENO GORRA LABORATORY en favoritos" [ref=e214]:
+                    - img [ref=e216]
+                  - link "VENENO GORRA LABORATORY VENENO VENENO GORRA LABORATORY $ 230.000" [ref=e218] [cursor=pointer]:
+                    - /url: https://www.veneno.com/products/veneno-gorra-laboratory-vn-0425
+                    - img "VENENO GORRA LABORATORY" [ref=e219]
+                    - generic [ref=e221]:
+                      - paragraph [ref=e222]: VENENO
+                      - heading "VENENO GORRA LABORATORY" [level=3] [ref=e223]
+                      - paragraph [ref=e224]: $ 230.000
+              - listitem [ref=e225]:
+                - article [ref=e226]:
+                  - button "Agregar a comparar" [ref=e228]:
+                    - img [ref=e229]
+                  - 'button "Guardar Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro. en favoritos" [ref=e235]':
+                    - img [ref=e237]
+                  - 'link "Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro. Lola Jeans Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro. $ 139.000" [ref=e239] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-0620209-pantalon-straight-leg-sin-prenses-tejido-plano-liviano-tiro-alto-tono-negro
+                    - 'img "Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro." [ref=e240]'
+                    - generic [ref=e242]:
+                      - paragraph [ref=e243]: Lola Jeans
+                      - 'heading "Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro." [level=3] [ref=e244]'
+                      - paragraph [ref=e245]: $ 139.000
+              - listitem [ref=e246]:
+                - article [ref=e247]:
+                  - button "Agregar a comparar" [ref=e249]:
+                    - img [ref=e250]
+                  - 'button "Guardar Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café en favoritos" [ref=e256]':
+                    - img [ref=e258]
+                  - 'link "Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café Lola Jeans Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café $ 149.000" [ref=e260] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066252-jean-wide-leg-confort-denim-velvet-acabado-terciopelo-tiro-alto-tono-cafe
+                    - 'img "Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café" [ref=e261]'
+                    - generic [ref=e263]:
+                      - paragraph [ref=e264]: Lola Jeans
+                      - 'heading "Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café" [level=3] [ref=e265]'
+                      - paragraph [ref=e266]: $ 149.000
+              - listitem [ref=e267]:
+                - article [ref=e268]:
+                  - button "Agregar a comparar" [ref=e270]:
+                    - img [ref=e271]
+                  - 'button "Guardar Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro. en favoritos" [ref=e277]':
+                    - img [ref=e279]
+                  - 'link "Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro. Lola Jeans Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro. $ 149.000" [ref=e281] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066118-jean-wide-leg-tiro-medio-con-cortes-rigido-tono-gris-oscuro
+                    - 'img "Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro." [ref=e282]'
+                    - generic [ref=e284]:
+                      - paragraph [ref=e285]: Lola Jeans
+                      - 'heading "Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro." [level=3] [ref=e286]'
+                      - paragraph [ref=e287]: $ 149.000
+              - listitem [ref=e288]:
+                - article [ref=e289]:
+                  - button "Agregar a comparar" [ref=e291]:
+                    - img [ref=e292]
+                  - 'button "Guardar Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro. en favoritos" [ref=e298]':
+                    - img [ref=e300]
+                  - 'link "Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro. Lola Jeans Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro. $ 139.000" [ref=e302] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-065784-jean-flare-stretch-bota-ancha-tiro-alto-tono-azul-claro
+                    - 'img "Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro." [ref=e303]'
+                    - generic [ref=e305]:
+                      - paragraph [ref=e306]: Lola Jeans
+                      - 'heading "Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro." [level=3] [ref=e307]'
+                      - paragraph [ref=e308]: $ 139.000
+              - listitem [ref=e309]:
+                - article [ref=e310]:
+                  - button "Agregar a comparar" [ref=e312]:
+                    - img [ref=e313]
+                  - 'button "Guardar Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris en favoritos" [ref=e319]':
+                    - img [ref=e321]
+                  - 'link "Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris Lola Jeans Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris $ 149.000" [ref=e323] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066251-jean-wide-leg-confort-denim-velvet-acabado-terciopelo-tiro-alto-tono-gris
+                    - 'img "Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris" [ref=e324]'
+                    - generic [ref=e326]:
+                      - paragraph [ref=e327]: Lola Jeans
+                      - 'heading "Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris" [level=3] [ref=e328]'
+                      - paragraph [ref=e329]: $ 149.000
+              - listitem [ref=e330]:
+                - article [ref=e331]:
+                  - button "Agregar a comparar" [ref=e333]:
+                    - img [ref=e334]
+                  - 'button "Guardar Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe. en favoritos" [ref=e340]':
+                    - img [ref=e342]
+                  - 'link "Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe. Lola Jeans Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe. $ 139.000" [ref=e344] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-0620210-pantalon-straight-leg-sin-prenses-tejido-plano-liviano-tiro-alto-tono-cafe
+                    - 'img "Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe." [ref=e345]'
+                    - generic [ref=e347]:
+                      - paragraph [ref=e348]: Lola Jeans
+                      - 'heading "Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe." [level=3] [ref=e349]'
+                      - paragraph [ref=e350]: $ 139.000
+              - listitem [ref=e351]:
+                - article [ref=e352]:
+                  - button "Agregar a comparar" [ref=e354]:
+                    - img [ref=e355]
+                  - 'button "Guardar Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca. en favoritos" [ref=e361]':
+                    - img [ref=e363]
+                  - 'link "Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca. Lola Jeans Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca. $ 139.000" [ref=e365] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-0620211-pantalon-straight-leg-sin-prenses-tejido-plano-liviano-tiro-alto-tono-mocca
+                    - 'img "Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca." [ref=e366]'
+                    - generic [ref=e368]:
+                      - paragraph [ref=e369]: Lola Jeans
+                      - 'heading "Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca." [level=3] [ref=e370]'
+                      - paragraph [ref=e371]: $ 139.000
+              - listitem [ref=e372]:
+                - article [ref=e373]:
+                  - button "Agregar a comparar" [ref=e375]:
+                    - img [ref=e376]
+                  - 'button "Guardar Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro. en favoritos" [ref=e382]':
+                    - img [ref=e384]
+                  - 'link "Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro. Lola Jeans Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro. $ 139.000" [ref=e386] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-065687-jean-flare-stretch-bota-ancha-tiro-alto-tono-azul-oscuro
+                    - 'img "Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro." [ref=e387]'
+                    - generic [ref=e389]:
+                      - paragraph [ref=e390]: Lola Jeans
+                      - 'heading "Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro." [level=3] [ref=e391]'
+                      - paragraph [ref=e392]: $ 139.000
+              - listitem [ref=e393]:
+                - article [ref=e394]:
+                  - button "Agregar a comparar" [ref=e396]:
+                    - img [ref=e397]
+                  - 'button "Guardar Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe en favoritos" [ref=e403]':
+                    - img [ref=e405]
+                  - 'link "Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe Lola Jeans Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe $ 149.000" [ref=e407] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066247-jean-wide-leg-tiro-alto-con-corte-detalle-de-tela-con-brillo-rigido-tono-cafe
+                    - 'img "Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe" [ref=e408]'
+                    - generic [ref=e410]:
+                      - paragraph [ref=e411]: Lola Jeans
+                      - 'heading "Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe" [level=3] [ref=e412]'
+                      - paragraph [ref=e413]: $ 149.000
+              - listitem [ref=e414]:
+                - article [ref=e415]:
+                  - button "Agregar a comparar" [ref=e417]:
+                    - img [ref=e418]
+                  - 'button "Guardar Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio. en favoritos" [ref=e424]':
+                    - img [ref=e426]
+                  - 'link "Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio. Lola Jeans Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio. $ 149.000" [ref=e428] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066119-jean-wide-leg-tiro-medio-con-cortes-rigido-tono-gris-medio
+                    - 'img "Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio." [ref=e429]'
+                    - generic [ref=e431]:
+                      - paragraph [ref=e432]: Lola Jeans
+                      - 'heading "Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio." [level=3] [ref=e433]'
+                      - paragraph [ref=e434]: $ 149.000
+              - listitem [ref=e435]:
+                - article [ref=e436]:
+                  - button "Agregar a comparar" [ref=e438]:
+                    - img [ref=e439]
+                  - 'button "Guardar Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro en favoritos" [ref=e445]':
+                    - img [ref=e447]
+                  - 'link "Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro Lola Jeans Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro $ 149.000" [ref=e449] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066175-jean-palazzo-rigido-con-corte-tiro-alto-tono-azul-oscuro
+                    - 'img "Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro" [ref=e450]'
+                    - generic [ref=e452]:
+                      - paragraph [ref=e453]: Lola Jeans
+                      - 'heading "Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro" [level=3] [ref=e454]'
+                      - paragraph [ref=e455]: $ 149.000
+              - listitem [ref=e456]:
+                - article [ref=e457]:
+                  - button "Agregar a comparar" [ref=e459]:
+                    - img [ref=e460]
+                  - 'button "Guardar Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio en favoritos" [ref=e466]':
+                    - img [ref=e468]
+                  - 'link "Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio Lola Jeans Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio $ 149.000" [ref=e470] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066176-jean-palazzo-rigido-con-corte-tiro-alto-tono-azul-medio
+                    - 'img "Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio" [ref=e471]'
+                    - generic [ref=e473]:
+                      - paragraph [ref=e474]: Lola Jeans
+                      - 'heading "Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio" [level=3] [ref=e475]'
+                      - paragraph [ref=e476]: $ 149.000
+              - listitem [ref=e477]:
+                - article [ref=e478]:
+                  - button "Agregar a comparar" [ref=e480]:
+                    - img [ref=e481]
+                  - 'button "Guardar Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul en favoritos" [ref=e487]':
+                    - img [ref=e489]
+                  - 'link "Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul Lola Jeans Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul $ 149.000" [ref=e491] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066248-jean-wide-leg-tiro-alto-con-corte-detalle-de-tela-con-brillo-rigido-tono-azul
+                    - 'img "Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul" [ref=e492]'
+                    - generic [ref=e494]:
+                      - paragraph [ref=e495]: Lola Jeans
+                      - 'heading "Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul" [level=3] [ref=e496]'
+                      - paragraph [ref=e497]: $ 149.000
+              - listitem [ref=e498]:
+                - article [ref=e499]:
+                  - button "Agregar a comparar" [ref=e501]:
+                    - img [ref=e502]
+                  - button "Guardar Camiseta Distressed Cry baby en favoritos" [ref=e508]:
+                    - img [ref=e510]
+                  - link "Camiseta Distressed Cry baby CHILL Camiseta Distressed Cry baby $ 88.000" [ref=e512] [cursor=pointer]:
+                    - /url: https://chillcolombia.co/products/camiseta-distressed-cry-baby
+                    - img "Camiseta Distressed Cry baby" [ref=e513]
+                    - generic [ref=e515]:
+                      - paragraph [ref=e516]: CHILL
+                      - heading "Camiseta Distressed Cry baby" [level=3] [ref=e517]
+                      - paragraph [ref=e518]: $ 88.000
+              - listitem [ref=e519]:
+                - article [ref=e520]:
+                  - button "Agregar a comparar" [ref=e522]:
+                    - img [ref=e523]
+                  - button "Guardar Camiseta Deteriorated en favoritos" [ref=e529]:
+                    - img [ref=e531]
+                  - link "Camiseta Deteriorated CHILL Camiseta Deteriorated $ 72.000" [ref=e533] [cursor=pointer]:
+                    - /url: https://chillcolombia.co/products/camiseta-deteriorated
+                    - img "Camiseta Deteriorated" [ref=e534]
+                    - generic [ref=e536]:
+                      - paragraph [ref=e537]: CHILL
+                      - heading "Camiseta Deteriorated" [level=3] [ref=e538]
+                      - paragraph [ref=e539]: $ 72.000
+              - listitem [ref=e540]:
+                - article [ref=e541]:
+                  - button "Agregar a comparar" [ref=e543]:
+                    - img [ref=e544]
+                  - button "Guardar Camiseta cometa gris en favoritos" [ref=e550]:
+                    - img [ref=e552]
+                  - link "Camiseta cometa gris LUCHADOR COLOMBIA Camiseta cometa gris $ 69.000" [ref=e554] [cursor=pointer]:
+                    - /url: https://luchadorcolombia.com/products/camiseta-cometa-gris
+                    - img "Camiseta cometa gris" [ref=e555]
+                    - generic [ref=e557]:
+                      - paragraph [ref=e558]: LUCHADOR COLOMBIA
+                      - heading "Camiseta cometa gris" [level=3] [ref=e559]
+                      - paragraph [ref=e560]: $ 69.000
+              - listitem [ref=e561]:
+                - article [ref=e562]:
+                  - button "Agregar a comparar" [ref=e564]:
+                    - img [ref=e565]
+                  - button "Guardar MARINA TOP en favoritos" [ref=e571]:
+                    - img [ref=e573]
+                  - link "MARINA TOP Pájaro Limón MARINA TOP $ 90.000" [ref=e575] [cursor=pointer]:
+                    - /url: https://www.pajarolimon.com/products/marina-top
+                    - img "MARINA TOP" [ref=e576]
+                    - generic [ref=e578]:
+                      - paragraph [ref=e579]: Pájaro Limón
+                      - heading "MARINA TOP" [level=3] [ref=e580]
+                      - paragraph [ref=e581]: $ 90.000
+              - listitem [ref=e582]:
+                - article [ref=e583]:
+                  - button "Agregar a comparar" [ref=e585]:
+                    - img [ref=e586]
+                  - button "Guardar Balance Club en favoritos" [ref=e592]:
+                    - img [ref=e594]
+                  - link "Balance Club Ban All Brand Balance Club $ 140.000" [ref=e596] [cursor=pointer]:
+                    - /url: https://www.banallbrand.com/productos/camiseta-keep-the-balance/
+                    - img "Balance Club" [ref=e597]
+                    - generic [ref=e599]:
+                      - paragraph [ref=e600]: Ban All Brand
+                      - heading "Balance Club" [level=3] [ref=e601]
+                      - paragraph [ref=e602]: $ 140.000
+              - listitem [ref=e603]:
+                - article [ref=e604]:
+                  - button "Agregar a comparar" [ref=e606]:
+                    - img [ref=e607]
+                  - button "Guardar Gioia Maxi Skirt en favoritos" [ref=e613]:
+                    - img [ref=e615]
+                  - link "Gioia Maxi Skirt Baobab Gioia Maxi Skirt $ 320.000" [ref=e617] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/gioia-maxi-dress-fuchsia
+                    - img "Gioia Maxi Skirt" [ref=e618]
+                    - generic [ref=e620]:
+                      - paragraph [ref=e621]: Baobab
+                      - heading "Gioia Maxi Skirt" [level=3] [ref=e622]
+                      - paragraph [ref=e623]: $ 320.000
+            - generic [ref=e624]:
+              - generic [ref=e626]:
+                - paragraph [ref=e627]: Mostrando 24 de 98.009
+                - paragraph [ref=e3107]: 0%
+              - button "Cargar más" [ref=e632]
+  - alert [ref=e3109]

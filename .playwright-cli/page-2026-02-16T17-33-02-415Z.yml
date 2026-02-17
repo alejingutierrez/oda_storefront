@@ -1,0 +1,982 @@
+- generic [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e4]:
+      - link "ODA" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - button "Abrir menu" [ref=e7]:
+        - text: Menu
+        - generic [ref=e8]: ▾
+    - generic [ref=e9]:
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - heading "Catálogo" [level=1] [ref=e15]
+            - generic "Columnas" [ref=e17]:
+              - button "1" [pressed] [ref=e18]
+              - button "2" [ref=e19]
+          - paragraph [ref=e20]: Descubre marcas locales con inventario disponible.
+        - region "Resultados" [ref=e22]:
+          - generic [ref=e3041]:
+            - list "Productos" [ref=e3043]:
+              - listitem [ref=e3044]:
+                - article [ref=e3045]:
+                  - button "Agregar a comparar" [ref=e3047]:
+                    - img [ref=e3048]
+                  - button "Guardar ICONO 9 en favoritos" [ref=e3054]:
+                    - img [ref=e3056]
+                  - link "ICONO 9 Barmont ICONO 9 $ 990.000" [ref=e3058] [cursor=pointer]:
+                    - /url: https://barmont.co/index.php/producto/chaqueta-cuero-textura-croco-icono-9/
+                    - img "ICONO 9" [ref=e3059]
+                    - generic [ref=e3061]:
+                      - paragraph [ref=e3062]: Barmont
+                      - heading "ICONO 9" [level=3] [ref=e3063]
+                      - paragraph [ref=e3064]: $ 990.000
+              - listitem [ref=e3065]:
+                - article [ref=e3066]:
+                  - button "Agregar a comparar" [ref=e3068]:
+                    - img [ref=e3069]
+                  - button "Guardar Cosmetiquera Para Mujer Moscu Estampada Snoopy en favoritos" [ref=e3075]:
+                    - img [ref=e3077]
+                  - link "Cosmetiquera Para Mujer Moscu Estampada Snoopy Vintro Store Cosmetiquera Para Mujer Moscu Estampada Snoopy $ 100.000" [ref=e3079] [cursor=pointer]:
+                    - /url: https://vintrostore.com/products/cosmetiquera-moscu-snoopy-words-in-colors
+                    - img "Cosmetiquera Para Mujer Moscu Estampada Snoopy" [ref=e3080]
+                    - generic [ref=e3082]:
+                      - paragraph [ref=e3083]: Vintro Store
+                      - heading "Cosmetiquera Para Mujer Moscu Estampada Snoopy" [level=3] [ref=e3084]
+                      - paragraph [ref=e3085]: $ 100.000
+              - listitem [ref=e3086]:
+                - article [ref=e3087]:
+                  - button "Agregar a comparar" [ref=e3089]:
+                    - img [ref=e3090]
+                  - button "Guardar TRUE en favoritos" [ref=e3096]:
+                    - img [ref=e3098]
+                  - link "TRUE Wanaa Waa TRUE $ 70.000" [ref=e3100] [cursor=pointer]:
+                    - /url: https://wanaawaa.com/products/true
+                    - img "TRUE" [ref=e3101]
+                    - generic [ref=e3103]:
+                      - paragraph [ref=e3104]: Wanaa Waa
+                      - heading "TRUE" [level=3] [ref=e3105]
+                      - paragraph [ref=e3106]: $ 70.000
+              - listitem [ref=e3107]:
+                - article [ref=e3108]:
+                  - button "Agregar a comparar" [ref=e3110]:
+                    - img [ref=e3111]
+                  - button "Guardar DARLA en favoritos" [ref=e3117]:
+                    - img [ref=e3119]
+                  - link "DARLA Wanaa Waa DARLA $ 64.000" [ref=e3121] [cursor=pointer]:
+                    - /url: https://wanaawaa.com/products/darla
+                    - img "DARLA" [ref=e3122]
+                    - generic [ref=e3124]:
+                      - paragraph [ref=e3125]: Wanaa Waa
+                      - heading "DARLA" [level=3] [ref=e3126]
+                      - paragraph [ref=e3127]: $ 64.000
+              - listitem [ref=e3128]:
+                - article [ref=e3129]:
+                  - button "Agregar a comparar" [ref=e3131]:
+                    - img [ref=e3132]
+                  - button "Guardar Body Evans Negro Santísimas Ref. S-615 en favoritos" [ref=e3138]:
+                    - img [ref=e3140]
+                  - link "Body Evans Negro Santísimas Ref. S-615 Santísimas Ropa Íntima Body Evans Negro Santísimas Ref. S-615 $ 240.000" [ref=e3142] [cursor=pointer]:
+                    - /url: https://santisimasropaintima.com/products/body-oca-nude-santisimas-ref-s-565-copia
+                    - img "Body Evans Negro Santísimas Ref. S-615" [ref=e3143]
+                    - generic [ref=e3145]:
+                      - paragraph [ref=e3146]: Santísimas Ropa Íntima
+                      - heading "Body Evans Negro Santísimas Ref. S-615" [level=3] [ref=e3147]
+                      - paragraph [ref=e3148]: $ 240.000
+              - listitem [ref=e3149]:
+                - article [ref=e3150]:
+                  - button "Agregar a comparar" [ref=e3152]:
+                    - img [ref=e3153]
+                  - button "Guardar BRASIER RITA NEGRO en favoritos" [ref=e3159]:
+                    - img [ref=e3161]
+                  - link "BRASIER RITA NEGRO Soreil BRASIER RITA NEGRO $ 215.000" [ref=e3163] [cursor=pointer]:
+                    - /url: https://soreil.co/products/brasier-rita-negro
+                    - img "BRASIER RITA NEGRO" [ref=e3164]
+                    - generic [ref=e3166]:
+                      - paragraph [ref=e3167]: Soreil
+                      - heading "BRASIER RITA NEGRO" [level=3] [ref=e3168]
+                      - paragraph [ref=e3169]: $ 215.000
+              - listitem [ref=e3170]:
+                - article [ref=e3171]:
+                  - button "Agregar a comparar" [ref=e3173]:
+                    - img [ref=e3174]
+                  - button "Guardar TANGA RITA NEGRO en favoritos" [ref=e3180]:
+                    - img [ref=e3182]
+                  - link "TANGA RITA NEGRO Soreil TANGA RITA NEGRO $ 129.000" [ref=e3184] [cursor=pointer]:
+                    - /url: https://soreil.co/products/tanga-rita-negro
+                    - img "TANGA RITA NEGRO" [ref=e3185]
+                    - generic [ref=e3187]:
+                      - paragraph [ref=e3188]: Soreil
+                      - heading "TANGA RITA NEGRO" [level=3] [ref=e3189]
+                      - paragraph [ref=e3190]: $ 129.000
+              - listitem [ref=e3191]:
+                - article [ref=e3192]:
+                  - button "Agregar a comparar" [ref=e3194]:
+                    - img [ref=e3195]
+                  - button "Guardar Portadocumentos Brasil Para Mujer Con Broche El Principito en favoritos" [ref=e3201]:
+                    - img [ref=e3203]
+                  - link "Portadocumentos Brasil Para Mujer Con Broche El Principito Vintro Store Portadocumentos Brasil Para Mujer Con Broche El Principito $ 75.000" [ref=e3205] [cursor=pointer]:
+                    - /url: https://vintrostore.com/products/portadocumentos-brasil-le-petit-prince
+                    - img "Portadocumentos Brasil Para Mujer Con Broche El Principito" [ref=e3206]
+                    - generic [ref=e3208]:
+                      - paragraph [ref=e3209]: Vintro Store
+                      - heading "Portadocumentos Brasil Para Mujer Con Broche El Principito" [level=3] [ref=e3210]
+                      - paragraph [ref=e3211]: $ 75.000
+              - listitem [ref=e3212]:
+                - article [ref=e3213]:
+                  - button "Agregar a comparar" [ref=e3215]:
+                    - img [ref=e3216]
+                  - 'button "Guardar Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro. en favoritos" [ref=e3222]':
+                    - img [ref=e3224]
+                  - 'link "Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro. Lola Jeans Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro. $ 139.000" [ref=e3226] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-0620209-pantalon-straight-leg-sin-prenses-tejido-plano-liviano-tiro-alto-tono-negro
+                    - 'img "Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro." [ref=e3227]'
+                    - generic [ref=e3229]:
+                      - paragraph [ref=e3230]: Lola Jeans
+                      - 'heading "Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro." [level=3] [ref=e3231]'
+                      - paragraph [ref=e3232]: $ 139.000
+              - listitem [ref=e3233]:
+                - article [ref=e3234]:
+                  - button "Agregar a comparar" [ref=e3236]:
+                    - img [ref=e3237]
+                  - 'button "Guardar Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café en favoritos" [ref=e3243]':
+                    - img [ref=e3245]
+                  - 'link "Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café Lola Jeans Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café $ 149.000" [ref=e3247] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066252-jean-wide-leg-confort-denim-velvet-acabado-terciopelo-tiro-alto-tono-cafe
+                    - 'img "Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café" [ref=e3248]'
+                    - generic [ref=e3250]:
+                      - paragraph [ref=e3251]: Lola Jeans
+                      - 'heading "Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café" [level=3] [ref=e3252]'
+                      - paragraph [ref=e3253]: $ 149.000
+              - listitem [ref=e3254]:
+                - article [ref=e3255]:
+                  - button "Agregar a comparar" [ref=e3257]:
+                    - img [ref=e3258]
+                  - 'button "Guardar Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro. en favoritos" [ref=e3264]':
+                    - img [ref=e3266]
+                  - 'link "Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro. Lola Jeans Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro. $ 149.000" [ref=e3268] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066118-jean-wide-leg-tiro-medio-con-cortes-rigido-tono-gris-oscuro
+                    - 'img "Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro." [ref=e3269]'
+                    - generic [ref=e3271]:
+                      - paragraph [ref=e3272]: Lola Jeans
+                      - 'heading "Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro." [level=3] [ref=e3273]'
+                      - paragraph [ref=e3274]: $ 149.000
+              - listitem [ref=e3275]:
+                - article [ref=e3276]:
+                  - button "Agregar a comparar" [ref=e3278]:
+                    - img [ref=e3279]
+                  - 'button "Guardar Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro. en favoritos" [ref=e3285]':
+                    - img [ref=e3287]
+                  - 'link "Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro. Lola Jeans Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro. $ 139.000" [ref=e3289] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-065784-jean-flare-stretch-bota-ancha-tiro-alto-tono-azul-claro
+                    - 'img "Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro." [ref=e3290]'
+                    - generic [ref=e3292]:
+                      - paragraph [ref=e3293]: Lola Jeans
+                      - 'heading "Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro." [level=3] [ref=e3294]'
+                      - paragraph [ref=e3295]: $ 139.000
+              - listitem [ref=e3296]:
+                - article [ref=e3297]:
+                  - button "Agregar a comparar" [ref=e3299]:
+                    - img [ref=e3300]
+                  - 'button "Guardar Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris en favoritos" [ref=e3306]':
+                    - img [ref=e3308]
+                  - 'link "Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris Lola Jeans Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris $ 149.000" [ref=e3310] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066251-jean-wide-leg-confort-denim-velvet-acabado-terciopelo-tiro-alto-tono-gris
+                    - 'img "Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris" [ref=e3311]'
+                    - generic [ref=e3313]:
+                      - paragraph [ref=e3314]: Lola Jeans
+                      - 'heading "Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris" [level=3] [ref=e3315]'
+                      - paragraph [ref=e3316]: $ 149.000
+              - listitem [ref=e3317]:
+                - article [ref=e3318]:
+                  - button "Agregar a comparar" [ref=e3320]:
+                    - img [ref=e3321]
+                  - 'button "Guardar Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe. en favoritos" [ref=e3327]':
+                    - img [ref=e3329]
+                  - 'link "Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe. Lola Jeans Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe. $ 139.000" [ref=e3331] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-0620210-pantalon-straight-leg-sin-prenses-tejido-plano-liviano-tiro-alto-tono-cafe
+                    - 'img "Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe." [ref=e3332]'
+                    - generic [ref=e3334]:
+                      - paragraph [ref=e3335]: Lola Jeans
+                      - 'heading "Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe." [level=3] [ref=e3336]'
+                      - paragraph [ref=e3337]: $ 139.000
+              - listitem [ref=e3338]:
+                - article [ref=e3339]:
+                  - button "Agregar a comparar" [ref=e3341]:
+                    - img [ref=e3342]
+                  - 'button "Guardar Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca. en favoritos" [ref=e3348]':
+                    - img [ref=e3350]
+                  - 'link "Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca. Lola Jeans Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca. $ 139.000" [ref=e3352] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-0620211-pantalon-straight-leg-sin-prenses-tejido-plano-liviano-tiro-alto-tono-mocca
+                    - 'img "Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca." [ref=e3353]'
+                    - generic [ref=e3355]:
+                      - paragraph [ref=e3356]: Lola Jeans
+                      - 'heading "Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca." [level=3] [ref=e3357]'
+                      - paragraph [ref=e3358]: $ 139.000
+              - listitem [ref=e3359]:
+                - article [ref=e3360]:
+                  - button "Agregar a comparar" [ref=e3362]:
+                    - img [ref=e3363]
+                  - 'button "Guardar Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro. en favoritos" [ref=e3369]':
+                    - img [ref=e3371]
+                  - 'link "Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro. Lola Jeans Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro. $ 139.000" [ref=e3373] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-065687-jean-flare-stretch-bota-ancha-tiro-alto-tono-azul-oscuro
+                    - 'img "Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro." [ref=e3374]'
+                    - generic [ref=e3376]:
+                      - paragraph [ref=e3377]: Lola Jeans
+                      - 'heading "Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro." [level=3] [ref=e3378]'
+                      - paragraph [ref=e3379]: $ 139.000
+              - listitem [ref=e3380]:
+                - article [ref=e3381]:
+                  - button "Agregar a comparar" [ref=e3383]:
+                    - img [ref=e3384]
+                  - 'button "Guardar Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe en favoritos" [ref=e3390]':
+                    - img [ref=e3392]
+                  - 'link "Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe Lola Jeans Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe $ 149.000" [ref=e3394] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066247-jean-wide-leg-tiro-alto-con-corte-detalle-de-tela-con-brillo-rigido-tono-cafe
+                    - 'img "Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe" [ref=e3395]'
+                    - generic [ref=e3397]:
+                      - paragraph [ref=e3398]: Lola Jeans
+                      - 'heading "Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe" [level=3] [ref=e3399]'
+                      - paragraph [ref=e3400]: $ 149.000
+              - listitem [ref=e3401]:
+                - article [ref=e3402]:
+                  - button "Agregar a comparar" [ref=e3404]:
+                    - img [ref=e3405]
+                  - 'button "Guardar Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio. en favoritos" [ref=e3411]':
+                    - img [ref=e3413]
+                  - 'link "Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio. Lola Jeans Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio. $ 149.000" [ref=e3415] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066119-jean-wide-leg-tiro-medio-con-cortes-rigido-tono-gris-medio
+                    - 'img "Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio." [ref=e3416]'
+                    - generic [ref=e3418]:
+                      - paragraph [ref=e3419]: Lola Jeans
+                      - 'heading "Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio." [level=3] [ref=e3420]'
+                      - paragraph [ref=e3421]: $ 149.000
+              - listitem [ref=e3422]:
+                - article [ref=e3423]:
+                  - button "Agregar a comparar" [ref=e3425]:
+                    - img [ref=e3426]
+                  - 'button "Guardar Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro en favoritos" [ref=e3432]':
+                    - img [ref=e3434]
+                  - 'link "Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro Lola Jeans Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro $ 149.000" [ref=e3436] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066175-jean-palazzo-rigido-con-corte-tiro-alto-tono-azul-oscuro
+                    - 'img "Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro" [ref=e3437]'
+                    - generic [ref=e3439]:
+                      - paragraph [ref=e3440]: Lola Jeans
+                      - 'heading "Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro" [level=3] [ref=e3441]'
+                      - paragraph [ref=e3442]: $ 149.000
+              - listitem [ref=e3443]:
+                - article [ref=e3444]:
+                  - button "Agregar a comparar" [ref=e3446]:
+                    - img [ref=e3447]
+                  - 'button "Guardar Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio en favoritos" [ref=e3453]':
+                    - img [ref=e3455]
+                  - 'link "Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio Lola Jeans Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio $ 149.000" [ref=e3457] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066176-jean-palazzo-rigido-con-corte-tiro-alto-tono-azul-medio
+                    - 'img "Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio" [ref=e3458]'
+                    - generic [ref=e3460]:
+                      - paragraph [ref=e3461]: Lola Jeans
+                      - 'heading "Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio" [level=3] [ref=e3462]'
+                      - paragraph [ref=e3463]: $ 149.000
+              - listitem [ref=e3464]:
+                - article [ref=e3465]:
+                  - button "Agregar a comparar" [ref=e3467]:
+                    - img [ref=e3468]
+                  - 'button "Guardar Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul en favoritos" [ref=e3474]':
+                    - img [ref=e3476]
+                  - 'link "Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul Lola Jeans Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul $ 149.000" [ref=e3478] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066248-jean-wide-leg-tiro-alto-con-corte-detalle-de-tela-con-brillo-rigido-tono-azul
+                    - 'img "Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul" [ref=e3479]'
+                    - generic [ref=e3481]:
+                      - paragraph [ref=e3482]: Lola Jeans
+                      - 'heading "Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul" [level=3] [ref=e3483]'
+                      - paragraph [ref=e3484]: $ 149.000
+              - listitem [ref=e3485]:
+                - article [ref=e3486]:
+                  - button "Agregar a comparar" [ref=e3488]:
+                    - img [ref=e3489]
+                  - button "Guardar MARINA TOP en favoritos" [ref=e3495]:
+                    - img [ref=e3497]
+                  - link "MARINA TOP Pájaro Limón MARINA TOP $ 90.000" [ref=e3499] [cursor=pointer]:
+                    - /url: https://www.pajarolimon.com/products/marina-top
+                    - img "MARINA TOP" [ref=e3500]
+                    - generic [ref=e3502]:
+                      - paragraph [ref=e3503]: Pájaro Limón
+                      - heading "MARINA TOP" [level=3] [ref=e3504]
+                      - paragraph [ref=e3505]: $ 90.000
+              - listitem [ref=e3506]:
+                - article [ref=e3507]:
+                  - button "Agregar a comparar" [ref=e3509]:
+                    - img [ref=e3510]
+                  - button "Guardar Gioia Maxi Skirt en favoritos" [ref=e3516]:
+                    - img [ref=e3518]
+                  - link "Gioia Maxi Skirt Baobab Gioia Maxi Skirt $ 320.000" [ref=e3520] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/gioia-maxi-dress-fuchsia
+                    - img "Gioia Maxi Skirt" [ref=e3521]
+                    - generic [ref=e3523]:
+                      - paragraph [ref=e3524]: Baobab
+                      - heading "Gioia Maxi Skirt" [level=3] [ref=e3525]
+                      - paragraph [ref=e3526]: $ 320.000
+              - listitem [ref=e3527]:
+                - article [ref=e3528]:
+                  - button "Agregar a comparar" [ref=e3530]:
+                    - img [ref=e3531]
+                  - button "Guardar Ola Bikini Bottom en favoritos" [ref=e3537]:
+                    - img [ref=e3539]
+                  - link "Ola Bikini Bottom Baobab Ola Bikini Bottom $ 100.000" [ref=e3541] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/ola-bottom
+                    - img "Ola Bikini Bottom" [ref=e3542]
+                    - generic [ref=e3544]:
+                      - paragraph [ref=e3545]: Baobab
+                      - heading "Ola Bikini Bottom" [level=3] [ref=e3546]
+                      - paragraph [ref=e3547]: $ 100.000
+              - listitem [ref=e3561]:
+                - article [ref=e3562]:
+                  - button "Agregar a comparar" [ref=e3564]:
+                    - img [ref=e3565]
+                  - button "Guardar Gaia Bikini Top en favoritos" [ref=e3571]:
+                    - img [ref=e3573]
+                  - link "Gaia Bikini Top Baobab Gaia Bikini Top $ 120.000" [ref=e3575] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/gaia-top-jade
+                    - img "Gaia Bikini Top" [ref=e3576]
+                    - generic [ref=e3578]:
+                      - paragraph [ref=e3579]: Baobab
+                      - heading "Gaia Bikini Top" [level=3] [ref=e3580]
+                      - paragraph [ref=e3581]: $ 120.000
+              - listitem [ref=e3582]:
+                - article [ref=e3583]:
+                  - button "Agregar a comparar" [ref=e3585]:
+                    - img [ref=e3586]
+                  - button "Guardar Aretes Bahía en favoritos" [ref=e3592]:
+                    - img [ref=e3594]
+                  - link "Aretes Bahía Fernanda Arias Aretes Bahía $ 149.000" [ref=e3596] [cursor=pointer]:
+                    - /url: https://fernandaarias.com/productos/aretes-brisa-cortos-plata/
+                    - img "Aretes Bahía" [ref=e3597]
+                    - generic [ref=e3599]:
+                      - paragraph [ref=e3600]: Fernanda Arias
+                      - heading "Aretes Bahía" [level=3] [ref=e3601]
+                      - paragraph [ref=e3602]: $ 149.000
+              - listitem [ref=e3603]:
+                - article [ref=e3604]:
+                  - button "Agregar a comparar" [ref=e3606]:
+                    - img [ref=e3607]
+                  - button "Guardar Lounge Swim Shorts - Red en favoritos" [ref=e3613]:
+                    - img [ref=e3615]
+                  - link "Lounge Swim Shorts - Red True. Lounge Swim Shorts - Red $ 85.000" [ref=e3617] [cursor=pointer]:
+                    - /url: https://trueshop.co/products/lounge-swim-shorts-red
+                    - img "Lounge Swim Shorts - Red" [ref=e3618]
+                    - generic [ref=e3620]:
+                      - paragraph [ref=e3621]: True.
+                      - heading "Lounge Swim Shorts - Red" [level=3] [ref=e3622]
+                      - paragraph [ref=e3623]: $ 85.000
+              - listitem [ref=e3624]:
+                - article [ref=e3625]:
+                  - button "Agregar a comparar" [ref=e3627]:
+                    - img [ref=e3628]
+                  - button "Guardar Topos Curva Pequeño Dorado en favoritos" [ref=e3634]:
+                    - img [ref=e3636]
+                  - link "Topos Curva Pequeño Dorado Fernanda Arias Topos Curva Pequeño Dorado $ 198.000" [ref=e3638] [cursor=pointer]:
+                    - /url: https://fernandaarias.com/productos/topos-love-dorado/
+                    - img "Topos Curva Pequeño Dorado" [ref=e3639]
+                    - generic [ref=e3641]:
+                      - paragraph [ref=e3642]: Fernanda Arias
+                      - heading "Topos Curva Pequeño Dorado" [level=3] [ref=e3643]
+                      - paragraph [ref=e3644]: $ 198.000
+              - listitem [ref=e3645]:
+                - article [ref=e3646]:
+                  - button "Agregar a comparar" [ref=e3648]:
+                    - img [ref=e3649]
+                  - button "Guardar Candongas Amores en favoritos" [ref=e3655]:
+                    - img [ref=e3657]
+                  - link "Candongas Amores Fernanda Arias Candongas Amores $ 125.000" [ref=e3659] [cursor=pointer]:
+                    - /url: https://fernandaarias.com/shop/candongas/?Color=Naranja
+                    - img "Candongas Amores" [ref=e3660]
+                    - generic [ref=e3662]:
+                      - paragraph [ref=e3663]: Fernanda Arias
+                      - heading "Candongas Amores" [level=3] [ref=e3664]
+                      - paragraph [ref=e3665]: $ 125.000
+              - listitem [ref=e3666]:
+                - article [ref=e3667]:
+                  - button "Agregar a comparar" [ref=e3669]:
+                    - img [ref=e3670]
+                  - button "Guardar Vestido Teruel en favoritos" [ref=e3676]:
+                    - img [ref=e3678]
+                  - link "Vestido Teruel Inmaculada VJ Vestido Teruel $ 189.000" [ref=e3680] [cursor=pointer]:
+                    - /url: https://inmaculadavj.com/products/tunica-canto-de-ceiba
+                    - img "Vestido Teruel" [ref=e3681]
+                    - generic [ref=e3683]:
+                      - paragraph [ref=e3684]: Inmaculada VJ
+                      - heading "Vestido Teruel" [level=3] [ref=e3685]
+                      - paragraph [ref=e3686]: $ 189.000
+              - listitem [ref=e3687]:
+                - article [ref=e3688]:
+                  - button "Agregar a comparar" [ref=e3690]:
+                    - img [ref=e3691]
+                  - button "Guardar Cayetana Silk Blouse / Black Seeds en favoritos" [ref=e3697]:
+                    - img [ref=e3699]
+                  - link "Cayetana Silk Blouse / Black Seeds Juan de Dios Cayetana Silk Blouse / Black Seeds $ 1.295.000" [ref=e3701] [cursor=pointer]:
+                    - /url: https://co.juandedios.com/products/cayetana-silk-blouse-black-seeds
+                    - img "Cayetana Silk Blouse / Black Seeds" [ref=e3702]
+                    - generic [ref=e3704]:
+                      - paragraph [ref=e3705]: Juan de Dios
+                      - heading "Cayetana Silk Blouse / Black Seeds" [level=3] [ref=e3706]
+                      - paragraph [ref=e3707]: $ 1.295.000
+              - listitem [ref=e3708]:
+                - article [ref=e3709]:
+                  - button "Agregar a comparar" [ref=e3711]:
+                    - img [ref=e3712]
+                  - button "Guardar Chaleco Umbral Beige en favoritos" [ref=e3718]:
+                    - img [ref=e3720]
+                  - link "Chaleco Umbral Beige Renata Lozano Chaleco Umbral Beige $ 798.000" [ref=e3722] [cursor=pointer]:
+                    - /url: https://renatalozano.co/products/chaleco-umbral-beige
+                    - img "Chaleco Umbral Beige" [ref=e3723]
+                    - generic [ref=e3725]:
+                      - paragraph [ref=e3726]: Renata Lozano
+                      - heading "Chaleco Umbral Beige" [level=3] [ref=e3727]
+                      - paragraph [ref=e3728]: $ 798.000
+              - listitem [ref=e3729]:
+                - article [ref=e3730]:
+                  - button "Agregar a comparar" [ref=e3732]:
+                    - img [ref=e3733]
+                  - button "Guardar Coco Mini Dress en favoritos" [ref=e3739]:
+                    - img [ref=e3741]
+                  - link "Coco Mini Dress Baobab Coco Mini Dress $ 360.000" [ref=e3743] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/coco-mini-dress-ivory
+                    - img "Coco Mini Dress" [ref=e3744]
+                    - generic [ref=e3746]:
+                      - paragraph [ref=e3747]: Baobab
+                      - heading "Coco Mini Dress" [level=3] [ref=e3748]
+                      - paragraph [ref=e3749]: $ 360.000
+              - listitem [ref=e3750]:
+                - article [ref=e3751]:
+                  - button "Agregar a comparar" [ref=e3753]:
+                    - img [ref=e3754]
+                  - button "Guardar Manzanares Crepe Chine Blouse / Dust Pink en favoritos" [ref=e3760]:
+                    - img [ref=e3762]
+                  - link "Manzanares Crepe Chine Blouse / Dust Pink Juan de Dios Manzanares Crepe Chine Blouse / Dust Pink $ 1.295.000" [ref=e3764] [cursor=pointer]:
+                    - /url: https://co.juandedios.com/products/manzanares-crepe-chine-blouse-dust-pink
+                    - img "Manzanares Crepe Chine Blouse / Dust Pink" [ref=e3765]
+                    - generic [ref=e3767]:
+                      - paragraph [ref=e3768]: Juan de Dios
+                      - heading "Manzanares Crepe Chine Blouse / Dust Pink" [level=3] [ref=e3769]
+                      - paragraph [ref=e3770]: $ 1.295.000
+              - listitem [ref=e3771]:
+                - article [ref=e3772]:
+                  - button "Agregar a comparar" [ref=e3774]:
+                    - img [ref=e3775]
+                  - button "Guardar Ari Mini Dress en favoritos" [ref=e3781]:
+                    - img [ref=e3783]
+                  - link "Ari Mini Dress Baobab Ari Mini Dress $ 380.000" [ref=e3785] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/ari-mini-dress-blonde
+                    - img "Ari Mini Dress" [ref=e3786]
+                    - generic [ref=e3788]:
+                      - paragraph [ref=e3789]: Baobab
+                      - heading "Ari Mini Dress" [level=3] [ref=e3790]
+                      - paragraph [ref=e3791]: $ 380.000
+              - listitem [ref=e3792]:
+                - article [ref=e3793]:
+                  - button "Agregar a comparar" [ref=e3795]:
+                    - img [ref=e3796]
+                  - button "Guardar Glow Dress en favoritos" [ref=e3802]:
+                    - img [ref=e3804]
+                  - link "Glow Dress Bemonocromo Glow Dress US$ 255" [ref=e3806] [cursor=pointer]:
+                    - /url: https://bemonocromo.com/product/glow-dress/
+                    - img "Glow Dress" [ref=e3807]
+                    - generic [ref=e3809]:
+                      - paragraph [ref=e3810]: Bemonocromo
+                      - heading "Glow Dress" [level=3] [ref=e3811]
+                      - paragraph [ref=e3812]: US$ 255
+              - listitem [ref=e3813]:
+                - article [ref=e3814]:
+                  - button "Agregar a comparar" [ref=e3816]:
+                    - img [ref=e3817]
+                  - button "Guardar Ari Mini Dress en favoritos" [ref=e3823]:
+                    - img [ref=e3825]
+                  - link "Ari Mini Dress Baobab Ari Mini Dress $ 380.000" [ref=e3827] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/ari-mini-dress-polynesian-blue
+                    - img "Ari Mini Dress" [ref=e3828]
+                    - generic [ref=e3830]:
+                      - paragraph [ref=e3831]: Baobab
+                      - heading "Ari Mini Dress" [level=3] [ref=e3832]
+                      - paragraph [ref=e3833]: $ 380.000
+              - listitem [ref=e3834]:
+                - article [ref=e3835]:
+                  - button "Agregar a comparar" [ref=e3837]:
+                    - img [ref=e3838]
+                  - button "Guardar Kaia Bikini Top en favoritos" [ref=e3844]:
+                    - img [ref=e3846]
+                  - link "Kaia Bikini Top Baobab Kaia Bikini Top $ 150.000" [ref=e3848] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/kaia-bikini-top-dua
+                    - img "Kaia Bikini Top" [ref=e3849]
+                    - generic [ref=e3851]:
+                      - paragraph [ref=e3852]: Baobab
+                      - heading "Kaia Bikini Top" [level=3] [ref=e3853]
+                      - paragraph [ref=e3854]: $ 150.000
+              - listitem [ref=e3855]:
+                - article [ref=e3856]:
+                  - button "Agregar a comparar" [ref=e3858]:
+                    - img [ref=e3859]
+                  - button "Guardar Alice Bikini Top en favoritos" [ref=e3865]:
+                    - img [ref=e3867]
+                  - link "Alice Bikini Top Baobab Alice Bikini Top $ 130.000" [ref=e3869] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/alice-bikini-top-blush
+                    - img "Alice Bikini Top" [ref=e3870]
+                    - generic [ref=e3872]:
+                      - paragraph [ref=e3873]: Baobab
+                      - heading "Alice Bikini Top" [level=3] [ref=e3874]
+                      - paragraph [ref=e3875]: $ 130.000
+              - listitem [ref=e3876]:
+                - article [ref=e3877]:
+                  - button "Agregar a comparar" [ref=e3879]:
+                    - img [ref=e3880]
+                  - button "Guardar Liv Top en favoritos" [ref=e3886]:
+                    - img [ref=e3888]
+                  - link "Liv Top Sal De Mar Liv Top $ 92.000" [ref=e3890] [cursor=pointer]:
+                    - /url: https://seasalt.co/products/liv-top
+                    - img "Liv Top" [ref=e3891]
+                    - generic [ref=e3893]:
+                      - paragraph [ref=e3894]: Sal De Mar
+                      - heading "Liv Top" [level=3] [ref=e3895]
+                      - paragraph [ref=e3896]: $ 92.000
+              - listitem [ref=e3897]:
+                - article [ref=e3898]:
+                  - button "Agregar a comparar" [ref=e3900]:
+                    - img [ref=e3901]
+                  - button "Guardar Hunter Enterizo en favoritos" [ref=e3907]:
+                    - img [ref=e3909]
+                  - link "Hunter Enterizo Sal De Mar Hunter Enterizo $ 510.000" [ref=e3911] [cursor=pointer]:
+                    - /url: https://seasalt.co/products/hunter-one-piece
+                    - img "Hunter Enterizo" [ref=e3912]
+                    - generic [ref=e3914]:
+                      - paragraph [ref=e3915]: Sal De Mar
+                      - heading "Hunter Enterizo" [level=3] [ref=e3916]
+                      - paragraph [ref=e3917]: $ 510.000
+              - listitem [ref=e3918]:
+                - article [ref=e3919]:
+                  - button "Agregar a comparar" [ref=e3921]:
+                    - img [ref=e3922]
+                  - button "Guardar Liv Top en favoritos" [ref=e3928]:
+                    - img [ref=e3930]
+                  - link "Liv Top Sea Salt Liv Top $ 92.000" [ref=e3932] [cursor=pointer]:
+                    - /url: https://seasalt.co/products/liv-top
+                    - img "Liv Top" [ref=e3933]
+                    - generic [ref=e3935]:
+                      - paragraph [ref=e3936]: Sea Salt
+                      - heading "Liv Top" [level=3] [ref=e3937]
+                      - paragraph [ref=e3938]: $ 92.000
+              - listitem [ref=e3939]:
+                - article [ref=e3940]:
+                  - button "Agregar a comparar" [ref=e3942]:
+                    - img [ref=e3943]
+                  - button "Guardar Hunter Enterizo en favoritos" [ref=e3949]:
+                    - img [ref=e3951]
+                  - link "Hunter Enterizo Sea Salt Hunter Enterizo $ 510.000" [ref=e3953] [cursor=pointer]:
+                    - /url: https://seasalt.co/products/hunter-one-piece
+                    - img "Hunter Enterizo" [ref=e3954]
+                    - generic [ref=e3956]:
+                      - paragraph [ref=e3957]: Sea Salt
+                      - heading "Hunter Enterizo" [level=3] [ref=e3958]
+                      - paragraph [ref=e3959]: $ 510.000
+              - listitem [ref=e3960]:
+                - article [ref=e3961]:
+                  - button "Agregar a comparar" [ref=e3963]:
+                    - img [ref=e3964]
+                  - button "Guardar Buzo Cuello alto Mujer Negro en favoritos" [ref=e3970]:
+                    - img [ref=e3972]
+                  - link "Buzo Cuello alto Mujer Negro Serranía Blazers Buzo Cuello alto Mujer Negro $ 159.900" [ref=e3974] [cursor=pointer]:
+                    - /url: https://serrania.co/products/buzo-cuello-alto-mujer-negro
+                    - img "Buzo Cuello alto Mujer Negro" [ref=e3975]
+                    - generic [ref=e3977]:
+                      - paragraph [ref=e3978]: Serranía Blazers
+                      - heading "Buzo Cuello alto Mujer Negro" [level=3] [ref=e3979]
+                      - paragraph [ref=e3980]: $ 159.900
+              - listitem [ref=e3981]:
+                - article [ref=e3982]:
+                  - button "Agregar a comparar" [ref=e3984]:
+                    - img [ref=e3985]
+                  - button "Guardar Buzo Cuello alto Mujer Azul Oxford en favoritos" [ref=e3991]:
+                    - img [ref=e3993]
+                  - link "Buzo Cuello alto Mujer Azul Oxford Serranía Blazers Buzo Cuello alto Mujer Azul Oxford $ 159.900" [ref=e3995] [cursor=pointer]:
+                    - /url: https://serrania.co/products/buzo-cuello-alto-mujer-azul-oxford
+                    - img "Buzo Cuello alto Mujer Azul Oxford" [ref=e3996]
+                    - generic [ref=e3998]:
+                      - paragraph [ref=e3999]: Serranía Blazers
+                      - heading "Buzo Cuello alto Mujer Azul Oxford" [level=3] [ref=e4000]
+                      - paragraph [ref=e4001]: $ 159.900
+              - listitem [ref=e4002]:
+                - article [ref=e4003]:
+                  - button "Agregar a comparar" [ref=e4005]:
+                    - img [ref=e4006]
+                  - button "Guardar Emerie Falda en favoritos" [ref=e4012]:
+                    - img [ref=e4014]
+                  - link "Emerie Falda Sal De Mar Emerie Falda $ 360.000" [ref=e4016] [cursor=pointer]:
+                    - /url: https://seasalt.co/products/emerie-skirt
+                    - img "Emerie Falda" [ref=e4017]
+                    - generic [ref=e4019]:
+                      - paragraph [ref=e4020]: Sal De Mar
+                      - heading "Emerie Falda" [level=3] [ref=e4021]
+                      - paragraph [ref=e4022]: $ 360.000
+              - listitem [ref=e4023]:
+                - article [ref=e4024]:
+                  - button "Agregar a comparar" [ref=e4026]:
+                    - img [ref=e4027]
+                  - button "Guardar Eve Kimono en favoritos" [ref=e4033]:
+                    - img [ref=e4035]
+                  - link "Eve Kimono Sal De Mar Eve Kimono $ 260.000" [ref=e4037] [cursor=pointer]:
+                    - /url: https://seasalt.co/products/eve-kimono
+                    - img "Eve Kimono" [ref=e4038]
+                    - generic [ref=e4040]:
+                      - paragraph [ref=e4041]: Sal De Mar
+                      - heading "Eve Kimono" [level=3] [ref=e4042]
+                      - paragraph [ref=e4043]: $ 260.000
+              - listitem [ref=e4044]:
+                - article [ref=e4045]:
+                  - button "Agregar a comparar" [ref=e4047]:
+                    - img [ref=e4048]
+                  - button "Guardar Dalia Pants en favoritos" [ref=e4054]:
+                    - img [ref=e4056]
+                  - link "Dalia Pants Sal De Mar Dalia Pants $ 480.000" [ref=e4058] [cursor=pointer]:
+                    - /url: https://seasalt.co/products/dalia-pants
+                    - img "Dalia Pants" [ref=e4059]
+                    - generic [ref=e4061]:
+                      - paragraph [ref=e4062]: Sal De Mar
+                      - heading "Dalia Pants" [level=3] [ref=e4063]
+                      - paragraph [ref=e4064]: $ 480.000
+              - listitem [ref=e4068]:
+                - article [ref=e4069]:
+                  - button "Agregar a comparar" [ref=e4071]:
+                    - img [ref=e4072]
+                  - button "Guardar Amar Maxi Dress en favoritos" [ref=e4078]:
+                    - img [ref=e4080]
+                  - link "Amar Maxi Dress Baobab Amar Maxi Dress $ 680.000" [ref=e4082] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/amar-maxi-dress-pensamiento
+                    - img "Amar Maxi Dress" [ref=e4083]
+                    - generic [ref=e4085]:
+                      - paragraph [ref=e4086]: Baobab
+                      - heading "Amar Maxi Dress" [level=3] [ref=e4087]
+                      - paragraph [ref=e4088]: $ 680.000
+              - listitem [ref=e4089]:
+                - article [ref=e4090]:
+                  - button "Agregar a comparar" [ref=e4092]:
+                    - img [ref=e4093]
+                  - button "Guardar Nia Mini Skirt en favoritos" [ref=e4099]:
+                    - img [ref=e4101]
+                  - link "Nia Mini Skirt Baobab Nia Mini Skirt $ 220.000" [ref=e4103] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/nia-mini-pareo
+                    - img "Nia Mini Skirt" [ref=e4104]
+                    - generic [ref=e4106]:
+                      - paragraph [ref=e4107]: Baobab
+                      - heading "Nia Mini Skirt" [level=3] [ref=e4108]
+                      - paragraph [ref=e4109]: $ 220.000
+              - listitem [ref=e4110]:
+                - article [ref=e4111]:
+                  - button "Agregar a comparar" [ref=e4113]:
+                    - img [ref=e4114]
+                  - button "Guardar Emerie Falda en favoritos" [ref=e4120]:
+                    - img [ref=e4122]
+                  - link "Emerie Falda Sea Salt Emerie Falda $ 360.000" [ref=e4124] [cursor=pointer]:
+                    - /url: https://seasalt.co/products/emerie-skirt
+                    - img "Emerie Falda" [ref=e4125]
+                    - generic [ref=e4127]:
+                      - paragraph [ref=e4128]: Sea Salt
+                      - heading "Emerie Falda" [level=3] [ref=e4129]
+                      - paragraph [ref=e4130]: $ 360.000
+              - listitem [ref=e4131]:
+                - article [ref=e4132]:
+                  - button "Agregar a comparar" [ref=e4134]:
+                    - img [ref=e4135]
+                  - button "Guardar Eve Kimono en favoritos" [ref=e4141]:
+                    - img [ref=e4143]
+                  - link "Eve Kimono Sea Salt Eve Kimono $ 260.000" [ref=e4145] [cursor=pointer]:
+                    - /url: https://seasalt.co/products/eve-kimono
+                    - img "Eve Kimono" [ref=e4146]
+                    - generic [ref=e4148]:
+                      - paragraph [ref=e4149]: Sea Salt
+                      - heading "Eve Kimono" [level=3] [ref=e4150]
+                      - paragraph [ref=e4151]: $ 260.000
+              - listitem [ref=e4152]:
+                - article [ref=e4153]:
+                  - button "Agregar a comparar" [ref=e4155]:
+                    - img [ref=e4156]
+                  - button "Guardar Dalia Pants en favoritos" [ref=e4162]:
+                    - img [ref=e4164]
+                  - link "Dalia Pants Sea Salt Dalia Pants $ 480.000" [ref=e4166] [cursor=pointer]:
+                    - /url: https://seasalt.co/products/dalia-pants
+                    - img "Dalia Pants" [ref=e4167]
+                    - generic [ref=e4169]:
+                      - paragraph [ref=e4170]: Sea Salt
+                      - heading "Dalia Pants" [level=3] [ref=e4171]
+                      - paragraph [ref=e4172]: $ 480.000
+              - listitem [ref=e4173]:
+                - article [ref=e4174]:
+                  - button "Agregar a comparar" [ref=e4176]:
+                    - img [ref=e4177]
+                  - button "Guardar Combo Osito en favoritos" [ref=e4183]:
+                    - img [ref=e4185]
+                  - link "Combo Osito Esmeraldas Colombia Combo Osito $ 306.000" [ref=e4187] [cursor=pointer]:
+                    - /url: https://esmeraldascolombia.com/products/combo-osito
+                    - img "Combo Osito" [ref=e4188]
+                    - generic [ref=e4190]:
+                      - paragraph [ref=e4191]: Esmeraldas Colombia
+                      - heading "Combo Osito" [level=3] [ref=e4192]
+                      - paragraph [ref=e4193]: $ 306.000
+              - listitem [ref=e4194]:
+                - article [ref=e4195]:
+                  - button "Agregar a comparar" [ref=e4197]:
+                    - img [ref=e4198]
+                  - button "Guardar El Carmen Sequins Midi Skirt / Green en favoritos" [ref=e4204]:
+                    - img [ref=e4206]
+                  - link "El Carmen Sequins Midi Skirt / Green Juan de Dios El Carmen Sequins Midi Skirt / Green $ 2.595.000" [ref=e4208] [cursor=pointer]:
+                    - /url: https://co.juandedios.com/products/el-carmen-sequins-midi-skirt-green
+                    - img "El Carmen Sequins Midi Skirt / Green" [ref=e4209]
+                    - generic [ref=e4211]:
+                      - paragraph [ref=e4212]: Juan de Dios
+                      - heading "El Carmen Sequins Midi Skirt / Green" [level=3] [ref=e4213]
+                      - paragraph [ref=e4214]: $ 2.595.000
+              - listitem [ref=e4215]:
+                - article [ref=e4216]:
+                  - button "Agregar a comparar" [ref=e4218]:
+                    - img [ref=e4219]
+                  - button "Guardar Set Alisa en favoritos" [ref=e4225]:
+                    - img [ref=e4227]
+                  - link "Set Alisa Ema Set Alisa $ 139.900" [ref=e4229] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/set-alisa
+                    - img "Set Alisa" [ref=e4230]
+                    - generic [ref=e4232]:
+                      - paragraph [ref=e4233]: Ema
+                      - heading "Set Alisa" [level=3] [ref=e4234]
+                      - paragraph [ref=e4235]: $ 139.900
+              - listitem [ref=e4236]:
+                - article [ref=e4237]:
+                  - button "Agregar a comparar" [ref=e4239]:
+                    - img [ref=e4240]
+                  - button "Guardar Body Atenas en favoritos" [ref=e4246]:
+                    - img [ref=e4248]
+                  - link "Body Atenas Ema Body Atenas $ 80.000" [ref=e4250] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/body-atenas-2
+                    - img "Body Atenas" [ref=e4251]
+                    - generic [ref=e4253]:
+                      - paragraph [ref=e4254]: Ema
+                      - heading "Body Atenas" [level=3] [ref=e4255]
+                      - paragraph [ref=e4256]: $ 80.000
+              - listitem [ref=e4257]:
+                - article [ref=e4258]:
+                  - button "Agregar a comparar" [ref=e4260]:
+                    - img [ref=e4261]
+                  - button "Guardar Short Jean susi en favoritos" [ref=e4267]:
+                    - img [ref=e4269]
+                  - link "Short Jean susi Ema Short Jean susi $ 85.000" [ref=e4271] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/short-jean-susi
+                    - img "Short Jean susi" [ref=e4272]
+                    - generic [ref=e4274]:
+                      - paragraph [ref=e4275]: Ema
+                      - heading "Short Jean susi" [level=3] [ref=e4276]
+                      - paragraph [ref=e4277]: $ 85.000
+              - listitem [ref=e4278]:
+                - article [ref=e4279]:
+                  - button "Agregar a comparar" [ref=e4281]:
+                    - img [ref=e4282]
+                  - button "Guardar Blusa mar en favoritos" [ref=e4288]:
+                    - img [ref=e4290]
+                  - link "Blusa mar Ema Blusa mar $ 85.000" [ref=e4292] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/blusa-mar
+                    - img "Blusa mar" [ref=e4293]
+                    - generic [ref=e4295]:
+                      - paragraph [ref=e4296]: Ema
+                      - heading "Blusa mar" [level=3] [ref=e4297]
+                      - paragraph [ref=e4298]: $ 85.000
+              - listitem [ref=e4299]:
+                - article [ref=e4300]:
+                  - button "Agregar a comparar" [ref=e4302]:
+                    - img [ref=e4303]
+                  - button "Guardar Short Toronto en favoritos" [ref=e4309]:
+                    - img [ref=e4311]
+                  - link "Short Toronto Ema Short Toronto $ 79.900" [ref=e4313] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/short-toronto-3
+                    - img "Short Toronto" [ref=e4314]
+                    - generic [ref=e4316]:
+                      - paragraph [ref=e4317]: Ema
+                      - heading "Short Toronto" [level=3] [ref=e4318]
+                      - paragraph [ref=e4319]: $ 79.900
+              - listitem [ref=e4320]:
+                - article [ref=e4321]:
+                  - button "Agregar a comparar" [ref=e4323]:
+                    - img [ref=e4324]
+                  - button "Guardar Jeans Alana en favoritos" [ref=e4330]:
+                    - img [ref=e4332]
+                  - link "Jeans Alana Ema Jeans Alana $ 115.000" [ref=e4334] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/jeans-alana
+                    - img "Jeans Alana" [ref=e4335]
+                    - generic [ref=e4337]:
+                      - paragraph [ref=e4338]: Ema
+                      - heading "Jeans Alana" [level=3] [ref=e4339]
+                      - paragraph [ref=e4340]: $ 115.000
+              - listitem [ref=e4341]:
+                - article [ref=e4342]:
+                  - button "Agregar a comparar" [ref=e4344]:
+                    - img [ref=e4345]
+                  - button "Guardar Set de short marena en favoritos" [ref=e4351]:
+                    - img [ref=e4353]
+                  - link "Set de short marena Ema Set de short marena $ 139.900" [ref=e4355] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/set-de-short-marena
+                    - img "Set de short marena" [ref=e4356]
+                    - generic [ref=e4358]:
+                      - paragraph [ref=e4359]: Ema
+                      - heading "Set de short marena" [level=3] [ref=e4360]
+                      - paragraph [ref=e4361]: $ 139.900
+              - listitem [ref=e4362]:
+                - article [ref=e4363]:
+                  - button "Agregar a comparar" [ref=e4365]:
+                    - img [ref=e4366]
+                  - button "Guardar Jean Nanci en favoritos" [ref=e4372]:
+                    - img [ref=e4374]
+                  - link "Jean Nanci Ema Jean Nanci $ 115.000" [ref=e4376] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/jea-nanci
+                    - img "Jean Nanci" [ref=e4377]
+                    - generic [ref=e4379]:
+                      - paragraph [ref=e4380]: Ema
+                      - heading "Jean Nanci" [level=3] [ref=e4381]
+                      - paragraph [ref=e4382]: $ 115.000
+              - listitem [ref=e4383]:
+                - article [ref=e4384]:
+                  - button "Agregar a comparar" [ref=e4386]:
+                    - img [ref=e4387]
+                  - button "Guardar Enterizo Pandora en favoritos" [ref=e4393]:
+                    - img [ref=e4395]
+                  - link "Enterizo Pandora Ema Enterizo Pandora $ 125.000" [ref=e4397] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/enterizo-pandora-1
+                    - img "Enterizo Pandora" [ref=e4398]
+                    - generic [ref=e4400]:
+                      - paragraph [ref=e4401]: Ema
+                      - heading "Enterizo Pandora" [level=3] [ref=e4402]
+                      - paragraph [ref=e4403]: $ 125.000
+              - listitem [ref=e4404]:
+                - article [ref=e4405]:
+                  - button "Agregar a comparar" [ref=e4407]:
+                    - img [ref=e4408]
+                  - button "Guardar Pantalon Sidney en favoritos" [ref=e4414]:
+                    - img [ref=e4416]
+                  - link "Pantalon Sidney Ema Pantalon Sidney $ 95.000" [ref=e4418] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/pantalon-sidney-5
+                    - img "Pantalon Sidney" [ref=e4419]
+                    - generic [ref=e4421]:
+                      - paragraph [ref=e4422]: Ema
+                      - heading "Pantalon Sidney" [level=3] [ref=e4423]
+                      - paragraph [ref=e4424]: $ 95.000
+              - listitem [ref=e4425]:
+                - article [ref=e4426]:
+                  - button "Agregar a comparar" [ref=e4428]:
+                    - img [ref=e4429]
+                  - button "Guardar Short Zafira en favoritos" [ref=e4435]:
+                    - img [ref=e4437]
+                  - link "Short Zafira Ema Short Zafira $ 79.900" [ref=e4439] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/short-zafira
+                    - img "Short Zafira" [ref=e4440]
+                    - generic [ref=e4442]:
+                      - paragraph [ref=e4443]: Ema
+                      - heading "Short Zafira" [level=3] [ref=e4444]
+                      - paragraph [ref=e4445]: $ 79.900
+              - listitem [ref=e4446]:
+                - article [ref=e4447]:
+                  - button "Agregar a comparar" [ref=e4449]:
+                    - img [ref=e4450]
+                  - button "Guardar Set pantalon Francia en favoritos" [ref=e4456]:
+                    - img [ref=e4458]
+                  - link "Set pantalon Francia Ema Set pantalon Francia $ 155.000" [ref=e4460] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/set-pantalon-francia-1
+                    - img "Set pantalon Francia" [ref=e4461]
+                    - generic [ref=e4463]:
+                      - paragraph [ref=e4464]: Ema
+                      - heading "Set pantalon Francia" [level=3] [ref=e4465]
+                      - paragraph [ref=e4466]: $ 155.000
+              - listitem [ref=e4467]:
+                - article [ref=e4468]:
+                  - button "Agregar a comparar" [ref=e4470]:
+                    - img [ref=e4471]
+                  - button "Guardar Vestido Yasmín en favoritos" [ref=e4477]:
+                    - img [ref=e4479]
+                  - link "Vestido Yasmín Ema Vestido Yasmín $ 115.000" [ref=e4481] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/vestido-yasmin
+                    - img "Vestido Yasmín" [ref=e4482]
+                    - generic [ref=e4484]:
+                      - paragraph [ref=e4485]: Ema
+                      - heading "Vestido Yasmín" [level=3] [ref=e4486]
+                      - paragraph [ref=e4487]: $ 115.000
+              - listitem [ref=e4488]:
+                - article [ref=e4489]:
+                  - button "Agregar a comparar" [ref=e4491]:
+                    - img [ref=e4492]
+                  - button "Guardar Body maya en favoritos" [ref=e4498]:
+                    - img [ref=e4500]
+                  - link "Body maya Ema Body maya $ 85.000" [ref=e4502] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/body-maya
+                    - img "Body maya" [ref=e4503]
+                    - generic [ref=e4505]:
+                      - paragraph [ref=e4506]: Ema
+                      - heading "Body maya" [level=3] [ref=e4507]
+                      - paragraph [ref=e4508]: $ 85.000
+              - listitem [ref=e4509]:
+                - article [ref=e4510]:
+                  - button "Agregar a comparar" [ref=e4512]:
+                    - img [ref=e4513]
+                  - button "Guardar Jean Naia en favoritos" [ref=e4519]:
+                    - img [ref=e4521]
+                  - link "Jean Naia Ema Jean Naia $ 115.000" [ref=e4523] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/jean-naia
+                    - img "Jean Naia" [ref=e4524]
+                    - generic [ref=e4526]:
+                      - paragraph [ref=e4527]: Ema
+                      - heading "Jean Naia" [level=3] [ref=e4528]
+                      - paragraph [ref=e4529]: $ 115.000
+              - listitem [ref=e4530]:
+                - article [ref=e4531]:
+                  - button "Agregar a comparar" [ref=e4533]:
+                    - img [ref=e4534]
+                  - button "Guardar Set short Toronto en favoritos" [ref=e4540]:
+                    - img [ref=e4542]
+                  - link "Set short Toronto Ema Set short Toronto $ 150.000" [ref=e4544] [cursor=pointer]:
+                    - /url: https://emacolombia.com/products/set-short-toronto
+                    - img "Set short Toronto" [ref=e4545]
+                    - generic [ref=e4547]:
+                      - paragraph [ref=e4548]: Ema
+                      - heading "Set short Toronto" [level=3] [ref=e4549]
+                      - paragraph [ref=e4550]: $ 150.000
+              - listitem [ref=e4551]:
+                - article [ref=e4552]:
+                  - button "Agregar a comparar" [ref=e4554]:
+                    - img [ref=e4555]
+                  - button "Guardar JEAN ANCHO DESTROYED DIRTY WASH AZUL CLARO en favoritos" [ref=e4561]:
+                    - img [ref=e4563]
+                  - link "JEAN ANCHO DESTROYED DIRTY WASH AZUL CLARO Luxur JEAN ANCHO DESTROYED DIRTY WASH AZUL CLARO $ 189.000" [ref=e4565] [cursor=pointer]:
+                    - /url: https://luxurunited.com/products/jean-carpenter-destroyed-dirty-wash-azul-claro
+                    - img "JEAN ANCHO DESTROYED DIRTY WASH AZUL CLARO" [ref=e4566]
+                    - generic [ref=e4568]:
+                      - paragraph [ref=e4569]: Luxur
+                      - heading "JEAN ANCHO DESTROYED DIRTY WASH AZUL CLARO" [level=3] [ref=e4570]
+                      - paragraph [ref=e4571]: $ 189.000
+            - generic [ref=e3548]:
+              - generic [ref=e3550]:
+                - paragraph [ref=e3551]: Mostrando 72 de 58.184
+                - paragraph [ref=e3552]: 0%
+              - button "Cargar más" [active] [ref=e3558]
+          - button "Volver arriba" [ref=e4066]:
+            - generic [ref=e4067]: ↑
+      - generic [ref=e541]:
+        - generic [ref=e542]:
+          - button "Filtrar 1" [ref=e3559]:
+            - text: Filtrar
+            - generic [ref=e3560]: "1"
+          - generic [ref=e544]:
+            - generic [ref=e545]: Ordenar
+            - generic [ref=e546]:
+              - combobox "Ordenar" [ref=e547]:
+                - option "Relevancia"
+                - option "Nuevos" [selected]
+                - 'option "Precio: menor"'
+                - 'option "Precio: mayor"'
+              - generic: ▾
+          - button "Limpiar filtros" [ref=e548]: ×
+        - generic [ref=e549]:
+          - generic [ref=e550]: 58.184 productos
+          - generic [ref=e551]: 534 marcas
+  - alert [ref=e552]: Catálogo Femenino | ODA

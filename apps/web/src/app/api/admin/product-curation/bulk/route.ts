@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { validateAdminRequest } from "@/lib/auth";
+import { invalidateCatalogCache } from "@/lib/catalog-cache";
 import { prisma } from "@/lib/prisma";
 import {
   GENDER_OPTIONS,
@@ -422,6 +423,9 @@ export async function POST(req: Request) {
 
   for (let i = 0; i < updates.length; i += TX_CHUNK_SIZE) {
     await prisma.$transaction(updates.slice(i, i + TX_CHUNK_SIZE));
+  }
+  if (updatedCount > 0) {
+    invalidateCatalogCache();
   }
 
   return NextResponse.json({

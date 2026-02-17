@@ -1067,8 +1067,14 @@ export const PATTERN_KEYWORD_RULES: KeywordRule[] = [
 ];
 
 export const GENDER_KEYWORD_RULES: KeywordRule[] = [
-  { key: "femenino", keywords: ["mujer", "women", "womens", "dama", "ladies", "femenino"] },
-  { key: "masculino", keywords: ["hombre", "men", "mens", "caballero", "masculino"] },
+  {
+    key: "femenino",
+    keywords: ["mujer", "mujeres", "women", "womens", "women s", "dama", "ladies", "femenino"],
+  },
+  {
+    key: "masculino",
+    keywords: ["hombre", "hombres", "men", "mens", "men s", "caballero", "masculino"],
+  },
   {
     key: "infantil",
     keywords: [
@@ -1078,10 +1084,16 @@ export const GENDER_KEYWORD_RULES: KeywordRule[] = [
       "newborn",
       "toddler",
       "junior",
+      "nino",
+      "nina",
       "ninos",
       "ninas",
+      "boy",
       "boys",
+      "girl",
       "girls",
+      "kid",
+      "kids",
       "for kids",
       "para ninos",
       "para ninas",

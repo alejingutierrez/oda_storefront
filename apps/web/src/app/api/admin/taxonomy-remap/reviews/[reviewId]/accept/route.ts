@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { validateAdminRequest } from "@/lib/auth";
+import { invalidateCatalogCache } from "@/lib/catalog-cache";
 import { prisma } from "@/lib/prisma";
 import { runTaxonomyAutoReseedBatch } from "@/lib/taxonomy-remap/auto-reseed";
 
@@ -156,6 +157,7 @@ export async function POST(
         AND id <> ${row.id}
     `),
   ]);
+  invalidateCatalogCache();
 
   let autoReseed = null;
   try {

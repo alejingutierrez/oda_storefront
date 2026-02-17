@@ -21,6 +21,7 @@ import {
   scoreKeywordHits,
   type CategoryKeywordRule,
 } from "@/lib/product-enrichment/keyword-dictionaries";
+import { SUBCATEGORY_TERM_PRIORS } from "@/lib/taxonomy-remap/subcategory-term-priors.generated";
 
 export type SignalStrength = "strong" | "moderate" | "weak";
 
@@ -37,9 +38,11 @@ export type HarvestedSignals = {
   descriptionCleanText: string;
   vendorCategory: string | null;
   vendorTags: string[];
+  seoHints: string[];
   vendorPlatform: string | null;
   ogTitle: string | null;
   ogDescription: string | null;
+  sourceUrlText: string;
   inferredCategory: string | null;
   inferredSubcategory: string | null;
   inferredGender: string | null;
@@ -63,6 +66,7 @@ type SignalInput = {
   seoDescription?: string | null;
   seoTags?: string[];
   currentCategory?: string | null;
+  currentSubcategory?: string | null;
   currentGender?: string | null;
   allowedCategoryValues?: string[];
   subcategoryByCategory?: Record<string, string[]>;
@@ -73,6 +77,7 @@ type SignalInput = {
 type PlatformSignals = {
   vendorCategory: string | null;
   vendorTags: string[];
+  seoTags: string[];
   vendorPlatform: string | null;
   ogTitle: string | null;
   ogDescription: string | null;
@@ -103,6 +108,62 @@ const normalizeText = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+const normalizeUrlToText = (value: string | null | undefined) => {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return "";
+
+  const stripNoiseTokens = (input: string) => {
+    const noise = new Set([
+      "products",
+      "product",
+      "producto",
+      "productos",
+      "collections",
+      "collection",
+      "coleccion",
+      "colecciones",
+      "categoria",
+      "categorias",
+      "category",
+      "categories",
+      "catalogo",
+      "catalog",
+      "shop",
+      "store",
+      "tienda",
+      "p",
+      "item",
+      "items",
+      "search",
+      "busqueda",
+    ]);
+    return input
+      .split(" ")
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 3)
+      .filter((token) => !/^\d{3,}$/.test(token))
+      .filter((token) => !noise.has(token))
+      .join(" ");
+  };
+
+  try {
+    const url = new URL(raw);
+    const path = decodeURIComponent(url.pathname || "");
+    const segments = path
+      .split("/")
+      .map((segment) => segment.trim())
+      .filter(Boolean)
+      .map((segment) => segment.replace(/\.[a-z0-9]{2,5}$/i, "")) // strip file extensions
+      .filter((segment) => !/^\d{3,}$/.test(segment)) // drop numeric IDs
+      .slice(0, 16);
+    const normalized = normalizeText(segments.join(" "));
+    return stripNoiseTokens(normalized);
+  } catch {
+    const normalized = normalizeText(raw);
+    return stripNoiseTokens(normalized);
+  }
+};
+
 const tokenizeName = (value: string) => {
   const stop = new Set(["de", "del", "la", "el", "los", "las", "con", "para", "y", "en"]);
   return normalizeText(value)
@@ -124,6 +185,13 @@ const dedupe = (values: string[]) => {
     output.push(cleaned);
   });
   return output;
+};
+
+const scoreSubcategoryPriorHits = (text: string, subcategory: string) => {
+  if (!text || !subcategory) return 0;
+  const priors = SUBCATEGORY_TERM_PRIORS[subcategory] ?? [];
+  if (!priors.length) return 0;
+  return scoreKeywordHits(text, priors);
 };
 
 const clamp = (value: number, min: number, max: number) =>
@@ -150,8 +218,10 @@ const CHILD_UNLIKELY_CATEGORIES = new Set([
 
 const FEMALE_KEYWORDS = [
   "mujer",
+  "mujeres",
   "women",
   "womens",
+  "women s",
   "femenino",
   "femenina",
   "dama",
@@ -160,8 +230,10 @@ const FEMALE_KEYWORDS = [
 
 const MALE_KEYWORDS = [
   "hombre",
+  "hombres",
   "men",
   "mens",
+  "men s",
   "masculino",
   "masculina",
   "caballero",
@@ -177,9 +249,13 @@ const CHILD_HARD_KEYWORDS = [
   "newborn",
   "toddler",
   "junior",
+  "nino",
+  "nina",
   "ninos",
   "ninas",
+  "boy",
   "boys",
+  "girl",
   "girls",
   "for kids",
   "para ninos",
@@ -220,6 +296,7 @@ const inferGenderSignal = (params: {
   seoTitleText: string;
   seoDescriptionText: string;
   seoTagText: string;
+  urlText: string;
   currentCategory: string | null;
   inferredCategory: string | null;
   currentGender: string | null;
@@ -231,6 +308,7 @@ const inferGenderSignal = (params: {
     params.seoTitleText,
     params.seoDescriptionText,
     params.seoTagText,
+    params.urlText,
   ]
     .filter(Boolean)
     .join(" ");
@@ -283,12 +361,14 @@ const inferGenderSignal = (params: {
   };
 
   const sources: Array<{ key: string; text: string; weight: number }> = [
-    { key: "name", text: params.nameText, weight: 1.8 },
-    { key: "description", text: params.descriptionText, weight: 1.15 },
-    { key: "vendor_tags", text: params.vendorTagText, weight: 1.15 },
-    { key: "seo_tags", text: params.seoTagText, weight: 1.9 },
-    { key: "seo_title", text: params.seoTitleText, weight: 1.45 },
-    { key: "seo_description", text: params.seoDescriptionText, weight: 1.05 },
+    { key: "name", text: params.nameText, weight: 2.1 },
+    { key: "description", text: params.descriptionText, weight: 1.7 },
+    { key: "vendor_tags", text: params.vendorTagText, weight: 1.05 },
+    // SEO signals are useful as weak hints, but should never dominate gender inference.
+    { key: "seo_tags", text: params.seoTagText, weight: 0.22 },
+    { key: "seo_title", text: params.seoTitleText, weight: 0.24 },
+    { key: "seo_description", text: params.seoDescriptionText, weight: 0.18 },
+    { key: "url", text: params.urlText, weight: 0.72 },
   ];
 
   let hasExplicitUnisex = false;
@@ -317,6 +397,9 @@ const inferGenderSignal = (params: {
       "liguero",
       "corset",
       "babydoll",
+      "falda",
+      "vestido",
+      "blusa",
     ]);
     const hasMaleProduct = hasAnyKeyword(text, [
       "boxer",
@@ -324,6 +407,13 @@ const inferGenderSignal = (params: {
       "briefs",
       "jockstrap",
       "suspensorio",
+      "corbata",
+      "corbatin",
+      "corbatín",
+      "pajarita",
+      "bow tie",
+      "tirantes",
+      "suspenders",
     ]);
 
     if (hasFemale) addScore("femenino", source.key, source.weight * 1.08, "kw:gender_female");
@@ -1611,7 +1701,7 @@ const toStringArray = (value: unknown) => {
   if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
   if (typeof value === "string") {
     return value
-      .split(",")
+      .split(/[;,|]/g)
       .map((entry) => entry.trim())
       .filter(Boolean);
   }
@@ -1622,7 +1712,21 @@ const getPlatformSignals = (metadata: Record<string, unknown> | null | undefined
   const enrichment = readNestedObject(metadata ?? null, "enrichment");
   const originalVendorSignals = readNestedObject(enrichment, "original_vendor_signals");
   const base = originalVendorSignals ?? (metadata ?? null);
-  const meta = readNestedObject(base, "meta");
+  const baseMeta = readNestedObject(base, "meta");
+  const rootMeta = base === metadata ? null : readNestedObject(metadata ?? null, "meta");
+  const metaSources = [baseMeta, rootMeta].filter(
+    (entry): entry is Record<string, unknown> => Boolean(entry),
+  );
+  const pickMetaString = (keys: string[]) => {
+    for (const source of metaSources) {
+      for (const key of keys) {
+        const value = source[key];
+        if (typeof value === "string" && value.trim()) return String(value).trim();
+      }
+    }
+    return null;
+  };
+
   const vendorCategoryRaw =
     typeof base?.product_type === "string"
       ? base.product_type
@@ -1630,13 +1734,25 @@ const getPlatformSignals = (metadata: Record<string, unknown> | null | undefined
         ? base.category
         : null;
   const vendorTags = dedupe(toStringArray(base?.tags));
+  const seoTags = dedupe([
+    ...toStringArray(base?.keywords),
+    ...metaSources.flatMap((source) => toStringArray(source.keywords)),
+  ]).slice(0, 24);
+  const ogTitle = pickMetaString(["og:title", "twitter:title", "title"]);
+  const ogDescription = pickMetaString(["og:description", "description", "twitter:description"]);
+  const vendorPlatformRaw =
+    typeof base?.platform === "string"
+      ? String(base.platform).trim()
+      : typeof metadata?.platform === "string"
+        ? String(metadata.platform).trim()
+        : null;
   return {
     vendorCategory: vendorCategoryRaw ? String(vendorCategoryRaw).trim() : null,
     vendorTags,
-    vendorPlatform: typeof base?.platform === "string" ? String(base.platform).trim().toLowerCase() : null,
-    ogTitle: typeof meta?.["og:title"] === "string" ? String(meta["og:title"]).trim() : null,
-    ogDescription:
-      typeof meta?.["og:description"] === "string" ? String(meta["og:description"]).trim() : null,
+    seoTags,
+    vendorPlatform: vendorPlatformRaw ? vendorPlatformRaw.toLowerCase() : null,
+    ogTitle,
+    ogDescription,
   };
 };
 
@@ -1647,14 +1763,23 @@ const resolveSignalStrength = (
   descriptionCategory: string | null,
   seoCategory: string | null,
   vendorTagCategory: string | null,
+  urlCategory: string | null,
   conflicts: string[],
 ): SignalStrength => {
   if (!inferredCategory) return "weak";
-  const agrees = [vendorCategory, nameCategory, descriptionCategory, seoCategory, vendorTagCategory].filter(
+  const agrees = [
+    vendorCategory,
+    nameCategory,
+    descriptionCategory,
+    vendorTagCategory,
+    urlCategory,
+  ].filter(
     (value) => value && value === inferredCategory,
   ).length;
+  const seoAgree = seoCategory && seoCategory === inferredCategory;
   if (agrees >= 2 && conflicts.length === 0) return "strong";
   if (agrees >= 1 && conflicts.length <= 1) return "moderate";
+  if (seoAgree && conflicts.length === 0) return "weak";
   return "weak";
 };
 
@@ -1671,31 +1796,50 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
   const descriptionCleanText = cleanDescriptionForLLM(params.description);
   const nameText = normalizeText(safeName);
   const descText = normalizeText(descriptionCleanText);
-  const seoTitleText = normalizeText(params.seoTitle ?? "");
-  const seoDescriptionText = normalizeText(params.seoDescription ?? "");
-  const seoTagText = normalizeText((params.seoTags ?? []).join(" "));
+  const urlText = normalizeUrlToText(params.sourceUrl);
   const seoCategoryText = normalizeText(
-    [seoTitleText, seoDescriptionText, seoTagText].filter(Boolean).join(" "),
+    [params.seoTitle ?? "", params.seoDescription ?? "", (params.seoTags ?? []).join(" ")]
+      .filter(Boolean)
+      .join(" "),
   );
 
   const nameMatch = pickCategorySignal(nameText, allowedCategories, allowedSubByCategory);
   const descriptionMatch = pickCategorySignal(descText, allowedCategories, allowedSubByCategory);
   const platform = getPlatformSignals(params.metadata);
+  const seoHints = params.seoTags?.length ? dedupe(params.seoTags).slice(0, 24) : platform.seoTags;
+  const effectiveSeoTitle = params.seoTitle ?? platform.ogTitle ?? "";
+  const effectiveSeoDescription = params.seoDescription ?? platform.ogDescription ?? "";
+  const seoTitleText = normalizeText(effectiveSeoTitle);
+  const seoDescriptionText = normalizeText(effectiveSeoDescription);
+  const seoTagText = normalizeText(seoHints.join(" "));
+  const seoTextCombined = normalizeText(
+    [seoTitleText, seoDescriptionText, seoTagText].filter(Boolean).join(" "),
+  );
 
   const vendorCategory = normalizeEnumValue(platform.vendorCategory, allowedCategories);
   const vendorTagText = normalizeText(platform.vendorTags.join(" "));
   const vendorTagMatch = pickCategorySignal(vendorTagText, allowedCategories, allowedSubByCategory);
-  const seoMatch = pickCategorySignal(seoCategoryText, allowedCategories, allowedSubByCategory);
+  const seoMatch = pickCategorySignal(seoTextCombined || seoCategoryText, allowedCategories, allowedSubByCategory);
+  const urlMatch = urlText ? pickCategorySignal(urlText, allowedCategories, allowedSubByCategory) : { category: null, subcategory: null, productType: null };
 
   const currentCategory = normalizeEnumValue(params.currentCategory, allowedCategories);
 
-  type CategorySource = "vendor_category" | "vendor_tags" | "name" | "description" | "seo";
+  type CategorySource =
+    | "vendor_category"
+    | "vendor_tags"
+    | "name"
+    | "description"
+    | "name_description"
+    | "seo"
+    | "url";
   const CATEGORY_SOURCE_WEIGHTS: Record<CategorySource, number> = {
-    vendor_category: 7,
-    description: 6,
-    seo: 5,
-    vendor_tags: 4,
-    name: 3,
+    vendor_category: 5.5,
+    description: 8.2,
+    name_description: 7.2,
+    seo: 0.42,
+    vendor_tags: 2.8,
+    name: 6.6,
+    url: 1.2,
   };
 
   const categoryScores = new Map<string, { score: number; sources: Set<CategorySource> }>();
@@ -1712,7 +1856,16 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
   bumpCategoryScore(vendorTagMatch.category, "vendor_tags");
   bumpCategoryScore(nameMatch.category, "name");
   bumpCategoryScore(descriptionMatch.category, "description");
+  bumpCategoryScore(
+    pickCategorySignal(
+      normalizeText([safeName, descriptionCleanText].filter(Boolean).join(" ")),
+      allowedCategories,
+      allowedSubByCategory,
+    ).category,
+    "name_description",
+  );
   bumpCategoryScore(seoMatch.category, "seo");
+  bumpCategoryScore(urlMatch.category, "url");
 
   const rankedCategories = [...categoryScores.entries()].sort((a, b) => {
     const scoreDelta = b[1].score - a[1].score;
@@ -1738,13 +1891,24 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     if (!inferredCategory) return null;
     const allowedSubs = allowedSubByCategory[inferredCategory] ?? [];
     if (!allowedSubs.length) return null;
-    type SubcategorySource = "description" | "seo" | "vendor_tags" | "name" | "combined";
+    type SubcategorySource =
+      | "description"
+      | "seo"
+      | "vendor_tags"
+      | "name"
+      | "name_description"
+      | "term_priors"
+      | "combined"
+      | "url";
     const SUBCATEGORY_SOURCE_WEIGHTS: Record<SubcategorySource, number> = {
-      description: 6,
-      seo: 5,
-      vendor_tags: 4,
-      name: 3,
-      combined: 4,
+      description: 8,
+      seo: 0.38,
+      vendor_tags: 2.8,
+      name: 6.8,
+      name_description: 7.1,
+      term_priors: 3.2,
+      combined: 4.2,
+      url: 1.2,
     };
 
     const scores = new Map<string, { score: number; sources: Set<SubcategorySource> }>();
@@ -1762,26 +1926,49 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     bump(seoMatch.subcategory, "seo");
     bump(vendorTagMatch.subcategory, "vendor_tags");
     bump(nameMatch.subcategory, "name");
+    const nameDescriptionSubcategory = pickSubcategorySignal(
+      normalizeText([safeName, descriptionCleanText].filter(Boolean).join(" ")),
+      inferredCategory,
+      allowedSubByCategory,
+    ).subcategory;
+    bump(nameDescriptionSubcategory, "name_description");
+    const priorEvidenceText = normalizeText([safeName, descriptionCleanText].filter(Boolean).join(" "));
+    for (const subcategory of allowedSubs) {
+      const priorHitScore = scoreSubcategoryPriorHits(priorEvidenceText, subcategory);
+      if (priorHitScore <= 0) continue;
+      const entry = scores.get(subcategory) ?? { score: 0, sources: new Set<SubcategorySource>() };
+      // Priors are a controlled tie-breaker signal from title+description analysis, not a dominant source.
+      entry.score += Math.min(5.2, priorHitScore * SUBCATEGORY_SOURCE_WEIGHTS.term_priors);
+      entry.sources.add("term_priors");
+      scores.set(subcategory, entry);
+    }
+    if (urlMatch.category === inferredCategory) bump(urlMatch.subcategory, "url");
     const combinedText = normalizeText(
       [
         safeName,
         descriptionCleanText,
         platform.vendorTags.join(" "),
-        params.seoTitle ?? "",
-        params.seoDescription ?? "",
-        (params.seoTags ?? []).join(" "),
+        effectiveSeoTitle,
+        effectiveSeoDescription,
+        seoHints.join(" "),
+        urlText,
       ]
         .filter(Boolean)
         .join(" "),
     );
     const combinedSubcategory = pickSubcategorySignal(combinedText, inferredCategory, allowedSubByCategory).subcategory;
     bump(combinedSubcategory, "combined");
+    const normalizedCurrentSubcategory = normalizeEnumValue(params.currentSubcategory, allowedSubs);
 
     const ranked = [...scores.entries()].sort((a, b) => {
       const scoreDelta = b[1].score - a[1].score;
       if (scoreDelta !== 0) return scoreDelta;
       const sourcesDelta = b[1].sources.size - a[1].sources.size;
       if (sourcesDelta !== 0) return sourcesDelta;
+      if (normalizedCurrentSubcategory) {
+        if (a[0] === normalizedCurrentSubcategory && b[0] !== normalizedCurrentSubcategory) return -1;
+        if (b[0] === normalizedCurrentSubcategory && a[0] !== normalizedCurrentSubcategory) return 1;
+      }
       return a[0].localeCompare(b[0]);
     });
 
@@ -1795,11 +1982,12 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     seoTitleText,
     seoDescriptionText,
     seoTagText,
+    urlText,
     currentCategory: normalizeEnumValue(params.currentCategory, allowedCategories),
     inferredCategory,
     currentGender: normalizeEnumValue(params.currentGender, GENDER_VALUES),
   });
-  const genderFallbackText = `${nameText} ${descText} ${vendorTagText}`;
+  const genderFallbackText = `${nameText} ${descText} ${vendorTagText} ${seoTextCombined} ${urlText}`;
   let fallbackGender = normalizeEnumValue(
     collectByRules(genderFallbackText, GENDER_KEYWORD_RULES)[0] ?? null,
     GENDER_VALUES,
@@ -1844,6 +2032,7 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     descriptionMatch.category,
     seoMatch.category,
     vendorTagMatch.category,
+    urlMatch.category,
     conflictingSignals,
   );
 
@@ -1860,9 +2049,11 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     descriptionCleanText,
     vendorCategory,
     vendorTags: platform.vendorTags,
+    seoHints,
     vendorPlatform: platform.vendorPlatform,
     ogTitle: platform.ogTitle,
     ogDescription: platform.ogDescription,
+    sourceUrlText: urlText,
     inferredCategory,
     inferredSubcategory,
     inferredGender,
@@ -1880,9 +2071,11 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
 export const buildSignalPayloadForPrompt = (signals: HarvestedSignals) => ({
   vendor_category: signals.vendorCategory,
   vendor_tags: signals.vendorTags,
+  seo_hints: signals.seoHints,
   vendor_platform: signals.vendorPlatform,
   og_title: signals.ogTitle,
   og_description: signals.ogDescription,
+  source_url_text: signals.sourceUrlText,
   detected_product_type: signals.nameProductType ?? signals.descriptionProductType,
   detected_materials: signals.inferredMaterials,
   detected_patterns: signals.inferredPatterns,

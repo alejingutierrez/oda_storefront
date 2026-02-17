@@ -1,0 +1,354 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e4]:
+      - link "ODA" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - button "Abrir menu" [ref=e7]:
+        - text: Menu
+        - generic [ref=e8]: ▾
+    - generic [ref=e9]:
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - heading "Catálogo" [level=1] [ref=e15]
+            - generic "Columnas" [ref=e17]:
+              - button "1" [pressed] [ref=e18]
+              - button "2" [ref=e19]
+          - paragraph [ref=e20]: Descubre marcas locales con inventario disponible.
+        - region "Resultados" [ref=e22]:
+          - generic [ref=e23]:
+            - list "Productos" [ref=e25]:
+              - listitem [ref=e26]:
+                - article [ref=e27]:
+                  - button "Agregar a comparar" [ref=e29]:
+                    - img [ref=e30]
+                  - button "Guardar Nómada XL Océano Noche Laptop 16&#8243; en favoritos" [ref=e36]:
+                    - img [ref=e38]
+                  - link "Nómada XL Océano Noche Laptop 16&#8243; Monkey Hide Nómada XL Océano Noche Laptop 16&#8243; $ 329.900" [ref=e40] [cursor=pointer]:
+                    - /url: https://www.monkeyhide.com/tienda/nomada-xl-oceano-negro/
+                    - img "Nómada XL Océano Noche Laptop 16&#8243;" [ref=e41]
+                    - generic [ref=e43]:
+                      - paragraph [ref=e44]: Monkey Hide
+                      - heading "Nómada XL Océano Noche Laptop 16&#8243;" [level=3] [ref=e45]
+                      - paragraph [ref=e46]: $ 329.900
+              - listitem [ref=e47]:
+                - article [ref=e48]:
+                  - button "Agregar a comparar" [ref=e50]:
+                    - img [ref=e51]
+                  - button "Guardar Body Evans Negro Santísimas Ref. S-615 en favoritos" [ref=e57]:
+                    - img [ref=e59]
+                  - link "Body Evans Negro Santísimas Ref. S-615 Santísimas Ropa Íntima Body Evans Negro Santísimas Ref. S-615 $ 240.000" [ref=e61] [cursor=pointer]:
+                    - /url: https://santisimasropaintima.com/products/body-oca-nude-santisimas-ref-s-565-copia
+                    - img "Body Evans Negro Santísimas Ref. S-615" [ref=e62]
+                    - generic [ref=e64]:
+                      - paragraph [ref=e65]: Santísimas Ropa Íntima
+                      - heading "Body Evans Negro Santísimas Ref. S-615" [level=3] [ref=e66]
+                      - paragraph [ref=e67]: $ 240.000
+              - listitem [ref=e68]:
+                - article [ref=e69]:
+                  - button "Agregar a comparar" [ref=e71]:
+                    - img [ref=e72]
+                  - button "Guardar BRASIER RITA NEGRO en favoritos" [ref=e78]:
+                    - img [ref=e80]
+                  - link "BRASIER RITA NEGRO Soreil BRASIER RITA NEGRO $ 215.000" [ref=e82] [cursor=pointer]:
+                    - /url: https://soreil.co/products/brasier-rita-negro
+                    - img "BRASIER RITA NEGRO" [ref=e83]
+                    - generic [ref=e85]:
+                      - paragraph [ref=e86]: Soreil
+                      - heading "BRASIER RITA NEGRO" [level=3] [ref=e87]
+                      - paragraph [ref=e88]: $ 215.000
+              - listitem [ref=e89]:
+                - article [ref=e90]:
+                  - button "Agregar a comparar" [ref=e92]:
+                    - img [ref=e93]
+                  - button "Guardar TANGA RITA NEGRO en favoritos" [ref=e99]:
+                    - img [ref=e101]
+                  - link "TANGA RITA NEGRO Soreil TANGA RITA NEGRO $ 129.000" [ref=e103] [cursor=pointer]:
+                    - /url: https://soreil.co/products/tanga-rita-negro
+                    - img "TANGA RITA NEGRO" [ref=e104]
+                    - generic [ref=e106]:
+                      - paragraph [ref=e107]: Soreil
+                      - heading "TANGA RITA NEGRO" [level=3] [ref=e108]
+                      - paragraph [ref=e109]: $ 129.000
+              - listitem [ref=e110]:
+                - article [ref=e111]:
+                  - button "Agregar a comparar" [ref=e113]:
+                    - img [ref=e114]
+                  - button "Guardar VENENO GORRA LABORATORY en favoritos" [ref=e120]:
+                    - img [ref=e122]
+                  - link "VENENO GORRA LABORATORY VENENO VENENO GORRA LABORATORY $ 230.000" [ref=e124] [cursor=pointer]:
+                    - /url: https://www.veneno.com/products/veneno-gorra-laboratory-vn-0425
+                    - img "VENENO GORRA LABORATORY" [ref=e125]
+                    - generic [ref=e127]:
+                      - paragraph [ref=e128]: VENENO
+                      - heading "VENENO GORRA LABORATORY" [level=3] [ref=e129]
+                      - paragraph [ref=e130]: $ 230.000
+              - listitem [ref=e131]:
+                - article [ref=e132]:
+                  - button "Agregar a comparar" [ref=e134]:
+                    - img [ref=e135]
+                  - 'button "Guardar Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro. en favoritos" [ref=e141]':
+                    - img [ref=e143]
+                  - 'link "Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro. Lola Jeans Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro. $ 139.000" [ref=e145] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-0620209-pantalon-straight-leg-sin-prenses-tejido-plano-liviano-tiro-alto-tono-negro
+                    - 'img "Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro." [ref=e146]'
+                    - generic [ref=e148]:
+                      - paragraph [ref=e149]: Lola Jeans
+                      - 'heading "Ref: 0620209 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono negro." [level=3] [ref=e150]'
+                      - paragraph [ref=e151]: $ 139.000
+              - listitem [ref=e152]:
+                - article [ref=e153]:
+                  - button "Agregar a comparar" [ref=e155]:
+                    - img [ref=e156]
+                  - 'button "Guardar Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café en favoritos" [ref=e162]':
+                    - img [ref=e164]
+                  - 'link "Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café Lola Jeans Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café $ 149.000" [ref=e166] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066252-jean-wide-leg-confort-denim-velvet-acabado-terciopelo-tiro-alto-tono-cafe
+                    - 'img "Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café" [ref=e167]'
+                    - generic [ref=e169]:
+                      - paragraph [ref=e170]: Lola Jeans
+                      - 'heading "Ref: 066252 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono café" [level=3] [ref=e171]'
+                      - paragraph [ref=e172]: $ 149.000
+              - listitem [ref=e173]:
+                - article [ref=e174]:
+                  - button "Agregar a comparar" [ref=e176]:
+                    - img [ref=e177]
+                  - 'button "Guardar Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro. en favoritos" [ref=e183]':
+                    - img [ref=e185]
+                  - 'link "Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro. Lola Jeans Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro. $ 149.000" [ref=e187] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066118-jean-wide-leg-tiro-medio-con-cortes-rigido-tono-gris-oscuro
+                    - 'img "Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro." [ref=e188]'
+                    - generic [ref=e190]:
+                      - paragraph [ref=e191]: Lola Jeans
+                      - 'heading "Ref: 066118 Jean wide leg, tiro medio, con cortes, rígido, tono gris oscuro." [level=3] [ref=e192]'
+                      - paragraph [ref=e193]: $ 149.000
+              - listitem [ref=e194]:
+                - article [ref=e195]:
+                  - button "Agregar a comparar" [ref=e197]:
+                    - img [ref=e198]
+                  - 'button "Guardar Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro. en favoritos" [ref=e204]':
+                    - img [ref=e206]
+                  - 'link "Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro. Lola Jeans Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro. $ 139.000" [ref=e208] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-065784-jean-flare-stretch-bota-ancha-tiro-alto-tono-azul-claro
+                    - 'img "Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro." [ref=e209]'
+                    - generic [ref=e211]:
+                      - paragraph [ref=e212]: Lola Jeans
+                      - 'heading "Ref: 065784 Jean flare stretch, bota ancha, tiro alto, tono azul claro." [level=3] [ref=e213]'
+                      - paragraph [ref=e214]: $ 139.000
+              - listitem [ref=e215]:
+                - article [ref=e216]:
+                  - button "Agregar a comparar" [ref=e218]:
+                    - img [ref=e219]
+                  - 'button "Guardar Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris en favoritos" [ref=e225]':
+                    - img [ref=e227]
+                  - 'link "Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris Lola Jeans Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris $ 149.000" [ref=e229] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066251-jean-wide-leg-confort-denim-velvet-acabado-terciopelo-tiro-alto-tono-gris
+                    - 'img "Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris" [ref=e230]'
+                    - generic [ref=e232]:
+                      - paragraph [ref=e233]: Lola Jeans
+                      - 'heading "Ref: 066251 Jean wide leg, confort, denim velvet, acabado terciopelo, tiro alto, tono gris" [level=3] [ref=e234]'
+                      - paragraph [ref=e235]: $ 149.000
+              - listitem [ref=e236]:
+                - article [ref=e237]:
+                  - button "Agregar a comparar" [ref=e239]:
+                    - img [ref=e240]
+                  - 'button "Guardar Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe. en favoritos" [ref=e246]':
+                    - img [ref=e248]
+                  - 'link "Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe. Lola Jeans Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe. $ 139.000" [ref=e250] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-0620210-pantalon-straight-leg-sin-prenses-tejido-plano-liviano-tiro-alto-tono-cafe
+                    - 'img "Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe." [ref=e251]'
+                    - generic [ref=e253]:
+                      - paragraph [ref=e254]: Lola Jeans
+                      - 'heading "Ref: 0620210 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono cafe." [level=3] [ref=e255]'
+                      - paragraph [ref=e256]: $ 139.000
+              - listitem [ref=e257]:
+                - article [ref=e258]:
+                  - button "Agregar a comparar" [ref=e260]:
+                    - img [ref=e261]
+                  - 'button "Guardar Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca. en favoritos" [ref=e267]':
+                    - img [ref=e269]
+                  - 'link "Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca. Lola Jeans Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca. $ 139.000" [ref=e271] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-0620211-pantalon-straight-leg-sin-prenses-tejido-plano-liviano-tiro-alto-tono-mocca
+                    - 'img "Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca." [ref=e272]'
+                    - generic [ref=e274]:
+                      - paragraph [ref=e275]: Lola Jeans
+                      - 'heading "Ref: 0620211 Pantalón straight leg, sin prenses, tejido plano liviano, tiro alto, tono mocca." [level=3] [ref=e276]'
+                      - paragraph [ref=e277]: $ 139.000
+              - listitem [ref=e278]:
+                - article [ref=e279]:
+                  - button "Agregar a comparar" [ref=e281]:
+                    - img [ref=e282]
+                  - 'button "Guardar Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro. en favoritos" [ref=e288]':
+                    - img [ref=e290]
+                  - 'link "Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro. Lola Jeans Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro. $ 139.000" [ref=e292] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-065687-jean-flare-stretch-bota-ancha-tiro-alto-tono-azul-oscuro
+                    - 'img "Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro." [ref=e293]'
+                    - generic [ref=e295]:
+                      - paragraph [ref=e296]: Lola Jeans
+                      - 'heading "Ref: 065687 Jean flare stretch, bota ancha, tiro alto, tono azul oscuro." [level=3] [ref=e297]'
+                      - paragraph [ref=e298]: $ 139.000
+              - listitem [ref=e299]:
+                - article [ref=e300]:
+                  - button "Agregar a comparar" [ref=e302]:
+                    - img [ref=e303]
+                  - 'button "Guardar Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe en favoritos" [ref=e309]':
+                    - img [ref=e311]
+                  - 'link "Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe Lola Jeans Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe $ 149.000" [ref=e313] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066247-jean-wide-leg-tiro-alto-con-corte-detalle-de-tela-con-brillo-rigido-tono-cafe
+                    - 'img "Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe" [ref=e314]'
+                    - generic [ref=e316]:
+                      - paragraph [ref=e317]: Lola Jeans
+                      - 'heading "Ref: 066247 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono cafe" [level=3] [ref=e318]'
+                      - paragraph [ref=e319]: $ 149.000
+              - listitem [ref=e320]:
+                - article [ref=e321]:
+                  - button "Agregar a comparar" [ref=e323]:
+                    - img [ref=e324]
+                  - 'button "Guardar Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio. en favoritos" [ref=e330]':
+                    - img [ref=e332]
+                  - 'link "Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio. Lola Jeans Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio. $ 149.000" [ref=e334] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066119-jean-wide-leg-tiro-medio-con-cortes-rigido-tono-gris-medio
+                    - 'img "Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio." [ref=e335]'
+                    - generic [ref=e337]:
+                      - paragraph [ref=e338]: Lola Jeans
+                      - 'heading "Ref: 066119 Jean wide leg, tiro medio, con cortes, rígido, tono gris medio." [level=3] [ref=e339]'
+                      - paragraph [ref=e340]: $ 149.000
+              - listitem [ref=e341]:
+                - article [ref=e342]:
+                  - button "Agregar a comparar" [ref=e344]:
+                    - img [ref=e345]
+                  - 'button "Guardar Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro en favoritos" [ref=e351]':
+                    - img [ref=e353]
+                  - 'link "Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro Lola Jeans Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro $ 149.000" [ref=e355] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066175-jean-palazzo-rigido-con-corte-tiro-alto-tono-azul-oscuro
+                    - 'img "Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro" [ref=e356]'
+                    - generic [ref=e358]:
+                      - paragraph [ref=e359]: Lola Jeans
+                      - 'heading "Ref: 066175 Jean palazzo, rígido, con corte, tiro alto, tono azul oscuro" [level=3] [ref=e360]'
+                      - paragraph [ref=e361]: $ 149.000
+              - listitem [ref=e362]:
+                - article [ref=e363]:
+                  - button "Agregar a comparar" [ref=e365]:
+                    - img [ref=e366]
+                  - 'button "Guardar Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio en favoritos" [ref=e372]':
+                    - img [ref=e374]
+                  - 'link "Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio Lola Jeans Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio $ 149.000" [ref=e376] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066176-jean-palazzo-rigido-con-corte-tiro-alto-tono-azul-medio
+                    - 'img "Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio" [ref=e377]'
+                    - generic [ref=e379]:
+                      - paragraph [ref=e380]: Lola Jeans
+                      - 'heading "Ref: 066176 Jean palazzo, rígido, con corte, tiro alto, tono azul medio" [level=3] [ref=e381]'
+                      - paragraph [ref=e382]: $ 149.000
+              - listitem [ref=e383]:
+                - article [ref=e384]:
+                  - button "Agregar a comparar" [ref=e386]:
+                    - img [ref=e387]
+                  - 'button "Guardar Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul en favoritos" [ref=e393]':
+                    - img [ref=e395]
+                  - 'link "Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul Lola Jeans Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul $ 149.000" [ref=e397] [cursor=pointer]':
+                    - /url: https://lolajeans.com.co/products/ref-066248-jean-wide-leg-tiro-alto-con-corte-detalle-de-tela-con-brillo-rigido-tono-azul
+                    - 'img "Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul" [ref=e398]'
+                    - generic [ref=e400]:
+                      - paragraph [ref=e401]: Lola Jeans
+                      - 'heading "Ref: 066248 Jean wide leg, tiro alto, con corte, detalle de tela con brillo, rígido, tono azul" [level=3] [ref=e402]'
+                      - paragraph [ref=e403]: $ 149.000
+              - listitem [ref=e404]:
+                - article [ref=e405]:
+                  - button "Agregar a comparar" [ref=e407]:
+                    - img [ref=e408]
+                  - button "Guardar Camiseta Distressed Cry baby en favoritos" [ref=e414]:
+                    - img [ref=e416]
+                  - link "Camiseta Distressed Cry baby CHILL Camiseta Distressed Cry baby $ 88.000" [ref=e418] [cursor=pointer]:
+                    - /url: https://chillcolombia.co/products/camiseta-distressed-cry-baby
+                    - img "Camiseta Distressed Cry baby" [ref=e419]
+                    - generic [ref=e421]:
+                      - paragraph [ref=e422]: CHILL
+                      - heading "Camiseta Distressed Cry baby" [level=3] [ref=e423]
+                      - paragraph [ref=e424]: $ 88.000
+              - listitem [ref=e425]:
+                - article [ref=e426]:
+                  - button "Agregar a comparar" [ref=e428]:
+                    - img [ref=e429]
+                  - button "Guardar Camiseta Deteriorated en favoritos" [ref=e435]:
+                    - img [ref=e437]
+                  - link "Camiseta Deteriorated CHILL Camiseta Deteriorated $ 72.000" [ref=e439] [cursor=pointer]:
+                    - /url: https://chillcolombia.co/products/camiseta-deteriorated
+                    - img "Camiseta Deteriorated" [ref=e440]
+                    - generic [ref=e442]:
+                      - paragraph [ref=e443]: CHILL
+                      - heading "Camiseta Deteriorated" [level=3] [ref=e444]
+                      - paragraph [ref=e445]: $ 72.000
+              - listitem [ref=e446]:
+                - article [ref=e447]:
+                  - button "Agregar a comparar" [ref=e449]:
+                    - img [ref=e450]
+                  - button "Guardar Camiseta cometa gris en favoritos" [ref=e456]:
+                    - img [ref=e458]
+                  - link "Camiseta cometa gris LUCHADOR COLOMBIA Camiseta cometa gris $ 69.000" [ref=e460] [cursor=pointer]:
+                    - /url: https://luchadorcolombia.com/products/camiseta-cometa-gris
+                    - img "Camiseta cometa gris" [ref=e461]
+                    - generic [ref=e463]:
+                      - paragraph [ref=e464]: LUCHADOR COLOMBIA
+                      - heading "Camiseta cometa gris" [level=3] [ref=e465]
+                      - paragraph [ref=e466]: $ 69.000
+              - listitem [ref=e467]:
+                - article [ref=e468]:
+                  - button "Agregar a comparar" [ref=e470]:
+                    - img [ref=e471]
+                  - button "Guardar MARINA TOP en favoritos" [ref=e477]:
+                    - img [ref=e479]
+                  - link "MARINA TOP Pájaro Limón MARINA TOP $ 90.000" [ref=e481] [cursor=pointer]:
+                    - /url: https://www.pajarolimon.com/products/marina-top
+                    - img "MARINA TOP" [ref=e482]
+                    - generic [ref=e484]:
+                      - paragraph [ref=e485]: Pájaro Limón
+                      - heading "MARINA TOP" [level=3] [ref=e486]
+                      - paragraph [ref=e487]: $ 90.000
+              - listitem [ref=e488]:
+                - article [ref=e489]:
+                  - button "Agregar a comparar" [ref=e491]:
+                    - img [ref=e492]
+                  - button "Guardar Balance Club en favoritos" [ref=e498]:
+                    - img [ref=e500]
+                  - link "Balance Club Ban All Brand Balance Club $ 140.000" [ref=e502] [cursor=pointer]:
+                    - /url: https://www.banallbrand.com/productos/camiseta-keep-the-balance/
+                    - img "Balance Club" [ref=e503]
+                    - generic [ref=e505]:
+                      - paragraph [ref=e506]: Ban All Brand
+                      - heading "Balance Club" [level=3] [ref=e507]
+                      - paragraph [ref=e508]: $ 140.000
+              - listitem [ref=e509]:
+                - article [ref=e510]:
+                  - button "Agregar a comparar" [ref=e512]:
+                    - img [ref=e513]
+                  - button "Guardar Gioia Maxi Skirt en favoritos" [ref=e519]:
+                    - img [ref=e521]
+                  - link "Gioia Maxi Skirt Baobab Gioia Maxi Skirt $ 320.000" [ref=e523] [cursor=pointer]:
+                    - /url: https://baobab.com.co/products/gioia-maxi-dress-fuchsia
+                    - img "Gioia Maxi Skirt" [ref=e524]
+                    - generic [ref=e526]:
+                      - paragraph [ref=e527]: Baobab
+                      - heading "Gioia Maxi Skirt" [level=3] [ref=e528]
+                      - paragraph [ref=e529]: $ 320.000
+            - generic [ref=e530]:
+              - generic [ref=e532]:
+                - paragraph [ref=e533]: Mostrando 24 de 98.009
+                - paragraph [ref=e534]: 0%
+              - button "Cargar más" [ref=e540]
+      - generic [ref=e541]:
+        - generic [ref=e542]:
+          - button "Filtrar" [ref=e543]
+          - generic [ref=e544]:
+            - generic [ref=e545]: Ordenar
+            - generic [ref=e546]:
+              - combobox "Ordenar" [ref=e547]:
+                - option "Relevancia"
+                - option "Nuevos" [selected]
+                - 'option "Precio: menor"'
+                - 'option "Precio: mayor"'
+              - generic: ▾
+          - button "Limpiar filtros" [disabled] [ref=e548]: ×
+        - generic [ref=e549]:
+          - generic [ref=e550]: 98.009 productos
+          - generic [ref=e551]: 534 marcas
+  - alert [ref=e552]
