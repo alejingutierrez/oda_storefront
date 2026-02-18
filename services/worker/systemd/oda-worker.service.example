@@ -1,0 +1,24 @@
+[Unit]
+Description=ODA Storefront BullMQ Worker (catalog + enrichment + plp-seo)
+After=network.target
+
+[Service]
+Type=simple
+
+# Ajusta usuario/grupo y rutas según tu VM.
+User=oda
+Group=oda
+WorkingDirectory=/opt/oda_storefront/services/worker
+
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/oda/worker.env
+
+ExecStart=/usr/bin/node /opt/oda_storefront/services/worker/index.js
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+

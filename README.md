@@ -42,6 +42,7 @@ Operación (BullMQ 24/7):
 - `services/worker` publica heartbeats en Redis: `workers:catalog:alive` y `workers:enrich:alive` (TTL 60s, refresh cada 20s).
 - Los drains de Vercel se comportan como fallback: si el heartbeat existe, responden `{ skipped: "worker_online" }` para evitar doble procesamiento. Override: `POST /api/admin/catalog-extractor/drain?force=true` o `POST /api/admin/product-enrichment/drain?force=true`.
 - Health: `GET /api/admin/queue-health` (jobCounts BullMQ + workerAlive).
+- Ejemplo de `systemd`: `services/worker/systemd/oda-worker.service.example` + `services/worker/systemd/worker.env.example`.
 No commitees credenciales reales.
 
 ## Comandos locales
@@ -334,7 +335,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - `/api/admin/brands/scrape/cron` cada 5 minutos.
 - `/api/admin/catalog-extractor/drain` cada 1 minuto.
 - `/api/admin/product-enrichment/drain` cada 1 minuto.
-- `/api/admin/catalog-refresh/cron` cada 5 minutos.
+- `/api/admin/catalog-refresh/cron` cada 1 hora (`0 * * * *`).
 - El endpoint acepta invocaciones de cron (User-Agent `vercel-cron`) o `ADMIN_TOKEN` en `Authorization`.
 
 ## CI/CD y Git
