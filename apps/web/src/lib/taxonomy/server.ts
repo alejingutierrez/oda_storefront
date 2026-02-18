@@ -46,7 +46,7 @@ export async function ensureTaxonomySnapshotsTable() {
   // does not have CREATE privileges (common with pooled/proxied DB users).
   try {
     const rows = await prisma.$queryRaw<Array<{ name: string | null }>>(Prisma.sql`
-      select to_regclass('public.taxonomy_snapshots') as name
+      select to_regclass('public.taxonomy_snapshots')::text as name
     `);
     if (rows?.[0]?.name) {
       taxonomySnapshotsTableState = "ready";

@@ -57,13 +57,13 @@ export async function ensurePlpSeoTables() {
   try {
     const [pages, runs, items] = await Promise.all([
       prisma.$queryRaw<Array<{ name: string | null }>>(Prisma.sql`
-        select to_regclass('public.plp_seo_pages') as name
+        select to_regclass('public.plp_seo_pages')::text as name
       `),
       prisma.$queryRaw<Array<{ name: string | null }>>(Prisma.sql`
-        select to_regclass('public.plp_seo_runs') as name
+        select to_regclass('public.plp_seo_runs')::text as name
       `),
       prisma.$queryRaw<Array<{ name: string | null }>>(Prisma.sql`
-        select to_regclass('public.plp_seo_items') as name
+        select to_regclass('public.plp_seo_items')::text as name
       `),
     ]);
     if (pages?.[0]?.name && runs?.[0]?.name && items?.[0]?.name) {
@@ -154,9 +154,14 @@ export async function ensurePlpSeoTables() {
     on "plp_seo_items"("genderSlug","categoryKey","subcategoryKey");
   `);
   await prisma.$executeRaw(Prisma.sql`
-    alter table "plp_seo_items"
-      add constraint "plp_seo_items_runId_fkey"
-      foreign key ("runId") references "plp_seo_runs"("id") on delete cascade on update cascade;
+    do $$
+    begin
+      alter table "plp_seo_items"
+        add constraint "plp_seo_items_runId_fkey"
+        foreign key ("runId") references "plp_seo_runs"("id") on delete cascade on update cascade;
+    exception
+      when duplicate_object then null;
+    end $$;
   `);
 
   plpSeoTablesState = "ready";

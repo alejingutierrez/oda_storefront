@@ -25,36 +25,37 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  await ensurePlpSeoTables();
+  try {
+    await ensurePlpSeoTables();
 
-  const url = new URL(req.url);
-  const genderSlug = isAllowedGenderSlug(url.searchParams.get("genderSlug"));
-  const categoryKey = coerceOptionalKey(url.searchParams.get("categoryKey"));
-  const onlyMissing = url.searchParams.get("onlyMissing") !== "false";
-  const limitRaw = Number(url.searchParams.get("limit") ?? 200);
-  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.round(limitRaw))) : 200;
+    const url = new URL(req.url);
+    const genderSlug = isAllowedGenderSlug(url.searchParams.get("genderSlug"));
+    const categoryKey = coerceOptionalKey(url.searchParams.get("categoryKey"));
+    const onlyMissing = url.searchParams.get("onlyMissing") !== "false";
+    const limitRaw = Number(url.searchParams.get("limit") ?? 200);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.round(limitRaw))) : 200;
 
-  const filters: Prisma.Sql[] = [];
-  if (genderSlug) filters.push(Prisma.sql`ap."genderSlug" = ${genderSlug}`);
-  if (categoryKey) filters.push(Prisma.sql`ap."categoryKey" = ${categoryKey}`);
-  if (onlyMissing) filters.push(Prisma.sql`page.id is null`);
-  const where = filters.length ? Prisma.sql`where ${Prisma.join(filters, " and ")}` : Prisma.sql``;
+    const filters: Prisma.Sql[] = [];
+    if (genderSlug) filters.push(Prisma.sql`ap."genderSlug" = ${genderSlug}`);
+    if (categoryKey) filters.push(Prisma.sql`ap."categoryKey" = ${categoryKey}`);
+    if (onlyMissing) filters.push(Prisma.sql`page.id is null`);
+    const where = filters.length ? Prisma.sql`where ${Prisma.join(filters, " and ")}` : Prisma.sql``;
 
-  const rows = await prisma.$queryRaw<
-    Array<{
-      path: string;
-      genderSlug: string;
-      categoryKey: string | null;
-      subcategoryKey: string | null;
-      productCount: bigint;
-      pageUpdatedAt: Date | null;
-      provider: string | null;
-      model: string | null;
-      itemStatus: string | null;
-      itemError: string | null;
-      itemUpdatedAt: Date | null;
-    }>
-  >(Prisma.sql`
+    const rows = await prisma.$queryRaw<
+      Array<{
+        path: string;
+        genderSlug: string;
+        categoryKey: string | null;
+        subcategoryKey: string | null;
+        productCount: bigint;
+        pageUpdatedAt: Date | null;
+        provider: string | null;
+        model: string | null;
+        itemStatus: string | null;
+        itemError: string | null;
+        itemUpdatedAt: Date | null;
+      }>
+    >(Prisma.sql`
     with base as (
       select
         case
@@ -136,33 +137,36 @@ export async function GET(req: Request) {
     limit ${limit}
   `);
 
-  const pages = rows.map((row) => {
-    const hasPage = Boolean(row.pageUpdatedAt);
-    const status = hasPage ? "ready" : row.itemStatus === "failed" ? "failed" : "missing";
-    return {
-      path: row.path,
-      genderSlug: row.genderSlug,
-      categoryKey: row.categoryKey,
-      subcategoryKey: row.subcategoryKey,
-      productCount: Number(row.productCount ?? 0),
-      status,
-      page: hasPage
-        ? {
-            updatedAt: row.pageUpdatedAt,
-            provider: row.provider,
-            model: row.model,
-          }
-        : null,
-      lastAttempt: row.itemUpdatedAt
-        ? {
-            status: row.itemStatus,
-            updatedAt: row.itemUpdatedAt,
-            error: row.itemError,
-          }
-        : null,
-    };
-  });
+    const pages = rows.map((row) => {
+      const hasPage = Boolean(row.pageUpdatedAt);
+      const status = hasPage ? "ready" : row.itemStatus === "failed" ? "failed" : "missing";
+      return {
+        path: row.path,
+        genderSlug: row.genderSlug,
+        categoryKey: row.categoryKey,
+        subcategoryKey: row.subcategoryKey,
+        productCount: Number(row.productCount ?? 0),
+        status,
+        page: hasPage
+          ? {
+              updatedAt: row.pageUpdatedAt,
+              provider: row.provider,
+              model: row.model,
+            }
+          : null,
+        lastAttempt: row.itemUpdatedAt
+          ? {
+              status: row.itemStatus,
+              updatedAt: row.itemUpdatedAt,
+              error: row.itemError,
+            }
+          : null,
+      };
+    });
 
-  return NextResponse.json({ pages });
+    return NextResponse.json({ pages });
+  } catch (err) {
+    console.error("[plp-seo] /pages failed", err);
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+  }
 }
-

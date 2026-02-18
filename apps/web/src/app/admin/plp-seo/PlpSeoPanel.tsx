@@ -212,13 +212,24 @@ export default function PlpSeoPanel() {
     setStateError(null);
     try {
       const res = await fetch("/api/admin/plp-seo/state", { cache: "no-store" });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        const error =
+          payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : `http_${res.status}`;
+        throw new Error(error);
+      }
       const payload = await res.json();
       setSummary(payload.summary ?? null);
       setRunMeta(payload.run ?? null);
       setItemCounts(payload.itemCounts ?? null);
       setRecentItems((payload.recentItems ?? []) as RecentItem[]);
     } catch (err) {
+      setSummary(null);
+      setRunMeta(null);
+      setItemCounts(null);
+      setRecentItems([]);
       setStateError(err instanceof Error ? err.message : "No se pudo cargar el estado");
     }
   }, []);
