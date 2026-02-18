@@ -60,6 +60,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: incremento de complejidad de estado en navegación; mitigado con estado mínimo (`hoveredGender`, `pinnedGender`, `activeGender`, `activeSection`) y cierre centralizado.
 - Métricas: CTR en entradas de menú, uso de pin en desktop, tasa de navegación por nivel en mobile.
 - Estado: **done (2026-02-18)**.
+- Ajuste incremental (2026-02-18): se compactó el espaciado vertical del panel desktop, se removió el desglose de `ropa_deportiva_y_performance` en subcategorías, y la UI ahora oculta cualquier subcategoría con `count=0`.
 
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.

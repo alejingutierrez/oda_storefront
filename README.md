@@ -203,6 +203,8 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Mega menu por género con estructura completa basada en categorías reales y reglas `category + subcategory` (ver `HOME_PLAN.md`).
 - Header + mega menu (actualización 2026-02-18):
   - Desktop: layout del header en grid (`auto | minmax(0,1fr) | auto`), input de búsqueda responsivo (`w-[clamp(12rem,18vw,20rem)]`) y panel de megamenu compartido a ancho completo del container.
+  - Desktop (ajuste UX): menor densidad vertical en líneas del panel para una lectura más compacta.
+  - Taxonomía/visibilidad: `ropa_deportiva_y_performance` deja de desglosarse por subcategorías en el menú, y cualquier subcategoría con `count=0` se oculta.
   - Interacción desktop: hover abre temporalmente, click fija/desfija (pin), cierre con `Esc` o click fuera.
   - Mobile: drawer jerárquico por niveles (`root/gender/section`) con barra sticky (atrás/título/cerrar), targets táctiles >=44px y cierre automático al navegar.
   - Telemetría de navegación: `menu_open`, `menu_pin_toggle`, `menu_item_click`, `menu_mobile_step` (endpoint `/api/experience/events`).
