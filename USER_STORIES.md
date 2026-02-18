@@ -725,6 +725,23 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Desktop: el panel de filtros opera en modo draft con auto-aplicación por debounce (400ms) para permitir seleccionar varios filtros seguidos sin disparar múltiples navegaciones.
   - Precio: `/api/catalog/price-bounds` soporta `mode=lite|full` (bounds rápidos vs insights completos) y la UI carga `lite` inmediatamente y `full` de forma lazy/idle para reducir lag percibido al combinar filtros.
 
+### MC-128 PLP `/catalogo`: acelerar filtros combinados (debounce desktop + `price-bounds` `mode=lite/full` + índices GIN tags)
+- Historia: Como usuario, quiero que al combinar varios filtros (incluyendo precio) el catálogo responda rápido y no dispare múltiples rondas de requests, para explorar sin fricción.
+- Alcance:
+  - Desktop: el panel de filtros opera en modo draft con auto-aplicación por debounce (400ms) para agrupar cambios y reducir navegaciones repetidas.
+  - Precio: `/api/catalog/price-bounds` soporta `mode=lite|full`. La UI primero carga `lite` (bounds rápidos) y luego `full` de forma lazy/idle (histograma + stats), con cache en `sessionStorage`.
+  - DB: índices GIN parciales para acelerar combinaciones tipo material/patrón/seo_tag/occasion sobre `products.*Tags[]`, acotados a productos enriquecidos con cover. Script Node para aplicar índices sin `psql`.
+- CA:
+  - Desktop: al marcar 2–3 filtros seguidos en <2s, se observa 1 navegación efectiva tras ~400ms de pausa.
+  - Precio: bounds se actualizan primero (lite) y el histograma/stats aparecen después (full) sin bloquear interacción.
+  - No regresión: los rangos no reintroducen outliers fuera de `CATALOG_PRICE_MAX_VALID` (default 100M).
+- Datos:
+  - API: `GET /api/catalog/price-bounds?mode=lite|full&...` retorna shape estable `{ bounds, histogram, stats }` (`histogram/stats` null en `lite`).
+  - Cache UI: `oda_catalog_price_bounds_v1:<key>` (60s) y `oda_catalog_price_insights_full_v1:<key>` (10 min).
+  - Índices: ver `apps/web/scripts/catalog-filter-indexes.sql` y `apps/web/scripts/apply-catalog-filter-indexes.mjs`.
+- NF: reducir latencia percibida al aplicar filtros combinados; evitar ráfagas de requests por click.
+- Estado: **done (2026-02-18)**.
+
 ### MC-126 PLP `/catalogo`: polish desktop + listas + SEO + header
 - Historia: Como usuario, quiero que el catálogo en desktop sea más ordenado y predecible (scroll de filtros por zonas, guardado en listas sin fricción y header consistente), y que la página tenga SEO más robusto, para explorar y compartir mejor.
 - Alcance:
