@@ -949,6 +949,8 @@ export default function CatalogoClient({
                     paramsString={effectiveParamsString}
                     lockedKeys={lockedKeysList}
                     hideSections={hideFilters}
+                    mode="draft"
+                    autoApplyDraftMs={400}
                   />
                 ) : (
                   <FiltersSkeleton />

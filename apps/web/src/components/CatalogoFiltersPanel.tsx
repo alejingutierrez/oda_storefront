@@ -36,6 +36,9 @@ type Props = {
   // Hide filter sections that would be redundant within a PLP (e.g. gender PLP hides Gender section).
   hideSections?: { gender?: boolean; category?: boolean; brand?: boolean };
   mode?: "instant" | "draft";
+  // When `mode="draft"` and no external draft state is provided, auto-apply the draft to the URL after a debounce.
+  // Used in desktop to avoid firing multiple navigations while users toggle several filters in a row.
+  autoApplyDraftMs?: number;
   draftParamsString?: string;
   onDraftParamsStringChange?: (next: string) => void;
 };
@@ -247,6 +250,7 @@ export default function CatalogoFiltersPanel({
   lockedKeys: lockedKeysList = [],
   hideSections,
   mode = "instant",
+  autoApplyDraftMs,
   draftParamsString = "",
   onDraftParamsStringChange,
 }: Props) {
@@ -321,7 +325,23 @@ export default function CatalogoFiltersPanel({
     [lockedKeysKey],
   );
   const searchParamsString = (paramsString ?? params.toString()).trim();
-  const currentParamsString = mode === "draft" ? draftParamsString : searchParamsString;
+  const committedParamsStringNoPage = useMemo(() => {
+    const next = new URLSearchParams(searchParamsString);
+    next.delete("page");
+    return next.toString();
+  }, [searchParamsString]);
+
+  const usesExternalDraft = mode === "draft" && typeof onDraftParamsStringChange === "function";
+  const usesInternalDraft = mode === "draft" && !usesExternalDraft;
+  const [internalDraftParamsString, setInternalDraftParamsString] = useState<string>(() => committedParamsStringNoPage);
+
+  useEffect(() => {
+    if (!usesInternalDraft) return;
+    setInternalDraftParamsString(committedParamsStringNoPage);
+  }, [committedParamsStringNoPage, usesInternalDraft]);
+
+  const effectiveDraftParamsString = usesInternalDraft ? internalDraftParamsString : draftParamsString;
+  const currentParamsString = mode === "draft" ? effectiveDraftParamsString : searchParamsString;
   const committedFiltersKey = useMemo(() => {
     const next = new URLSearchParams(searchParamsString);
     next.delete("page");
@@ -329,11 +349,11 @@ export default function CatalogoFiltersPanel({
     return normalizeParamsString(next.toString());
   }, [searchParamsString]);
   const draftFiltersKey = useMemo(() => {
-    const next = new URLSearchParams(draftParamsString);
+    const next = new URLSearchParams(effectiveDraftParamsString);
     next.delete("page");
     next.delete("sort");
     return normalizeParamsString(next.toString());
-  }, [draftParamsString]);
+  }, [effectiveDraftParamsString]);
   const allowZeroCounts = mode === "draft" && draftFiltersKey !== committedFiltersKey;
 
   const selected = useMemo(() => {
@@ -393,8 +413,10 @@ export default function CatalogoFiltersPanel({
   const [resolvedPriceStats, setResolvedPriceStats] = useState<CatalogPriceStats | null>(
     priceStats ?? null,
   );
-  const priceInsightsLastOkAtRef = useRef<number>(0);
-  const priceInsightsLastOkKeyRef = useRef<string>("");
+  const priceBoundsLastOkAtRef = useRef<number>(0);
+  const priceBoundsLastOkKeyRef = useRef<string>("");
+  const priceInsightsFullLastOkAtRef = useRef<number>(0);
+  const priceInsightsFullLastOkKeyRef = useRef<string>("");
   const priceInsightsSeededPropsRef = useRef<{
     bounds: CatalogPriceBounds;
     histogram: CatalogPriceHistogram | null | undefined;
@@ -402,6 +424,9 @@ export default function CatalogoFiltersPanel({
   } | null>(null);
   const [priceBoundsLoading, setPriceBoundsLoading] = useState(false);
   const priceBoundsAbortRef = useRef<AbortController | null>(null);
+  const priceInsightsFullAbortRef = useRef<AbortController | null>(null);
+  const priceInsightsFullIdleRef = useRef<number | null>(null);
+  const priceInsightsFullTimeoutRef = useRef<number | null>(null);
   const priceBoundsFetchKey = useMemo(() => {
     const source = mode === "draft" ? searchParamsString : currentParamsString;
     const next = new URLSearchParams(source);
@@ -413,8 +438,12 @@ export default function CatalogoFiltersPanel({
     next.delete("price_range");
     return next.toString();
   }, [currentParamsString, mode, searchParamsString]);
-  const priceInsightsSessionKey = useMemo(
-    () => `oda_catalog_price_insights_v1:${priceBoundsFetchKey || "base"}`,
+  const priceBoundsSessionKey = useMemo(
+    () => `oda_catalog_price_bounds_v1:${priceBoundsFetchKey || "base"}`,
+    [priceBoundsFetchKey],
+  );
+  const priceInsightsFullSessionKey = useMemo(
+    () => `oda_catalog_price_insights_full_v1:${priceBoundsFetchKey || "base"}`,
     [priceBoundsFetchKey],
   );
   const brandSearchResetKey = useMemo(
@@ -442,6 +471,14 @@ export default function CatalogoFiltersPanel({
       return;
     }
 
+    const canSeedBounds =
+      typeof priceBounds.min === "number" &&
+      typeof priceBounds.max === "number" &&
+      Number.isFinite(priceBounds.min) &&
+      Number.isFinite(priceBounds.max) &&
+      priceBounds.max > priceBounds.min;
+    if (!canSeedBounds) return;
+
     priceInsightsSeededPropsRef.current = {
       bounds: priceBounds,
       histogram: priceHistogram,
@@ -451,17 +488,18 @@ export default function CatalogoFiltersPanel({
     setResolvedPriceBounds(priceBounds);
     setResolvedPriceHistogram(priceHistogram ?? null);
     setResolvedPriceStats(priceStats ?? null);
-    writeSessionJson(priceInsightsSessionKey, {
+    writeSessionJson(priceBoundsSessionKey, priceBounds);
+    writeSessionJson(priceInsightsFullSessionKey, {
       bounds: priceBounds,
       histogram: priceHistogram ?? null,
       stats: priceStats ?? null,
     });
 
-    if (typeof priceBounds.min === "number" && typeof priceBounds.max === "number") {
-      priceInsightsLastOkAtRef.current = Date.now();
-      priceInsightsLastOkKeyRef.current = priceInsightsSessionKey;
-    }
-  }, [priceBounds, priceHistogram, priceInsightsSessionKey, priceStats]);
+    priceBoundsLastOkAtRef.current = Date.now();
+    priceBoundsLastOkKeyRef.current = priceBoundsSessionKey;
+    priceInsightsFullLastOkAtRef.current = Date.now();
+    priceInsightsFullLastOkKeyRef.current = priceInsightsFullSessionKey;
+  }, [priceBounds, priceBoundsSessionKey, priceHistogram, priceInsightsFullSessionKey, priceStats]);
 
   useEffect(() => {
     if (subcategories.length > 0) return;
@@ -487,7 +525,17 @@ export default function CatalogoFiltersPanel({
   }, [subcategories.length, subcategoriesSessionKey]);
 
   useEffect(() => {
-    const cached = readSessionJson<unknown>(priceInsightsSessionKey);
+    const cached = readSessionJson<unknown>(priceBoundsSessionKey);
+    if (!isValidPriceBounds(cached)) return;
+    setResolvedPriceBounds(cached);
+    if (typeof cached.min === "number" && typeof cached.max === "number") {
+      priceBoundsLastOkAtRef.current = Date.now();
+      priceBoundsLastOkKeyRef.current = priceBoundsSessionKey;
+    }
+  }, [priceBoundsSessionKey]);
+
+  useEffect(() => {
+    const cached = readSessionJson<unknown>(priceInsightsFullSessionKey);
     if (!cached || typeof cached !== "object") return;
     const obj = cached as { bounds?: unknown; histogram?: unknown; stats?: unknown };
     if (isValidPriceBounds(obj.bounds)) {
@@ -509,10 +557,10 @@ export default function CatalogoFiltersPanel({
       typeof obj.bounds.min === "number" &&
       typeof obj.bounds.max === "number"
     ) {
-      priceInsightsLastOkAtRef.current = Date.now();
-      priceInsightsLastOkKeyRef.current = priceInsightsSessionKey;
+      priceInsightsFullLastOkAtRef.current = Date.now();
+      priceInsightsFullLastOkKeyRef.current = priceInsightsFullSessionKey;
     }
-  }, [priceInsightsSessionKey]);
+  }, [priceInsightsFullSessionKey]);
 
   useEffect(() => {
     if (isPending) return;
@@ -569,8 +617,8 @@ export default function CatalogoFiltersPanel({
     if (typeof document !== "undefined" && document.hidden) return;
     const now = Date.now();
     const isFresh =
-      priceInsightsLastOkKeyRef.current === priceInsightsSessionKey &&
-      now - priceInsightsLastOkAtRef.current < 60_000;
+      priceBoundsLastOkKeyRef.current === priceBoundsSessionKey &&
+      now - priceBoundsLastOkAtRef.current < 60_000;
     if (isFresh) return;
 
     priceBoundsAbortRef.current?.abort();
@@ -579,7 +627,72 @@ export default function CatalogoFiltersPanel({
     setPriceBoundsLoading(true);
 
     const next = new URLSearchParams(priceBoundsFetchKey);
+    next.set("mode", "lite");
     const timeout = window.setTimeout(async () => {
+      const watchdog = window.setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(`/api/catalog/price-bounds?${next.toString()}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          throw new Error(`http_${res.status}`);
+        }
+        const payload = (await res.json()) as { bounds?: CatalogPriceBounds };
+        const bounds = payload?.bounds;
+        const nextBounds: CatalogPriceBounds = {
+          min: typeof bounds?.min === "number" ? bounds.min : null,
+          max: typeof bounds?.max === "number" ? bounds.max : null,
+        };
+        setResolvedPriceBounds(nextBounds);
+        writeSessionJson(priceBoundsSessionKey, nextBounds);
+        priceBoundsLastOkAtRef.current = Date.now();
+        priceBoundsLastOkKeyRef.current = priceBoundsSessionKey;
+      } catch (err) {
+        if (isAbortError(err)) return;
+        // Mantén el último estado válido (evita “romper” el filtro de precio al volver a una pestaña inactiva).
+        setResolvedPriceBounds((prev) => prev);
+      } finally {
+        window.clearTimeout(watchdog);
+        setPriceBoundsLoading(false);
+      }
+    }, 150);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+      setPriceBoundsLoading(false);
+    };
+  }, [isPending, priceBoundsFetchKey, priceBoundsSessionKey, resumeTick]);
+
+  useEffect(() => {
+    if (isPending) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    const now = Date.now();
+    const isFresh =
+      priceInsightsFullLastOkKeyRef.current === priceInsightsFullSessionKey &&
+      now - priceInsightsFullLastOkAtRef.current < 600_000;
+    if (isFresh) return;
+
+    // Cancel any pending schedule for the previous key.
+    if (priceInsightsFullIdleRef.current !== null) {
+      if (typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(priceInsightsFullIdleRef.current);
+      }
+      priceInsightsFullIdleRef.current = null;
+    }
+    if (priceInsightsFullTimeoutRef.current !== null) {
+      window.clearTimeout(priceInsightsFullTimeoutRef.current);
+      priceInsightsFullTimeoutRef.current = null;
+    }
+
+    priceInsightsFullAbortRef.current?.abort();
+    const controller = new AbortController();
+    priceInsightsFullAbortRef.current = controller;
+
+    const next = new URLSearchParams(priceBoundsFetchKey);
+    next.set("mode", "full");
+
+    const run = async () => {
       const watchdog = window.setTimeout(() => controller.abort(), 8000);
       try {
         const res = await fetch(`/api/catalog/price-bounds?${next.toString()}`, {
@@ -601,21 +714,22 @@ export default function CatalogoFiltersPanel({
         setResolvedPriceBounds(nextBounds);
 
         const histogram = payload?.histogram;
-        const nextHistogram =
-          histogram && Array.isArray(histogram.buckets) ? histogram : null;
+        const nextHistogram = histogram && Array.isArray(histogram.buckets) ? histogram : null;
         setResolvedPriceHistogram(nextHistogram);
 
         const stats = payload?.stats;
         const nextStats = stats === null ? null : isValidPriceStats(stats) ? stats : null;
         setResolvedPriceStats(nextStats);
 
-        writeSessionJson(priceInsightsSessionKey, {
+        // Keep both caches in sync: `lite` can be shown immediately, `full` can be lazy.
+        writeSessionJson(priceBoundsSessionKey, nextBounds);
+        writeSessionJson(priceInsightsFullSessionKey, {
           bounds: nextBounds,
           histogram: nextHistogram,
           stats: nextStats,
         });
-        priceInsightsLastOkAtRef.current = Date.now();
-        priceInsightsLastOkKeyRef.current = priceInsightsSessionKey;
+        priceInsightsFullLastOkAtRef.current = Date.now();
+        priceInsightsFullLastOkKeyRef.current = priceInsightsFullSessionKey;
       } catch (err) {
         if (isAbortError(err)) return;
         // Mantén el último estado válido (evita “romper” el filtro de precio al volver a una pestaña inactiva).
@@ -624,18 +738,37 @@ export default function CatalogoFiltersPanel({
         setResolvedPriceStats((prev) => prev);
       } finally {
         window.clearTimeout(watchdog);
-        setPriceBoundsLoading(false);
       }
-    }, 150);
+    };
+
+    if (typeof window.requestIdleCallback === "function") {
+      priceInsightsFullIdleRef.current = window.requestIdleCallback(() => void run(), { timeout: 1200 });
+    } else {
+      priceInsightsFullTimeoutRef.current = window.setTimeout(() => void run(), 900);
+    }
 
     return () => {
-      window.clearTimeout(timeout);
+      if (priceInsightsFullIdleRef.current !== null) {
+        if (typeof window.cancelIdleCallback === "function") {
+          window.cancelIdleCallback(priceInsightsFullIdleRef.current);
+        }
+        priceInsightsFullIdleRef.current = null;
+      }
+      if (priceInsightsFullTimeoutRef.current !== null) {
+        window.clearTimeout(priceInsightsFullTimeoutRef.current);
+        priceInsightsFullTimeoutRef.current = null;
+      }
       controller.abort();
-      setPriceBoundsLoading(false);
     };
-  }, [isPending, priceBoundsFetchKey, priceInsightsSessionKey, resumeTick]);
+  }, [
+    isPending,
+    priceBoundsFetchKey,
+    priceBoundsSessionKey,
+    priceInsightsFullSessionKey,
+    resumeTick,
+  ]);
 
-  const applyParams = (next: URLSearchParams) => {
+  const applyParams = useCallback((next: URLSearchParams) => {
     if (selected.sort && !next.get("sort")) {
       next.set("sort", selected.sort);
     }
@@ -652,16 +785,61 @@ export default function CatalogoFiltersPanel({
     startTransition(() => {
       router.replace(url, { scroll: false });
     });
-  };
+  }, [lockedKeys, pathname, router, searchParamsString, selected.sort, startTransition]);
 
   const commitParams = (next: URLSearchParams) => {
     next.delete("page");
     if (mode === "draft") {
-      onDraftParamsStringChange?.(next.toString());
+      const out = next.toString();
+      if (typeof onDraftParamsStringChange === "function") {
+        onDraftParamsStringChange(out);
+      } else {
+        setInternalDraftParamsString(out);
+      }
       return;
     }
     applyParams(next);
   };
+
+  const autoApplyTimeoutRef = useRef<number | null>(null);
+  const resolvedAutoApplyDraftMs = useMemo(() => {
+    if (!usesInternalDraft) return null;
+    if (typeof autoApplyDraftMs !== "number" || !Number.isFinite(autoApplyDraftMs)) return null;
+    return Math.max(0, Math.floor(autoApplyDraftMs));
+  }, [autoApplyDraftMs, usesInternalDraft]);
+
+  useEffect(() => {
+    if (resolvedAutoApplyDraftMs === null) return;
+    if (isPending) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    if (draftFiltersKey === committedFiltersKey) return;
+
+    if (autoApplyTimeoutRef.current !== null) {
+      window.clearTimeout(autoApplyTimeoutRef.current);
+      autoApplyTimeoutRef.current = null;
+    }
+
+    const next = new URLSearchParams(effectiveDraftParamsString);
+    next.delete("page");
+    autoApplyTimeoutRef.current = window.setTimeout(() => {
+      autoApplyTimeoutRef.current = null;
+      applyParams(next);
+    }, resolvedAutoApplyDraftMs);
+
+    return () => {
+      if (autoApplyTimeoutRef.current !== null) {
+        window.clearTimeout(autoApplyTimeoutRef.current);
+        autoApplyTimeoutRef.current = null;
+      }
+    };
+  }, [
+    applyParams,
+    committedFiltersKey,
+    draftFiltersKey,
+    effectiveDraftParamsString,
+    isPending,
+    resolvedAutoApplyDraftMs,
+  ]);
 
   const toggleCategory = (value: string) => {
     const next = new URLSearchParams(currentParamsString);

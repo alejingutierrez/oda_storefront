@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import { performance } from "node:perf_hooks";
 
 function parseIntSafe(value, fallback = 0) {
@@ -122,7 +121,7 @@ async function main() {
 
   const genders = [null, "Femenino", "Masculino", "Unisex", "Infantil"];
 
-  const endpoints = ["products-page:new", "subcategories", "price-bounds", "products-count"];
+  const endpoints = ["products-page:new", "subcategories", "price-bounds:lite", "price-bounds:full", "products-count"];
   if (includePriceSort) {
     endpoints.push("products-page:price_asc", "products-page:price_desc");
   }
@@ -150,10 +149,12 @@ async function main() {
           u.searchParams.set("category", String(category));
           if (gender) u.searchParams.set("gender", gender);
           url = u.toString();
-        } else if (endpoint === "price-bounds") {
+        } else if (endpoint.startsWith("price-bounds:")) {
+          const mode = endpoint.split(":")[1] || "full";
           const u = new URL("/api/catalog/price-bounds", baseUrl);
           u.searchParams.set("category", String(category));
           if (gender) u.searchParams.set("gender", gender);
+          u.searchParams.set("mode", mode);
           url = u.toString();
         } else if (endpoint === "products-count") {
           const u = new URL("/api/catalog/products-count", baseUrl);

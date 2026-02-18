@@ -721,6 +721,9 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Actualización (2026-02-17, fix precio outliers):
   - Se agregó guardia de precio válido en backend (`CATALOG_PRICE_MAX_VALID`, default `100000000`) para que PLP/filtro/sort ignoren variantes con precios anómalos (ej. miles de millones por errores de origen).
   - `/api/catalog/price-bounds` vuelve a responder `bounds + stats + histogram`, y la ingestión (`catalog/extractor` + normalizador) ahora sanea precios fuera de rango para evitar reintroducir outliers en corridas futuras.
+- Actualización (2026-02-18, performance):
+  - Desktop: el panel de filtros opera en modo draft con auto-aplicación por debounce (400ms) para permitir seleccionar varios filtros seguidos sin disparar múltiples navegaciones.
+  - Precio: `/api/catalog/price-bounds` soporta `mode=lite|full` (bounds rápidos vs insights completos) y la UI carga `lite` inmediatamente y `full` de forma lazy/idle para reducir lag percibido al combinar filtros.
 
 ### MC-126 PLP `/catalogo`: polish desktop + listas + SEO + header
 - Historia: Como usuario, quiero que el catálogo en desktop sea más ordenado y predecible (scroll de filtros por zonas, guardado en listas sin fricción y header consistente), y que la página tenga SEO más robusto, para explorar y compartir mejor.

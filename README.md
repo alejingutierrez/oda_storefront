@@ -54,6 +54,7 @@ npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/smoke-product-enrichm
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/unknown-llm-dry-run.ts     # dry-run LLM PDP (unknown)
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/tech-profiler-sweep.ts     # perfila y elimina marcas no procesables
 node scripts/build-style-assignments.mjs  # seed style_profiles + backfill estilos principal/secundario
+node scripts/apply-catalog-filter-indexes.mjs  # aplica índices de performance del PLP `/catalogo` en Neon (CREATE INDEX CONCURRENTLY)
 node scripts/seed-color-palette-200.mjs  # carga paleta 200 en color_combinations_colors (desde Excel)
 node scripts/build-color-relations.mjs  # recalcula matches variante↔combinacion con colores estandarizados
 node scripts/diagnose-catalog-refresh.cjs > ../../reports/catalog_refresh_diagnostics/report.json  # métricas de refresh/fallas (Neon)
@@ -153,7 +154,10 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Filtro de precio:
   - Slider (rango continuo): `price_min` y `price_max`.
   - Rangos múltiples (unión disjunta real): `price_range=min:max` (parámetro repetible). Si existe al menos un `price_range`, tiene prioridad sobre `price_min/price_max` (la UI limpia `price_range` al interactuar con el slider).
-  - Bounds/histograma: `/api/catalog/price-bounds` devuelve `{ bounds, histogram, stats }` y usa un dominio robusto (percentiles p02/p98 cuando hay suficientes datos) para que outliers no dominen el rango.
+  - Bounds/histograma: `/api/catalog/price-bounds` soporta `mode=lite|full`.
+    - `mode=lite`: devuelve `{ bounds }` (rápido).
+    - `mode=full` (default): devuelve `{ bounds, histogram, stats }` y usa un dominio robusto (percentiles p02/p98 cuando hay suficientes datos) para que outliers no dominen el rango.
+    - La UI carga `lite` inmediatamente y `full` de forma lazy/idle para reducir lag percibido al combinar filtros.
   - Guardia anti-outliers: los cálculos de `min/max` y `price_asc/price_desc` ignoran variantes con `price > CATALOG_PRICE_MAX_VALID` para evitar rangos astronómicos por datos de origen defectuosos.
 - Layout mobile:
   - Preferencia persistida en `localStorage` key `oda_catalog_mobile_layout_v1` (default = layout previo).
