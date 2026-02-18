@@ -129,7 +129,12 @@ export default function CatalogSubcategoryChips({
   // Si la subcategoría está bloqueada por el path (p.ej. /g/.../ropa_deportiva_y_performance/<sub>),
   // los chips serían engañosos porque no pueden cambiar el resultado.
   const pathParts = useMemo(() => pathname.split("/").filter(Boolean), [pathname]);
-  const isLockedSubcategoryRoute = pathParts[0] === "g" && pathParts.length >= 4;
+  const isLockedSubcategoryRoute =
+    (pathParts[0] === "femenino" ||
+      pathParts[0] === "masculino" ||
+      pathParts[0] === "unisex" ||
+      pathParts[0] === "infantil") &&
+    pathParts.length >= 3;
 
   const { category, key } = useMemo(() => {
     if (isLockedSubcategoryRoute) return { category: "", key: "" };

@@ -1,6 +1,6 @@
 import Header from "@/components/Header";
 import CatalogoClient from "@/app/catalogo/CatalogoClient";
-import { getCatalogProductsPage, type CatalogFilters } from "@/lib/catalog-data";
+import { getCatalogFacetsLite, getCatalogProductsPage, type CatalogFilters } from "@/lib/catalog-data";
 import { getMegaMenuData } from "@/lib/home-data";
 import type { CatalogPlpContext } from "@/lib/catalog-plp";
 import {
@@ -40,7 +40,11 @@ export default async function CatalogoView({
   const parsedFilters = parseCatalogFiltersFromSearchParams(params, { categoryMode: "single" });
   const filters: CatalogFilters = { ...parsedFilters, inStock: true, enrichedOnly: true };
 
-  const [menu, page] = await Promise.all([getMegaMenuData(), getCatalogProductsPage({ filters, page: 1, sort })]);
+  const [menu, page, facets] = await Promise.all([
+    getMegaMenuData(),
+    getCatalogProductsPage({ filters, page: 1, sort }),
+    getCatalogFacetsLite(filters),
+  ]);
   const searchKeyParams = new URLSearchParams(params.toString());
   searchKeyParams.delete("page");
   const searchKey = searchKeyParams.toString();
@@ -52,6 +56,7 @@ export default async function CatalogoView({
         initialItems={page.items}
         totalCount={null}
         initialSearchParams={searchKey}
+        initialFacets={facets}
         plpContext={plp ?? null}
       />
     </main>

@@ -934,10 +934,9 @@ export default function CatalogoFiltersPanel({
     (subcategoriesLoading || !subcategoriesSettled || (rawSubcategoriesEmpty && !subcategoriesEmptyReady));
   const visibleBrands = useMemo(() => {
     const query = brandSearch.trim().toLowerCase();
-    const list = query
-      ? facets.brands.filter((item) => item.label.toLowerCase().includes(query))
-      : facets.brands;
-    return sortFacetItems(list, []);
+    if (!query) return facets.brands;
+    // Preserve server ordering (cnt desc) while filtering by text.
+    return facets.brands.filter((item) => item.label.toLowerCase().includes(query));
   }, [brandSearch, facets.brands]);
 
   return (
@@ -1348,6 +1347,9 @@ export default function CatalogoFiltersPanel({
           })}
         </div>
       </details>
+
+      {/* Spacer: evita que el ultimo filtro quede pegado al borde inferior del scroll. */}
+      <div className="h-10" aria-hidden="true" />
     </aside>
   );
 }

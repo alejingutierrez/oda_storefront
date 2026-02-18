@@ -754,3 +754,63 @@ model Announcement {
   @@index([slot])
   @@map("announcements")
 }
+
+model PlpSeoPage {
+  id             String   @id @default(uuid())
+  path           String   @unique
+  genderSlug     String
+  categoryKey    String?
+  subcategoryKey String?
+  metaTitle      String
+  metaDescription String
+  subtitle       String
+  provider       String
+  model          String
+  promptVersion  String
+  schemaVersion  String
+  inputHash      String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([genderSlug])
+  @@index([genderSlug, categoryKey, subcategoryKey])
+  @@map("plp_seo_pages")
+}
+
+model PlpSeoRun {
+  id         String   @id @default(uuid())
+  status     String   @default("processing") // processing | paused | stopped | blocked | completed
+  totalItems Int      @default(0)
+  startedAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  finishedAt DateTime?
+  lastError  String?
+  metadata   Json?
+  items      PlpSeoItem[]
+
+  @@index([status, updatedAt])
+  @@map("plp_seo_runs")
+}
+
+model PlpSeoItem {
+  id           String   @id @default(uuid())
+  runId        String
+  run          PlpSeoRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  path         String
+  genderSlug   String
+  categoryKey  String?
+  subcategoryKey String?
+  status       String   @default("pending") // pending | queued | in_progress | completed | failed
+  attempts     Int      @default(0)
+  lastError    String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  updatedAt    DateTime @updatedAt
+
+  @@unique([runId, path])
+  @@index([runId, status])
+  @@index([status, updatedAt])
+  @@index([genderSlug, categoryKey, subcategoryKey])
+  @@map("plp_seo_items")
+}

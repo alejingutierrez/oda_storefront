@@ -64,7 +64,7 @@ export default async function Home() {
                 Explorar ahora
               </Link>
               <Link
-                href="/g/unisex"
+                href="/unisex"
                 className="rounded-full border border-[color:var(--oda-ink)] px-6 py-3 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
               >
                 Ver catalogo
@@ -105,7 +105,7 @@ export default async function Home() {
         <SectionHeading
           title="Categorias clave"
           subtitle="Explorar"
-          ctaHref="/g/unisex"
+          ctaHref="/unisex"
           ctaLabel="Ver catalogo"
         />
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -243,7 +243,7 @@ export default async function Home() {
               humana, solo descubrimiento continuo.
             </p>
             <Link
-              href="/g/unisex"
+              href="/unisex"
               className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
             >
               Ver todo el catalogo
@@ -274,10 +274,10 @@ export default async function Home() {
           </div>
           <div className="flex flex-col gap-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
             <Link href="/novedades">Novedades</Link>
-            <Link href="/g/femenino">Femenino</Link>
-            <Link href="/g/masculino">Masculino</Link>
-            <Link href="/g/unisex">Unisex</Link>
-            <Link href="/g/infantil">Infantil</Link>
+            <Link href="/femenino">Femenino</Link>
+            <Link href="/masculino">Masculino</Link>
+            <Link href="/unisex">Unisex</Link>
+            <Link href="/infantil">Infantil</Link>
           </div>
           <div className="flex flex-col gap-2">
             <span className="text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">

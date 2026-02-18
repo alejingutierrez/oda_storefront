@@ -89,5 +89,39 @@ const enrichmentWorker = new Worker(
 enrichmentWorker.on('completed', (job) => console.log('[product-enrichment-worker] completed', job.id));
 enrichmentWorker.on('failed', (job, err) => console.error('[product-enrichment-worker] failed', job?.id, err));
 
+const plpSeoQueueName = process.env.PLP_SEO_QUEUE_NAME || 'plp-seo';
+const plpSeoConcurrency = Number(process.env.PLP_SEO_WORKER_CONCURRENCY || 5);
+const plpSeoWorker = new Worker(
+  plpSeoQueueName,
+  async (job) => {
+    const itemId = job.data?.itemId;
+    if (!itemId) return;
+    const endpoint =
+      process.env.PLP_SEO_WORKER_API_URL ||
+      'http://web:3000/api/admin/plp-seo/process-item';
+    const token = process.env.ADMIN_TOKEN || process.env.NEXTAUTH_SECRET || '';
+    if (!token) throw new Error('Missing ADMIN_TOKEN for PLP SEO worker');
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ itemId }),
+    });
+    if (!res.ok) {
+      throw new Error(`plp-seo worker failed: ${res.status}`);
+    }
+    const payload = await res.json().catch(() => ({}));
+    if (payload.status === 'failed') {
+      throw new Error(payload.error || 'plp-seo worker error');
+    }
+  },
+  { connection, concurrency: plpSeoConcurrency },
+);
+
+plpSeoWorker.on('completed', (job) => console.log('[plp-seo-worker] completed', job.id));
+plpSeoWorker.on('failed', (job, err) => console.error('[plp-seo-worker] failed', job?.id, err));
+
 // seed a demo job
 queue.add('demo', { hello: 'world' }).catch((err) => console.error('queue add error', err));

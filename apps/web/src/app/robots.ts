@@ -6,11 +6,10 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
       userAgent: "*",
-      allow: ["/", "/catalogo", "/g/", "/novedades", "/estilo/", "/marca/"],
+      allow: ["/", "/catalogo", "/femenino/", "/masculino/", "/unisex/", "/infantil/", "/novedades", "/estilo/", "/marca/"],
       disallow: ["/admin/", "/api/", "/auth/", "/sign-in", "/perfil"],
     },
     sitemap: [`${siteUrl}/sitemap.xml`],
     host: siteUrl,
   };
 }
-

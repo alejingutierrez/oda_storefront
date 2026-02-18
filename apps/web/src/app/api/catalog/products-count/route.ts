@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCatalogProductsCount } from "@/lib/catalog-data";
+import { getCatalogCounts } from "@/lib/catalog-data";
 import { parseCatalogFiltersFromSearchParams } from "@/lib/catalog-filters";
 
 export const runtime = "nodejs";
@@ -10,10 +10,10 @@ export async function GET(req: Request) {
   const parsedFilters = parseCatalogFiltersFromSearchParams(url.searchParams, { categoryMode: "single" });
   const filters = { ...parsedFilters, inStock: true, enrichedOnly: true };
 
-  const totalCount = await getCatalogProductsCount({ filters });
+  const counts = await getCatalogCounts({ filters });
 
   return NextResponse.json(
-    { totalCount },
+    { totalCount: counts.totalCount, brandCount: counts.brandCount },
     {
       headers: {
         // Cache corto en CDN: el catálogo es público y ya revalida en server (`unstable_cache`).
@@ -22,4 +22,3 @@ export async function GET(req: Request) {
     },
   );
 }
-

@@ -43,7 +43,7 @@ function countActiveFilters(params: URLSearchParams) {
 
 export default function CatalogMobileDock({
   totalCount,
-  activeBrandCount,
+  brandCount,
   facets,
   subcategories,
   priceBounds,
@@ -55,7 +55,7 @@ export default function CatalogMobileDock({
   hideSections,
 }: {
   totalCount: number | null;
-  activeBrandCount?: number | null;
+  brandCount?: number | null;
   facets: Facets | null;
   subcategories: FacetItem[];
   priceBounds: CatalogPriceBounds;
@@ -339,8 +339,8 @@ export default function CatalogMobileDock({
               <span className="inline-flex h-3 w-20 rounded-full bg-[color:var(--oda-stone)]" />
             )}
           </span>
-          {typeof activeBrandCount === "number" ? (
-            <span>{activeBrandCount.toLocaleString("es-CO")} marcas</span>
+          {typeof brandCount === "number" ? (
+            <span>{brandCount.toLocaleString("es-CO")} marcas</span>
           ) : (
             <span className="inline-flex h-3 w-16 rounded-full bg-[color:var(--oda-stone)]" />
           )}

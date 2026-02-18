@@ -113,6 +113,11 @@ export type CatalogProductPageResult = {
   pageSize: number;
 };
 
+export type CatalogCounts = {
+  totalCount: number;
+  brandCount: number;
+};
+
 export type CatalogPriceBounds = {
   min: number | null;
   max: number | null;
@@ -1474,6 +1479,19 @@ export async function getCatalogProductsCount(params: { filters: CatalogFilters 
   return cached();
 }
 
+export async function getCatalogCounts(params: { filters: CatalogFilters }): Promise<CatalogCounts> {
+  const cacheKey = JSON.stringify({
+    filters: buildFacetsCacheKey(params.filters),
+  });
+  const cached = unstable_cache(
+    () => computeCatalogCounts(params.filters),
+    ["catalog-counts", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
+    buildCatalogCacheOptions(CATALOG_PRODUCTS_REVALIDATE_SECONDS),
+  );
+
+  return cached();
+}
+
 export async function getCatalogProducts(params: {
   filters: CatalogFilters;
   page: number;
@@ -1519,6 +1537,40 @@ async function computeCatalogProductsCount(filters: CatalogFilters): Promise<num
   `);
 
   return Number(rows[0]?.total ?? 0);
+}
+
+async function computeCatalogCounts(filters: CatalogFilters): Promise<CatalogCounts> {
+  const productWhere = buildProductWhere(filters);
+  const variantConditions = buildVariantConditions(filters);
+  const variantWhere =
+    variantConditions.length > 0
+      ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
+      : Prisma.empty;
+  const variantExists =
+    variantConditions.length > 0
+      ? Prisma.sql`
+          and exists (
+            select 1 from variants v
+            where v."productId" = p.id
+              ${variantWhere}
+          )
+        `
+      : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<Array<{ total: bigint; brand_count: bigint }>>(Prisma.sql`
+    select
+      count(*) as total,
+      count(distinct p."brandId") as brand_count
+    from products p
+    join brands b on b.id = p."brandId"
+    ${productWhere}
+    ${variantExists}
+  `);
+
+  return {
+    totalCount: Number(rows[0]?.total ?? 0),
+    brandCount: Number(rows[0]?.brand_count ?? 0),
+  };
 }
 
 async function computeCatalogProductsPage(params: {

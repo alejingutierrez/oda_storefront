@@ -9,14 +9,14 @@ const STYLE_LIMIT = 500;
 const BRAND_LIMIT = 600;
 
 function buildGenderUrl(gender: (typeof GENDERS)[number]) {
-  return `/g/${GENDER_ROUTE[gender]}`;
+  return `/${GENDER_ROUTE[gender]}`;
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteUrl = getSiteUrl();
   const now = new Date();
 
-  const basePages = ["/", "/catalogo", "/novedades", "/g/femenino", "/g/masculino", "/g/unisex", "/g/infantil"];
+  const basePages = ["/", "/catalogo", "/novedades", "/femenino", "/masculino", "/unisex", "/infantil"];
 
   const [menu, styles, brands] = await Promise.all([
     getMegaMenuData(),

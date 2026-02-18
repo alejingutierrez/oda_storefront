@@ -179,6 +179,43 @@ function FiltersSkeleton() {
   );
 }
 
+function Columns1Icon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="6" y="5" width="12" height="14" rx="2" />
+    </svg>
+  );
+}
+
+function Columns2Icon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="5" y="5" width="7" height="14" rx="2" />
+      <rect x="12" y="5" width="7" height="14" rx="2" />
+    </svg>
+  );
+}
+
 export default function CatalogoClient({
   initialItems,
   totalCount,
@@ -471,13 +508,24 @@ export default function CatalogoClient({
   const totalCountLastOkKeyRef = useRef<string>("");
   const totalCountAbortRef = useRef<AbortController | null>(null);
 
+  const brandCountSessionKey = useMemo(
+    () => `oda_catalog_brands_count_v1:${totalCountFetchKey || "base"}`,
+    [totalCountFetchKey],
+  );
+  const [resolvedBrandCount, setResolvedBrandCount] = useState<number | null>(() => {
+    const cached = readSessionJson<unknown>(brandCountSessionKey);
+    return typeof cached === "number" && Number.isFinite(cached) && cached >= 0 ? cached : null;
+  });
+  const brandCountLastOkAtRef = useRef<number>(0);
+  const brandCountLastOkKeyRef = useRef<string>("");
+
   useEffect(() => {
     if (typeof totalCount === "number" && Number.isFinite(totalCount) && totalCount >= 0) {
       setResolvedTotalCount(totalCount);
       writeSessionJson(totalCountSessionKey, totalCount);
       totalCountLastOkAtRef.current = Date.now();
       totalCountLastOkKeyRef.current = totalCountSessionKey;
-      return;
+      // `totalCount` no incluye brandCount; se resuelve por cache/fetch.
     }
 
     const cached = readSessionJson<unknown>(totalCountSessionKey);
@@ -490,7 +538,22 @@ export default function CatalogoClient({
     }
   }, [totalCount, totalCountSessionKey]);
 
-  const facetsSessionKey = "oda_catalog_facets_static_v1";
+  useEffect(() => {
+    const cached = readSessionJson<unknown>(brandCountSessionKey);
+    if (typeof cached === "number" && Number.isFinite(cached) && cached >= 0) {
+      setResolvedBrandCount(cached);
+      brandCountLastOkAtRef.current = Date.now();
+      brandCountLastOkKeyRef.current = brandCountSessionKey;
+    } else {
+      setResolvedBrandCount(null);
+    }
+  }, [brandCountSessionKey]);
+
+  const facetsFetchKey = totalCountFetchKey;
+  const facetsSessionKey = useMemo(
+    () => `oda_catalog_facets_lite_v1:${facetsFetchKey || "base"}`,
+    [facetsFetchKey],
+  );
   const [facets, setFacets] = useState<FacetsLite | null>(() => {
     if (isValidFacetsLite(initialFacets)) return initialFacets;
     const cached = readSessionJson<unknown>(facetsSessionKey);
@@ -569,9 +632,8 @@ export default function CatalogoClient({
     const timeout = window.setTimeout(async () => {
       const watchdog = window.setTimeout(() => controller.abort(), 8000);
       try {
-        const res = await fetch("/api/catalog/facets-static", {
-          signal: controller.signal,
-        });
+        const next = new URLSearchParams(facetsFetchKey);
+        const res = await fetch(`/api/catalog/facets-lite?${next.toString()}`, { signal: controller.signal });
         if (!res.ok) {
           throw new Error(`http_${res.status}`);
         }
@@ -605,16 +667,26 @@ export default function CatalogoClient({
       controller.abort();
       setFacetsLoading(false);
     };
-  }, [facets, facetsSessionKey, navigationPending, resumeTick]);
+  }, [facets, facetsFetchKey, facetsSessionKey, navigationPending, resumeTick]);
 
   useEffect(() => {
     if (navigationPending) return;
     if (typeof document !== "undefined" && document.hidden) return;
     const now = Date.now();
-    const isFresh =
+    const totalFresh =
       totalCountLastOkKeyRef.current === totalCountSessionKey &&
       now - totalCountLastOkAtRef.current < 60_000;
-    if (isFresh && typeof resolvedTotalCount === "number") return;
+    const brandFresh =
+      brandCountLastOkKeyRef.current === brandCountSessionKey &&
+      now - brandCountLastOkAtRef.current < 60_000;
+    if (
+      totalFresh &&
+      brandFresh &&
+      typeof resolvedTotalCount === "number" &&
+      typeof resolvedBrandCount === "number"
+    ) {
+      return;
+    }
 
     totalCountAbortRef.current?.abort();
     const controller = new AbortController();
@@ -630,10 +702,14 @@ export default function CatalogoClient({
         if (!res.ok) {
           throw new Error(`http_${res.status}`);
         }
-        const payload = (await res.json()) as { totalCount?: number };
+        const payload = (await res.json()) as { totalCount?: number; brandCount?: number };
         const nextTotal =
           typeof payload.totalCount === "number" && Number.isFinite(payload.totalCount) && payload.totalCount >= 0
             ? payload.totalCount
+            : null;
+        const nextBrand =
+          typeof payload.brandCount === "number" && Number.isFinite(payload.brandCount) && payload.brandCount >= 0
+            ? payload.brandCount
             : null;
         if (nextTotal !== null) {
           setResolvedTotalCount(nextTotal);
@@ -641,10 +717,17 @@ export default function CatalogoClient({
           totalCountLastOkAtRef.current = Date.now();
           totalCountLastOkKeyRef.current = totalCountSessionKey;
         }
+        if (nextBrand !== null) {
+          setResolvedBrandCount(nextBrand);
+          writeSessionJson(brandCountSessionKey, nextBrand);
+          brandCountLastOkAtRef.current = Date.now();
+          brandCountLastOkKeyRef.current = brandCountSessionKey;
+        }
       } catch (err) {
         if (isAbortError(err)) return;
         // Mantén el último estado válido si existe.
         setResolvedTotalCount((prev) => prev);
+        setResolvedBrandCount((prev) => prev);
       } finally {
         window.clearTimeout(watchdog);
       }
@@ -654,7 +737,15 @@ export default function CatalogoClient({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [navigationPending, resumeTick, resolvedTotalCount, totalCountFetchKey, totalCountSessionKey]);
+  }, [
+    brandCountSessionKey,
+    navigationPending,
+    resumeTick,
+    resolvedBrandCount,
+    resolvedTotalCount,
+    totalCountFetchKey,
+    totalCountSessionKey,
+  ]);
 
   const closeListsDrawer = useCallback(() => {
     setListsOpen(false);
@@ -819,11 +910,6 @@ export default function CatalogoClient({
     savingListId,
   ]);
 
-  const activeBrandCount = useMemo(() => {
-    if (!facets) return null;
-    return facets.brands.filter((brand) => brand.count > 0).length;
-  }, [facets]);
-
   const priceBounds: CatalogPriceBounds = initialPriceInsights?.bounds ?? { min: null, max: null };
   const priceHistogram = initialPriceInsights?.histogram ?? null;
   const priceStats = initialPriceInsights?.stats ?? null;
@@ -886,7 +972,8 @@ export default function CatalogoClient({
                     aria-pressed={mobileColumns === 1}
                     title="1 por fila"
                   >
-                    1
+                    <span className="sr-only">1 por fila</span>
+                    <Columns1Icon />
                   </button>
                   <button
                     type="button"
@@ -901,7 +988,8 @@ export default function CatalogoClient({
                     aria-pressed={mobileColumns === 2}
                     title="2 por fila"
                   >
-                    2
+                    <span className="sr-only">2 por fila</span>
+                    <Columns2Icon />
                   </button>
                 </div>
               </div>
@@ -922,7 +1010,7 @@ export default function CatalogoClient({
               <div
                 id="catalog-filters-scroll"
                 aria-label="Filtros"
-                className="hidden lg:block lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-auto lg:overscroll-contain lg:pr-1 lg:pb-8"
+                className="hidden lg:block lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-auto lg:overscroll-contain lg:pr-1 lg:pb-16"
               >
                 <div className="sticky top-0 z-20 bg-[color:var(--oda-cream)] pb-4">
                   <div className="flex min-h-[68px] items-center justify-between gap-3 rounded-2xl border border-[color:var(--oda-border)] bg-white px-5 py-3">
@@ -962,7 +1050,7 @@ export default function CatalogoClient({
               <div className="hidden lg:block">
                 <CatalogToolbar
                   totalCount={resolvedTotalCount}
-                  activeBrandCount={activeBrandCount}
+                  brandCount={resolvedBrandCount}
                   searchKey={unlockedSearchKey}
                   paramsString={effectiveParamsString}
                   lockedKeys={lockedKeysList}
@@ -994,7 +1082,7 @@ export default function CatalogoClient({
 
       <CatalogMobileDock
         totalCount={resolvedTotalCount}
-        activeBrandCount={activeBrandCount}
+        brandCount={resolvedBrandCount}
         facets={facets}
         subcategories={initialSubcats}
         priceBounds={priceBounds}

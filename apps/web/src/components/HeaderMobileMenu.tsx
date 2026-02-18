@@ -154,7 +154,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                               </div>
                             ))}
                             <Link prefetch={false}
-                              href={`/g/${GENDER_ROUTE[gender]}`}
+                              href={`/${GENDER_ROUTE[gender]}`}
                               className="inline-flex rounded-full px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)] transition hover:bg-white/70 hover:text-[color:var(--oda-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                               onClick={() => setOpen(false)}
                             >

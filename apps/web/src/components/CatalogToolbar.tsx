@@ -96,7 +96,7 @@ function persistSavedSearches(next: SavedSearch[]) {
 
 export default function CatalogToolbar({
   totalCount,
-  activeBrandCount,
+  brandCount,
   searchKey,
   paramsString,
   lockedKeys: lockedKeysList = [],
@@ -104,7 +104,7 @@ export default function CatalogToolbar({
   onToggleFiltersCollapsed,
 }: {
   totalCount: number | null;
-  activeBrandCount?: number | null;
+  brandCount?: number | null;
   searchKey: string;
   paramsString: string;
   lockedKeys?: string[];
@@ -263,9 +263,9 @@ export default function CatalogToolbar({
               )}{" "}
               productos
             </p>
-            {typeof activeBrandCount === "number" ? (
+            {typeof brandCount === "number" ? (
               <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                {activeBrandCount.toLocaleString("es-CO")} marcas
+                {brandCount.toLocaleString("es-CO")} marcas
               </p>
             ) : (
               <div className="h-3 w-20 rounded-full bg-[color:var(--oda-stone)]" aria-label="Cargando marcas" />

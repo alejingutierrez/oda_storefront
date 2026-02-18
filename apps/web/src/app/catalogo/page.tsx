@@ -6,6 +6,7 @@ import {
   resolveSearchParams,
   type SearchParams,
 } from "@/lib/catalog-filters";
+import { GENDER_ROUTE, normalizeGender } from "@/lib/navigation";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -85,6 +86,40 @@ export default async function CatalogoPage({ searchParams }: { searchParams: Sea
   if (canon.changed) {
     const query = canon.params.toString();
     redirect(query ? `/catalogo?${query}` : "/catalogo");
+  }
+
+  // Hygiene: avoid duplicate indexable PLPs living under `/catalogo?...`.
+  // Only redirect when the query is strictly gender/category/subcategory.
+  const plpParams = new URLSearchParams(canon.params.toString());
+  plpParams.delete("page");
+  if (plpParams.get("sort") === "new") plpParams.delete("sort");
+  const keys = Array.from(new Set(Array.from(plpParams.keys())));
+  const allowed = new Set(["gender", "category", "subcategory"]);
+  const onlyPlpKeys = keys.every((key) => allowed.has(key));
+  if (onlyPlpKeys) {
+    const genderRaw = plpParams
+      .getAll("gender")
+      .map((value) => value.trim())
+      .find((value) => value.length > 0);
+    const categories = plpParams
+      .getAll("category")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    const subcategories = plpParams
+      .getAll("subcategory")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+
+    if (genderRaw && categories.length <= 1 && subcategories.length <= 1) {
+      const genderKey = normalizeGender(genderRaw);
+      const genderSlug = GENDER_ROUTE[genderKey];
+      const category = categories[0] ?? null;
+      const subcategory = subcategories[0] ?? null;
+      if (!subcategory || category) {
+        const basePath = `/${genderSlug}${category ? `/${category}` : ""}${subcategory ? `/${subcategory}` : ""}`;
+        redirect(basePath);
+      }
+    }
   }
 
   return CatalogoView({ searchParams: canon.params });

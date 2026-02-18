@@ -185,7 +185,7 @@ export function buildCategoryHref(
 ): string {
   const genderRoute = GENDER_ROUTE[gender];
   if (subcategory) {
-    return `/g/${genderRoute}/${category}/${subcategory}`;
+    return `/${genderRoute}/${category}/${subcategory}`;
   }
-  return `/g/${genderRoute}/${category}`;
+  return `/${genderRoute}/${category}`;
 }

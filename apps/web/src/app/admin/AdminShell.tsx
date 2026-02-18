@@ -8,6 +8,7 @@ const navItems = [
   { key: "taxonomy", label: "Taxonomía", href: "/admin/taxonomy" },
   { key: "taxonomy-remap-review", label: "Remap review", href: "/admin/taxonomy-remap-review" },
   { key: "product-enrichment", label: "Enriquecimiento", href: "/admin/product-enrichment" },
+  { key: "plp-seo", label: "SEO PLP", href: "/admin/plp-seo" },
   { key: "catalog-refresh", label: "Refresh semanal", href: "/admin/catalog-refresh" },
   { key: "color-combinations", label: "Combinaciones", href: "/admin/color-combinations" },
 ];

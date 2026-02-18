@@ -35,7 +35,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
           return (
             <li key={gender} className="group">
               <Link prefetch={false}
-                href={`/g/${route}`}
+                href={`/${route}`}
                 className={[
                   "relative block py-6 text-xs font-medium transition-colors hover:text-[color:var(--oda-ink-soft)]",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
@@ -179,7 +179,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                 </div>
                 <div className="mt-6 border-t border-[color:var(--oda-border)] pt-4 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                   <Link prefetch={false}
-                    href={`/g/${route}`}
+                    href={`/${route}`}
                     className="inline-flex items-center gap-2 hover:text-[color:var(--oda-ink)]"
                   >
                     Ver todo {gender}
