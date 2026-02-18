@@ -7,14 +7,14 @@ set -euo pipefail
 # - In some environments DNS/network can be flaky from Node scripts, while curl remains reliable.
 #
 # Usage:
-#   BASE_URL=https://oda-storefront-6ee5.vercel.app ./apps/web/scripts/benchmark-catalog-filters.sh
+#   BASE_URL=https://oda-moda.vercel.app ./apps/web/scripts/benchmark-catalog-filters.sh
 #   ./apps/web/scripts/benchmark-catalog-filters.sh --limit 20
 #   ./apps/web/scripts/benchmark-catalog-filters.sh --no-price-sort
 #
 # Output:
 # - Writes JSONL rows to stdout (one request per line) and prints a summary at the end.
 
-BASE_URL="${BASE_URL:-https://oda-storefront-6ee5.vercel.app}"
+BASE_URL="${BASE_URL:-https://oda-moda.vercel.app}"
 BASE_URL="${BASE_URL%/}"
 
 LIMIT=0

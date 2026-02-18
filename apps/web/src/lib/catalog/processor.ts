@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCatalogAdapter } from "@/lib/catalog/registry";
 import { processCatalogRef } from "@/lib/catalog/extractor";
-import { getBrandCurrencyOverride } from "@/lib/pricing";
+import { getBrandCurrencyOverride, getPricingConfig, getUsdCopTrm } from "@/lib/pricing";
 import {
   CATALOG_MAX_ATTEMPTS,
   getCatalogConsecutiveErrorLimit,
@@ -193,6 +193,8 @@ export const processCatalogItemById = async (
     process.env.CATALOG_PDP_LLM_ENABLED !== "false" &&
     (adapter.platform === "custom" || (brand.ecommercePlatform ?? "").toLowerCase() === "unknown");
   const brandCurrencyOverride = getBrandCurrencyOverride(readBrandMetadata(brand));
+  const pricingConfig = await getPricingConfig();
+  const trmUsdCop = getUsdCopTrm(pricingConfig);
 
   let lastStage: string | null = null;
   try {
@@ -203,6 +205,7 @@ export const processCatalogItemById = async (
       ref: { url: item.url },
       canUseLlmPdp,
       brandCurrencyOverride,
+      trmUsdCop,
       onStage: (stage) => {
         lastStage = stage;
       },

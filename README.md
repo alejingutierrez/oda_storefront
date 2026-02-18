@@ -61,6 +61,7 @@ npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/unknown-llm-dry-run.t
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/tech-profiler-sweep.ts     # perfila y elimina marcas no procesables
 node scripts/build-style-assignments.mjs  # seed style_profiles + backfill estilos principal/secundario
 node scripts/apply-catalog-filter-indexes.mjs  # aplica índices de performance del PLP `/catalogo` en Neon (CREATE INDEX CONCURRENTLY)
+node scripts/backfill-product-price-rollups.mjs  # recalcula hasInStock/minPriceCop/maxPriceCop en `products`
 node scripts/seed-color-palette-200.mjs  # carga paleta 200 en color_combinations_colors (desde Excel)
 node scripts/build-color-relations.mjs  # recalcula matches variante↔combinacion con colores estandarizados
 	node scripts/diagnose-catalog-refresh.cjs > ../../reports/catalog_refresh_diagnostics/report.json  # métricas de refresh/fallas (Neon)
@@ -186,11 +187,13 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 
 ### Performance (filtros `/catalogo`)
 - En Neon (prod/stg), los filtros del catálogo dependen de índices para evitar `seq scan` en queries de `products/variants` (subcategorías, bounds de precio, listados).
+- El sort por precio (`price_asc`/`price_desc`) y `price-bounds` en modo lite usan rollups persistidos en `products` (`hasInStock`, `minPriceCop`, `maxPriceCop`, `priceRollupUpdatedAt`) para evitar agregaciones pesadas por request.
 - SQL (re-aplicable): `apps/web/scripts/catalog-filter-indexes.sql`
 - Script: `apps/web/scripts/apply-catalog-filter-indexes.sh` (usa `NEON_DATABASE_URL` desde `.env` y `CREATE INDEX CONCURRENTLY`).
+- Backfill de rollups: `apps/web/scripts/backfill-product-price-rollups.mjs` (usar después de migrar/agregar columnas).
 - Benchmark E2E (latencia por endpoint + resumen p50/p95 + casos >2s):
   ```bash
-  BASE_URL=https://oda-storefront-6ee5.vercel.app node apps/web/scripts/benchmark-catalog-filters.mjs
+  BASE_URL=https://oda-moda.vercel.app node apps/web/scripts/benchmark-catalog-filters.mjs
   node apps/web/scripts/benchmark-catalog-filters.mjs --limit 30
   node apps/web/scripts/benchmark-catalog-filters.mjs --no-price-sort
   ```

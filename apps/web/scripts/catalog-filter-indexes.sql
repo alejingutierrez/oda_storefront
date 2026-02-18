@@ -53,3 +53,40 @@ create index concurrently if not exists idx_variants_instock_price
   on variants (price)
   where price > 0
     and (stock > 0 or "stockStatus" in ('in_stock','preorder'));
+
+-- Price-sort rollups on products (avoid `group by variants` on every request).
+create index concurrently if not exists idx_products_catalog_minprice_createdat
+  on products ("minPriceCop" asc, "createdAt" desc)
+  where "hasInStock" = true
+    and "imageCoverUrl" is not null
+    and ("metadata" -> 'enrichment') is not null;
+
+create index concurrently if not exists idx_products_catalog_maxprice_createdat
+  on products ("maxPriceCop" desc, "createdAt" desc)
+  where "hasInStock" = true
+    and "imageCoverUrl" is not null
+    and ("metadata" -> 'enrichment') is not null;
+
+create index concurrently if not exists idx_products_catalog_category_minprice_createdat
+  on products (category, "minPriceCop" asc, "createdAt" desc)
+  where "hasInStock" = true
+    and "imageCoverUrl" is not null
+    and ("metadata" -> 'enrichment') is not null;
+
+create index concurrently if not exists idx_products_catalog_category_maxprice_createdat
+  on products (category, "maxPriceCop" desc, "createdAt" desc)
+  where "hasInStock" = true
+    and "imageCoverUrl" is not null
+    and ("metadata" -> 'enrichment') is not null;
+
+create index concurrently if not exists idx_products_catalog_category_subcategory_minprice_createdat
+  on products (category, subcategory, "minPriceCop" asc, "createdAt" desc)
+  where "hasInStock" = true
+    and "imageCoverUrl" is not null
+    and ("metadata" -> 'enrichment') is not null;
+
+create index concurrently if not exists idx_products_catalog_category_subcategory_maxprice_createdat
+  on products (category, subcategory, "maxPriceCop" desc, "createdAt" desc)
+  where "hasInStock" = true
+    and "imageCoverUrl" is not null
+    and ("metadata" -> 'enrichment') is not null;

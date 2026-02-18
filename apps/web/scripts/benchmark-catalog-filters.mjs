@@ -83,7 +83,7 @@ async function main() {
   const argv = process.argv;
   const args = argv.slice(argv[1]?.endsWith(".mjs") ? 2 : 1);
 
-  let baseUrl = process.env.BASE_URL || "https://oda-storefront-6ee5.vercel.app";
+  let baseUrl = process.env.BASE_URL || "https://oda-moda.vercel.app";
   baseUrl = baseUrl.replace(/\/+$/, "");
 
   let limit = 0;

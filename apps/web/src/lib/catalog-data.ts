@@ -30,7 +30,7 @@ const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 const CATALOG_PRODUCTS_REVALIDATE_SECONDS = 60;
 export const CATALOG_PAGE_SIZE = 24;
 // Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
-const CATALOG_CACHE_VERSION = 7;
+const CATALOG_CACHE_VERSION = 8;
 
 const buildCatalogCacheOptions = (revalidate: number) => ({
   revalidate,
@@ -215,6 +215,17 @@ function omitFilters(filters: CatalogFilters, keys: (keyof CatalogFilters)[]): C
     next[key] = undefined;
   }
   return next;
+}
+
+function hasVariantLevelFilters(filters: CatalogFilters) {
+  return (
+    (filters.colors?.length ?? 0) > 0 ||
+    (filters.sizes?.length ?? 0) > 0 ||
+    (filters.fits?.length ?? 0) > 0 ||
+    (filters.priceRanges?.length ?? 0) > 0 ||
+    filters.priceMin !== undefined ||
+    filters.priceMax !== undefined
+  );
 }
 
 function buildProductWhere(filters: CatalogFilters) {
@@ -421,22 +432,39 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
   const cached = unstable_cache(
     async () => {
       const { pricing, roundingUnitCop } = await getPricingContext();
-      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
-      const { productWhere, variantWhere } = buildVariantWhere(boundsFilters, pricing);
-      const rows = await prisma.$queryRaw<Array<{ min_price: string | null; max_price: string | null }>>(
-        Prisma.sql`
-          select
-            min(${priceCopExpr}) as min_price,
-            max(${priceCopExpr}) as max_price
-          from products p
-          join brands b on b.id = p."brandId"
-          join variants v on v."productId" = p.id
-          ${productWhere}
-          ${variantWhere}
-          and ${priceCopExpr} > 0
-          and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
-        `,
-      );
+      const rows = await (async () => {
+        if (!hasVariantLevelFilters(boundsFilters)) {
+          const productWhere = buildProductWhere(boundsFilters);
+          return prisma.$queryRaw<Array<{ min_price: string | null; max_price: string | null }>>(
+            Prisma.sql`
+              select
+                min(case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end) as min_price,
+                max(case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end) as max_price
+              from products p
+              join brands b on b.id = p."brandId"
+              ${productWhere}
+              and p."hasInStock" = true
+            `,
+          );
+        }
+
+        const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+        const { productWhere, variantWhere } = buildVariantWhere(boundsFilters, pricing);
+        return prisma.$queryRaw<Array<{ min_price: string | null; max_price: string | null }>>(
+          Prisma.sql`
+            select
+              min(${priceCopExpr}) as min_price,
+              max(${priceCopExpr}) as max_price
+            from products p
+            join brands b on b.id = p."brandId"
+            join variants v on v."productId" = p.id
+            ${productWhere}
+            ${variantWhere}
+            and ${priceCopExpr} > 0
+            and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
+          `,
+        );
+      })();
       const row = rows[0];
       const min = row?.min_price ? Number(row.min_price) : null;
       const max = row?.max_price ? Number(row.max_price) : null;
@@ -1667,6 +1695,7 @@ async function computeCatalogProductsPage(params: {
       : Prisma.empty;
 
   const sortKey = sort || "new";
+  const hasVariantFilters = hasVariantLevelFilters(filters);
 
   const rows: Array<{
     id: string;
@@ -1678,6 +1707,44 @@ async function computeCatalogProductsPage(params: {
     maxPrice: string | null;
     currency: string | null;
   }> = await (async () => {
+    if ((sortKey === "price_asc" || sortKey === "price_desc") && !hasVariantFilters) {
+      const priceOrder =
+        sortKey === "price_asc"
+          ? Prisma.sql`p."minPriceCop" asc nulls last`
+          : Prisma.sql`p."maxPriceCop" desc nulls last`;
+      return prisma.$queryRaw<
+        Array<{
+          id: string;
+          name: string;
+          imageCoverUrl: string | null;
+          brandName: string;
+          sourceUrl: string | null;
+          minPrice: string | null;
+          maxPrice: string | null;
+          currency: string | null;
+        }>
+      >(
+        Prisma.sql`
+          select
+            p.id,
+            p.name,
+            p."imageCoverUrl",
+            b.name as "brandName",
+            p."sourceUrl",
+            case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
+            case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
+            'COP' as currency
+          from products p
+          join brands b on b.id = p."brandId"
+          ${productWhere}
+          and p."hasInStock" = true
+          order by ${priceOrder}, p."createdAt" desc
+          limit ${CATALOG_PAGE_SIZE}
+          offset ${offset}
+        `,
+      );
+    }
+
     if (sortKey === "price_asc" || sortKey === "price_desc") {
       const orderBy = buildOrderBy(sortKey, filters, pricing);
       return prisma.$queryRaw<
@@ -1835,6 +1902,7 @@ async function computeCatalogProducts(params: {
   `);
 
   const sortKey = sort || "new";
+  const hasVariantFilters = hasVariantLevelFilters(filters);
   const itemsPromise: Promise<
     Array<{
       id: string;
@@ -1847,6 +1915,44 @@ async function computeCatalogProducts(params: {
       currency: string | null;
     }>
   > = (() => {
+    if ((sortKey === "price_asc" || sortKey === "price_desc") && !hasVariantFilters) {
+      const priceOrder =
+        sortKey === "price_asc"
+          ? Prisma.sql`p."minPriceCop" asc nulls last`
+          : Prisma.sql`p."maxPriceCop" desc nulls last`;
+      return prisma.$queryRaw<
+        Array<{
+          id: string;
+          name: string;
+          imageCoverUrl: string | null;
+          brandName: string;
+          sourceUrl: string | null;
+          minPrice: string | null;
+          maxPrice: string | null;
+          currency: string | null;
+        }>
+      >(
+        Prisma.sql`
+          select
+            p.id,
+            p.name,
+            p."imageCoverUrl",
+            b.name as "brandName",
+            p."sourceUrl",
+            case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
+            case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
+            'COP' as currency
+          from products p
+          join brands b on b.id = p."brandId"
+          ${productWhere}
+          and p."hasInStock" = true
+          order by ${priceOrder}, p."createdAt" desc
+          limit ${CATALOG_PAGE_SIZE}
+          offset ${offset}
+        `,
+      );
+    }
+
     if (sortKey === "price_asc" || sortKey === "price_desc") {
       const orderBy = buildOrderBy(sortKey, filters, pricing);
       return prisma.$queryRaw<

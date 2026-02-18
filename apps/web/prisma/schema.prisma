@@ -168,6 +168,10 @@ model Product {
   seoDescription    String?
   seoTags           String[]  @default([])
   currency          String?   // COP, USD, etc.
+  hasInStock        Boolean   @default(false)
+  minPriceCop       Decimal?  @db.Decimal(12, 2)
+  maxPriceCop       Decimal?  @db.Decimal(12, 2)
+  priceRollupUpdatedAt DateTime?
   sourceUrl         String?
   imageCoverUrl     String?
   metadata          Json?

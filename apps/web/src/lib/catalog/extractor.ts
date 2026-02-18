@@ -25,7 +25,7 @@ import {
   safeOrigin,
 } from "@/lib/catalog/utils";
 import { sanitizeCatalogPrice } from "@/lib/catalog-price";
-import { getBrandCurrencyOverride } from "@/lib/pricing";
+import { getBrandCurrencyOverride, getPricingConfig, getUsdCopTrm, toCopEffective } from "@/lib/pricing";
 
 const toNumber = (value: unknown) => sanitizeCatalogPrice(parsePriceValue(value));
 const chooseString = (
@@ -54,6 +54,12 @@ const resolveStockStatus = (variant: RawVariant) => {
     return variant.stock > 0 ? "in_stock" : "out_of_stock";
   }
   return null;
+};
+
+const isVariantInStock = (input: { stock: number | null | undefined; stockStatus: string | null | undefined }) => {
+  if (typeof input.stock === "number" && Number.isFinite(input.stock) && input.stock > 0) return true;
+  const normalized = typeof input.stockStatus === "string" ? input.stockStatus.trim().toLowerCase() : "";
+  return normalized === "in_stock" || normalized === "preorder";
 };
 
 type CatalogItemState = {
@@ -281,6 +287,7 @@ export const processCatalogRef = async ({
   ref,
   canUseLlmPdp,
   brandCurrencyOverride,
+  trmUsdCop,
   onStage,
 }: {
   brand: { id: string; slug: string };
@@ -289,6 +296,7 @@ export const processCatalogRef = async ({
   ref: { url: string };
   canUseLlmPdp: boolean;
   brandCurrencyOverride?: "USD" | null;
+  trmUsdCop: number;
   onStage?: (stage: string) => void;
 }) => {
   onStage?.("fetch");
@@ -444,6 +452,9 @@ export const processCatalogRef = async ({
       ];
 
   let createdVariants = 0;
+  let hasInStock = false;
+  let minPriceCop: number | null = null;
+  let maxPriceCop: number | null = null;
   for (let index = 0; index < rawVariants.length; index += 1) {
     const rawVariant = rawVariants[index];
     const sku = buildVariantSku(rawVariant, `${product.id}-${index}`);
@@ -475,9 +486,40 @@ export const processCatalogRef = async ({
         source_images: [rawVariant.image ?? "", ...(rawVariant.images ?? [])].filter(Boolean),
       },
     };
+
+    const inStock = isVariantInStock({
+      stock: variantPayload.stock,
+      stockStatus: variantPayload.stock_status,
+    });
+    if (inStock) {
+      hasInStock = true;
+      const effectivePriceCop = sanitizeCatalogPrice(
+        toCopEffective({
+          price: variantPayload.price ?? null,
+          currency: variantPayload.currency ?? null,
+          brandOverride: brandCurrencyOverride ?? null,
+          trmUsdCop,
+        }),
+      );
+      if (effectivePriceCop !== null) {
+        minPriceCop = minPriceCop === null ? effectivePriceCop : Math.min(minPriceCop, effectivePriceCop);
+        maxPriceCop = maxPriceCop === null ? effectivePriceCop : Math.max(maxPriceCop, effectivePriceCop);
+      }
+    }
+
     const variantResult = await upsertVariant(product.id, variantPayload);
     if (variantResult.created) createdVariants += 1;
   }
+
+  await prisma.product.update({
+    where: { id: product.id },
+    data: {
+      hasInStock,
+      minPriceCop,
+      maxPriceCop,
+      priceRollupUpdatedAt: new Date(),
+    },
+  });
 
   return { created, createdVariants };
 };
@@ -700,6 +742,8 @@ export const extractCatalogForBrand = async (
 
   const metadata = getBrandMetadata(brand);
   const brandCurrencyOverride = getBrandCurrencyOverride(metadata);
+  const pricingConfig = await getPricingConfig();
+  const trmUsdCop = getUsdCopTrm(pricingConfig);
   const existingState = readCatalogRunState(metadata);
   const storedInference =
     metadata.catalog_extract_inferred_platform &&
@@ -987,6 +1031,7 @@ export const extractCatalogForBrand = async (
         ref,
         canUseLlmPdp,
         brandCurrencyOverride,
+        trmUsdCop,
         onStage: (stage) => {
           state.lastStage = stage;
         },

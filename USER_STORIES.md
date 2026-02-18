@@ -783,6 +783,26 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - `standard_color_config(key='pricing_config').valueJson`
 - Estado: **done (2026-02-18)**.
 
+### MC-131 PLP `/catalogo`: ordenar por precio sin timeout (rollups persistidos en `products`)
+- Historia: Como usuario, quiero que el orden por precio (`price_asc`/`price_desc`) responda rápido y sin errores de red, para poder navegar el catálogo sin bloqueos.
+- Alcance:
+  - Modelo de datos: nuevas columnas en `products` para rollup de precio e inventario (`hasInStock`, `minPriceCop`, `maxPriceCop`, `priceRollupUpdatedAt`).
+  - Operación: script `apps/web/scripts/backfill-product-price-rollups.mjs` para recalcular rollups históricos en Neon (incluye conversión USD→COP por TRM y guardia `CATALOG_PRICE_MAX_VALID`).
+  - Ingestión: `catalog/extractor` recalcula y persiste rollups por producto en cada procesamiento de variantes (aunque no haya enrichment nuevo).
+  - Serving catálogo: `catalog-data` usa ruta rápida sobre `products` para `price_asc/price_desc` y `price-bounds` (lite) cuando no hay filtros de variante (`colors/sizes/fits/price`); conserva fallback pesado (`join variants + group by`) cuando sí hay filtros de variante.
+  - DB performance: índices parciales concurrentes sobre `products(minPriceCop/maxPriceCop, createdAt)` en global, `category` y `category+subcategory`.
+  - Operación/QA: defaults de benchmark actualizados a `https://oda-moda.vercel.app`.
+- CA:
+  - `GET /catalogo?sort=price_asc&page=1` y `GET /catalogo?sort=price_desc&page=1` no devuelven timeout/504 y renderizan sin `network error`.
+  - `GET /api/catalog/products-page?page=1&sort=price_asc` usa plan index-friendly en modo sin filtros de variante.
+  - Semántica de inventario preservada en rollup: en stock = `stock > 0 OR stockStatus in ('in_stock','preorder')`.
+  - Outliers de precio siguen excluidos con `CATALOG_PRICE_MAX_VALID`.
+- Datos:
+  - `products.hasInStock`, `products.minPriceCop`, `products.maxPriceCop`, `products.priceRollupUpdatedAt`.
+  - `standard_color_config(key='pricing_config').valueJson.usd_cop_trm` (fallback `FX_USD_COP_TRM_DEFAULT`).
+- NF: sin cambio de contrato JSON en `/api/catalog/products-page`, `/api/catalog/products` y `/api/catalog/price-bounds`.
+- Estado: **done (2026-02-18)**.
+
 ### MC-126 PLP `/catalogo`: polish desktop + listas + SEO + header
 - Historia: Como usuario, quiero que el catálogo en desktop sea más ordenado y predecible (scroll de filtros por zonas, guardado en listas sin fricción y header consistente), y que la página tenga SEO más robusto, para explorar y compartir mejor.
 - Alcance:
