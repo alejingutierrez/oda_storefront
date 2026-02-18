@@ -6,6 +6,8 @@ import { resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
 import { drainCatalogRun } from "@/lib/catalog/processor";
 import { CATALOG_MAX_ATTEMPTS } from "@/lib/catalog/constants";
 import { finalizeRefreshForRun } from "@/lib/catalog/refresh";
+import { isCatalogQueueEnabled } from "@/lib/catalog/queue";
+import { readHeartbeat } from "@/lib/redis";
 
 const readBrandMetadata = (brand: { metadata?: unknown }) =>
   brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
@@ -13,14 +15,15 @@ const readBrandMetadata = (brand: { metadata?: unknown }) =>
     : {};
 
 const finalizeRunIfIdle = async (runId: string) => {
-  const remaining = await prisma.catalogItem.count({
+  const remaining = await prisma.catalogItem.findFirst({
     where: {
       runId,
       status: { in: ["pending", "queued", "in_progress", "failed"] },
       attempts: { lt: CATALOG_MAX_ATTEMPTS },
     },
+    select: { id: true },
   });
-  if (remaining > 0) return;
+  if (remaining) return;
 
   const run = await prisma.catalogRun.findUnique({
     where: { id: runId },
@@ -111,6 +114,15 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : null;
+  const url = new URL(req.url);
+  const force = url.searchParams.get("force") === "true" || body?.force === true;
+
+  if (!force && isCatalogQueueEnabled()) {
+    const heartbeat = await readHeartbeat("workers:catalog:alive");
+    if (heartbeat.online) {
+      return NextResponse.json({ skipped: "worker_online", heartbeat });
+    }
+  }
 
   const { batch, concurrency, maxMs, maxRuns, queuedStaleMs, stuckMs } = resolveDrainConfig(body);
   const startedAt = Date.now();

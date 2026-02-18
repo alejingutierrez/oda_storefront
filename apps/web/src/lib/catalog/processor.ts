@@ -11,6 +11,39 @@ import {
 import { finalizeRefreshForRun } from "@/lib/catalog/refresh";
 import { enqueueCatalogItems } from "@/lib/catalog/queue";
 import { listPendingItems, listRunnableItems, markItemsQueued, resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
+import { tryAcquireLock } from "@/lib/redis";
+
+const REFILL_LOCK_TTL_MS = 5000;
+
+const hasRemainingRunnableItems = async (runId: string) => {
+  const row = await prisma.catalogItem.findFirst({
+    where: {
+      runId,
+      status: { in: ["pending", "queued", "in_progress", "failed"] },
+      attempts: { lt: CATALOG_MAX_ATTEMPTS },
+    },
+    select: { id: true },
+  });
+  return Boolean(row);
+};
+
+const maybeRefillQueue = async (params: {
+  runId: string;
+  enqueueLimit: number;
+  queuedStaleMs: number;
+  stuckMs: number;
+}) => {
+  const acquired = await tryAcquireLock(`catalog:refill_lock:${params.runId}`, REFILL_LOCK_TTL_MS);
+  if (!acquired) return { refilled: 0, skipped: true };
+
+  await resetQueuedItems(params.runId, params.queuedStaleMs);
+  await resetStuckItems(params.runId, params.stuckMs);
+  const pendingItems = await listPendingItems(params.runId, params.enqueueLimit);
+  if (!pendingItems.length) return { refilled: 0, skipped: false };
+  await markItemsQueued(pendingItems.map((candidate) => candidate.id));
+  await enqueueCatalogItems(pendingItems);
+  return { refilled: pendingItems.length, skipped: false };
+};
 
 const readBrandMetadata = (brand: { metadata?: unknown }) =>
   brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
@@ -197,16 +230,8 @@ export const processCatalogItemById = async (
       },
     });
 
-    await resetQueuedItems(run.id, queuedStaleMs);
-    await resetStuckItems(run.id, stuckMs);
-    const remaining = await prisma.catalogItem.count({
-      where: {
-        runId: run.id,
-        status: { in: ["pending", "queued", "in_progress", "failed"] },
-        attempts: { lt: CATALOG_MAX_ATTEMPTS },
-      },
-    });
-    if (remaining === 0) {
+    const hasRemaining = await hasRemainingRunnableItems(run.id);
+    if (!hasRemaining) {
       await prisma.catalogRun.update({
         where: { id: run.id },
         data: { status: "completed", finishedAt: new Date(), updatedAt: new Date() },
@@ -226,9 +251,12 @@ export const processCatalogItemById = async (
         reason: "auto_complete",
       });
     } else if (options.allowQueueRefill) {
-      const pendingItems = await listPendingItems(run.id, enqueueLimit);
-      await markItemsQueued(pendingItems.map((candidate) => candidate.id));
-      await enqueueCatalogItems(pendingItems);
+      await maybeRefillQueue({
+        runId: run.id,
+        enqueueLimit,
+        queuedStaleMs,
+        stuckMs,
+      });
     }
 
     return { status: "completed", created: result.created, createdVariants: result.createdVariants };
@@ -265,16 +293,8 @@ export const processCatalogItemById = async (
     });
 
     if (!shouldPause) {
-      await resetQueuedItems(run.id, queuedStaleMs);
-      await resetStuckItems(run.id, stuckMs);
-      const remaining = await prisma.catalogItem.count({
-        where: {
-          runId: run.id,
-          status: { in: ["pending", "queued", "in_progress", "failed"] },
-          attempts: { lt: CATALOG_MAX_ATTEMPTS },
-        },
-      });
-      if (remaining === 0) {
+      const hasRemaining = await hasRemainingRunnableItems(run.id);
+      if (!hasRemaining) {
         await prisma.catalogRun.update({
           where: { id: run.id },
           data: { status: "completed", finishedAt: new Date(), updatedAt: new Date() },
@@ -294,9 +314,12 @@ export const processCatalogItemById = async (
           reason: "auto_complete",
         });
       } else if (options.allowQueueRefill) {
-        const pendingItems = await listPendingItems(run.id, enqueueLimit);
-        await markItemsQueued(pendingItems.map((candidate) => candidate.id));
-        await enqueueCatalogItems(pendingItems);
+        await maybeRefillQueue({
+          runId: run.id,
+          enqueueLimit,
+          queuedStaleMs,
+          stuckMs,
+        });
       }
     }
 

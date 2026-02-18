@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/admin/catalog-refresh/cron",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/admin/taxonomy-remap/auto-reseed/cron",

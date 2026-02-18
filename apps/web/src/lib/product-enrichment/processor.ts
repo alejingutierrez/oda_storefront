@@ -16,6 +16,7 @@ import {
   resetStuckItems,
   updateRunAfterItem,
 } from "@/lib/product-enrichment/run-store";
+import { tryAcquireLock } from "@/lib/redis";
 
 const MAX_ATTEMPTS = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 5));
 const CONSECUTIVE_ERROR_LIMIT = Math.max(
@@ -23,6 +24,7 @@ const CONSECUTIVE_ERROR_LIMIT = Math.max(
   Number(process.env.PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT ?? 5),
 );
 const ALLOW_REENRICH = process.env.PRODUCT_ENRICHMENT_ALLOW_REENRICH === "true";
+const REFILL_LOCK_TTL_MS = 5000;
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -63,15 +65,16 @@ const buildOriginalVendorSignals = (metadata: Record<string, unknown> | null | u
 };
 
 export const finalizeRunIfDone = async (runId: string) => {
-  const remaining = await prisma.productEnrichmentItem.count({
+  const remaining = await prisma.productEnrichmentItem.findFirst({
     where: {
       runId,
       status: { in: ["pending", "queued", "in_progress", "failed"] },
       attempts: { lt: MAX_ATTEMPTS },
     },
+    select: { id: true },
   });
 
-  if (remaining > 0) return null;
+  if (remaining) return null;
 
   const terminalFailed = await prisma.productEnrichmentItem.count({
     where: {
@@ -100,6 +103,24 @@ export const finalizeRunIfDone = async (runId: string) => {
     data: { status: "completed", finishedAt: now, updatedAt: now },
   });
   return { status: "completed", terminalFailed: 0 };
+};
+
+const maybeRefillQueue = async (params: {
+  runId: string;
+  enqueueLimit: number;
+  queuedStaleMs: number;
+  stuckMs: number;
+}) => {
+  const acquired = await tryAcquireLock(`enrich:refill_lock:${params.runId}`, REFILL_LOCK_TTL_MS);
+  if (!acquired) return { refilled: 0, skipped: true };
+
+  await resetQueuedItems(params.runId, params.queuedStaleMs);
+  await resetStuckItems(params.runId, params.stuckMs);
+  const pendingItems = await listPendingItems(params.runId, params.enqueueLimit);
+  if (!pendingItems.length) return { refilled: 0, skipped: false };
+  await markItemsQueued(pendingItems.map((candidate) => candidate.id));
+  await enqueueEnrichmentItems(pendingItems);
+  return { refilled: pendingItems.length, skipped: false };
 };
 const resolveMinConcurrency = () => {
   const worker = Number(process.env.PRODUCT_ENRICHMENT_WORKER_CONCURRENCY ?? NaN);
@@ -223,9 +244,12 @@ export const processEnrichmentItemById = async (
 
     const finalized = await finalizeRunIfDone(run.id);
     if (!finalized && options.allowQueueRefill) {
-      const pendingItems = await listPendingItems(run.id, enqueueLimit);
-      await markItemsQueued(pendingItems.map((candidate) => candidate.id));
-      await enqueueEnrichmentItems(pendingItems);
+      await maybeRefillQueue({
+        runId: run.id,
+        enqueueLimit,
+        queuedStaleMs,
+        stuckMs,
+      });
     }
     return { status: "already_enriched" };
   }
@@ -389,13 +413,14 @@ export const processEnrichmentItemById = async (
       });
     });
 
-    await resetQueuedItems(run.id, queuedStaleMs);
-    await resetStuckItems(run.id, stuckMs);
     const finalized = await finalizeRunIfDone(run.id);
     if (!finalized && options.allowQueueRefill) {
-      const pendingItems = await listPendingItems(run.id, enqueueLimit);
-      await markItemsQueued(pendingItems.map((candidate) => candidate.id));
-      await enqueueEnrichmentItems(pendingItems);
+      await maybeRefillQueue({
+        runId: run.id,
+        enqueueLimit,
+        queuedStaleMs,
+        stuckMs,
+      });
     }
 
     return { status: "completed" };
@@ -427,13 +452,14 @@ export const processEnrichmentItemById = async (
     });
 
     if (!shouldPause) {
-      await resetQueuedItems(run.id, queuedStaleMs);
-      await resetStuckItems(run.id, stuckMs);
       const finalized = await finalizeRunIfDone(run.id);
       if (!finalized && options.allowQueueRefill) {
-        const pendingItems = await listPendingItems(run.id, enqueueLimit);
-        await markItemsQueued(pendingItems.map((candidate) => candidate.id));
-        await enqueueEnrichmentItems(pendingItems);
+        await maybeRefillQueue({
+          runId: run.id,
+          enqueueLimit,
+          queuedStaleMs,
+          stuckMs,
+        });
       }
     }
 

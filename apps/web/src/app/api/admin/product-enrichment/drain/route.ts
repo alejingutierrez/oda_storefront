@@ -3,6 +3,8 @@ import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resetQueuedItems, resetStuckItems } from "@/lib/product-enrichment/run-store";
 import { drainEnrichmentRun } from "@/lib/product-enrichment/processor";
+import { isEnrichmentQueueEnabled } from "@/lib/product-enrichment/queue";
+import { readHeartbeat } from "@/lib/redis";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -84,6 +86,15 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : null;
   const requestedRunId = typeof body?.runId === "string" ? body.runId : null;
+  const url = new URL(req.url);
+  const force = url.searchParams.get("force") === "true" || body?.force === true;
+
+  if (!force && isEnrichmentQueueEnabled()) {
+    const heartbeat = await readHeartbeat("workers:enrich:alive");
+    if (heartbeat.online) {
+      return NextResponse.json({ skipped: "worker_online", heartbeat });
+    }
+  }
 
   const { batch, concurrency, maxMs, maxRuns, queuedStaleMs, stuckMs } = resolveDrainConfig(body);
   const safeBatch = batch <= 0 ? Number.MAX_SAFE_INTEGER : Math.max(1, batch);

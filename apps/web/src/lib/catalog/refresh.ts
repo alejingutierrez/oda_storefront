@@ -185,7 +185,9 @@ export const isBrandDueForRefresh = (
 ) => {
   const refresh = readRefreshMeta(metadata);
   const nextDue = parseDate(refresh.nextDueAt);
-  if (nextDue && nextDue <= now) return true;
+  // If nextDueAt is present, treat it as the authoritative schedule. This makes jitter effective
+  // and avoids re-running brands earlier than planned.
+  if (nextDue) return nextDue <= now;
   const lastCompleted = parseDate(refresh.lastCompletedAt);
   if (lastCompleted) {
     const windowMs = config.intervalDays * 24 * 60 * 60 * 1000;

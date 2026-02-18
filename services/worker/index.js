@@ -1,8 +1,43 @@
 import 'dotenv/config';
 import { Queue, Worker } from 'bullmq';
+import IORedis from 'ioredis';
 
 const connection = { url: process.env.REDIS_URL || 'redis://localhost:6379' };
 const queueName = process.env.WORK_QUEUE || 'ingestion';
+
+const redis = new IORedis(connection.url);
+const heartbeatEnabled = process.env.WORKER_HEARTBEAT_DISABLED !== 'true';
+const heartbeatTtlSeconds = Math.max(
+  10,
+  Number(process.env.WORKER_HEARTBEAT_TTL_SECONDS || 60),
+);
+const heartbeatIntervalMs = Math.max(
+  5000,
+  Number(process.env.WORKER_HEARTBEAT_INTERVAL_MS || 20000),
+);
+
+let lastCatalogSuccessAt = 0;
+let lastEnrichSuccessAt = 0;
+
+const writeHeartbeats = async () => {
+  if (!heartbeatEnabled) return;
+  const now = Date.now();
+  const healthyWindowMs = heartbeatTtlSeconds * 1000;
+  const ops = [];
+  if (lastCatalogSuccessAt && now - lastCatalogSuccessAt < healthyWindowMs) {
+    ops.push(redis.set('workers:catalog:alive', '1', 'EX', heartbeatTtlSeconds));
+  }
+  if (lastEnrichSuccessAt && now - lastEnrichSuccessAt < healthyWindowMs) {
+    ops.push(redis.set('workers:enrich:alive', '1', 'EX', heartbeatTtlSeconds));
+  }
+  if (!ops.length) return;
+  await Promise.all(ops);
+};
+
+writeHeartbeats().catch((err) => console.error('[worker] heartbeat failed', err));
+const heartbeatTimer = setInterval(() => {
+  writeHeartbeats().catch((err) => console.error('[worker] heartbeat failed', err));
+}, heartbeatIntervalMs);
 
 const queue = new Queue(queueName, { connection });
 
@@ -51,6 +86,9 @@ const catalogWorker = new Worker(
 
 catalogWorker.on('completed', (job) => console.log('[catalog-worker] completed', job.id));
 catalogWorker.on('failed', (job, err) => console.error('[catalog-worker] failed', job?.id, err));
+catalogWorker.on('completed', () => {
+  lastCatalogSuccessAt = Date.now();
+});
 
 const enrichmentQueueName = process.env.PRODUCT_ENRICHMENT_QUEUE_NAME || 'product-enrichment';
 const enrichmentConcurrency = Math.max(
@@ -88,6 +126,9 @@ const enrichmentWorker = new Worker(
 
 enrichmentWorker.on('completed', (job) => console.log('[product-enrichment-worker] completed', job.id));
 enrichmentWorker.on('failed', (job, err) => console.error('[product-enrichment-worker] failed', job?.id, err));
+enrichmentWorker.on('completed', () => {
+  lastEnrichSuccessAt = Date.now();
+});
 
 const plpSeoQueueName = process.env.PLP_SEO_QUEUE_NAME || 'plp-seo';
 const plpSeoConcurrency = Number(process.env.PLP_SEO_WORKER_CONCURRENCY || 5);
@@ -125,3 +166,20 @@ plpSeoWorker.on('failed', (job, err) => console.error('[plp-seo-worker] failed',
 
 // seed a demo job
 queue.add('demo', { hello: 'world' }).catch((err) => console.error('queue add error', err));
+
+const shutdown = async (signal) => {
+  console.log(`[worker] shutdown requested (${signal})`);
+  clearInterval(heartbeatTimer);
+  await Promise.allSettled([
+    worker.close(),
+    catalogWorker.close(),
+    enrichmentWorker.close(),
+    plpSeoWorker.close(),
+    queue.close(),
+    redis.quit(),
+  ]);
+  process.exit(0);
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

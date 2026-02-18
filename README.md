@@ -38,6 +38,10 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 
 Nota: el refresh de catálogo puede detectar productos nuevos sin `metadata.enrichment` y crear un `product_enrichment_run` (mode `new_products`). Por defecto queda en `paused` para evitar consumo inesperado de cuota; se reanuda manualmente con el Admin o con `POST /api/admin/product-enrichment/run` (brandId). Si quieres que se procese automáticamente (sin intervención), setea `CATALOG_REFRESH_ENRICH_AUTO_START=true` en Vercel. Hardening adicional: si existe una corrida heredada `catalog_refresh` con `auto_start=false`, el sistema puede reanudarla cuando el flag está activo; si el flag está apagado, la normaliza a `paused` (`auto_start_disabled`) para impedir ejecución automática.
 Tip operativo: `GET /api/admin/catalog-refresh/cron` acepta overrides opcionales `maxBrands`, `brandConcurrency` y `maxRuntimeMs` para pruebas controladas de throughput (por ejemplo: `/api/admin/catalog-refresh/cron?force=true&maxBrands=12&brandConcurrency=4&maxRuntimeMs=90000`). Si no envías esos query params, el endpoint usa los valores de entorno (`CATALOG_REFRESH_*`) sin aplicar overrides.
+Operación (BullMQ 24/7):
+- `services/worker` publica heartbeats en Redis: `workers:catalog:alive` y `workers:enrich:alive` (TTL 60s, refresh cada 20s).
+- Los drains de Vercel se comportan como fallback: si el heartbeat existe, responden `{ skipped: "worker_online" }` para evitar doble procesamiento. Override: `POST /api/admin/catalog-extractor/drain?force=true` o `POST /api/admin/product-enrichment/drain?force=true`.
+- Health: `GET /api/admin/queue-health` (jobCounts BullMQ + workerAlive).
 No commitees credenciales reales.
 
 ## Comandos locales
@@ -47,7 +51,7 @@ cd apps/web
 npm install        # ya ejecutado en bootstrap
 npm run dev        # http://localhost:3000
 npm run lint
-npm run build
+	npm run build
 npm run db:import:brands   # importa Marcas colombianas.xlsx a Neon
 npm run db:seed:users      # crea/actualiza usuario admin en Neon
 npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/smoke-catalog-adapters.ts  # smoke test por tecnología
@@ -58,12 +62,14 @@ node scripts/build-style-assignments.mjs  # seed style_profiles + backfill estil
 node scripts/apply-catalog-filter-indexes.mjs  # aplica índices de performance del PLP `/catalogo` en Neon (CREATE INDEX CONCURRENTLY)
 node scripts/seed-color-palette-200.mjs  # carga paleta 200 en color_combinations_colors (desde Excel)
 node scripts/build-color-relations.mjs  # recalcula matches variante↔combinacion con colores estandarizados
-node scripts/diagnose-catalog-refresh.cjs > ../../reports/catalog_refresh_diagnostics/report.json  # métricas de refresh/fallas (Neon)
+	node scripts/diagnose-catalog-refresh.cjs > ../../reports/catalog_refresh_diagnostics/report.json  # métricas de refresh/fallas (Neon)
+	node scripts/reschedule-catalog-refresh-nextdue.mjs --dry-run  # recalcula nextDueAt para scheduling con jitter (usa CATALOG_REFRESH_INTERVAL_DAYS/JITTER_HOURS)
+	node scripts/recover-bullmq-queues.mjs --dry-run  # obliterate BullMQ + reset DB queued->pending + reseed coherente (requiere --yes)
 
-# worker (cola/enriquecimiento)
-cd ../../services/worker
-npm install
-npm run dev
+	# worker (cola/enriquecimiento)
+	cd ../../services/worker
+	npm install
+	npm run dev
 
 # scraper
 cd ../scraper
