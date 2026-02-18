@@ -201,6 +201,11 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 ## Home (public)
 - Ruta `/` con home editorial (estilo Farfetch) y grillas cuadradas.
 - Mega menu por género con estructura completa basada en categorías reales y reglas `category + subcategory` (ver `HOME_PLAN.md`).
+- Header + mega menu (actualización 2026-02-18):
+  - Desktop: layout del header en grid (`auto | minmax(0,1fr) | auto`), input de búsqueda responsivo (`w-[clamp(12rem,18vw,20rem)]`) y panel de megamenu compartido a ancho completo del container.
+  - Interacción desktop: hover abre temporalmente, click fija/desfija (pin), cierre con `Esc` o click fuera.
+  - Mobile: drawer jerárquico por niveles (`root/gender/section`) con barra sticky (atrás/título/cerrar), targets táctiles >=44px y cierre automático al navegar.
+  - Telemetría de navegación: `menu_open`, `menu_pin_toggle`, `menu_item_click`, `menu_mobile_step` (endpoint `/api/experience/events`).
 - Rotación automática cada 3 días para productos y marcas, sin intervención humana.
 - Panel `/admin/color-combinations` (combinaciones de color):
   - Al hacer click en un color, lista productos asociados y filtra por rol del color con categorías permitidas:

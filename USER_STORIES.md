@@ -46,6 +46,21 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: Tiempo de carga del home, CTR en bloques principales, rotación efectiva cada 3 días.
 - Estado: **done (2026-02-04)**.
 
+### MC-132 Rediseño megamenu desktop/mobile + fix de ancho en header
+- Historia: Como usuario, quiero que el megamenu ocupe el ancho correcto y sea más fácil de usar en desktop y mobile, para navegar categorías sin fricción.
+- Alcance: Header desktop cambia a grid (`auto | minmax(0,1fr) | auto`) con buscador responsive (`clamp`) para evitar compresión del nav. `MegaMenu` pasa a interacción controlada por estado (hover temporal + pin por click, cierre con `Esc`/outside click, panel único compartido anclado al ancho del container). `HeaderMobileMenu` migra de `<details>` a drawer jerárquico por niveles (`root -> gender -> section`) con botón atrás, título contextual sticky y cierre al navegar.
+- CA:
+  - En desktop (1024/1280/1366/1440/1728), el panel del megamenu usa ancho completo del container y no se ve achatado.
+  - Interacciones desktop: hover abre, click fija/desfija, `Esc` cierra y click fuera cierra.
+  - En mobile, el flujo jerárquico permite navegar género -> sección -> categoría/subcategoría sin perder contexto.
+  - Se mantiene `prefetch={false}` en links del header/mega menu.
+  - Se agregan eventos de telemetría: `menu_open`, `menu_pin_toggle`, `menu_item_click`, `menu_mobile_step`.
+- Datos: `MegaMenuData` existente (sin cambios de backend ni esquema DB).
+- NF: Accesibilidad base (`aria-expanded`, `aria-controls`, foco visible), targets táctiles >=44px en mobile, y scroll interno del drawer sin desplazar el body.
+- Riesgos: incremento de complejidad de estado en navegación; mitigado con estado mínimo (`hoveredGender`, `pinnedGender`, `activeGender`, `activeSection`) y cierre centralizado.
+- Métricas: CTR en entradas de menú, uso de pin en desktop, tasa de navegación por nivel en mobile.
+- Estado: **done (2026-02-18)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

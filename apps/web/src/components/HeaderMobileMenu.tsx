@@ -1,32 +1,113 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import AccountLink from "@/components/AccountLink";
 import type { MegaMenuData } from "@/lib/home-data";
+import { logExperienceEvent } from "@/lib/experience-events";
 import { GENDER_ROUTE, type GenderKey } from "@/lib/navigation";
 
 const GENDERS: GenderKey[] = ["Femenino", "Masculino", "Unisex", "Infantil"];
+type MenuSectionKey = "Superiores" | "Inferiores" | "Accesorios";
+type MobileMenuLevel = "root" | "gender" | "section";
+const MENU_SECTIONS: MenuSectionKey[] = ["Superiores", "Inferiores", "Accesorios"];
 
 export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
   const [open, setOpen] = useState(false);
+  const [activeGender, setActiveGender] = useState<GenderKey | null>(null);
+  const [activeSection, setActiveSection] = useState<MenuSectionKey | null>(null);
+  const lastStepRef = useRef<string | null>(null);
 
   const portalRoot = typeof document !== "undefined" ? document.body : null;
+  const level: MobileMenuLevel = activeGender ? (activeSection ? "section" : "gender") : "root";
+  const activeGenderMenu = activeGender ? menu[activeGender] : null;
+  const sectionItems = useMemo(() => {
+    if (!activeGenderMenu || !activeSection) return [];
+    return activeGenderMenu[activeSection];
+  }, [activeGenderMenu, activeSection]);
+
+  const closeMenu = useCallback(() => {
+    setOpen(false);
+    setActiveGender(null);
+    setActiveSection(null);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") closeMenu();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
       document.body.style.overflow = prevOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
+  }, [closeMenu, open]);
+
+  useEffect(() => {
+    if (!open) {
+      lastStepRef.current = null;
+      return;
+    }
+    logExperienceEvent({
+      type: "menu_open",
+      path: `${window.location.pathname}${window.location.search}`,
+      properties: {
+        surface: "mobile",
+      },
+    });
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const stepKey = `${level}|${activeGender ?? ""}|${activeSection ?? ""}`;
+    if (lastStepRef.current === stepKey) return;
+    logExperienceEvent({
+      type: "menu_mobile_step",
+      path: `${window.location.pathname}${window.location.search}`,
+      properties: {
+        level,
+        gender: activeGender,
+        section: activeSection,
+      },
+    });
+    lastStepRef.current = stepKey;
+  }, [activeGender, activeSection, level, open]);
+
+  const handleItemClick = useCallback(
+    (href: string, label: string, meta?: Record<string, unknown>) => {
+      logExperienceEvent({
+        type: "menu_item_click",
+        path: `${window.location.pathname}${window.location.search}`,
+        properties: {
+          surface: "mobile",
+          href,
+          label,
+          ...meta,
+        },
+      });
+      window.requestAnimationFrame(() => closeMenu());
+    },
+    [closeMenu],
+  );
+
+  const goBack = () => {
+    if (level === "section") {
+      setActiveSection(null);
+      return;
+    }
+    setActiveGender(null);
+  };
+
+  const panelTitle = (() => {
+    if (level === "root") return "Menu";
+    if (level === "gender") return activeGender ?? "Menu";
+    if (activeGender && activeSection) return `${activeGender} · ${activeSection}`;
+    return "Menu";
+  })();
 
   return (
     <>
@@ -50,23 +131,39 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
 
       {open && portalRoot
         ? createPortal(
-            <div className="fixed inset-0 z-[200] lg:hidden" role="dialog" aria-modal="true">
+            <div className="fixed inset-0 z-[200] lg:hidden" role="dialog" aria-modal="true" aria-label="Menu principal">
               <button
                 type="button"
                 className="absolute inset-0 bg-black/30 backdrop-blur-lg backdrop-saturate-150"
                 aria-label="Cerrar menu"
-                onClick={() => setOpen(false)}
+                onClick={closeMenu}
               />
 
               <div className="oda-glass-noise absolute inset-x-4 bottom-6 top-24 overflow-hidden rounded-3xl border border-white/50 bg-white/85 shadow-[0_30px_90px_rgba(23,21,19,0.30)] backdrop-blur-2xl">
-                <div className="flex items-center justify-between gap-3 border-b border-white/40 bg-white/75 px-5 py-4 backdrop-blur-xl">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-                    Menu
-                  </p>
+                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-white/40 bg-white/75 px-5 py-4 backdrop-blur-xl">
+                  <div className="flex items-center gap-2">
+                    {level !== "root" ? (
+                      <button
+                        type="button"
+                        onClick={goBack}
+                        className="inline-flex h-11 min-h-11 min-w-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-sm text-[color:var(--oda-ink)]"
+                        aria-label="Volver"
+                      >
+                        ←
+                      </button>
+                    ) : (
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                        Explorar
+                      </span>
+                    )}
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                      {panelTitle}
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setOpen(false)}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-sm font-semibold text-[color:var(--oda-ink)]"
+                    onClick={closeMenu}
+                    className="inline-flex h-11 min-h-11 min-w-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-sm font-semibold text-[color:var(--oda-ink)]"
                     aria-label="Cerrar"
                     title="Cerrar"
                   >
@@ -75,104 +172,157 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                 </div>
 
                 <div className="max-h-[calc(100vh-10rem)] overflow-auto overscroll-contain px-5 pb-8 pt-5">
-                  <div className="flex items-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-3">
-                    <input
-                      type="text"
-                      placeholder="Buscar"
-                      // iOS: >= 16px evita el zoom automático al focus.
-                      className="w-full bg-transparent text-base uppercase tracking-[0.2em] text-[color:var(--oda-ink)] placeholder:text-[color:var(--oda-taupe)] focus:outline-none"
-                    />
-                  </div>
+                  {level === "root" ? (
+                    <>
+                      <div className="flex items-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-3">
+                        <input
+                          type="text"
+                          placeholder="Buscar"
+                          // iOS: >= 16px evita el zoom automático al focus.
+                          className="w-full bg-transparent text-base uppercase tracking-[0.2em] text-[color:var(--oda-ink)] placeholder:text-[color:var(--oda-taupe)] focus:outline-none"
+                        />
+                      </div>
+                      <div className="mt-6 grid grid-cols-3 gap-2">
+                        <Link
+                          prefetch={false}
+                          href="/novedades"
+                          className="inline-flex min-h-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+                          onClick={() => handleItemClick("/novedades", "Novedades", { level: "root" })}
+                        >
+                          Novedades
+                        </Link>
+                        <Link
+                          prefetch={false}
+                          href="/buscar"
+                          className="inline-flex min-h-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+                          onClick={() => handleItemClick("/buscar", "Buscar", { level: "root" })}
+                        >
+                          Buscar
+                        </Link>
+                        <Link
+                          prefetch={false}
+                          href="/catalogo"
+                          className="inline-flex min-h-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+                          onClick={() => handleItemClick("/catalogo", "Ver todo", { level: "root" })}
+                        >
+                          Ver todo
+                        </Link>
+                      </div>
+                      <div className="mt-6 flex flex-col gap-2">
+                        {GENDERS.map((gender) => (
+                          <button
+                            key={gender}
+                            type="button"
+                            onClick={() => {
+                              setActiveGender(gender);
+                              setActiveSection(null);
+                            }}
+                            className="inline-flex min-h-11 items-center justify-between rounded-2xl border border-[color:var(--oda-border)] bg-white/70 px-4 py-3 text-xs uppercase tracking-[0.18em] text-[color:var(--oda-ink)]"
+                          >
+                            {gender}
+                            <span aria-hidden className="text-[color:var(--oda-taupe)]">
+                              →
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
 
-                  <div className="mt-6 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                    <span>Explorar</span>
-                    <div className="flex items-center gap-1">
-                      <Link prefetch={false}
-                        href="/novedades"
-                        className="rounded-full px-3 py-2 text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                        onClick={() => setOpen(false)}
+                  {level === "gender" && activeGender && activeGenderMenu ? (
+                    <div className="flex flex-col gap-2">
+                      {MENU_SECTIONS.map((section) => {
+                        const count = activeGenderMenu[section].length;
+                        return (
+                          <button
+                            key={section}
+                            type="button"
+                            onClick={() => setActiveSection(section)}
+                            disabled={count === 0}
+                            className={[
+                              "inline-flex min-h-11 items-center justify-between rounded-2xl border px-4 py-3 text-xs uppercase tracking-[0.18em]",
+                              count === 0
+                                ? "cursor-not-allowed border-[color:var(--oda-border)] bg-white/40 text-[color:var(--oda-taupe)]"
+                                : "border-[color:var(--oda-border)] bg-white/70 text-[color:var(--oda-ink)]",
+                            ].join(" ")}
+                          >
+                            <span>{section}</span>
+                            <span className="text-[10px]">{count}</span>
+                          </button>
+                        );
+                      })}
+                      <Link
+                        prefetch={false}
+                        href={`/${GENDER_ROUTE[activeGender]}`}
+                        className="mt-4 inline-flex min-h-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+                        onClick={() =>
+                          handleItemClick(`/${GENDER_ROUTE[activeGender]}`, `Ver todo ${activeGender}`, {
+                            level: "gender",
+                            gender: activeGender,
+                          })
+                        }
                       >
-                        Novedades
-                      </Link>
-                      <Link prefetch={false}
-                        href="/buscar"
-                        className="rounded-full px-3 py-2 text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                        onClick={() => setOpen(false)}
-                      >
-                        Ver todo
+                        Ver todo {activeGender}
                       </Link>
                     </div>
-                  </div>
+                  ) : null}
 
-                  <div className="mt-4 flex flex-col gap-4">
-                    {GENDERS.map((gender) => {
-                      const data = menu[gender];
-                      return (
-                        <details
-                          key={gender}
-                          className="group/section border-t border-[color:var(--oda-border)] pt-4"
-                        >
-                          <summary className="flex cursor-pointer list-none items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
-                            {gender}
-                            <span className="inline-flex h-8 w-8 items-center justify-center text-base text-[color:var(--oda-taupe)] transition group-open/section:rotate-180">
-                              ▾
-                            </span>
-                          </summary>
-                          <div className="mt-4 flex flex-col gap-4">
-                            {([
-                              ["Superiores", data.Superiores],
-                              ["Inferiores", data.Inferiores],
-                              ["Accesorios", data.Accesorios],
-                            ] as const).map(([title, items]) => (
-                              <div key={title} className="flex flex-col gap-2">
-                                <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                                  {title}
-                                </span>
-                                <div className="flex flex-col gap-2">
-                                  {items.map((item) => (
-                                    <div key={item.key} className="flex flex-col gap-1">
-                                      <Link prefetch={false}
-                                        href={item.href}
-                                        className="rounded-xl px-3 py-2 text-xs font-medium text-[color:var(--oda-ink)] transition hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                                        onClick={() => setOpen(false)}
-                                      >
-                                        {item.label}
-                                      </Link>
-                                      {item.subcategories && item.subcategories.length > 0 ? (
-                                        <div className="flex flex-wrap gap-2 px-3 text-[10px] uppercase tracking-[0.14em] text-[color:var(--oda-taupe)]">
-                                          {item.subcategories.map((sub) => (
-                                            <Link prefetch={false}
-                                              key={sub.key}
-                                              href={sub.href}
-                                              className="rounded-full px-2 py-1 transition hover:bg-white/70 hover:text-[color:var(--oda-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                                              onClick={() => setOpen(false)}
-                                            >
-                                              {sub.label}
-                                            </Link>
-                                          ))}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                            <Link prefetch={false}
-                              href={`/${GENDER_ROUTE[gender]}`}
-                              className="inline-flex rounded-full px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)] transition hover:bg-white/70 hover:text-[color:var(--oda-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-                              onClick={() => setOpen(false)}
+                  {level === "section" && activeGender && activeSection ? (
+                    <div className="flex flex-col gap-3">
+                      {sectionItems.length === 0 ? (
+                        <p className="rounded-2xl border border-[color:var(--oda-border)] bg-white/50 px-4 py-4 text-xs uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
+                          Sin categorias disponibles
+                        </p>
+                      ) : (
+                        sectionItems.map((item) => (
+                          <div
+                            key={item.key}
+                            className="rounded-2xl border border-[color:var(--oda-border)] bg-white/70 px-3 py-3"
+                          >
+                            <Link
+                              prefetch={false}
+                              href={item.href}
+                              className="inline-flex min-h-11 items-center rounded-xl px-2 py-2 text-xs font-medium uppercase tracking-[0.14em] text-[color:var(--oda-ink)]"
+                              onClick={() =>
+                                handleItemClick(item.href, item.label, {
+                                  level: "section",
+                                  gender: activeGender,
+                                  section: activeSection,
+                                })
+                              }
                             >
-                              Ver todo {gender}
+                              {item.label}
                             </Link>
+                            {item.subcategories && item.subcategories.length > 0 ? (
+                              <div className="mt-2 flex flex-wrap gap-2 px-1">
+                                {item.subcategories.map((sub) => (
+                                  <Link
+                                    prefetch={false}
+                                    key={sub.key}
+                                    href={sub.href}
+                                    className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-[color:var(--oda-taupe)]"
+                                    onClick={() =>
+                                      handleItemClick(sub.href, sub.label, {
+                                        level: "section",
+                                        gender: activeGender,
+                                        section: activeSection,
+                                      })
+                                    }
+                                  >
+                                    {sub.label}
+                                  </Link>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
-                        </details>
-                      );
-                    })}
-                  </div>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
 
                   <div className="mt-8 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                     <span>Cuenta</span>
-                    <AccountLink />
+                    <AccountLink className="rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2" />
                   </div>
                 </div>
               </div>
