@@ -295,7 +295,7 @@ export default function CatalogProductCard({
         ? "h-[42%]"
         : "h-[30%]"
       : mobileCompact
-        ? "h-[26%]"
+        ? "h-[32%]"
         : "h-[20%]";
 
   const priceLabel = useMemo(
