@@ -179,7 +179,7 @@ const reseedCatalog = async (client) => {
         `
           UPDATE catalog_items
           SET status = 'queued', "startedAt" = NULL, "updatedAt" = NOW()
-          WHERE id = ANY($1::uuid[])
+          WHERE id = ANY($1::text[])
             AND status IN ('pending', 'failed')
         `,
         [ids],
@@ -240,7 +240,7 @@ const reseedEnrichment = async (client) => {
         `
           UPDATE product_enrichment_items
           SET status = 'queued', "startedAt" = NULL, "updatedAt" = NOW()
-          WHERE id = ANY($1::uuid[])
+          WHERE id = ANY($1::text[])
             AND status IN ('pending', 'failed')
         `,
         [ids],
