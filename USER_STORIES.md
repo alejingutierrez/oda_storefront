@@ -742,6 +742,26 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: reducir latencia percibida al aplicar filtros combinados; evitar ráfagas de requests por click.
 - Estado: **done (2026-02-18)**.
 
+### MC-129 PLP (SEO + filtros): rutas canónicas, facets contextuales, conteos reales y generador SEO (Bedrock)
+- Historia: Como usuario, quiero PLPs con URLs canónicas SEO y filtros consistentes (marcas reales, chips, patrones y conteos), y como operador quiero generar descripciones únicas por PLP, para mejorar descubrimiento y SEO.
+- Alcance:
+  - Canonical PLP: `/{femenino|masculino|unisex|infantil}/[categoria]/[subcategoria]` y redirect 308 permanente desde `/g/*`.
+  - Facets PLP: marcas/materiales/patrones contextuales por filtros efectivos (facets-lite); marcas ordenadas por conteo desc.
+  - Chips subcategoría: funcionan en `/{gender}/{categoria}` (query `subcategory`), y se bloquean cuando la subcategoría está en el path.
+  - Conteos: “X marcas” en PLP refleja `count(distinct brandId)` del set filtrado (mismo universo que “Y productos”).
+  - UI: sección “Patrón” en filtros y panel desktop con padding/spacer al final (no corta en Materiales). Toggle mobile 1/2 columnas por iconos.
+  - SEO PLP: panel `/admin/plp-seo` genera `metaTitle/metaDescription/subtitle` con Bedrock (batch 20, muestra 100 productos random) y persiste en `plp_seo_pages` (con runs/items + cola BullMQ).
+- CA:
+  - `/g/femenino/camisetas_y_tops` responde con 308 a `/femenino/camisetas_y_tops` y `canonical` ya no incluye `/g/`.
+  - En una PLP, el filtro de marcas lista solo marcas presentes y queda ordenado por conteo desc.
+  - En `/{gender}/{categoria}`, tocar chips agrega/remueve `subcategory` y cambia resultados.
+  - “X marcas” cae/crece coherentemente al aplicar filtros (incluyendo filtro por marca).
+  - Se ve “Patrón” en filtros cuando hay datos y el panel permite scroll hasta el final con padding.
+  - En mobile, el selector de columnas muestra iconos y persiste `oda_catalog_mobile_columns_v1`.
+  - En admin, se puede correr un batch y ver copy aplicado en meta description + subtítulo visible de la PLP.
+- Datos: `plp_seo_pages`, `plp_seo_runs`, `plp_seo_items`.
+- Estado: **done (2026-02-18)**.
+
 ### MC-126 PLP `/catalogo`: polish desktop + listas + SEO + header
 - Historia: Como usuario, quiero que el catálogo en desktop sea más ordenado y predecible (scroll de filtros por zonas, guardado en listas sin fricción y header consistente), y que la página tenga SEO más robusto, para explorar y compartir mejor.
 - Alcance:

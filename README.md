@@ -31,6 +31,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Catalog refresh semanal: `CATALOG_REFRESH_INTERVAL_DAYS`, `CATALOG_REFRESH_JITTER_HOURS`, `CATALOG_REFRESH_MAX_BRANDS`, `CATALOG_REFRESH_BRAND_CONCURRENCY`, `CATALOG_REFRESH_MAX_RUNTIME_MS`, `CATALOG_REFRESH_MIN_GAP_HOURS`, `CATALOG_REFRESH_MAX_FAILED_ITEMS`, `CATALOG_REFRESH_MAX_FAILED_RATE`, `CATALOG_REFRESH_DISCOVERY_LIMIT` (0 = sin límite), `CATALOG_REFRESH_COVERAGE_ENABLED`, `CATALOG_REFRESH_AUTO_RECOVER`, `CATALOG_REFRESH_RECOVER_MAX_RUNS`, `CATALOG_REFRESH_RECOVER_STUCK_MINUTES`, `CATALOG_REFRESH_ENRICH_RECOVER_STUCK_MINUTES`, `CATALOG_REFRESH_FAILED_LOOKBACK_DAYS`, `CATALOG_REFRESH_FAILED_URL_LIMIT`, `CATALOG_REFRESH_ENRICH_LOOKBACK_DAYS`, `CATALOG_REFRESH_ENRICH_MAX_PRODUCTS`, `CATALOG_REFRESH_DRAIN_ON_RUN`, `CATALOG_ALERT_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_ALERT_STUCK_MINUTES`.
 - Catalog extractor (PDP LLM): `CATALOG_OPENAI_MODEL`, `CATALOG_OPENAI_TEMPERATURE`, `CATALOG_OPENAI_DISABLE_TEMPERATURE`, `CATALOG_PDP_LLM_ENABLED`, `CATALOG_PDP_LLM_CONFIDENCE_MIN`, `CATALOG_PDP_LLM_MAX_HTML_CHARS`, `CATALOG_PDP_LLM_MAX_TEXT_CHARS`, `CATALOG_PDP_LLM_MAX_IMAGES`.
 - Product enrichment (switch OpenAI/Bedrock): `PRODUCT_ENRICHMENT_PROVIDER` (`openai|bedrock`), `PRODUCT_ENRICHMENT_MODEL`, `BEDROCK_INFERENCE_PROFILE_ID`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `PRODUCT_ENRICHMENT_MAX_TOKENS`, `PRODUCT_ENRICHMENT_MAX_RETRIES`, `PRODUCT_ENRICHMENT_MAX_ATTEMPTS`, `PRODUCT_ENRICHMENT_MAX_IMAGES`, `PRODUCT_ENRICHMENT_VARIANT_CHUNK_SIZE`, `PRODUCT_ENRICHMENT_REPAIR_MAX_CHARS`, `PRODUCT_ENRICHMENT_BEDROCK_MAX_IMAGES`, `PRODUCT_ENRICHMENT_BEDROCK_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_BEDROCK_INCLUDE_IMAGES`, `PRODUCT_ENRICHMENT_BEDROCK_IMAGE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_BEDROCK_IMAGE_MAX_BYTES`, `PRODUCT_ENRICHMENT_BEDROCK_TOP_K`, `PRODUCT_ENRICHMENT_BEDROCK_TEMPERATURE`, `PRODUCT_ENRICHMENT_BEDROCK_LATENCY`, `PRODUCT_ENRICHMENT_BEDROCK_STOP_SEQUENCES`, `PRODUCT_ENRICHMENT_QUEUE_NAME`, `PRODUCT_ENRICHMENT_QUEUE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_QUEUE_DISABLED`, `PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT`, `PRODUCT_ENRICHMENT_QUEUE_STALE_MINUTES`, `PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_RESUME_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_AUTO_PAUSE_ON_ERRORS`, `PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT`, `PRODUCT_ENRICHMENT_DRAIN_ON_RUN`, `PRODUCT_ENRICHMENT_DRAIN_BATCH`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS`, `PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNS`, `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`, `PRODUCT_ENRICHMENT_WORKER_API_URL`, `PRODUCT_ENRICHMENT_ALLOW_REENRICH`.
+- PLP SEO (admin + Bedrock + cola): `PLP_SEO_BEDROCK_INFERENCE_PROFILE_ID` (fallback: `BEDROCK_INFERENCE_PROFILE_ID`), `PLP_SEO_BEDROCK_MAX_TOKENS`, `PLP_SEO_BEDROCK_TIMEOUT_MS`, `PLP_SEO_BEDROCK_TEMPERATURE`, `PLP_SEO_BEDROCK_TOP_K`, `PLP_SEO_MAX_RETRIES`, `PLP_SEO_SAMPLE_PRODUCTS`, `PLP_SEO_MAX_ATTEMPTS`, `PLP_SEO_QUEUE_NAME`, `PLP_SEO_QUEUE_DISABLED`, `PLP_SEO_QUEUE_TIMEOUT_MS`, `PLP_SEO_QUEUE_ENQUEUE_LIMIT`, `PLP_SEO_QUEUE_STALE_MINUTES`, `PLP_SEO_ITEM_STUCK_MINUTES`, `PLP_SEO_WORKER_CONCURRENCY`, `PLP_SEO_WORKER_API_URL`.
 - Taxonomy remap (auto-reseed): `TAXONOMY_REMAP_AUTO_RESEED_ENABLED`, `TAXONOMY_REMAP_AUTO_RESEED_THRESHOLD`, `TAXONOMY_REMAP_AUTO_RESEED_LIMIT`, `TAXONOMY_REMAP_AUTO_RESEED_COOLDOWN_MINUTES`, `TAXONOMY_REMAP_AUTO_RESEED_RUNNING_STALE_MINUTES`, `TAXONOMY_REMAP_AUTO_RESEED_FORCE_RECOVER_MINUTES`.
 - Sweep tech profiler: `TECH_PROFILE_SWEEP_LIMIT`, `TECH_PROFILE_SWEEP_PLATFORM` (all|unknown|null|shopify|...).
 - Dry-run LLM: `UNKNOWN_LLM_DRY_RUN_LIMIT`, `UNKNOWN_LLM_DRY_RUN_CANDIDATES`.
@@ -144,8 +145,10 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Eventos de experiencia UI viven en `experience_events` y se vinculan a `experience_subjects` usando cookie persistente `oda_anon_id`.
 
 ## Catalogo (public)
-- Ruta `/catalogo` (y aliases `/buscar`, `/g/*`) con filtros, facets y scroll infinito.
+- Ruta `/catalogo` (y alias `/buscar`) con filtros, facets y scroll infinito.
+- Rutas canónicas SEO de PLP: `/{femenino|masculino|unisex|infantil}/[categoria]/[subcategoria]` (redirect 308 permanente desde `/g/*`).
 - El catálogo público fuerza `inStock=true` y `enrichedOnly=true` (no muestra productos sin `products.metadata.enrichment`).
+- Facets contextuales: marcas/materiales/patrones vienen de `/api/catalog/facets-lite` según filtros efectivos de la PLP (marcas ordenadas por conteo desc). El contador “X marcas” es `count(distinct brandId)` del set filtrado.
 - Hardening de estabilidad en pestañas inactivas:
   - Filtros (desktop/mobile): lock transitorio de interacción con timeout + liberación automática al volver (`focus`, `visibilitychange`, `pageshow`) para evitar estados “pegados” en `Aplicando/Actualizando`.
   - Infinite scroll: `loadMore` y prefetch con timeout/abort; reintento automático al recuperar foco/conectividad (`focus`, `online`, `pageshow`) y fallback por proximidad al sentinel.
@@ -222,6 +225,10 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - El worker BullMQ aplica concurrencia mínima 20 vía `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`.
   - El batch de drenado y el enqueue limit se elevan automáticamente al nivel de concurrencia para evitar cuellos por configuración baja.
   - Persistencia de estado: `scope`, `brandId` y `batch` viven en la URL para mantener el contexto tras recarga.
+- Panel `/admin/plp-seo` (SEO PLP):
+  - Genera meta title/description + subtítulo visible por PLP (`/{genderSlug}/[categoria]/[subcategoria]`) usando Bedrock (tool schema) y persiste en `plp_seo_pages`.
+  - Operación por batches de 20 (items), usando muestra de 100 productos random por PLP + top brands/materials/patterns (facets-lite).
+  - Cola BullMQ `plp-seo` con worker (`services/worker`) que llama `POST /api/admin/plp-seo/process-item`.
 
 ## API interna (MC-004)
 - Endpoint: `POST /api/normalize` (runtime Node).
