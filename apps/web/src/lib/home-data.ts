@@ -14,7 +14,7 @@ import {
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 2;
+const HOME_CACHE_VERSION = 3;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 
 export type MenuSubcategory = {

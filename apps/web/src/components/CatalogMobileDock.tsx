@@ -379,6 +379,7 @@ export default function CatalogMobileDock({
                 <CatalogoFiltersPanel
                   facets={facets}
                   subcategories={subcategories}
+                  showSubcategoriesSection={false}
                   priceBounds={priceBounds}
                   priceHistogram={priceHistogram}
                   priceStats={priceStats}

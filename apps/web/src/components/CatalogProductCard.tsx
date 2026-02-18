@@ -295,8 +295,8 @@ export default function CatalogProductCard({
         ? "h-[42%]"
         : "h-[30%]"
       : mobileCompact
-        ? "h-[34%]"
-        : "h-[24%]";
+        ? "h-[26%]"
+        : "h-[20%]";
 
   const priceLabel = useMemo(
     () => formatPriceRange(product.minPrice, product.maxPrice, product.currency),
@@ -443,7 +443,7 @@ export default function CatalogProductCard({
             <h3
               className={[
                 "font-semibold leading-snug text-[color:var(--oda-ink)] lg:text-sm",
-                mobileCompact ? "text-[12px] line-clamp-2" : "text-[13px] truncate",
+                mobileCompact ? "text-[12px] truncate" : "text-[13px] truncate",
               ].join(" ")}
             >
               {product.name}

@@ -249,10 +249,14 @@ export default function CatalogSubcategoryChips({
   const showCounts = density === "desktop";
   const labelMaxW = density === "mobile" ? "max-w-[8.5rem]" : "max-w-[10rem]";
   const circle = density === "mobile" ? "h-7 w-7" : "h-8 w-8";
-  const circleSizes = density === "mobile" ? "28px" : "32px";
-  const chip = density === "mobile" ? "px-2.5 py-1.5" : "px-3 py-2";
+  const circleSizes = density === "mobile" ? "40px" : "48px";
+  const chip = density === "mobile" ? "min-h-10 px-2.5 py-1.5" : "min-h-12 px-3 py-2";
   const chipGap = density === "mobile" ? "gap-2" : "gap-2.5";
   const labelClass = density === "mobile" ? "text-[12px]" : "text-[13px]";
+  const circleVisual =
+    density === "mobile"
+      ? "-left-[9px] -top-[6px] h-10 w-10"
+      : "-left-[12px] -top-[8px] h-12 w-12";
 
   const wrapperClassName =
     mode === "toolbar"
@@ -291,17 +295,6 @@ export default function CatalogSubcategoryChips({
                 ].join(" ")}
                 title="Ver todas"
               >
-                <span
-                  className={[
-                    `flex ${circle} items-center justify-center rounded-full border`,
-                    selected.length === 0
-                      ? "border-white/40 bg-white/10 text-[color:var(--oda-cream)]"
-                      : "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-taupe)]",
-                  ].join(" ")}
-                  aria-hidden="true"
-                >
-                  *
-                </span>
                 <span className="min-w-0">
                   <span className={["block truncate font-semibold leading-tight", labelMaxW, labelClass].join(" ")}>
                     Todas
@@ -346,25 +339,35 @@ export default function CatalogSubcategoryChips({
                   >
                     <span
                       className={[
-                        "relative overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-stone)]",
+                        "relative",
                         circle,
                       ].join(" ")}
                     >
-                      {img ? (
-                        <Image
-                          src={img}
-                          alt={item.label}
-                          fill
-                          sizes={circleSizes}
-                          unoptimized={img.startsWith("/api/image-proxy")}
-                          className="object-cover object-center transition duration-500 group-hover:scale-[1.08] motion-reduce:transition-none"
-                          priority={false}
-                        />
-                      ) : (
-                        <span className="flex h-full w-full items-center justify-center text-[10px] text-[color:var(--oda-taupe)]">
-                          -
+                      <span
+                        className={[
+                          "absolute overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-stone)]",
+                          circleVisual,
+                        ].join(" ")}
+                        aria-hidden="true"
+                      >
+                        <span className="relative block h-full w-full">
+                          {img ? (
+                            <Image
+                              src={img}
+                              alt={item.label}
+                              fill
+                              sizes={circleSizes}
+                              unoptimized={img.startsWith("/api/image-proxy")}
+                              className="object-cover object-center transition duration-500 group-hover:scale-[1.08] motion-reduce:transition-none"
+                              priority={false}
+                            />
+                          ) : (
+                            <span className="flex h-full w-full items-center justify-center text-[10px] text-[color:var(--oda-taupe)]">
+                              -
+                            </span>
+                          )}
                         </span>
-                      )}
+                      </span>
                     </span>
                     <span className="min-w-0">
                       <span className={["block truncate font-semibold leading-tight", labelMaxW, labelClass].join(" ")}>

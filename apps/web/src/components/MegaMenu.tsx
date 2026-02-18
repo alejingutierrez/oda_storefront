@@ -14,7 +14,7 @@ const splitColumns = <T,>(items: T[], columns: number) => {
 
 export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
   return (
-    <nav className="w-full">
+    <nav className="relative w-full">
       <ul className="flex items-center gap-6 text-sm uppercase tracking-[0.18em] text-[color:var(--oda-ink)]">
         <li>
           <Link prefetch={false}
