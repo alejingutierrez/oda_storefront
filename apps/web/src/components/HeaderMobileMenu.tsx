@@ -274,48 +274,53 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                           Sin categorias disponibles
                         </p>
                       ) : (
-                        sectionItems.map((item) => (
-                          <div
-                            key={item.key}
-                            className="rounded-2xl border border-[color:var(--oda-border)] bg-white/70 px-3 py-3"
-                          >
-                            <Link
-                              prefetch={false}
-                              href={item.href}
-                              className="inline-flex min-h-11 items-center rounded-xl px-2 py-2 text-xs font-medium uppercase tracking-[0.14em] text-[color:var(--oda-ink)]"
-                              onClick={() =>
-                                handleItemClick(item.href, item.label, {
-                                  level: "section",
-                                  gender: activeGender,
-                                  section: activeSection,
-                                })
-                              }
+                        sectionItems.map((item) => {
+                          const visibleSubcategories = (item.subcategories ?? []).filter(
+                            (sub) => sub.count > 0,
+                          );
+                          return (
+                            <div
+                              key={item.key}
+                              className="rounded-2xl border border-[color:var(--oda-border)] bg-white/70 px-3 py-3"
                             >
-                              {item.label}
-                            </Link>
-                            {item.subcategories && item.subcategories.length > 0 ? (
-                              <div className="mt-2 flex flex-wrap gap-2 px-1">
-                                {item.subcategories.map((sub) => (
-                                  <Link
-                                    prefetch={false}
-                                    key={sub.key}
-                                    href={sub.href}
-                                    className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-[color:var(--oda-taupe)]"
-                                    onClick={() =>
-                                      handleItemClick(sub.href, sub.label, {
-                                        level: "section",
-                                        gender: activeGender,
-                                        section: activeSection,
-                                      })
-                                    }
-                                  >
-                                    {sub.label}
-                                  </Link>
-                                ))}
-                              </div>
-                            ) : null}
-                          </div>
-                        ))
+                              <Link
+                                prefetch={false}
+                                href={item.href}
+                                className="inline-flex min-h-11 items-center rounded-xl px-2 py-2 text-xs font-medium uppercase tracking-[0.14em] text-[color:var(--oda-ink)]"
+                                onClick={() =>
+                                  handleItemClick(item.href, item.label, {
+                                    level: "section",
+                                    gender: activeGender,
+                                    section: activeSection,
+                                  })
+                                }
+                              >
+                                {item.label}
+                              </Link>
+                              {visibleSubcategories.length > 0 ? (
+                                <div className="mt-2 flex flex-wrap gap-2 px-1">
+                                  {visibleSubcategories.map((sub) => (
+                                    <Link
+                                      prefetch={false}
+                                      key={sub.key}
+                                      href={sub.href}
+                                      className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-[color:var(--oda-taupe)]"
+                                      onClick={() =>
+                                        handleItemClick(sub.href, sub.label, {
+                                          level: "section",
+                                          gender: activeGender,
+                                          section: activeSection,
+                                        })
+                                      }
+                                    >
+                                      {sub.label}
+                                    </Link>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   ) : null}

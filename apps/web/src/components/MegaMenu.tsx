@@ -242,7 +242,7 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
             }
           >
             <div className="grid grid-cols-4 gap-8">
-              <div className="col-span-2 flex flex-col gap-4">
+              <div className="col-span-2 flex flex-col gap-3">
                 <span className="text-xs uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
                   Superiores
                 </span>
@@ -250,135 +250,150 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
                   {sectionData.SuperioresColumns.map((items, columnIndex) => (
                     <div
                       key={`${openGender}-superiores-${columnIndex}`}
-                      className="flex max-h-[52vh] flex-col gap-3 overflow-y-auto pr-2"
+                      className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto pr-2"
                     >
-                      {items.map((item) => (
-                        <div key={item.key} className="flex flex-col gap-2">
-                          <Link
-                            prefetch={false}
-                            href={item.href}
-                            className={[
-                              "-mx-2 inline-flex rounded-lg px-2 py-1 text-sm font-medium text-[color:var(--oda-ink)] transition",
-                              "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
-                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                            ].join(" ")}
-                            onClick={() => handleItemClick(openGender, "Superiores", item.href, item.label)}
-                          >
-                            {item.label}
-                          </Link>
-                          {item.subcategories && item.subcategories.length > 0 ? (
-                            <div className="grid gap-1 border-l border-[color:var(--oda-border)] pl-3">
-                              {item.subcategories.map((sub) => (
-                                <Link
-                                  prefetch={false}
-                                  key={sub.key}
-                                  href={sub.href}
-                                  className={[
-                                    "-mx-2 inline-flex rounded-md px-2 py-1 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
-                                    "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
-                                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                                  ].join(" ")}
-                                  onClick={() =>
-                                    handleItemClick(openGender, "Superiores", sub.href, sub.label)
-                                  }
-                                >
-                                  {sub.label}
-                                </Link>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
+                      {items.map((item) => {
+                        const visibleSubcategories = (item.subcategories ?? []).filter(
+                          (sub) => sub.count > 0,
+                        );
+                        return (
+                          <div key={item.key} className="flex flex-col gap-1">
+                            <Link
+                              prefetch={false}
+                              href={item.href}
+                              className={[
+                                "-mx-2 inline-flex rounded-lg px-2 py-0.5 text-sm font-medium text-[color:var(--oda-ink)] transition",
+                                "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
+                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                              ].join(" ")}
+                              onClick={() => handleItemClick(openGender, "Superiores", item.href, item.label)}
+                            >
+                              {item.label}
+                            </Link>
+                            {visibleSubcategories.length > 0 ? (
+                              <div className="grid gap-0.5 border-l border-[color:var(--oda-border)] pl-3">
+                                {visibleSubcategories.map((sub) => (
+                                  <Link
+                                    prefetch={false}
+                                    key={sub.key}
+                                    href={sub.href}
+                                    className={[
+                                      "-mx-2 inline-flex rounded-md px-2 py-0.5 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
+                                      "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
+                                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                                    ].join(" ")}
+                                    onClick={() =>
+                                      handleItemClick(openGender, "Superiores", sub.href, sub.label)
+                                    }
+                                  >
+                                    {sub.label}
+                                  </Link>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3">
                 <span className="text-xs uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
                   Inferiores
                 </span>
-                <div className="flex max-h-[52vh] flex-col gap-3 overflow-y-auto pr-2">
-                  {sectionData.Inferiores.map((item) => (
-                    <div key={item.key} className="flex flex-col gap-2">
-                      <Link
-                        prefetch={false}
-                        href={item.href}
-                        className={[
-                          "-mx-2 inline-flex rounded-lg px-2 py-1 text-sm font-medium text-[color:var(--oda-ink)] transition",
-                          "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                        ].join(" ")}
-                        onClick={() => handleItemClick(openGender, "Inferiores", item.href, item.label)}
-                      >
-                        {item.label}
-                      </Link>
-                      {item.subcategories && item.subcategories.length > 0 ? (
-                        <div className="grid gap-1 border-l border-[color:var(--oda-border)] pl-3">
-                          {item.subcategories.map((sub) => (
-                            <Link
-                              prefetch={false}
-                              key={sub.key}
-                              href={sub.href}
-                              className={[
-                                "-mx-2 inline-flex rounded-md px-2 py-1 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
-                                "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
-                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                              ].join(" ")}
-                              onClick={() =>
-                                handleItemClick(openGender, "Inferiores", sub.href, sub.label)
-                              }
-                            >
-                              {sub.label}
-                            </Link>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
+                <div className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto pr-2">
+                  {sectionData.Inferiores.map((item) => {
+                    const visibleSubcategories = (item.subcategories ?? []).filter(
+                      (sub) => sub.count > 0,
+                    );
+                    return (
+                      <div key={item.key} className="flex flex-col gap-1">
+                        <Link
+                          prefetch={false}
+                          href={item.href}
+                          className={[
+                            "-mx-2 inline-flex rounded-lg px-2 py-0.5 text-sm font-medium text-[color:var(--oda-ink)] transition",
+                            "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                          ].join(" ")}
+                          onClick={() => handleItemClick(openGender, "Inferiores", item.href, item.label)}
+                        >
+                          {item.label}
+                        </Link>
+                        {visibleSubcategories.length > 0 ? (
+                          <div className="grid gap-0.5 border-l border-[color:var(--oda-border)] pl-3">
+                            {visibleSubcategories.map((sub) => (
+                              <Link
+                                prefetch={false}
+                                key={sub.key}
+                                href={sub.href}
+                                className={[
+                                  "-mx-2 inline-flex rounded-md px-2 py-0.5 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
+                                  "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
+                                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                                ].join(" ")}
+                                onClick={() =>
+                                  handleItemClick(openGender, "Inferiores", sub.href, sub.label)
+                                }
+                              >
+                                {sub.label}
+                              </Link>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3">
                 <span className="text-xs uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
                   Accesorios
                 </span>
-                <div className="flex max-h-[52vh] flex-col gap-3 overflow-y-auto pr-2">
-                  {sectionData.Accesorios.map((item) => (
-                    <div key={item.key} className="flex flex-col gap-2">
-                      <Link
-                        prefetch={false}
-                        href={item.href}
-                        className={[
-                          "-mx-2 inline-flex rounded-lg px-2 py-1 text-sm font-medium text-[color:var(--oda-ink)] transition",
-                          "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                        ].join(" ")}
-                        onClick={() => handleItemClick(openGender, "Accesorios", item.href, item.label)}
-                      >
-                        {item.label}
-                      </Link>
-                      {item.subcategories && item.subcategories.length > 0 ? (
-                        <div className="grid gap-1 border-l border-[color:var(--oda-border)] pl-3">
-                          {item.subcategories.map((sub) => (
-                            <Link
-                              prefetch={false}
-                              key={sub.key}
-                              href={sub.href}
-                              className={[
-                                "-mx-2 inline-flex rounded-md px-2 py-1 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
-                                "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
-                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                              ].join(" ")}
-                              onClick={() =>
-                                handleItemClick(openGender, "Accesorios", sub.href, sub.label)
-                              }
-                            >
-                              {sub.label}
-                            </Link>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
+                <div className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto pr-2">
+                  {sectionData.Accesorios.map((item) => {
+                    const visibleSubcategories = (item.subcategories ?? []).filter(
+                      (sub) => sub.count > 0,
+                    );
+                    return (
+                      <div key={item.key} className="flex flex-col gap-1">
+                        <Link
+                          prefetch={false}
+                          href={item.href}
+                          className={[
+                            "-mx-2 inline-flex rounded-lg px-2 py-0.5 text-sm font-medium text-[color:var(--oda-ink)] transition",
+                            "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                          ].join(" ")}
+                          onClick={() => handleItemClick(openGender, "Accesorios", item.href, item.label)}
+                        >
+                          {item.label}
+                        </Link>
+                        {visibleSubcategories.length > 0 ? (
+                          <div className="grid gap-0.5 border-l border-[color:var(--oda-border)] pl-3">
+                            {visibleSubcategories.map((sub) => (
+                              <Link
+                                prefetch={false}
+                                key={sub.key}
+                                href={sub.href}
+                                className={[
+                                  "-mx-2 inline-flex rounded-md px-2 py-0.5 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
+                                  "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
+                                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                                ].join(" ")}
+                                onClick={() =>
+                                  handleItemClick(openGender, "Accesorios", sub.href, sub.label)
+                                }
+                              >
+                                {sub.label}
+                              </Link>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>

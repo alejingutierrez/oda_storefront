@@ -7,10 +7,8 @@ import { CATALOG_CACHE_TAG } from "@/lib/catalog-cache";
 import {
   CATEGORY_GROUPS,
   GenderKey,
-  SPECIAL_SUBCATEGORY_SPLITS,
   buildCategoryHref,
   labelize,
-  labelizeSubcategory,
 } from "@/lib/navigation";
 import { buildEffectiveVariantPriceCopExpr } from "@/lib/catalog-query";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
@@ -18,7 +16,7 @@ import { getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm, toCopDisplay
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 3;
+const HOME_CACHE_VERSION = 4;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 
 export type MenuSubcategory = {
@@ -193,37 +191,6 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
           for (const category of categories) {
             const entry = catMap.get(category);
             if (!entry || entry.count <= 0) {
-              continue;
-            }
-
-            if (category === "ropa_deportiva_y_performance") {
-              const allowed =
-                column === "Superiores"
-                  ? SPECIAL_SUBCATEGORY_SPLITS.ropa_deportiva_y_performance.superiores
-                  : column === "Inferiores"
-                    ? SPECIAL_SUBCATEGORY_SPLITS.ropa_deportiva_y_performance.inferiores
-                    : [];
-              if (allowed.length === 0) {
-                continue;
-              }
-              const subcategories = allowed
-                .map((sub) => ({
-                  key: sub,
-                  label: labelizeSubcategory(sub),
-                  count: entry.sub.get(sub) ?? 0,
-                  href: buildCategoryHref(gender, category, sub),
-                }))
-                .filter((sub) => sub.count > 0);
-              if (subcategories.length === 0) {
-                continue;
-              }
-              items.push({
-                key: category,
-                label: labelize(category),
-                count: entry.count,
-                href: buildCategoryHref(gender, category),
-                subcategories,
-              });
               continue;
             }
 
