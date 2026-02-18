@@ -91,7 +91,8 @@ export async function computeUsdBrandCandidates(config?: PricingConfig): Promise
       b.name as "brandName",
       t.total_products as "totalProducts",
       coalesce(s.suspect_products, 0)::int as "suspectProducts",
-      round(100.0 * coalesce(s.suspect_products, 0) / nullif(t.total_products, 0), 4) as pct
+      -- Prisma maps NUMERIC to Decimal-like objects; cast to float8 so JS receives a number.
+      round(100.0 * coalesce(s.suspect_products, 0) / nullif(t.total_products, 0), 4)::float8 as pct
     from totals t
     join brands b on b.id = t.brand_id
     left join suspect s on s.brand_id = t.brand_id
@@ -101,7 +102,7 @@ export async function computeUsdBrandCandidates(config?: PricingConfig): Promise
 
   const evaluatedBrands = rows.length;
   const candidates = rows
-    .filter((row) => typeof row.pct === "number" && row.pct > threshold)
+    .filter((row) => Number.isFinite(row.pct) && row.pct > threshold)
     .map((row) => ({
       brandId: row.brandId,
       brandName: row.brandName,
@@ -209,7 +210,6 @@ export async function applyUsdBrandOverrides(params?: { config?: PricingConfig }
   // Avoid an unbounded `Promise.all` even though candidate set is small.
   const BATCH = 25;
   for (let i = 0; i < updates.length; i += BATCH) {
-    // eslint-disable-next-line no-await-in-loop
     await Promise.allSettled(updates.slice(i, i + BATCH));
   }
 

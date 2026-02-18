@@ -46,10 +46,13 @@ type UsdOverrideBrand = {
 };
 
 type AutoUsdRunSummary = {
+  evaluatedBrands: number;
+  candidateBrands: number;
   markedUsd: number;
   skippedManual: number;
   skippedAlreadyUsd: number;
   errors: number;
+  ranAt: string;
 };
 
 const readObject = (value: unknown) =>
@@ -78,6 +81,7 @@ export default function PricingPanel() {
   const [isPending, startTransition] = useTransition();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [autoMarkRunning, setAutoMarkRunning] = useState(false);
 
   const [config, setConfig] = useState<PricingConfig | null>(null);
   const [brands, setBrands] = useState<UsdOverrideBrand[]>([]);
@@ -174,6 +178,7 @@ export default function PricingPanel() {
   const runAutoMark = useCallback(() => {
     startTransition(async () => {
       setError(null);
+      setAutoMarkRunning(true);
       try {
         const res = await fetch("/api/admin/pricing/auto-usd-brands", { method: "POST" });
         const json = (await res.json().catch(() => null)) as unknown;
@@ -182,14 +187,19 @@ export default function PricingPanel() {
         if (!res.ok) throw new Error(err ?? "No se pudo correr auto-marcado");
 
         setLastRun({
+          evaluatedBrands: Number(obj?.evaluatedBrands ?? 0),
+          candidateBrands: Number(obj?.candidateBrands ?? 0),
           markedUsd: Number(obj?.markedUsd ?? 0),
           skippedManual: Number(obj?.skippedManual ?? 0),
           skippedAlreadyUsd: Number(obj?.skippedAlreadyUsd ?? 0),
           errors: Number(obj?.errors ?? 0),
+          ranAt: new Date().toISOString(),
         });
         await refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setAutoMarkRunning(false);
       }
     });
   }, [refresh, startTransition]);
@@ -249,10 +259,10 @@ export default function PricingPanel() {
             <button
               type="button"
               onClick={runAutoMark}
-              disabled={loading || isPending}
+              disabled={loading || isPending || autoMarkRunning}
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
             >
-              Correr auto-marcado ahora
+              {autoMarkRunning ? "Ejecutando auto-marcado…" : "Correr auto-marcado ahora"}
             </button>
           </div>
         </div>
@@ -333,6 +343,9 @@ export default function PricingPanel() {
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
               <div className="flex flex-wrap gap-3">
                 <span className="font-semibold">Ultimo run:</span>
+                <span>
+                  candidatas: {String(lastRun.candidateBrands ?? 0)} / {String(lastRun.evaluatedBrands ?? 0)}
+                </span>
                 <span>marcadas: {String(lastRun.markedUsd ?? 0)}</span>
                 <span>skip manual: {String(lastRun.skippedManual ?? 0)}</span>
                 <span>ya USD: {String(lastRun.skippedAlreadyUsd ?? 0)}</span>
