@@ -118,6 +118,10 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Bulk edit: la modal puede aplicar cambios a la **selección** o directamente al **filtro actual** (sin seleccionar manualmente), con límite de 1200 productos por request.
   - Integridad: al reemplazar `category` se limpia `subcategory` si deja de pertenecer; al reemplazar `subcategory` se valida contra la categoría.
   - No permite editar `description` ni campos SEO. Preserva `products.metadata.enrichment` y registra trazabilidad en `products.metadata.enrichment_human`.
+- Panel `/admin/pricing` (precios/TRM):
+  - Editar TRM USD→COP y reglas de auto-clasificación de marcas USD (umbral % + `COP <` sospechoso + incluir variantes ya en USD).
+  - Botón para correr el auto-marcado bajo demanda (además del cron diario).
+  - Tabla de marcas con override USD (promover a manual o limpiar override).
 - Panel `/admin/taxonomy` (taxonomía):
   - Editor de categorías/subcategorías/materiales/patrones/ocasiones/style tags con workflow **draft → publish**.
   - Editor de perfiles de estilo (tabla `style_profiles`) + acción de backfill para recalcular `stylePrimary/styleSecondary`.
@@ -267,6 +271,15 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - `GET /api/admin/products`: listado paginado de productos (query: `page`, `pageSize`, `brandId`).
 - `GET /api/admin/products/brands`: listado de marcas con conteo de productos.
 - `GET /api/admin/products/:id`: detalle de producto con variantes.
+
+## API interna (pricing / TRM)
+- `GET /api/admin/pricing/config`: retorna config resuelta (defaults + KV `standard_color_config:pricing_config`).
+- `PATCH /api/admin/pricing/config`: actualiza TRM USD→COP y reglas de auto-marcado; invalida cache de catálogo.
+- `GET /api/admin/pricing/auto-usd-brands`: dry-run de candidatas (pct > umbral).
+- `POST /api/admin/pricing/auto-usd-brands`: aplica overrides USD (solo marca, no desmarca; no pisa manual) e invalida cache.
+- `GET /api/admin/pricing/auto-usd-brands/cron`: misma lógica para cron (autoriza `x-vercel-cron` o `Authorization: Bearer ADMIN_TOKEN`).
+- `GET /api/admin/pricing/brands`: lista marcas con override USD.
+- `PATCH /api/admin/pricing/brands/:id/override`: set/clear override manual (body `{ currency_override: "USD" | null }`).
 
 ## API interna (curación de productos)
 - `GET /api/admin/product-curation/products`: listado paginado (interno) para scroll infinito (query: filtros del catálogo + `page`, `pageSize`, `sort`).

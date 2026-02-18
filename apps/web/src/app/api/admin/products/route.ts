@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
+import { buildEffectiveVariantPriceCopExpr } from "@/lib/catalog-query";
+import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
+import { getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm, toCopDisplayMarketing } from "@/lib/pricing";
 
 export const runtime = "nodejs";
 
@@ -17,6 +21,11 @@ export async function GET(req: Request) {
   if (!admin) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+
+  const pricingConfig = await getPricingConfig();
+  const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
+  const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+  const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
 
   const url = new URL(req.url);
   const page = Math.max(1, Number(url.searchParams.get("page") ?? 1));
@@ -46,13 +55,20 @@ export async function GET(req: Request) {
       })
     : [];
   const variantAgg = productIds.length
-    ? await prisma.variant.groupBy({
-        by: ["productId"],
-        where: { productId: { in: productIds } },
-        _min: { price: true },
-        _max: { price: true },
-        _count: { _all: true },
-      })
+    ? await prisma.$queryRaw<
+        Array<{ productId: string; minPrice: string | null; maxPrice: string | null; count: bigint }>
+      >(Prisma.sql`
+        select
+          v."productId" as "productId",
+          min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
+          max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
+          count(*) as "count"
+        from variants v
+        join products p on p.id = v."productId"
+        join brands b on b.id = p."brandId"
+        where v."productId" in (${Prisma.join(productIds)})
+        group by v."productId"
+      `)
     : [];
 
   const stockAgg = productIds.length
@@ -68,10 +84,14 @@ export async function GET(req: Request) {
     { minPrice: number | null; maxPrice: number | null; count: number }
   >();
   variantAgg.forEach((row) => {
+    const minRaw = toNumber(row.minPrice);
+    const maxRaw = toNumber(row.maxPrice);
+    const minRounded = toCopDisplayMarketing(minRaw, displayUnitCop);
+    const maxRounded = toCopDisplayMarketing(maxRaw, displayUnitCop);
     variantMap.set(row.productId, {
-      minPrice: toNumber(row._min.price),
-      maxPrice: toNumber(row._max.price),
-      count: row._count._all ?? 0,
+      minPrice: minRounded ? Math.round(minRounded) : null,
+      maxPrice: maxRounded ? Math.round(maxRounded) : null,
+      count: Number(row.count ?? 0),
     });
   });
 
@@ -120,7 +140,7 @@ export async function GET(req: Request) {
       origin: product.origin,
       status: product.status,
       sourceUrl: product.sourceUrl,
-      currency: product.currency,
+      currency: "COP",
       imageCoverUrl: product.imageCoverUrl,
       imageGallery: imageMap.get(product.id) ?? [],
       createdAt: product.createdAt,

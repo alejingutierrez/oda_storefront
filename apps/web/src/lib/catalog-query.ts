@@ -27,6 +27,10 @@ export type CatalogFilters = {
   enrichedOnly?: boolean;
 };
 
+export type PricingSqlContext = {
+  trmUsdCop: number;
+};
+
 const genderSqlMap: Record<GenderKey, Prisma.Sql> = {
   Femenino: Prisma.sql`lower(coalesce(p.gender,'')) in ('femenino','mujer')`,
   Masculino: Prisma.sql`lower(coalesce(p.gender,'')) in ('masculino','hombre','male')`,
@@ -36,6 +40,22 @@ const genderSqlMap: Record<GenderKey, Prisma.Sql> = {
 
 function buildTextArray(values: string[]): Prisma.Sql {
   return Prisma.sql`ARRAY[${Prisma.join(values)}]`;
+}
+
+export function buildEffectiveVariantPriceCopExpr(pricing: PricingSqlContext): Prisma.Sql {
+  const trm = Number.isFinite(pricing.trmUsdCop) && pricing.trmUsdCop > 0 ? pricing.trmUsdCop : 4200;
+  // NOTE: This expression assumes the calling query has:
+  // - `brands b` joined in the outer scope (to read `b.metadata` for brand overrides)
+  // - `variants v` as the variant alias in the current scope.
+  return Prisma.sql`
+    (
+      case
+        when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD' then (v.price * ${trm})
+        when upper(coalesce(v.currency, '')) = 'USD' then (v.price * ${trm})
+        else v.price
+      end
+    )
+  `;
 }
 
 // Query-time category canonicalization:
@@ -127,8 +147,9 @@ export function buildProductConditions(filters: CatalogFilters): Prisma.Sql[] {
   return conditions;
 }
 
-export function buildVariantConditions(filters: CatalogFilters): Prisma.Sql[] {
+export function buildVariantConditions(filters: CatalogFilters, pricing: PricingSqlContext): Prisma.Sql[] {
   const variantConditions: Prisma.Sql[] = [];
+  const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
   if (filters.colors && filters.colors.length > 0) {
     const raw = filters.colors.map((value) => value.trim()).filter(Boolean);
     const uuidRe =
@@ -184,23 +205,25 @@ export function buildVariantConditions(filters: CatalogFilters): Prisma.Sql[] {
       const max = typeof range.max === "number" && Number.isFinite(range.max) ? range.max : null;
       if (min === null && max === null) continue;
       if (min !== null && max !== null && max < min) continue;
-      if (min !== null && max !== null) parts.push(Prisma.sql`(v.price between ${min} and ${max})`);
-      else if (min !== null) parts.push(Prisma.sql`(v.price >= ${min})`);
-      else if (max !== null) parts.push(Prisma.sql`(v.price <= ${max})`);
+      if (min !== null && max !== null) parts.push(Prisma.sql`(${priceCopExpr} between ${min} and ${max})`);
+      else if (min !== null) parts.push(Prisma.sql`${priceCopExpr} >= ${min}`);
+      else if (max !== null) parts.push(Prisma.sql`${priceCopExpr} <= ${max}`);
     }
     if (parts.length > 0) {
       variantConditions.push(Prisma.sql`(${Prisma.join(parts, " or ")})`);
     }
   } else {
     if (filters.priceMin !== undefined) {
-      variantConditions.push(Prisma.sql`v.price >= ${filters.priceMin}`);
+      variantConditions.push(Prisma.sql`${priceCopExpr} >= ${filters.priceMin}`);
     }
     if (filters.priceMax !== undefined) {
-      variantConditions.push(Prisma.sql`v.price <= ${filters.priceMax}`);
+      variantConditions.push(Prisma.sql`${priceCopExpr} <= ${filters.priceMax}`);
     }
   }
   if (filters.priceRanges?.length || filters.priceMin !== undefined || filters.priceMax !== undefined) {
-    variantConditions.push(Prisma.sql`v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE}`);
+    variantConditions.push(
+      Prisma.sql`${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}`,
+    );
   }
   if (filters.inStock) {
     variantConditions.push(
@@ -210,9 +233,9 @@ export function buildVariantConditions(filters: CatalogFilters): Prisma.Sql[] {
   return variantConditions;
 }
 
-export function buildWhere(filters: CatalogFilters): Prisma.Sql {
+export function buildWhere(filters: CatalogFilters, pricing: PricingSqlContext): Prisma.Sql {
   const productConditions = buildProductConditions(filters);
-  const variantConditions = buildVariantConditions(filters);
+  const variantConditions = buildVariantConditions(filters, pricing);
   const variantFilter =
     variantConditions.length > 0
       ? Prisma.sql`
@@ -230,13 +253,14 @@ export function buildWhere(filters: CatalogFilters): Prisma.Sql {
   `;
 }
 
-export function buildOrderBy(sort: string, filters?: CatalogFilters): Prisma.Sql {
+export function buildOrderBy(sort: string, filters: CatalogFilters | undefined, pricing: PricingSqlContext): Prisma.Sql {
   const q = filters?.q ? `%${filters.q}%` : null;
+  const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
   switch (sort) {
     case "price_asc":
-      return Prisma.sql`order by min(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) asc nulls last, p."createdAt" desc`;
+      return Prisma.sql`order by min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) asc nulls last, p."createdAt" desc`;
     case "price_desc":
-      return Prisma.sql`order by max(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) desc nulls last, p."createdAt" desc`;
+      return Prisma.sql`order by max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) desc nulls last, p."createdAt" desc`;
     case "relevancia":
       if (q) {
         return Prisma.sql`

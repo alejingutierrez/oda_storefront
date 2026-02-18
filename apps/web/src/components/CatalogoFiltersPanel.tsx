@@ -230,10 +230,9 @@ function sortColorFacetItems(items: FacetItem[], selectedValues: string[]) {
   });
 }
 
-function getStep(max: number) {
-  if (!Number.isFinite(max) || max <= 0) return 1000;
-  if (max <= 200_000) return 1000;
-  if (max <= 900_000) return 5000;
+function getStep(_max: number) {
+  // Marketing rounding rule: keep slider ticks clean (ends in `0000`).
+  // Backend already aligns bounds to multiples of 10k COP.
   return 10_000;
 }
 

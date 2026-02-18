@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/descope";
 import { logExperienceEvent } from "@/lib/experience";
+import {
+  getBrandCurrencyOverride,
+  getDisplayRoundingUnitCop,
+  getPricingConfig,
+  getUsdCopTrm,
+  toCopDisplayMarketing,
+  toCopEffective,
+} from "@/lib/pricing";
 
 export async function GET(
   req: Request,
@@ -27,6 +35,10 @@ export async function GET(
     include: { product: { include: { brand: true } }, variant: true },
   });
 
+  const pricingConfig = await getPricingConfig();
+  const trmUsdCop = getUsdCopTrm(pricingConfig);
+  const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+
   return NextResponse.json({
     items: items.map((item) => ({
       id: item.id,
@@ -37,14 +49,25 @@ export async function GET(
         name: item.product.name,
         imageCoverUrl: item.product.imageCoverUrl,
         sourceUrl: item.product.sourceUrl,
-        currency: item.product.currency,
+        currency: "COP",
         brand: item.product.brand ? { id: item.product.brand.id, name: item.product.brand.name } : null,
       },
       variant: item.variant
         ? {
             id: item.variant.id,
-            price: item.variant.price.toString(),
-            currency: item.variant.currency,
+            price: (() => {
+              const brandOverride = getBrandCurrencyOverride(item.product.brand?.metadata);
+              const priceRaw = Number(item.variant!.price.toString());
+              const effective = toCopEffective({
+                price: Number.isFinite(priceRaw) ? priceRaw : null,
+                currency: item.variant!.currency,
+                brandOverride,
+                trmUsdCop,
+              });
+              const display = toCopDisplayMarketing(effective, displayUnitCop);
+              return display ? String(Math.round(display)) : "0";
+            })(),
+            currency: "COP",
             color: item.variant.color,
             size: item.variant.size,
           }

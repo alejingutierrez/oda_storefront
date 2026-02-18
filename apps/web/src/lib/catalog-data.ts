@@ -8,13 +8,21 @@ import { labelize, labelizeSubcategory, normalizeGender, type GenderKey } from "
 import { getPublishedTaxonomyOptions } from "@/lib/taxonomy/server";
 import type { TaxonomyOptions } from "@/lib/taxonomy/types";
 import {
+  buildEffectiveVariantPriceCopExpr,
   buildOrderBy,
   buildProductConditions,
   buildVariantConditions,
   buildWhere,
   type CatalogFilters,
+  type PricingSqlContext,
 } from "@/lib/catalog-query";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
+import {
+  getDisplayRoundingUnitCop,
+  getPricingConfig,
+  getUsdCopTrm,
+  toCopDisplayMarketing,
+} from "@/lib/pricing";
 
 const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 // Products can change frequently (stock/price), but we still want to avoid DB spikes on filters.
@@ -22,7 +30,7 @@ const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 const CATALOG_PRODUCTS_REVALIDATE_SECONDS = 60;
 export const CATALOG_PAGE_SIZE = 24;
 // Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
-const CATALOG_CACHE_VERSION = 6;
+const CATALOG_CACHE_VERSION = 7;
 
 const buildCatalogCacheOptions = (revalidate: number) => ({
   revalidate,
@@ -193,11 +201,12 @@ function buildFacetsCacheKey(filters: CatalogFilters) {
   return JSON.stringify(key);
 }
 
-function getPriceStep(max: number) {
-  if (!Number.isFinite(max) || max <= 0) return 1000;
-  if (max <= 200_000) return 1000;
-  if (max <= 900_000) return 5000;
-  return 10_000;
+function getPriceStep(max: number, unitCop: number) {
+  if (!Number.isFinite(max) || max <= 0) return unitCop;
+  if (!Number.isFinite(unitCop) || unitCop <= 0) return 10_000;
+  // En precios COP "de marketing", el step debe seguir el unit configurado (default 10k)
+  // para mantener bounds y ticks limpios (terminan en `0000`).
+  return unitCop;
 }
 
 function omitFilters(filters: CatalogFilters, keys: (keyof CatalogFilters)[]): CatalogFilters {
@@ -213,9 +222,9 @@ function buildProductWhere(filters: CatalogFilters) {
   return Prisma.sql`where ${Prisma.join(conditions, " and ")}`;
 }
 
-function buildVariantWhere(filters: CatalogFilters) {
+function buildVariantWhere(filters: CatalogFilters, pricing: PricingSqlContext) {
   const productWhere = buildProductWhere(filters);
-  const variantConditions = buildVariantConditions(filters);
+  const variantConditions = buildVariantConditions(filters, pricing);
   const variantWhere =
     variantConditions.length > 0
       ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
@@ -223,6 +232,45 @@ function buildVariantWhere(filters: CatalogFilters) {
   return { productWhere, variantWhere };
 }
 
+async function getPricingContext() {
+  const config = await getPricingConfig();
+  return {
+    config,
+    pricing: { trmUsdCop: getUsdCopTrm(config) } satisfies PricingSqlContext,
+    roundingUnitCop: getDisplayRoundingUnitCop(config),
+  };
+}
+
+function toFiniteNumber(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toCopDisplayString(value: string | number | null | undefined, unitCop: number) {
+  const numeric = toFiniteNumber(value);
+  const rounded = toCopDisplayMarketing(numeric, unitCop);
+  return rounded ? String(Math.round(rounded)) : null;
+}
+
+function roundPriceStats(stats: CatalogPriceStats | null, unitCop: number): CatalogPriceStats | null {
+  if (!stats) return null;
+  const unit = Number.isFinite(unitCop) && unitCop > 0 ? unitCop : 10_000;
+  const r = (value: number | null) => {
+    const rounded = toCopDisplayMarketing(value, unit);
+    return rounded ? Math.round(rounded) : null;
+  };
+  return {
+    count: stats.count,
+    min: r(stats.min) ?? stats.min,
+    max: r(stats.max) ?? stats.max,
+    p02: r(stats.p02),
+    p25: r(stats.p25),
+    p50: r(stats.p50),
+    p75: r(stats.p75),
+    p98: r(stats.p98),
+  };
+}
 
 export async function getCatalogStats(): Promise<CatalogStats> {
   const cached = unstable_cache(
@@ -372,27 +420,37 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
   const cacheKey = buildFacetsCacheKey(boundsFilters);
   const cached = unstable_cache(
     async () => {
-      const { productWhere, variantWhere } = buildVariantWhere(boundsFilters);
+      const { pricing, roundingUnitCop } = await getPricingContext();
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+      const { productWhere, variantWhere } = buildVariantWhere(boundsFilters, pricing);
       const rows = await prisma.$queryRaw<Array<{ min_price: string | null; max_price: string | null }>>(
         Prisma.sql`
           select
-            min(v.price) as min_price,
-            max(v.price) as max_price
+            min(${priceCopExpr}) as min_price,
+            max(${priceCopExpr}) as max_price
           from products p
           join brands b on b.id = p."brandId"
           join variants v on v."productId" = p.id
           ${productWhere}
           ${variantWhere}
-          and v.price > 0
-          and v.price <= ${CATALOG_MAX_VALID_PRICE}
+          and ${priceCopExpr} > 0
+          and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
         `,
       );
       const row = rows[0];
       const min = row?.min_price ? Number(row.min_price) : null;
       const max = row?.max_price ? Number(row.max_price) : null;
+      const minOk = Number.isFinite(min ?? NaN) && (min ?? 0) > 0;
+      const maxOk = Number.isFinite(max ?? NaN) && (max ?? 0) > 0;
+
+      if (!minOk || !maxOk) return { min: null, max: null };
+
+      const unit = Number.isFinite(roundingUnitCop) && roundingUnitCop > 0 ? roundingUnitCop : 10_000;
+      const alignedMin = Math.max(0, Math.floor((min as number) / unit) * unit);
+      const alignedMax = Math.ceil((max as number) / unit) * unit;
       return {
-        min: Number.isFinite(min) ? min : null,
-        max: Number.isFinite(max) ? max : null,
+        min: alignedMin,
+        max: alignedMax > alignedMin ? alignedMax : alignedMin + unit,
       };
     },
     ["catalog-price-bounds", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
@@ -415,7 +473,9 @@ export async function getCatalogPriceInsights(
   const cacheKey = `${buildFacetsCacheKey(boundsFilters)}::buckets:${bucketKey}`;
   const cached = unstable_cache(
     async () => {
-      const { productWhere, variantWhere } = buildVariantWhere(boundsFilters);
+      const { pricing, roundingUnitCop } = await getPricingContext();
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+      const { productWhere, variantWhere } = buildVariantWhere(boundsFilters, pricing);
 
       const statsRows = await prisma.$queryRaw<
         Array<{
@@ -430,14 +490,14 @@ export async function getCatalogPriceInsights(
         }>
       >(Prisma.sql`
         with prices as (
-          select v.price as price
+          select ${priceCopExpr} as price
           from products p
           join brands b on b.id = p."brandId"
           join variants v on v."productId" = p.id
           ${productWhere}
           ${variantWhere}
-          and v.price > 0
-          and v.price <= ${CATALOG_MAX_VALID_PRICE}
+          and ${priceCopExpr} > 0
+          and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
         )
         select
           count(*) as n,
@@ -480,6 +540,7 @@ export async function getCatalogPriceInsights(
             p98: typeof p98 === "number" && Number.isFinite(p98) ? p98 : null,
           }
         : null;
+      const statsDisplay = roundPriceStats(stats, roundingUnitCop);
 
       let min = hardOk ? minHard : null;
       let max = hardOk ? maxHard : null;
@@ -501,7 +562,7 @@ export async function getCatalogPriceInsights(
 
       // Alinea el rango a pasos “humanos” para que el slider no muestre números raros.
       if (hardOk && typeof min === "number" && typeof max === "number") {
-        const step = getPriceStep(max);
+        const step = getPriceStep(max, roundingUnitCop);
         const alignedMin = Math.max(0, Math.floor(min / step) * step);
         const alignedMax = Math.ceil(max / step) * step;
         min = alignedMin;
@@ -547,19 +608,19 @@ export async function getCatalogPriceInsights(
         bounds.max > bounds.min;
 
       if (!histogramRangeOk || resolvedBucketCount < 6) {
-        return { bounds, histogram: null, stats };
+        return { bounds, histogram: null, stats: statsDisplay };
       }
 
       const rows = await prisma.$queryRaw<Array<{ bucket: number; cnt: bigint }>>(Prisma.sql`
         with prices as (
-          select v.price as price
+          select ${priceCopExpr} as price
           from products p
           join brands b on b.id = p."brandId"
           join variants v on v."productId" = p.id
           ${productWhere}
           ${variantWhere}
-          and v.price > 0
-          and v.price <= ${CATALOG_MAX_VALID_PRICE}
+          and ${priceCopExpr} > 0
+          and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
         )
         select
           least(${resolvedBucketCount}, greatest(1, width_bucket(price, ${bounds.min}, ${bounds.max}, ${resolvedBucketCount}))) as bucket,
@@ -578,7 +639,7 @@ export async function getCatalogPriceInsights(
       return {
         bounds,
         histogram: { bucketCount: resolvedBucketCount, buckets },
-        stats,
+        stats: statsDisplay,
       };
     },
     ["catalog-price-insights", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
@@ -589,6 +650,7 @@ export async function getCatalogPriceInsights(
 }
 
 async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyOptions): Promise<CatalogFacets> {
+  const { pricing } = await getPricingContext();
   const categoryFilters = omitFilters(filters, ["categories"]);
   const genderFilters = omitFilters(filters, ["genders"]);
   const brandFilters = omitFilters(filters, ["brandIds"]);
@@ -602,22 +664,22 @@ async function computeCatalogFacets(filters: CatalogFilters, taxonomy: TaxonomyO
   const seasonFilters = omitFilters(filters, ["seasons"]);
   const styleFilters = omitFilters(filters, ["styles"]);
 
-  const categoryWhere = buildWhere(categoryFilters);
-  const genderWhere = buildWhere(genderFilters);
-  const brandWhere = buildWhere(brandFilters);
-  const seoTagWhere = buildWhere(seoTagFilters);
-  const materialWhere = buildWhere(materialFilters);
-  const patternWhere = buildWhere(patternFilters);
-  const occasionWhere = buildWhere(occasionFilters);
-  const seasonWhere = buildWhere(seasonFilters);
-  const styleWhere = buildWhere(styleFilters);
+  const categoryWhere = buildWhere(categoryFilters, pricing);
+  const genderWhere = buildWhere(genderFilters, pricing);
+  const brandWhere = buildWhere(brandFilters, pricing);
+  const seoTagWhere = buildWhere(seoTagFilters, pricing);
+  const materialWhere = buildWhere(materialFilters, pricing);
+  const patternWhere = buildWhere(patternFilters, pricing);
+  const occasionWhere = buildWhere(occasionFilters, pricing);
+  const seasonWhere = buildWhere(seasonFilters, pricing);
+  const styleWhere = buildWhere(styleFilters, pricing);
 
   const { productWhere: colorProductWhere, variantWhere: colorVariantWhere } =
-    buildVariantWhere(colorFilters);
+    buildVariantWhere(colorFilters, pricing);
   const { productWhere: sizeProductWhere, variantWhere: sizeVariantWhere } =
-    buildVariantWhere(sizeFilters);
+    buildVariantWhere(sizeFilters, pricing);
   const { productWhere: fitProductWhere, variantWhere: fitVariantWhere } =
-    buildVariantWhere(fitFilters);
+    buildVariantWhere(fitFilters, pricing);
 
   const [
     categories,
@@ -1110,6 +1172,7 @@ async function computeCatalogFacetsLite(
   filters: CatalogFilters,
   taxonomy: TaxonomyOptions,
 ): Promise<CatalogFacetsLite> {
+  const { pricing } = await getPricingContext();
   const categoryFilters = omitFilters(filters, ["categories"]);
   const genderFilters = omitFilters(filters, ["genders"]);
   const brandFilters = omitFilters(filters, ["brandIds"]);
@@ -1117,14 +1180,14 @@ async function computeCatalogFacetsLite(
   const materialFilters = omitFilters(filters, ["materials"]);
   const patternFilters = omitFilters(filters, ["patterns"]);
 
-  const categoryWhere = buildWhere(categoryFilters);
-  const genderWhere = buildWhere(genderFilters);
-  const brandWhere = buildWhere(brandFilters);
-  const materialWhere = buildWhere(materialFilters);
-  const patternWhere = buildWhere(patternFilters);
+  const categoryWhere = buildWhere(categoryFilters, pricing);
+  const genderWhere = buildWhere(genderFilters, pricing);
+  const brandWhere = buildWhere(brandFilters, pricing);
+  const materialWhere = buildWhere(materialFilters, pricing);
+  const patternWhere = buildWhere(patternFilters, pricing);
 
   const { productWhere: colorProductWhere, variantWhere: colorVariantWhere } =
-    buildVariantWhere(colorFilters);
+    buildVariantWhere(colorFilters, pricing);
 
   const [categories, genders, brands, colors, materials, patterns] = await Promise.all([
     prisma.$queryRaw<Array<{ category: string; cnt: bigint }>>(Prisma.sql`
@@ -1354,8 +1417,9 @@ async function computeCatalogSubcategories(
   if (!filters.categories || filters.categories.length === 0) {
     return [];
   }
+  const { pricing } = await getPricingContext();
   const subcategoryFilters = omitFilters(filters, ["subcategories"]);
-  const subcategoryWhere = buildWhere(subcategoryFilters);
+  const subcategoryWhere = buildWhere(subcategoryFilters, pricing);
 
   const rows = await prisma.$queryRaw<Array<{ subcategory: string; cnt: bigint }>>(
     Prisma.sql`
@@ -1511,8 +1575,9 @@ export async function getCatalogProducts(params: {
 }
 
 async function computeCatalogProductsCount(filters: CatalogFilters): Promise<number> {
+  const { pricing } = await getPricingContext();
   const productWhere = buildProductWhere(filters);
-  const variantConditions = buildVariantConditions(filters);
+  const variantConditions = buildVariantConditions(filters, pricing);
   const variantWhere =
     variantConditions.length > 0
       ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
@@ -1540,8 +1605,9 @@ async function computeCatalogProductsCount(filters: CatalogFilters): Promise<num
 }
 
 async function computeCatalogCounts(filters: CatalogFilters): Promise<CatalogCounts> {
+  const { pricing } = await getPricingContext();
   const productWhere = buildProductWhere(filters);
-  const variantConditions = buildVariantConditions(filters);
+  const variantConditions = buildVariantConditions(filters, pricing);
   const variantWhere =
     variantConditions.length > 0
       ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
@@ -1579,9 +1645,12 @@ async function computeCatalogProductsPage(params: {
   sort: string;
 }): Promise<CatalogProduct[]> {
   const { filters, page, sort } = params;
+  const { pricing, roundingUnitCop } = await getPricingContext();
+  const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+  const displayUnitCop = Number.isFinite(roundingUnitCop) && roundingUnitCop > 0 ? roundingUnitCop : 10_000;
   const offset = Math.max(0, (page - 1) * CATALOG_PAGE_SIZE);
   const productWhere = buildProductWhere(filters);
-  const variantConditions = buildVariantConditions(filters);
+  const variantConditions = buildVariantConditions(filters, pricing);
   const variantWhere =
     variantConditions.length > 0
       ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
@@ -1610,7 +1679,7 @@ async function computeCatalogProductsPage(params: {
     currency: string | null;
   }> = await (async () => {
     if (sortKey === "price_asc" || sortKey === "price_desc") {
-      const orderBy = buildOrderBy(sortKey, filters);
+      const orderBy = buildOrderBy(sortKey, filters, pricing);
       return prisma.$queryRaw<
         Array<{
           id: string;
@@ -1630,9 +1699,9 @@ async function computeCatalogProductsPage(params: {
             p."imageCoverUrl",
             b.name as "brandName",
             p."sourceUrl",
-            min(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "minPrice",
-            max(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "maxPrice",
-            max(v.currency) as currency
+            min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
+            max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
+            'COP' as currency
           from products p
           join brands b on b.id = p."brandId"
           join variants v on v."productId" = p.id
@@ -1704,9 +1773,9 @@ async function computeCatalogProductsPage(params: {
         join brands b on b.id = p."brandId"
         left join lateral (
           select
-            min(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "minPrice",
-            max(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "maxPrice",
-            max(v.currency) as currency
+            min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
+            max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
+            'COP' as currency
           from variants v
           where v."productId" = p.id
             ${variantWhere}
@@ -1724,9 +1793,9 @@ async function computeCatalogProductsPage(params: {
     imageCoverUrl: item.imageCoverUrl,
     brandName: item.brandName,
     sourceUrl: item.sourceUrl,
-    minPrice: item.minPrice,
-    maxPrice: item.maxPrice,
-    currency: item.currency,
+    minPrice: toCopDisplayString(item.minPrice, displayUnitCop),
+    maxPrice: toCopDisplayString(item.maxPrice, displayUnitCop),
+    currency: "COP",
   }));
 }
 
@@ -1736,9 +1805,12 @@ async function computeCatalogProducts(params: {
   sort: string;
 }): Promise<CatalogProductResult> {
   const { filters, page, sort } = params;
+  const { pricing, roundingUnitCop } = await getPricingContext();
+  const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+  const displayUnitCop = Number.isFinite(roundingUnitCop) && roundingUnitCop > 0 ? roundingUnitCop : 10_000;
   const offset = Math.max(0, (page - 1) * CATALOG_PAGE_SIZE);
   const productWhere = buildProductWhere(filters);
-  const variantConditions = buildVariantConditions(filters);
+  const variantConditions = buildVariantConditions(filters, pricing);
   const variantWhere =
     variantConditions.length > 0
       ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
@@ -1776,7 +1848,7 @@ async function computeCatalogProducts(params: {
     }>
   > = (() => {
     if (sortKey === "price_asc" || sortKey === "price_desc") {
-      const orderBy = buildOrderBy(sortKey, filters);
+      const orderBy = buildOrderBy(sortKey, filters, pricing);
       return prisma.$queryRaw<
         Array<{
           id: string;
@@ -1796,9 +1868,9 @@ async function computeCatalogProducts(params: {
             p."imageCoverUrl",
             b.name as "brandName",
             p."sourceUrl",
-            min(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "minPrice",
-            max(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "maxPrice",
-            max(v.currency) as currency
+            min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
+            max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
+            'COP' as currency
           from products p
           join brands b on b.id = p."brandId"
           join variants v on v."productId" = p.id
@@ -1870,9 +1942,9 @@ async function computeCatalogProducts(params: {
         join brands b on b.id = p."brandId"
         left join lateral (
           select
-            min(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "minPrice",
-            max(case when v.price > 0 and v.price <= ${CATALOG_MAX_VALID_PRICE} then v.price end) as "maxPrice",
-            max(v.currency) as currency
+            min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
+            max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
+            'COP' as currency
           from variants v
           where v."productId" = p.id
             ${variantWhere}
@@ -1895,9 +1967,9 @@ async function computeCatalogProducts(params: {
       imageCoverUrl: item.imageCoverUrl,
       brandName: item.brandName,
       sourceUrl: item.sourceUrl,
-      minPrice: item.minPrice,
-      maxPrice: item.maxPrice,
-      currency: item.currency,
+      minPrice: toCopDisplayString(item.minPrice, displayUnitCop),
+      maxPrice: toCopDisplayString(item.maxPrice, displayUnitCop),
+      currency: "COP",
     })),
     totalCount,
   };

@@ -25,6 +25,7 @@ import {
   safeOrigin,
 } from "@/lib/catalog/utils";
 import { sanitizeCatalogPrice } from "@/lib/catalog-price";
+import { getBrandCurrencyOverride } from "@/lib/pricing";
 
 const toNumber = (value: unknown) => sanitizeCatalogPrice(parsePriceValue(value));
 const chooseString = (
@@ -279,6 +280,7 @@ export const processCatalogRef = async ({
   ctx,
   ref,
   canUseLlmPdp,
+  brandCurrencyOverride,
   onStage,
 }: {
   brand: { id: string; slug: string };
@@ -286,6 +288,7 @@ export const processCatalogRef = async ({
   ctx: AdapterContext;
   ref: { url: string };
   canUseLlmPdp: boolean;
+  brandCurrencyOverride?: "USD" | null;
   onStage?: (stage: string) => void;
 }) => {
   onStage?.("fetch");
@@ -413,7 +416,13 @@ export const processCatalogRef = async ({
   );
 
   onStage?.("upsert");
-  const { product, created } = await upsertProduct(brand.id, raw, normalized, coverImage);
+  const { product, created } = await upsertProduct(
+    brand.id,
+    raw,
+    normalized,
+    coverImage,
+    brandCurrencyOverride ?? null,
+  );
 
   const variantFallbackImages = fallbackImages;
   const normalizedVariantMap = new Map<string, any>();
@@ -429,7 +438,7 @@ export const processCatalogRef = async ({
         {
           sku: raw.externalId ?? null,
           price: null,
-          currency: raw.currency ?? "COP",
+          currency: brandCurrencyOverride === "USD" ? "USD" : (raw.currency ?? "COP"),
           images: raw.images,
         } as RawVariant,
       ];
@@ -444,10 +453,10 @@ export const processCatalogRef = async ({
     const size = options.size ?? normalizedVariant?.size ?? null;
     const variantImages = buildVariantImages(rawVariant, imageMapping, variantFallbackImages);
     const priceValue = toNumber(rawVariant.price) ?? toNumber(normalizedVariant?.price) ?? 0;
-    const currencyValue = guessCurrency(
-      priceValue,
-      rawVariant.currency ?? normalizedVariant?.currency ?? raw.currency ?? null,
-    );
+    const currencyValue =
+      brandCurrencyOverride === "USD"
+        ? "USD"
+        : guessCurrency(priceValue, rawVariant.currency ?? normalizedVariant?.currency ?? raw.currency ?? null);
     const variantPayload = {
       sku,
       color,
@@ -473,7 +482,13 @@ export const processCatalogRef = async ({
   return { created, createdVariants };
 };
 
-const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, imageCoverUrl: string | null) => {
+const upsertProduct = async (
+  brandId: string,
+  raw: RawProduct,
+  normalized: any,
+  imageCoverUrl: string | null,
+  brandCurrencyOverride: "USD" | null,
+) => {
   const conditions = [] as Array<{ externalId?: string; sourceUrl?: string }>;
   if (raw.externalId) conditions.push({ externalId: raw.externalId });
   if (raw.sourceUrl) conditions.push({ sourceUrl: raw.sourceUrl });
@@ -491,10 +506,13 @@ const upsertProduct = async (brandId: string, raw: RawProduct, normalized: any, 
     : null;
 
   const samplePrice = toNumber(raw.variants?.[0]?.price ?? normalized?.variants?.[0]?.price ?? null);
-  const currencyValue = guessCurrency(
-    samplePrice,
-    raw.currency ?? normalized?.variants?.[0]?.currency ?? raw.variants?.[0]?.currency ?? null,
-  );
+  const currencyValue =
+    brandCurrencyOverride === "USD"
+      ? "USD"
+      : guessCurrency(
+          samplePrice,
+          raw.currency ?? normalized?.variants?.[0]?.currency ?? raw.variants?.[0]?.currency ?? null,
+        );
 
   const existingMetadata =
     existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
@@ -681,6 +699,7 @@ export const extractCatalogForBrand = async (
   }
 
   const metadata = getBrandMetadata(brand);
+  const brandCurrencyOverride = getBrandCurrencyOverride(metadata);
   const existingState = readCatalogRunState(metadata);
   const storedInference =
     metadata.catalog_extract_inferred_platform &&
@@ -967,6 +986,7 @@ export const extractCatalogForBrand = async (
         ctx,
         ref,
         canUseLlmPdp,
+        brandCurrencyOverride,
         onStage: (stage) => {
           state.lastStage = stage;
         },

@@ -762,6 +762,27 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Datos: `plp_seo_pages`, `plp_seo_runs`, `plp_seo_items`.
 - Estado: **done (2026-02-18)**.
 
+### MC-130 Moneda por marca (USD) + TRM editable + redondeo marketing (xxxx0000)
+- Historia: Como operador, quiero corregir “precios COP demasiado bajos” detectando marcas que realmente publican en USD, para mostrar siempre COP consistente y mantener filtros/orden correctos.
+- Alcance:
+  - Config global `pricing_config` (KV en `standard_color_config`): TRM `usd_cop_trm` + reglas de auto-clasificación (`enabled`, `threshold_pct`, `cop_price_lt`, `include_usd_variants`) + redondeo display (unit 10.000, nearest).
+  - Override por marca en `brands.metadata.pricing` (auto/manual) con trazabilidad (`applied_at`, `reason`, `stats`).
+  - Auto-clasificación diaria por cron (Vercel) y ejecución manual desde admin:
+    - Marca USD si `pct > 75%` de sus productos caen en la muestra (producto sospechoso si tiene variante `currency='USD'` o `currency='COP' AND price < 1999`).
+    - No desmarca marcas automáticamente; no pisa overrides manuales.
+  - Serving de catálogo: filtros y sort usan precio COP efectivo sin redondeo; payload a UI retorna COP con redondeo marketing a múltiplos de 10.000.
+  - Scraping/ingestión: si la marca tiene override USD, el extractor fuerza `currency='USD'` al persistir (toda la marca) en la siguiente corrida.
+  - Admin: nueva página `/admin/pricing` para editar TRM/reglas, correr auto-marcado y gestionar overrides.
+- CA:
+  - Cambiar TRM en `/admin/pricing` refresca el catálogo/home en <1 minuto (por invalidación de cache) y todos los precios se muestran en COP.
+  - Para marcas USD (override), un precio base USD se convierte con TRM y se redondea en UI a `xxxx0000`.
+  - Filtros de precio y orden `price_asc/price_desc` operan sobre COP efectivo (sin redondeo).
+  - El cron diario marca nuevas marcas USD pero no desmarca ni pisa overrides manuales.
+- Datos:
+  - `brands.metadata.pricing.currency_override|source|applied_at|reason|stats`
+  - `standard_color_config(key='pricing_config').valueJson`
+- Estado: **done (2026-02-18)**.
+
 ### MC-126 PLP `/catalogo`: polish desktop + listas + SEO + header
 - Historia: Como usuario, quiero que el catálogo en desktop sea más ordenado y predecible (scroll de filtros por zonas, guardado en listas sin fricción y header consistente), y que la página tenga SEO más robusto, para explorar y compartir mejor.
 - Alcance:

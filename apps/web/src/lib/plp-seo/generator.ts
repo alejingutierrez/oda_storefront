@@ -8,6 +8,7 @@ import { buildWhere, type CatalogFilters } from "@/lib/catalog-query";
 import { getCatalogCounts, getCatalogFacetsLite } from "@/lib/catalog-data";
 import { labelize, labelizeSubcategory, normalizeGender, type GenderKey, GENDER_ROUTE } from "@/lib/navigation";
 import { getPublishedTaxonomyOptions } from "@/lib/taxonomy/server";
+import { getPricingConfig, getUsdCopTrm } from "@/lib/pricing";
 import { invokePlpSeoBedrockTool, plpSeoBedrockModelId } from "@/lib/plp-seo/bedrock";
 import { normalizePlpPath } from "@/lib/plp-seo/store";
 
@@ -78,7 +79,8 @@ function validateCopy(candidate: { metaTitle: string; metaDescription: string; s
 }
 
 async function loadSampleProducts(filters: CatalogFilters, limit: number) {
-  const where = buildWhere(filters);
+  const pricingConfig = await getPricingConfig();
+  const where = buildWhere(filters, { trmUsdCop: getUsdCopTrm(pricingConfig) });
   const rows = await prisma.$queryRaw<
     Array<{
       id: string;
@@ -283,4 +285,3 @@ export async function generatePlpSeoCopy(params: {
 
   throw new Error(lastErr ?? "plp_seo_generation_failed");
 }
-

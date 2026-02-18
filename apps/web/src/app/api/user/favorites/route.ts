@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/descope";
 import { logExperienceEvent } from "@/lib/experience";
+import {
+  getBrandCurrencyOverride,
+  getDisplayRoundingUnitCop,
+  getPricingConfig,
+  getUsdCopTrm,
+  toCopDisplayMarketing,
+  toCopEffective,
+} from "@/lib/pricing";
 
 export async function GET(req: Request) {
   const session = await requireUser(req);
@@ -15,6 +23,10 @@ export async function GET(req: Request) {
     include: { product: { include: { brand: true } }, variant: true },
   });
 
+  const pricingConfig = await getPricingConfig();
+  const trmUsdCop = getUsdCopTrm(pricingConfig);
+  const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+
   return NextResponse.json({
     favorites: favorites.map((favorite) => ({
       id: favorite.id,
@@ -24,7 +36,7 @@ export async function GET(req: Request) {
         name: favorite.product.name,
         imageCoverUrl: favorite.product.imageCoverUrl,
         sourceUrl: favorite.product.sourceUrl,
-        currency: favorite.product.currency,
+        currency: "COP",
         brand: favorite.product.brand
           ? { id: favorite.product.brand.id, name: favorite.product.brand.name }
           : null,
@@ -32,8 +44,19 @@ export async function GET(req: Request) {
       variant: favorite.variant
         ? {
             id: favorite.variant.id,
-            price: favorite.variant.price.toString(),
-            currency: favorite.variant.currency,
+            price: (() => {
+              const brandOverride = getBrandCurrencyOverride(favorite.product.brand?.metadata);
+              const priceRaw = Number(favorite.variant!.price.toString());
+              const effective = toCopEffective({
+                price: Number.isFinite(priceRaw) ? priceRaw : null,
+                currency: favorite.variant!.currency,
+                brandOverride,
+                trmUsdCop,
+              });
+              const display = toCopDisplayMarketing(effective, displayUnitCop);
+              return display ? String(Math.round(display)) : "0";
+            })(),
+            currency: "COP",
             color: favorite.variant.color,
             size: favorite.variant.size,
           }

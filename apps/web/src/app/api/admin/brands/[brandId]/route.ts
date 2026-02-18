@@ -5,6 +5,14 @@ import { normalizeSiteUrl } from "@/lib/brand-site";
 import { validateAdminRequest } from "@/lib/auth";
 import { getCatalogQueue, isCatalogQueueEnabled } from "@/lib/catalog/queue";
 import { getEnrichmentQueue, isEnrichmentQueueEnabled } from "@/lib/product-enrichment/queue";
+import {
+  getBrandCurrencyOverride,
+  getDisplayRoundingUnitCop,
+  getPricingConfig,
+  getUsdCopTrm,
+  toCopDisplayMarketing,
+} from "@/lib/pricing";
+import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
 
 const normalizeString = (value: unknown) => {
   if (value === null || value === undefined) return null;
@@ -114,6 +122,21 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
+  const pricingConfig = await getPricingConfig();
+  const trmUsdCop = getUsdCopTrm(pricingConfig);
+  const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+  const brandOverride = getBrandCurrencyOverride(brand.metadata);
+  const forceUsd = brandOverride === "USD";
+  const priceCopExpr = Prisma.sql`
+    (
+      case
+        when ${forceUsd} then (v.price * ${trmUsdCop})
+        when upper(coalesce(v.currency,'')) = 'USD' then (v.price * ${trmUsdCop})
+        else v.price
+      end
+    )
+  `;
+
   const lastJob = await prisma.brandScrapeJob.findFirst({
     where: { brandId },
     orderBy: { createdAt: "desc" },
@@ -121,7 +144,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
   const [statsRow] = await prisma.$queryRaw<ProductStatsRow[]>(Prisma.sql`
     WITH product_min AS (
-      SELECT p.id AS product_id, MIN(v.price)::numeric AS min_price
+      SELECT
+        p.id AS product_id,
+        MIN(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)::numeric AS min_price
       FROM "products" p
       JOIN "variants" v ON v."productId" = p.id
       WHERE p."brandId" = ${brandId}
@@ -130,21 +155,16 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     SELECT
       (SELECT COUNT(*)::int FROM "products" p WHERE p."brandId" = ${brandId}) AS "productCount",
       (SELECT AVG(min_price) FROM product_min) AS "avgPrice",
-      (
-        SELECT MODE() WITHIN GROUP (ORDER BY v.currency)
-        FROM "variants" v
-        JOIN "products" p ON p.id = v."productId"
-        WHERE p."brandId" = ${brandId}
-      ) AS "avgPriceCurrency"
+      'COP' AS "avgPriceCurrency"
   `);
 
   const previewRows = await prisma.$queryRaw<ProductPreviewRow[]>(Prisma.sql`
     WITH product_prices AS (
       SELECT
         v."productId",
-        MIN(v.price)::numeric AS "minPrice",
-        MAX(v.price)::numeric AS "maxPrice",
-        MODE() WITHIN GROUP (ORDER BY v.currency) AS currency
+        MIN(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)::numeric AS "minPrice",
+        MAX(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)::numeric AS "maxPrice",
+        'COP' AS currency
       FROM "variants" v
       JOIN "products" p ON p.id = v."productId"
       WHERE p."brandId" = ${brandId}
@@ -170,8 +190,12 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
   const productStats = {
     productCount: statsRow?.productCount ?? 0,
-    avgPrice: toNumber(statsRow?.avgPrice),
-    avgPriceCurrency: statsRow?.avgPriceCurrency ?? null,
+    avgPrice: (() => {
+      const value = toNumber(statsRow?.avgPrice);
+      const rounded = toCopDisplayMarketing(value, displayUnitCop);
+      return rounded ? Math.round(rounded) : null;
+    })(),
+    avgPriceCurrency: "COP",
   };
 
   const previewProducts = previewRows.map((row) => ({
@@ -182,9 +206,17 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     category: row.category,
     subcategory: row.subcategory,
     updatedAt: row.updatedAt,
-    minPrice: toNumber(row.minPrice),
-    maxPrice: toNumber(row.maxPrice),
-    currency: row.currency ?? productStats.avgPriceCurrency,
+    minPrice: (() => {
+      const value = toNumber(row.minPrice);
+      const rounded = toCopDisplayMarketing(value, displayUnitCop);
+      return rounded ? Math.round(rounded) : null;
+    })(),
+    maxPrice: (() => {
+      const value = toNumber(row.maxPrice);
+      const rounded = toCopDisplayMarketing(value, displayUnitCop);
+      return rounded ? Math.round(rounded) : null;
+    })(),
+    currency: "COP",
   }));
 
   return NextResponse.json({ brand, lastJob, productStats, previewProducts });

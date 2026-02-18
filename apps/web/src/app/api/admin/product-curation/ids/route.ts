@@ -7,6 +7,7 @@ import {
   parseCatalogFiltersFromSearchParams,
   parseCatalogSortFromSearchParams,
 } from "@/lib/catalog-filters";
+import { getPricingConfig, getUsdCopTrm } from "@/lib/pricing";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -25,6 +26,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const pricingConfig = await getPricingConfig();
+  const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
+
   const url = new URL(req.url);
   const params = url.searchParams;
   const limit = Math.min(MAX_LIMIT, parsePositiveInt(params.get("limit"), MAX_LIMIT));
@@ -33,8 +37,8 @@ export async function GET(req: Request) {
   const parsedFilters = parseCatalogFiltersFromSearchParams(params);
   // Curación humana se alinea con catálogo público: solo enriquecidos y en stock.
   const filters = { ...parsedFilters, enrichedOnly: true, inStock: true };
-  const where = buildWhere(filters);
-  const orderBy = buildOrderBy(sort);
+  const where = buildWhere(filters, pricing);
+  const orderBy = buildOrderBy(sort, filters, pricing);
 
   const limitPlusOne = limit + 1;
   const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`

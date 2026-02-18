@@ -3,6 +3,7 @@ import "server-only";
 import { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { CATALOG_CACHE_TAG } from "@/lib/catalog-cache";
 import {
   CATEGORY_GROUPS,
   GenderKey,
@@ -11,6 +12,9 @@ import {
   labelize,
   labelizeSubcategory,
 } from "@/lib/navigation";
+import { buildEffectiveVariantPriceCopExpr } from "@/lib/catalog-query";
+import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
+import { getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm, toCopDisplayMarketing } from "@/lib/pricing";
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
@@ -86,6 +90,14 @@ export type BrandLogo = {
 
 export function getRotationSeed(now = new Date()): number {
   return Math.floor(now.getTime() / THREE_DAYS_MS);
+}
+
+function toCopDisplayString(value: string | number | null | undefined, unitCop: number) {
+  if (value === null || value === undefined) return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  const rounded = toCopDisplayMarketing(parsed, unitCop);
+  return rounded ? String(Math.round(rounded)) : null;
 }
 
 export async function getMegaMenuData(): Promise<MegaMenuData> {
@@ -236,7 +248,7 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
       return result;
     },
     [`home-v${HOME_CACHE_VERSION}-mega-menu`],
-    { revalidate: HOME_REVALIDATE_SECONDS }
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
   return cached();
@@ -245,6 +257,10 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
 export async function getHeroProduct(seed: number): Promise<ProductCard | null> {
   const cached = unstable_cache(
     async () => {
+      const pricingConfig = await getPricingConfig();
+      const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
+      const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
       const rows = await prisma.$queryRaw<ProductCard[]>(
         Prisma.sql`
           select
@@ -256,16 +272,11 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
             p.subcategory,
             p."sourceUrl",
             (
-              select min(v.price)
+              select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
               from variants v
-              where v."productId" = p.id and v.price > 0
+              where v."productId" = p.id
             ) as "minPrice",
-            (
-              select v.currency
-              from variants v
-              where v."productId" = p.id and v.price > 0
-              limit 1
-            ) as currency
+            'COP' as currency
           from products p
           join brands b on b.id = p."brandId"
           where p."imageCoverUrl" is not null
@@ -273,10 +284,16 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
           limit 1
         `
       );
-      return rows[0] ?? null;
+      const row = rows[0] ?? null;
+      if (!row) return null;
+      return {
+        ...row,
+        minPrice: toCopDisplayString(row.minPrice, displayUnitCop),
+        currency: "COP",
+      };
     },
     [`home-v${HOME_CACHE_VERSION}-hero-${seed}`],
-    { revalidate: HOME_REVALIDATE_SECONDS }
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
   return cached();
@@ -285,7 +302,12 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
 export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCard[]> {
   const cached = unstable_cache(
     async () => {
-      return prisma.$queryRaw<ProductCard[]>(
+      const pricingConfig = await getPricingConfig();
+      const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
+      const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+
+      const rows = await prisma.$queryRaw<ProductCard[]>(
         Prisma.sql`
           select
             p.id,
@@ -296,16 +318,11 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
             p.subcategory,
             p."sourceUrl",
             (
-              select min(v.price)
+              select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
               from variants v
-              where v."productId" = p.id and v.price > 0
+              where v."productId" = p.id
             ) as "minPrice",
-            (
-              select v.currency
-              from variants v
-              where v."productId" = p.id and v.price > 0
-              limit 1
-            ) as currency
+            'COP' as currency
           from products p
           join brands b on b.id = p."brandId"
           where p."imageCoverUrl" is not null
@@ -313,9 +330,15 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
           limit ${limit}
         `
       );
+
+      return rows.map((row) => ({
+        ...row,
+        minPrice: toCopDisplayString(row.minPrice, displayUnitCop),
+        currency: "COP",
+      }));
     },
     [`home-v${HOME_CACHE_VERSION}-new-${seed}-${limit}`],
-    { revalidate: HOME_REVALIDATE_SECONDS }
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
   return cached();
@@ -324,7 +347,12 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
 export async function getTrendingPicks(seed: number, limit = 8): Promise<ProductCard[]> {
   const cached = unstable_cache(
     async () => {
-      return prisma.$queryRaw<ProductCard[]>(
+      const pricingConfig = await getPricingConfig();
+      const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
+      const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+
+      const rows = await prisma.$queryRaw<ProductCard[]>(
         Prisma.sql`
           select
             p.id,
@@ -335,16 +363,11 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
             p.subcategory,
             p."sourceUrl",
             (
-              select min(v.price)
+              select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
               from variants v
-              where v."productId" = p.id and v.price > 0
+              where v."productId" = p.id
             ) as "minPrice",
-            (
-              select v.currency
-              from variants v
-              where v."productId" = p.id and v.price > 0
-              limit 1
-            ) as currency
+            'COP' as currency
           from products p
           join brands b on b.id = p."brandId"
           where p."imageCoverUrl" is not null
@@ -352,9 +375,15 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
           limit ${limit}
         `
       );
+
+      return rows.map((row) => ({
+        ...row,
+        minPrice: toCopDisplayString(row.minPrice, displayUnitCop),
+        currency: "COP",
+      }));
     },
     [`home-v${HOME_CACHE_VERSION}-picks-${seed}-${limit}`],
-    { revalidate: HOME_REVALIDATE_SECONDS }
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
   return cached();
@@ -444,7 +473,7 @@ export async function getCategoryHighlights(
       }));
     },
     [`home-v${HOME_CACHE_VERSION}-categories-${seed}-${limit}`],
-    { revalidate: HOME_REVALIDATE_SECONDS }
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
   return cached();
@@ -453,6 +482,11 @@ export async function getCategoryHighlights(
 export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGroup[]> {
   const cached = unstable_cache(
     async () => {
+      const pricingConfig = await getPricingConfig();
+      const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
+      const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+
       const styles = await prisma.$queryRaw<
         Array<{ stylePrimary: string; cnt: bigint }>
       >(
@@ -469,7 +503,7 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
       const groups: StyleGroup[] = [];
       for (const style of styles) {
         const styleKey = style.stylePrimary;
-        const products = await prisma.$queryRaw<ProductCard[]>(
+        const rows = await prisma.$queryRaw<ProductCard[]>(
           Prisma.sql`
             select
               p.id,
@@ -480,16 +514,11 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
               p.subcategory,
               p."sourceUrl",
               (
-                select min(v.price)
+                select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
                 from variants v
-                where v."productId" = p.id and v.price > 0
+                where v."productId" = p.id
               ) as "minPrice",
-              (
-                select v.currency
-                from variants v
-                where v."productId" = p.id and v.price > 0
-                limit 1
-              ) as currency
+              'COP' as currency
             from products p
             join brands b on b.id = p."brandId"
             where p."stylePrimary" = ${styleKey} and p."imageCoverUrl" is not null
@@ -497,6 +526,11 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
             limit 6
           `
         );
+        const products = rows.map((row) => ({
+          ...row,
+          minPrice: toCopDisplayString(row.minPrice, displayUnitCop),
+          currency: "COP",
+        }));
 
         groups.push({
           styleKey,
@@ -508,7 +542,7 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
       return groups;
     },
     [`home-v${HOME_CACHE_VERSION}-styles-${seed}-${limit}`],
-    { revalidate: HOME_REVALIDATE_SECONDS }
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
   return cached();
@@ -567,7 +601,7 @@ export async function getColorCombos(seed: number, limit = 6): Promise<ColorComb
       });
     },
     [`home-v${HOME_CACHE_VERSION}-colors-${seed}-${limit}`],
-    { revalidate: HOME_REVALIDATE_SECONDS }
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
   return cached();
@@ -589,7 +623,7 @@ export async function getBrandLogos(seed: number, limit = 24): Promise<BrandLogo
       );
     },
     [`home-v${HOME_CACHE_VERSION}-brands-${seed}-${limit}`],
-    { revalidate: HOME_REVALIDATE_SECONDS }
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
   return cached();

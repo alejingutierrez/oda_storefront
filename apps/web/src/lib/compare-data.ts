@@ -1,7 +1,14 @@
 import "server-only";
 
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import {
+  getBrandCurrencyOverride,
+  getDisplayRoundingUnitCop,
+  getPricingConfig,
+  getUsdCopTrm,
+  toCopDisplayMarketing,
+  toCopEffective,
+} from "@/lib/pricing";
 
 export type CompareProductDetails = {
   id: string;
@@ -39,17 +46,11 @@ function isVariantAvailable(variant: { stock: number | null; stockStatus: string
   return true;
 }
 
-function decimalToString(value: Prisma.Decimal | null | undefined) {
-  if (!value) return null;
-  try {
-    const str = value.toString();
-    return str;
-  } catch {
-    return null;
-  }
-}
-
 export async function getCompareProductDetails(ids: string[]): Promise<CompareProductDetails[]> {
+  const pricingConfig = await getPricingConfig();
+  const trmUsdCop = getUsdCopTrm(pricingConfig);
+  const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+
   const orderedUnique = Array.from(
     new Set(
       ids
@@ -64,7 +65,7 @@ export async function getCompareProductDetails(ids: string[]): Promise<ComparePr
     where: { id: { in: orderedUnique } },
     select: {
       id: true,
-      brand: { select: { name: true } },
+      brand: { select: { name: true, metadata: true } },
       imageCoverUrl: true,
       sourceUrl: true,
       currency: true,
@@ -84,57 +85,64 @@ export async function getCompareProductDetails(ids: string[]): Promise<ComparePr
 
   const byId = new Map(rows.map((row) => [row.id, row]));
 
-  return orderedUnique
-    .map((id) => {
-      const row = byId.get(id);
-      if (!row) return null;
+  return orderedUnique.flatMap((id) => {
+    const row = byId.get(id);
+    if (!row) return [];
 
-      let min: Prisma.Decimal | null = null;
-      let max: Prisma.Decimal | null = null;
-      let currency: string | null = row.currency ?? null;
+    const brandOverride = getBrandCurrencyOverride(row.brand?.metadata);
+    let minCop: number | null = null;
+    let maxCop: number | null = null;
 
-      const allSizes: string[] = [];
-      const inStockSizes: string[] = [];
-      const variantMaterials: string[] = [];
+    const allSizes: string[] = [];
+    const inStockSizes: string[] = [];
+    const variantMaterials: string[] = [];
 
-      for (const variant of row.variants) {
-        if (!currency) currency = variant.currency ?? null;
-        const price = variant.price;
-        if (price && price.greaterThan(0)) {
-          min = !min || price.lessThan(min) ? price : min;
-          max = !max || price.greaterThan(max) ? price : max;
-        }
-
-        if (variant.material) variantMaterials.push(variant.material);
-
-        if (variant.size) {
-          allSizes.push(variant.size);
-          if (isVariantAvailable({ stock: variant.stock ?? null, stockStatus: variant.stockStatus ?? null })) {
-            inStockSizes.push(variant.size);
-          }
-        }
+    for (const variant of row.variants) {
+      const priceRaw = variant.price ? Number(variant.price.toString()) : null;
+      const priceCop = toCopEffective({
+        price: priceRaw,
+        currency: variant.currency ?? row.currency ?? null,
+        brandOverride,
+        trmUsdCop,
+      });
+      if (typeof priceCop === "number" && Number.isFinite(priceCop) && priceCop > 0) {
+        minCop = minCop === null ? priceCop : Math.min(minCop, priceCop);
+        maxCop = maxCop === null ? priceCop : Math.max(maxCop, priceCop);
       }
 
-      const materials =
-        Array.isArray(row.materialTags) && row.materialTags.length > 0
-          ? uniqSorted(row.materialTags)
-          : uniqSorted(variantMaterials);
+      if (variant.material) variantMaterials.push(variant.material);
 
-      const sizesPreferred = uniqSorted(inStockSizes);
-      const sizes = sizesPreferred.length > 0 ? sizesPreferred : uniqSorted(allSizes);
+      if (variant.size) {
+        allSizes.push(variant.size);
+        if (isVariantAvailable({ stock: variant.stock ?? null, stockStatus: variant.stockStatus ?? null })) {
+          inStockSizes.push(variant.size);
+        }
+      }
+    }
 
-      return {
+    const materials =
+      Array.isArray(row.materialTags) && row.materialTags.length > 0
+        ? uniqSorted(row.materialTags)
+        : uniqSorted(variantMaterials);
+
+    const sizesPreferred = uniqSorted(inStockSizes);
+    const sizes = sizesPreferred.length > 0 ? sizesPreferred : uniqSorted(allSizes);
+
+    const minDisplay = toCopDisplayMarketing(minCop, displayUnitCop);
+    const maxDisplay = toCopDisplayMarketing(maxCop, displayUnitCop);
+
+    return [
+      {
         id: row.id,
         brandName: row.brand?.name ?? "—",
         imageCoverUrl: row.imageCoverUrl,
         sourceUrl: row.sourceUrl,
-        minPrice: decimalToString(min),
-        maxPrice: decimalToString(max),
-        currency,
+        minPrice: minDisplay ? String(Math.round(minDisplay)) : null,
+        maxPrice: maxDisplay ? String(Math.round(maxDisplay)) : null,
+        currency: "COP",
         materials,
         sizes,
-      } satisfies CompareProductDetails;
-    })
-    .filter((item): item is CompareProductDetails => Boolean(item));
+      } satisfies CompareProductDetails,
+    ];
+  });
 }
-

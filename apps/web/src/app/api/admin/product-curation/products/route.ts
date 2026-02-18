@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
-import { buildOrderBy, buildWhere } from "@/lib/catalog-query";
+import { buildEffectiveVariantPriceCopExpr, buildOrderBy, buildWhere } from "@/lib/catalog-query";
 import {
   parseCatalogFiltersFromSearchParams,
   parseCatalogSortFromSearchParams,
 } from "@/lib/catalog-filters";
+import { getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm, toCopDisplayMarketing } from "@/lib/pricing";
+import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -23,6 +25,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const pricingConfig = await getPricingConfig();
+  const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
+  const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+  const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+
   const url = new URL(req.url);
   const params = url.searchParams;
   const page = parsePositiveInt(params.get("page"), 1);
@@ -33,8 +40,8 @@ export async function GET(req: Request) {
   const filters = { ...parsedFilters, enrichedOnly: true, inStock: true };
 
   const offset = Math.max(0, (page - 1) * pageSize);
-  const where = buildWhere(filters);
-  const orderBy = buildOrderBy(sort);
+  const where = buildWhere(filters, pricing);
+  const orderBy = buildOrderBy(sort, filters, pricing);
 
   const [rows, countRows] = await Promise.all([
     prisma.$queryRaw<
@@ -75,21 +82,16 @@ export async function GET(req: Request) {
         p."sourceUrl",
         p."updatedAt",
         (
-          select min(v.price)
+          select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
           from variants v
-          where v."productId" = p.id and v.price > 0
+          where v."productId" = p.id
         ) as "minPrice",
         (
-          select max(v.price)
+          select max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
           from variants v
-          where v."productId" = p.id and v.price > 0
+          where v."productId" = p.id
         ) as "maxPrice",
-        (
-          select v.currency
-          from variants v
-          where v."productId" = p.id and v.price > 0
-          limit 1
-        ) as currency,
+        'COP' as currency,
         (
           select count(*)
           from variants v
@@ -121,6 +123,12 @@ export async function GET(req: Request) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const hasMore = page < totalPages;
 
+  const toDisplay = (value: string | null) => {
+    const numeric = value ? Number(value) : null;
+    const rounded = toCopDisplayMarketing(numeric, displayUnitCop);
+    return rounded ? String(Math.round(rounded)) : null;
+  };
+
   return NextResponse.json({
     page,
     pageSize,
@@ -141,9 +149,9 @@ export async function GET(req: Request) {
       status: row.status,
       sourceUrl: row.sourceUrl,
       updatedAt: row.updatedAt,
-      minPrice: row.minPrice,
-      maxPrice: row.maxPrice,
-      currency: row.currency,
+      minPrice: toDisplay(row.minPrice),
+      maxPrice: toDisplay(row.maxPrice),
+      currency: "COP",
       variantCount: Number(row.variantCount ?? 0),
       inStockCount: Number(row.inStockCount ?? 0),
       hasEnrichment: Boolean(row.hasEnrichment),
