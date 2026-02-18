@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
+import {
+  getBrandCurrencyOverride,
+  getDisplayRoundingUnitCop,
+  getPricingConfig,
+  getUsdCopTrm,
+  toCopDisplayMarketing,
+  toCopEffective,
+} from "@/lib/pricing";
 
 export const runtime = "nodejs";
 
@@ -15,11 +23,15 @@ export async function GET(req: Request, context: { params: Promise<{ productId: 
     return NextResponse.json({ error: "missing_product" }, { status: 400 });
   }
 
+  const pricingConfig = await getPricingConfig();
+  const trmUsdCop = getUsdCopTrm(pricingConfig);
+  const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+
   const product = await prisma.product.findUnique({
     where: { id: productId },
     include: {
-      brand: { select: { id: true, name: true, logoUrl: true } },
-      variants: { orderBy: { price: "asc" } },
+      brand: { select: { id: true, name: true, logoUrl: true, metadata: true } },
+      variants: true,
     },
   });
 
@@ -27,5 +39,43 @@ export async function GET(req: Request, context: { params: Promise<{ productId: 
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  return NextResponse.json({ product });
+  const brandOverride = getBrandCurrencyOverride(product.brand?.metadata);
+
+  const variants = product.variants
+    .map((variant) => {
+      const storedCurrency = variant.currency;
+      const storedPrice = typeof variant.price === "number" ? variant.price : Number(variant.price);
+      const effectiveCop = toCopEffective({
+        price: Number.isFinite(storedPrice) ? storedPrice : null,
+        currency: storedCurrency,
+        brandOverride,
+        trmUsdCop,
+      });
+      const displayCop = toCopDisplayMarketing(effectiveCop, displayUnitCop);
+
+      return {
+        ...variant,
+        // Always show prices in COP for admin display.
+        price: displayCop ? Math.round(displayCop) : null,
+        currency: "COP",
+        // Keep the raw values for debugging / audits in admin.
+        priceStored: variant.price,
+        currencyStored: storedCurrency,
+        priceCopEffective: effectiveCop,
+      };
+    })
+    .sort((a, b) => {
+      const aPrice = typeof a.price === "number" ? a.price : Infinity;
+      const bPrice = typeof b.price === "number" ? b.price : Infinity;
+      return aPrice - bPrice;
+    });
+
+  const payload = {
+    ...product,
+    currency: "COP",
+    brand: { id: product.brand.id, name: product.brand.name, logoUrl: product.brand.logoUrl },
+    variants,
+  };
+
+  return NextResponse.json({ product: payload });
 }

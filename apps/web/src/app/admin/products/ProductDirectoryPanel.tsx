@@ -90,8 +90,11 @@ type ProductDetail = {
     fit: string | null;
     colorPantone: string | null;
     material: string | null;
-    price: number | string;
+    price: number | string | null;
     currency: string;
+    priceStored?: number | string | null;
+    currencyStored?: string | null;
+    priceCopEffective?: number | null;
     stock: number | null;
     stockStatus: string | null;
     images: string[];
@@ -436,7 +439,7 @@ export default function ProductDirectoryPanel() {
     let inStock = 0;
     detail.variants.forEach((variant) => {
       const numericPrice = typeof variant.price === "number" ? variant.price : Number(variant.price);
-      if (Number.isFinite(numericPrice)) {
+      if (Number.isFinite(numericPrice) && numericPrice > 0) {
         minPrice = minPrice === null ? numericPrice : Math.min(minPrice, numericPrice);
         maxPrice = maxPrice === null ? numericPrice : Math.max(maxPrice, numericPrice);
       }
@@ -949,9 +952,14 @@ export default function ProductDirectoryPanel() {
                                 </p>
                               </div>
                               <div className="text-right text-sm font-semibold text-slate-800">
-                                {typeof variant.price === "number"
-                                  ? `${variant.price.toLocaleString("es-CO")} ${variant.currency}`
-                                  : `${variant.price} ${variant.currency}`}
+                                {(() => {
+                                  const numericPrice =
+                                    typeof variant.price === "number" ? variant.price : Number(variant.price);
+                                  if (Number.isFinite(numericPrice) && numericPrice > 0) {
+                                    return `${Math.round(numericPrice).toLocaleString("es-CO")} ${variant.currency}`;
+                                  }
+                                  return "Consultar";
+                                })()}
                               </div>
                             </div>
                           ))}
