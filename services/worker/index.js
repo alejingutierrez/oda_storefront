@@ -43,21 +43,26 @@ if ((catalogEnabled || enrichEnabled || plpSeoEnabled) && !adminToken) {
   throw new Error('Missing ADMIN_TOKEN for BullMQ workers');
 }
 
-const defaultFetchTimeoutMs = Math.max(
-  10000,
-  Number(process.env.WORKER_FETCH_TIMEOUT_MS || 180000),
+const parseTimeoutMs = (value, fallbackMs) => {
+  if (value === undefined || value === null || value === '') return fallbackMs;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallbackMs;
+  if (parsed <= 0) return null;
+  return Math.max(10000, parsed);
+};
+
+const defaultFetchTimeoutMs = parseTimeoutMs(process.env.WORKER_FETCH_TIMEOUT_MS, null);
+const catalogFetchTimeoutMs = parseTimeoutMs(
+  process.env.CATALOG_WORKER_FETCH_TIMEOUT_MS,
+  defaultFetchTimeoutMs,
 );
-const catalogFetchTimeoutMs = Math.max(
-  10000,
-  Number(process.env.CATALOG_WORKER_FETCH_TIMEOUT_MS || defaultFetchTimeoutMs),
+const enrichmentFetchTimeoutMs = parseTimeoutMs(
+  process.env.PRODUCT_ENRICHMENT_WORKER_FETCH_TIMEOUT_MS,
+  defaultFetchTimeoutMs,
 );
-const enrichmentFetchTimeoutMs = Math.max(
-  10000,
-  Number(process.env.PRODUCT_ENRICHMENT_WORKER_FETCH_TIMEOUT_MS || defaultFetchTimeoutMs),
-);
-const plpSeoFetchTimeoutMs = Math.max(
-  10000,
-  Number(process.env.PLP_SEO_WORKER_FETCH_TIMEOUT_MS || defaultFetchTimeoutMs),
+const plpSeoFetchTimeoutMs = parseTimeoutMs(
+  process.env.PLP_SEO_WORKER_FETCH_TIMEOUT_MS,
+  defaultFetchTimeoutMs,
 );
 
 let lastCatalogCompletedAtIso = null;
@@ -95,15 +100,19 @@ const heartbeatTimer = setInterval(() => {
 }, heartbeatIntervalMs);
 
 const postAdminJson = async (endpoint, body, timeoutMs) => {
-  const res = await fetch(endpoint, {
+  const requestInit = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${adminToken}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  };
+  if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+    requestInit.signal = AbortSignal.timeout(timeoutMs);
+  }
+
+  const res = await fetch(endpoint, requestInit);
 
   const text = await res.text().catch(() => '');
   let payload = {};
@@ -257,5 +266,5 @@ process.on('uncaughtException', (err) => {
 });
 
 console.log(
-  `[worker] boot ok pid=${pid} host=${hostname} heartbeat=${heartbeatEnabled} ttl=${heartbeatTtlSeconds}s interval=${heartbeatIntervalMs}ms timeout_default=${defaultFetchTimeoutMs}ms timeout_catalog=${catalogFetchTimeoutMs}ms timeout_enrich=${enrichmentFetchTimeoutMs}ms timeout_plp=${plpSeoFetchTimeoutMs}ms`,
+  `[worker] boot ok pid=${pid} host=${hostname} heartbeat=${heartbeatEnabled} ttl=${heartbeatTtlSeconds}s interval=${heartbeatIntervalMs}ms timeout_default=${defaultFetchTimeoutMs ?? 'none'} timeout_catalog=${catalogFetchTimeoutMs ?? 'none'} timeout_enrich=${enrichmentFetchTimeoutMs ?? 'none'} timeout_plp=${plpSeoFetchTimeoutMs ?? 'none'}`,
 );
