@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { Queue } from "bullmq";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
@@ -68,6 +69,101 @@ const finalizeRunIfIdle = async (runId: string) => {
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const queueConnection = { url: process.env.REDIS_URL ?? "" };
+const catalogQueueName = process.env.CATALOG_QUEUE_NAME ?? "catalog";
+const workerNoProgressSeconds = Math.max(
+  60,
+  Number(process.env.WORKER_NO_PROGRESS_SECONDS ?? 300),
+);
+
+const readCatalogQueueCounts = async () => {
+  const queue = new Queue(catalogQueueName, { connection: queueConnection });
+  try {
+    return await queue.getJobCounts("waiting", "active", "delayed");
+  } finally {
+    await queue.close().catch(() => null);
+  }
+};
+
+const readCatalogLastCompletedAt = (heartbeat: {
+  payload?: { lastCompletedAt?: Record<string, string | null | undefined> | undefined } | null;
+}) => {
+  const value = heartbeat.payload?.lastCompletedAt?.catalog;
+  return typeof value === "string" ? value : null;
+};
+
+const evaluateCatalogWorkerGate = async (heartbeat: {
+  online: boolean;
+  ttlSeconds: number | null;
+  payload?: { lastCompletedAt?: Record<string, string | null | undefined> | undefined } | null;
+}) => {
+  if (!heartbeat.online) {
+    return {
+      skipDrain: false,
+      meta: { reason: "worker_offline", heartbeat },
+    };
+  }
+
+  try {
+    const counts = await readCatalogQueueCounts();
+    const backlog = (counts.waiting ?? 0) + (counts.delayed ?? 0);
+    const active = counts.active ?? 0;
+    const lastCompletedAt = readCatalogLastCompletedAt(heartbeat);
+    const lastCompletedMs = lastCompletedAt ? Date.parse(lastCompletedAt) : Number.NaN;
+    const noRecentProgress =
+      !Number.isFinite(lastCompletedMs) ||
+      Date.now() - lastCompletedMs > workerNoProgressSeconds * 1000;
+    const staleNoProgress = backlog > 0 && active === 0 && noRecentProgress;
+    if (staleNoProgress) {
+      return {
+        skipDrain: false,
+        meta: {
+          reason: "worker_stale_no_progress",
+          heartbeat,
+          queue: {
+            name: catalogQueueName,
+            waiting: counts.waiting ?? 0,
+            delayed: counts.delayed ?? 0,
+            active: counts.active ?? 0,
+            backlog,
+            lastCompletedAt,
+            noRecentProgress,
+            maxNoProgressSeconds: workerNoProgressSeconds,
+          },
+        },
+      };
+    }
+    return {
+      skipDrain: true,
+      meta: {
+        reason: "worker_online",
+        heartbeat,
+        queue: {
+          name: catalogQueueName,
+          waiting: counts.waiting ?? 0,
+          delayed: counts.delayed ?? 0,
+          active: counts.active ?? 0,
+          backlog,
+          lastCompletedAt,
+          noRecentProgress,
+          maxNoProgressSeconds: workerNoProgressSeconds,
+        },
+      },
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Conservative behavior: if queue probe fails but worker heartbeat exists, do not race the worker.
+    return {
+      skipDrain: true,
+      meta: {
+        reason: "worker_online_queue_probe_failed",
+        heartbeat,
+        queueError: message,
+      },
+    };
+  }
+};
+
 const allowCronRequest = (req: Request) => {
   const cronHeader = req.headers.get("x-vercel-cron");
   const userAgent = req.headers.get("user-agent") ?? "";
@@ -116,11 +212,14 @@ export async function POST(req: Request) {
   const brandId = typeof body?.brandId === "string" ? body.brandId : null;
   const url = new URL(req.url);
   const force = url.searchParams.get("force") === "true" || body?.force === true;
+  let workerGate: Record<string, unknown> | null = null;
 
   if (!force && isCatalogQueueEnabled()) {
     const heartbeat = await readHeartbeat("workers:catalog:alive");
-    if (heartbeat.online) {
-      return NextResponse.json({ skipped: "worker_online", heartbeat });
+    const gate = await evaluateCatalogWorkerGate(heartbeat);
+    workerGate = gate.meta;
+    if (gate.skipDrain) {
+      return NextResponse.json({ skipped: "worker_online", ...gate.meta });
     }
   }
 
@@ -176,7 +275,7 @@ export async function POST(req: Request) {
     if (processed >= safeBatch && safeBatch !== Number.MAX_SAFE_INTEGER) break;
   }
 
-  return NextResponse.json({ processed, runsProcessed, lastResult });
+  return NextResponse.json({ processed, runsProcessed, lastResult, workerGate });
 }
 
 export async function GET(req: Request) {

@@ -12,6 +12,10 @@ const queueNames = {
   enrichment: process.env.PRODUCT_ENRICHMENT_QUEUE_NAME ?? "product-enrichment",
   plpSeo: process.env.PLP_SEO_QUEUE_NAME ?? "plp-seo",
 };
+const workerNoProgressSeconds = Math.max(
+  60,
+  Number(process.env.WORKER_NO_PROGRESS_SECONDS ?? 300),
+);
 
 const readQueueCounts = async (name: string) => {
   const queue = new Queue(name, { connection });
@@ -27,6 +31,45 @@ const readQueueCounts = async (name: string) => {
   } finally {
     await queue.close().catch(() => null);
   }
+};
+
+const buildWorkerStatus = ({
+  workerKey,
+  heartbeat,
+  counts,
+}: {
+  workerKey: "catalog" | "enrich";
+  heartbeat: {
+    online: boolean;
+    ttlSeconds: number | null;
+    payload?: { lastCompletedAt?: Record<string, string | null | undefined> | undefined } | null;
+  };
+  counts: {
+    waiting?: number;
+    active?: number;
+    delayed?: number;
+  };
+}) => {
+  const lastCompletedAtValue = heartbeat.payload?.lastCompletedAt?.[workerKey];
+  const lastCompletedAt =
+    typeof lastCompletedAtValue === "string" ? lastCompletedAtValue : null;
+  const backlog = (counts.waiting ?? 0) + (counts.delayed ?? 0);
+  const active = counts.active ?? 0;
+  const lastCompletedMs = lastCompletedAt ? Date.parse(lastCompletedAt) : Number.NaN;
+  const noRecentProgress =
+    !Number.isFinite(lastCompletedMs) ||
+    Date.now() - lastCompletedMs > workerNoProgressSeconds * 1000;
+  const staleNoProgress = heartbeat.online && backlog > 0 && active === 0 && noRecentProgress;
+  return {
+    online: heartbeat.online,
+    ttlSeconds: heartbeat.ttlSeconds,
+    lastCompletedAt,
+    backlog,
+    active,
+    noRecentProgress,
+    staleNoProgress,
+    maxNoProgressSeconds: workerNoProgressSeconds,
+  };
 };
 
 export async function GET(req: Request) {
@@ -58,6 +101,18 @@ export async function GET(req: Request) {
     readQueueCounts(queueNames.enrichment),
     readQueueCounts(queueNames.plpSeo),
   ]);
+  const workerStatus = {
+    catalog: buildWorkerStatus({
+      workerKey: "catalog",
+      heartbeat: catalogAlive,
+      counts: catalogCounts,
+    }),
+    enrich: buildWorkerStatus({
+      workerKey: "enrich",
+      heartbeat: enrichAlive,
+      counts: enrichCounts,
+    }),
+  };
 
   return NextResponse.json({
     ok: true,
@@ -65,6 +120,7 @@ export async function GET(req: Request) {
     redisEnabled: true,
     queueNames,
     workerAlive: { catalog: catalogAlive, enrich: enrichAlive },
+    workerStatus,
     queues: {
       catalog: catalogCounts,
       enrichment: enrichCounts,
@@ -72,4 +128,3 @@ export async function GET(req: Request) {
     },
   });
 }
-

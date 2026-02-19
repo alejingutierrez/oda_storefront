@@ -133,8 +133,16 @@ const catalogWorker = catalogEnabled
     )
   : null;
 
+if (catalogWorker) {
+  console.log(
+    `[catalog-worker] enabled queue=${catalogQueueName} concurrency=${catalogConcurrency} endpoint=${catalogEndpoint}`,
+  );
+}
 catalogWorker?.on('completed', (job) => console.log('[catalog-worker] completed', job.id));
 catalogWorker?.on('failed', (job, err) => console.error('[catalog-worker] failed', job?.id, err));
+catalogWorker?.on('error', (err) => console.error('[catalog-worker] error', err));
+catalogWorker?.on('stalled', (jobId) => console.warn('[catalog-worker] stalled', jobId));
+catalogWorker?.on('ready', () => console.log('[catalog-worker] ready'));
 catalogWorker?.on('completed', () => {
   lastCatalogCompletedAtIso = new Date().toISOString();
 });
@@ -160,12 +168,20 @@ const enrichmentWorker = enrichEnabled
     )
   : null;
 
+if (enrichmentWorker) {
+  console.log(
+    `[product-enrichment-worker] enabled queue=${enrichmentQueueName} concurrency=${enrichmentConcurrency} endpoint=${enrichmentEndpoint}`,
+  );
+}
 enrichmentWorker?.on('completed', (job) =>
   console.log('[product-enrichment-worker] completed', job.id),
 );
 enrichmentWorker?.on('failed', (job, err) =>
   console.error('[product-enrichment-worker] failed', job?.id, err),
 );
+enrichmentWorker?.on('error', (err) => console.error('[product-enrichment-worker] error', err));
+enrichmentWorker?.on('stalled', (jobId) => console.warn('[product-enrichment-worker] stalled', jobId));
+enrichmentWorker?.on('ready', () => console.log('[product-enrichment-worker] ready'));
 enrichmentWorker?.on('completed', () => {
   lastEnrichCompletedAtIso = new Date().toISOString();
 });
@@ -188,13 +204,24 @@ const plpSeoWorker = plpSeoEnabled
     )
   : null;
 
+if (plpSeoWorker) {
+  console.log(
+    `[plp-seo-worker] enabled queue=${plpSeoQueueName} concurrency=${plpSeoConcurrency} endpoint=${plpSeoEndpoint}`,
+  );
+}
 plpSeoWorker?.on('completed', (job) => console.log('[plp-seo-worker] completed', job.id));
 plpSeoWorker?.on('failed', (job, err) => console.error('[plp-seo-worker] failed', job?.id, err));
+plpSeoWorker?.on('error', (err) => console.error('[plp-seo-worker] error', err));
+plpSeoWorker?.on('stalled', (jobId) => console.warn('[plp-seo-worker] stalled', jobId));
+plpSeoWorker?.on('ready', () => console.log('[plp-seo-worker] ready'));
 plpSeoWorker?.on('completed', () => {
   lastPlpSeoCompletedAtIso = new Date().toISOString();
 });
 
-const shutdown = async (signal) => {
+let isShuttingDown = false;
+const shutdown = async (signal, code = 0) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
   console.log(`[worker] shutdown requested (${signal})`);
   clearInterval(heartbeatTimer);
   await Promise.allSettled([
@@ -203,11 +230,20 @@ const shutdown = async (signal) => {
     plpSeoWorker?.close(),
     redis.quit(),
   ]);
-  process.exit(0);
+  process.exit(code);
 };
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('unhandledRejection', (err) => console.error('[worker] unhandledRejection', err));
-process.on('uncaughtException', (err) => console.error('[worker] uncaughtException', err));
+process.on('unhandledRejection', (err) => {
+  console.error('[worker] unhandledRejection', err);
+  shutdown('unhandledRejection', 1).catch(() => process.exit(1));
+});
+process.on('uncaughtException', (err) => {
+  console.error('[worker] uncaughtException', err);
+  shutdown('uncaughtException', 1).catch(() => process.exit(1));
+});
 
+console.log(
+  `[worker] boot ok pid=${pid} host=${hostname} heartbeat=${heartbeatEnabled} ttl=${heartbeatTtlSeconds}s interval=${heartbeatIntervalMs}ms timeout=${fetchTimeoutMs}ms`,
+);

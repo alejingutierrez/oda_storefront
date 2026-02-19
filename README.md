@@ -40,7 +40,9 @@ Nota: el refresh de catálogo puede detectar productos nuevos sin `metadata.enri
 Tip operativo: `GET /api/admin/catalog-refresh/cron` acepta overrides opcionales `maxBrands`, `brandConcurrency` y `maxRuntimeMs` para pruebas controladas de throughput (por ejemplo: `/api/admin/catalog-refresh/cron?force=true&maxBrands=12&brandConcurrency=4&maxRuntimeMs=90000`). Si no envías esos query params, el endpoint usa los valores de entorno (`CATALOG_REFRESH_*`) sin aplicar overrides.
 Operación (BullMQ 24/7):
 - `services/worker` publica heartbeats en Redis: `workers:catalog:alive` y `workers:enrich:alive` (TTL 60s, refresh cada 20s).
-- Los drains de Vercel se comportan como fallback: si el heartbeat existe, responden `{ skipped: "worker_online" }` para evitar doble procesamiento. Override: `POST /api/admin/catalog-extractor/drain?force=true` o `POST /api/admin/product-enrichment/drain?force=true`.
+- Los drains de Vercel se comportan como fallback: si el heartbeat existe y hay progreso del worker, responden `{ skipped: "worker_online" }` para evitar doble procesamiento. Si hay backlog (`waiting+delayed > 0`) pero `active=0` y sin progreso reciente, el drain entra automáticamente (sin `force`) para recuperar.
+- Umbral de recuperación automática por falta de progreso: `WORKER_NO_PROGRESS_SECONDS` (default `300`).
+- Override manual: `POST /api/admin/catalog-extractor/drain?force=true` o `POST /api/admin/product-enrichment/drain?force=true`.
 - Health: `GET /api/admin/queue-health` (jobCounts BullMQ + workerAlive).
 - Ejemplo de `systemd`: `services/worker/systemd/oda-worker.service.example` + `services/worker/systemd/worker.env.example`.
 No commitees credenciales reales.

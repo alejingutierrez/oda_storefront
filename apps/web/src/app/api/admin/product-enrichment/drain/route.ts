@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Queue } from "bullmq";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resetQueuedItems, resetStuckItems } from "@/lib/product-enrichment/run-store";
@@ -8,6 +9,101 @@ import { readHeartbeat } from "@/lib/redis";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+const queueConnection = { url: process.env.REDIS_URL ?? "" };
+const enrichmentQueueName = process.env.PRODUCT_ENRICHMENT_QUEUE_NAME ?? "product-enrichment";
+const workerNoProgressSeconds = Math.max(
+  60,
+  Number(process.env.WORKER_NO_PROGRESS_SECONDS ?? 300),
+);
+
+const readEnrichmentQueueCounts = async () => {
+  const queue = new Queue(enrichmentQueueName, { connection: queueConnection });
+  try {
+    return await queue.getJobCounts("waiting", "active", "delayed");
+  } finally {
+    await queue.close().catch(() => null);
+  }
+};
+
+const readEnrichmentLastCompletedAt = (heartbeat: {
+  payload?: { lastCompletedAt?: Record<string, string | null | undefined> | undefined } | null;
+}) => {
+  const value = heartbeat.payload?.lastCompletedAt?.enrich;
+  return typeof value === "string" ? value : null;
+};
+
+const evaluateEnrichmentWorkerGate = async (heartbeat: {
+  online: boolean;
+  ttlSeconds: number | null;
+  payload?: { lastCompletedAt?: Record<string, string | null | undefined> | undefined } | null;
+}) => {
+  if (!heartbeat.online) {
+    return {
+      skipDrain: false,
+      meta: { reason: "worker_offline", heartbeat },
+    };
+  }
+
+  try {
+    const counts = await readEnrichmentQueueCounts();
+    const backlog = (counts.waiting ?? 0) + (counts.delayed ?? 0);
+    const active = counts.active ?? 0;
+    const lastCompletedAt = readEnrichmentLastCompletedAt(heartbeat);
+    const lastCompletedMs = lastCompletedAt ? Date.parse(lastCompletedAt) : Number.NaN;
+    const noRecentProgress =
+      !Number.isFinite(lastCompletedMs) ||
+      Date.now() - lastCompletedMs > workerNoProgressSeconds * 1000;
+    const staleNoProgress = backlog > 0 && active === 0 && noRecentProgress;
+    if (staleNoProgress) {
+      return {
+        skipDrain: false,
+        meta: {
+          reason: "worker_stale_no_progress",
+          heartbeat,
+          queue: {
+            name: enrichmentQueueName,
+            waiting: counts.waiting ?? 0,
+            delayed: counts.delayed ?? 0,
+            active: counts.active ?? 0,
+            backlog,
+            lastCompletedAt,
+            noRecentProgress,
+            maxNoProgressSeconds: workerNoProgressSeconds,
+          },
+        },
+      };
+    }
+    return {
+      skipDrain: true,
+      meta: {
+        reason: "worker_online",
+        heartbeat,
+        queue: {
+          name: enrichmentQueueName,
+          waiting: counts.waiting ?? 0,
+          delayed: counts.delayed ?? 0,
+          active: counts.active ?? 0,
+          backlog,
+          lastCompletedAt,
+          noRecentProgress,
+          maxNoProgressSeconds: workerNoProgressSeconds,
+        },
+      },
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Conservative behavior: if queue probe fails but worker heartbeat exists, do not race the worker.
+    return {
+      skipDrain: true,
+      meta: {
+        reason: "worker_online_queue_probe_failed",
+        heartbeat,
+        queueError: message,
+      },
+    };
+  }
+};
 
 const readJsonRecord = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -88,11 +184,14 @@ export async function POST(req: Request) {
   const requestedRunId = typeof body?.runId === "string" ? body.runId : null;
   const url = new URL(req.url);
   const force = url.searchParams.get("force") === "true" || body?.force === true;
+  let workerGate: Record<string, unknown> | null = null;
 
   if (!force && isEnrichmentQueueEnabled()) {
     const heartbeat = await readHeartbeat("workers:enrich:alive");
-    if (heartbeat.online) {
-      return NextResponse.json({ skipped: "worker_online", heartbeat });
+    const gate = await evaluateEnrichmentWorkerGate(heartbeat);
+    workerGate = gate.meta;
+    if (gate.skipDrain) {
+      return NextResponse.json({ skipped: "worker_online", ...gate.meta });
     }
   }
 
@@ -171,7 +270,7 @@ export async function POST(req: Request) {
     if (processed >= safeBatch && safeBatch !== Number.MAX_SAFE_INTEGER) break;
   }
 
-  return NextResponse.json({ runId, runsProcessed, processed, lastResult });
+  return NextResponse.json({ runId, runsProcessed, processed, lastResult, workerGate });
 }
 
 export async function GET(req: Request) {
