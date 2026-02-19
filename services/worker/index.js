@@ -43,9 +43,21 @@ if ((catalogEnabled || enrichEnabled || plpSeoEnabled) && !adminToken) {
   throw new Error('Missing ADMIN_TOKEN for BullMQ workers');
 }
 
-const fetchTimeoutMs = Math.max(
-  5000,
-  Number(process.env.WORKER_FETCH_TIMEOUT_MS || 60000),
+const defaultFetchTimeoutMs = Math.max(
+  10000,
+  Number(process.env.WORKER_FETCH_TIMEOUT_MS || 180000),
+);
+const catalogFetchTimeoutMs = Math.max(
+  10000,
+  Number(process.env.CATALOG_WORKER_FETCH_TIMEOUT_MS || defaultFetchTimeoutMs),
+);
+const enrichmentFetchTimeoutMs = Math.max(
+  10000,
+  Number(process.env.PRODUCT_ENRICHMENT_WORKER_FETCH_TIMEOUT_MS || defaultFetchTimeoutMs),
+);
+const plpSeoFetchTimeoutMs = Math.max(
+  10000,
+  Number(process.env.PLP_SEO_WORKER_FETCH_TIMEOUT_MS || defaultFetchTimeoutMs),
 );
 
 let lastCatalogCompletedAtIso = null;
@@ -82,7 +94,7 @@ const heartbeatTimer = setInterval(() => {
   writeHeartbeats().catch((err) => console.error('[worker] heartbeat failed', err));
 }, heartbeatIntervalMs);
 
-const postAdminJson = async (endpoint, body) => {
+const postAdminJson = async (endpoint, body, timeoutMs) => {
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -90,7 +102,7 @@ const postAdminJson = async (endpoint, body) => {
       Authorization: `Bearer ${adminToken}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(fetchTimeoutMs),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   const text = await res.text().catch(() => '');
@@ -127,7 +139,7 @@ const catalogWorker = catalogEnabled
       async (job) => {
         const itemId = job.data?.itemId;
         if (!itemId) return;
-        await postAdminJson(catalogEndpoint, { itemId });
+        await postAdminJson(catalogEndpoint, { itemId }, catalogFetchTimeoutMs);
       },
       { connection, concurrency: catalogConcurrency },
     )
@@ -162,7 +174,7 @@ const enrichmentWorker = enrichEnabled
       async (job) => {
         const itemId = job.data?.itemId;
         if (!itemId) return;
-        await postAdminJson(enrichmentEndpoint, { itemId });
+        await postAdminJson(enrichmentEndpoint, { itemId }, enrichmentFetchTimeoutMs);
       },
       { connection, concurrency: enrichmentConcurrency },
     )
@@ -198,7 +210,7 @@ const plpSeoWorker = plpSeoEnabled
       async (job) => {
         const itemId = job.data?.itemId;
         if (!itemId) return;
-        await postAdminJson(plpSeoEndpoint, { itemId });
+        await postAdminJson(plpSeoEndpoint, { itemId }, plpSeoFetchTimeoutMs);
       },
       { connection, concurrency: plpSeoConcurrency },
     )
@@ -245,5 +257,5 @@ process.on('uncaughtException', (err) => {
 });
 
 console.log(
-  `[worker] boot ok pid=${pid} host=${hostname} heartbeat=${heartbeatEnabled} ttl=${heartbeatTtlSeconds}s interval=${heartbeatIntervalMs}ms timeout=${fetchTimeoutMs}ms`,
+  `[worker] boot ok pid=${pid} host=${hostname} heartbeat=${heartbeatEnabled} ttl=${heartbeatTtlSeconds}s interval=${heartbeatIntervalMs}ms timeout_default=${defaultFetchTimeoutMs}ms timeout_catalog=${catalogFetchTimeoutMs}ms timeout_enrich=${enrichmentFetchTimeoutMs}ms timeout_plp=${plpSeoFetchTimeoutMs}ms`,
 );
