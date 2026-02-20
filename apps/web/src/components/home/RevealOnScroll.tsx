@@ -7,7 +7,7 @@ export default function RevealOnScroll({
   children,
   delay = 0,
   y = 28,
-  amount = 0.24,
+  amount = 0.01,
   once = true,
   className,
 }: {
