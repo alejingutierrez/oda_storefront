@@ -65,6 +65,7 @@ const plpSeoFetchTimeoutMs = parseTimeoutMs(
   defaultFetchTimeoutMs,
 );
 
+let isShuttingDown = false;
 let lastCatalogCompletedAtIso = null;
 let lastEnrichCompletedAtIso = null;
 let lastPlpSeoCompletedAtIso = null;
@@ -99,15 +100,17 @@ const heartbeatTimer = setInterval(() => {
   writeHeartbeats().catch((err) => console.error('[worker] heartbeat failed', err));
 }, heartbeatIntervalMs);
 
-const postAdminJson = async (endpoint, body, timeoutMs) => {
+const requestAdminJson = async ({ endpoint, method, body, timeoutMs }) => {
   const requestInit = {
-    method: 'POST',
+    method,
     headers: {
-      'Content-Type': 'application/json',
       Authorization: `Bearer ${adminToken}`,
     },
-    body: JSON.stringify(body),
   };
+  if (body !== undefined) {
+    requestInit.headers['Content-Type'] = 'application/json';
+    requestInit.body = JSON.stringify(body);
+  }
   if (typeof timeoutMs === 'number' && timeoutMs > 0) {
     requestInit.signal = AbortSignal.timeout(timeoutMs);
   }
@@ -135,6 +138,11 @@ const postAdminJson = async (endpoint, body, timeoutMs) => {
 
   return payload;
 };
+
+const postAdminJson = async (endpoint, body, timeoutMs) =>
+  requestAdminJson({ endpoint, method: 'POST', body, timeoutMs });
+const getAdminJson = async (endpoint, timeoutMs) =>
+  requestAdminJson({ endpoint, method: 'GET', timeoutMs });
 
 const catalogQueueName = process.env.CATALOG_QUEUE_NAME || 'catalog';
 const catalogConcurrency = Math.max(1, Number(process.env.CATALOG_WORKER_CONCURRENCY || 10));
@@ -213,6 +221,54 @@ const plpSeoEndpoint =
   process.env.PLP_SEO_WORKER_API_URL ||
   'http://localhost:3000/api/admin/plp-seo/process-item';
 
+const deriveEndpoint = (fromEndpoint, pathname) => {
+  if (!fromEndpoint) return null;
+  try {
+    const url = new URL(fromEndpoint);
+    url.pathname = pathname;
+    url.search = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
+
+const queueHealthEndpoint =
+  process.env.WORKER_QUEUE_HEALTH_URL ||
+  deriveEndpoint(catalogEndpoint, '/api/admin/queue-health') ||
+  deriveEndpoint(enrichmentEndpoint, '/api/admin/queue-health');
+const catalogDrainEndpoint =
+  process.env.CATALOG_WORKER_DRAIN_URL ||
+  deriveEndpoint(catalogEndpoint, '/api/admin/catalog-extractor/drain');
+const enrichmentDrainEndpoint =
+  process.env.PRODUCT_ENRICHMENT_WORKER_DRAIN_URL ||
+  deriveEndpoint(enrichmentEndpoint, '/api/admin/product-enrichment/drain');
+
+const autonomousEnabled =
+  process.env.WORKER_AUTONOMOUS_DISABLED !== 'true' &&
+  Boolean(queueHealthEndpoint) &&
+  (catalogEnabled || enrichEnabled);
+const autonomousIntervalMs = Math.max(
+  10000,
+  Number(process.env.WORKER_AUTONOMOUS_INTERVAL_MS || 30000),
+);
+const autonomousProbeTimeoutMs = parseTimeoutMs(
+  process.env.WORKER_AUTONOMOUS_PROBE_TIMEOUT_MS,
+  10000,
+);
+const autonomousDrainTimeoutMs = parseTimeoutMs(
+  process.env.WORKER_AUTONOMOUS_DRAIN_TIMEOUT_MS,
+  60000,
+);
+const autonomousDrainLimitCatalog = Math.max(
+  1,
+  Number(process.env.WORKER_AUTONOMOUS_CATALOG_LIMIT || 8),
+);
+const autonomousDrainLimitEnrich = Math.max(
+  1,
+  Number(process.env.WORKER_AUTONOMOUS_ENRICH_LIMIT || 20),
+);
+
 const plpSeoWorker = plpSeoEnabled
   ? new Worker(
       plpSeoQueueName,
@@ -239,12 +295,91 @@ plpSeoWorker?.on('completed', () => {
   lastPlpSeoCompletedAtIso = new Date().toISOString();
 });
 
-let isShuttingDown = false;
+let autonomousTickInFlight = false;
+const runAutonomousTick = async () => {
+  if (!autonomousEnabled || autonomousTickInFlight || isShuttingDown) return;
+  autonomousTickInFlight = true;
+  try {
+    const health = await getAdminJson(queueHealthEndpoint, autonomousProbeTimeoutMs);
+    const workerStatus = (health?.workerStatus ?? {});
+    const actions = [];
+
+    if (catalogEnabled && catalogDrainEndpoint) {
+      const catalogStatus = workerStatus.catalog ?? {};
+      const reason = catalogStatus.queueEmptyButDbRunnable
+        ? 'queue_empty_db_runnable'
+        : catalogStatus.staleNoProgress
+          ? 'stale_no_progress'
+          : null;
+      if (reason) {
+        actions.push({
+          queue: 'catalog',
+          endpoint: catalogDrainEndpoint,
+          reason,
+          limit: autonomousDrainLimitCatalog,
+        });
+      }
+    }
+
+    if (enrichEnabled && enrichmentDrainEndpoint) {
+      const enrichStatus = workerStatus.enrich ?? workerStatus.enrichment ?? {};
+      const reason = enrichStatus.queueEmptyButDbRunnable
+        ? 'queue_empty_db_runnable'
+        : enrichStatus.staleNoProgress
+          ? 'stale_no_progress'
+          : null;
+      if (reason) {
+        actions.push({
+          queue: 'enrichment',
+          endpoint: enrichmentDrainEndpoint,
+          reason,
+          limit: autonomousDrainLimitEnrich,
+        });
+      }
+    }
+
+    for (const action of actions) {
+      const payload = await postAdminJson(
+        action.endpoint,
+        {
+          limit: action.limit,
+          maxMs: autonomousDrainTimeoutMs ?? 60000,
+          maxRuns: 1,
+        },
+        autonomousDrainTimeoutMs,
+      );
+      console.warn(
+        `[worker-autonomy] triggered queue=${action.queue} reason=${action.reason} processed=${payload?.processed ?? 0} runs=${payload?.runsProcessed ?? 0} skipped=${payload?.skipped ?? 'no'}`,
+      );
+    }
+  } catch (error) {
+    console.error('[worker-autonomy] tick failed', error);
+  } finally {
+    autonomousTickInFlight = false;
+  }
+};
+
+if (autonomousEnabled) {
+  console.log(
+    `[worker-autonomy] enabled interval=${autonomousIntervalMs}ms queueHealth=${queueHealthEndpoint} catalogDrain=${catalogDrainEndpoint ?? 'n/a'} enrichDrain=${enrichmentDrainEndpoint ?? 'n/a'}`,
+  );
+} else {
+  const reason = queueHealthEndpoint ? 'disabled_by_env_or_queue_flags' : 'missing_queue_health_url';
+  console.log(`[worker-autonomy] disabled reason=${reason}`);
+}
+runAutonomousTick().catch((err) => console.error('[worker-autonomy] startup failed', err));
+const autonomousTimer = autonomousEnabled
+  ? setInterval(() => {
+      runAutonomousTick().catch((err) => console.error('[worker-autonomy] tick failed', err));
+    }, autonomousIntervalMs)
+  : null;
+
 const shutdown = async (signal, code = 0) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
   console.log(`[worker] shutdown requested (${signal})`);
   clearInterval(heartbeatTimer);
+  if (autonomousTimer) clearInterval(autonomousTimer);
   await Promise.allSettled([
     catalogWorker?.close(),
     enrichmentWorker?.close(),
