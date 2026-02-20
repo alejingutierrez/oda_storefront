@@ -209,4 +209,74 @@ summary::-webkit-details-marker {
   .oda-no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+
+  @keyframes home-marquee-scroll {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(-50%, 0, 0);
+    }
+  }
+
+  .home-marquee-track {
+    animation: home-marquee-scroll 34s linear infinite;
+    will-change: transform;
+  }
+
+  .home-marquee-track:hover,
+  .home-marquee-track:focus-within {
+    animation-play-state: paused;
+  }
+
+  .home-hide-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .home-hide-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .home-drag-scroll {
+    cursor: grab;
+  }
+
+  .home-drag-scroll[data-dragging="true"] {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  .home-swatch-stack {
+    position: relative;
+    height: 84px;
+    border-radius: 1rem;
+    border: 1px solid var(--oda-border);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.45) inset,
+      0 18px 28px rgba(23, 21, 19, 0.1),
+      0 6px 14px rgba(23, 21, 19, 0.08);
+    overflow: hidden;
+  }
+
+  .home-swatch-layer {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    transform: translateZ(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-marquee-track {
+    animation: none !important;
+  }
+
+  .home-parallax-media {
+    transform: none !important;
+  }
+
+  .home-drag-scroll {
+    scroll-behavior: auto;
+  }
 }

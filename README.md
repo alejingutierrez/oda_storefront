@@ -234,6 +234,12 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 ## Home (public)
 - Ruta `/` con home editorial (estilo Farfetch) y grillas cuadradas.
 - Mega menu por género con estructura completa basada en categorías reales y reglas `category + subcategory` (ver `HOME_PLAN.md`).
+- Home inmersivo editorial (MC-134, 2026-02-20):
+  - Estrategia `SSR + islas client`: `/src/app/page.tsx` mantiene fetch server-side (semilla determinista de 3 dias) y delega interactividad a componentes client en `src/components/home/*`.
+  - Dependencias UI: `framer-motion` (reveal/parallax/transiciones) y `lucide-react` (controles de carrusel).
+  - Módulos nuevos: `HomeHeroImmersive`, `ProductCarousel` (swipe/drag + keyboard), `CategoryGallery` (3:4), `CuratedStickyEdit`, `ColorSwatchPalette`, `BrandMarquee` y `RevealOnScroll`.
+  - Tipos compartidos movidos a `src/lib/home-types.ts` para evitar acoplar componentes client al módulo `server-only` (`home-data.ts`).
+  - Accesibilidad y motion: se respeta `prefers-reduced-motion` (desactiva marquee/parallax y reduce animación no esencial), foco visible y labels en controles de carrusel/marquee.
 - Header + mega menu (actualización 2026-02-18):
   - Desktop: layout del header en grid (`auto | minmax(0,1fr) | auto`), input de búsqueda responsivo (`w-[clamp(12rem,18vw,20rem)]`) y panel de megamenu compartido a ancho completo del container.
   - Desktop (ajuste UX): menor densidad vertical en líneas del panel para una lectura más compacta.

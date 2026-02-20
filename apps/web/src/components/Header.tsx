@@ -3,7 +3,7 @@ import AccountLink from "@/components/AccountLink";
 import HeaderHeightSync from "@/components/HeaderHeightSync";
 import HeaderMobileMenu from "@/components/HeaderMobileMenu";
 import MegaMenu from "@/components/MegaMenu";
-import type { MegaMenuData } from "@/lib/home-data";
+import type { MegaMenuData } from "@/lib/home-types";
 
 export default function Header({ menu }: { menu: MegaMenuData }) {
   return (

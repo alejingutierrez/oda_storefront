@@ -94,6 +94,23 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - `cold`: p95 `< 3s`
 - Estado: **done (2026-02-20)**.
 
+### MC-134 Home inmersivo editorial (SSR + islas client)
+- Historia: Como usuario, quiero una home inmersiva con calidad visual premium (hero full-bleed, motion editorial y navegación por bloques interactivos), para descubrir moda colombiana con una experiencia comparable a e-commerce de lujo internacional.
+- Alcance: rediseño integral de `/` manteniendo `page.tsx` como Server Component (seed determinista de 3 días + `Promise.all` + `revalidate` intactos) y moviendo interacciones a islas client (`framer-motion`). Nuevos módulos en `src/components/home`: `HomeHeroImmersive`, `RevealOnScroll`, `ProductCarousel`, `CategoryGallery`, `CuratedStickyEdit`, `ColorSwatchPalette`, `BrandMarquee`, `HomeProductCard`. Migración de tipos compartidos a `src/lib/home-types.ts` para desacoplar client components de `home-data` (`server-only`).
+- CA:
+  - Hero full-bleed (>=90svh) con parallax suave y CTA editorial.
+  - Carruseles de Novedades/Trending con scroll-snap, swipe mobile, drag desktop, botones y navegación por teclado.
+  - Categorías y cards de producto en ratio vertical 3:4 (sin romper `ProductCard` global).
+  - Curated edit con bloque visual sticky en desktop y fallback apilado en mobile.
+  - Marcas destacadas en marquee infinito sin saltos.
+  - `prefers-reduced-motion` aplicado (marquee/parallax/animaciones no esenciales degradan correctamente).
+  - Semilla de rotación de 3 días conserva consistencia de productos/marcas.
+- Datos: `getHeroProduct`, `getNewArrivals`, `getCategoryHighlights`, `getStyleGroups`, `getColorCombos`, `getBrandLogos`, `getTrendingPicks` (sin cambios de contrato).
+- NF: preservar SSR/ISR y evitar regresiones de accesibilidad (alt text, foco visible, labels de controles).
+- Riesgos: incremento de JS por islas client y animaciones; mitigación con límites de alcance (solo secciones interactivas), componentes server para render base y fallback reduced-motion.
+- Métricas: estabilidad del build, respuesta visual en desktop/mobile y ausencia de overflow horizontal en mobile.
+- Estado: **done (2026-02-20)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

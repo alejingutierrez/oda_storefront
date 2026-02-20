@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import AccountLink from "@/components/AccountLink";
-import type { MegaMenuData } from "@/lib/home-data";
+import type { MegaMenuData } from "@/lib/home-types";
 import { logExperienceEvent } from "@/lib/experience-events";
 import { GENDER_ROUTE, type GenderKey } from "@/lib/navigation";
 

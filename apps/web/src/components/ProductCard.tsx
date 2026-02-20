@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { ProductCard as ProductCardType } from "@/lib/home-data";
+import type { ProductCard as ProductCardType } from "@/lib/home-types";
 
 function formatPrice(amount: string | null, currency: string | null) {
   if (!amount || Number(amount) <= 0) {

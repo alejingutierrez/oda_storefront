@@ -4,6 +4,15 @@ import { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { CATALOG_CACHE_TAG } from "@/lib/catalog-cache";
+import type {
+  BrandLogo,
+  CategoryHighlight,
+  ColorCombo,
+  MegaMenuData,
+  MenuCategory,
+  ProductCard,
+  StyleGroup,
+} from "@/lib/home-types";
 import {
   CATEGORY_GROUPS,
   GenderKey,
@@ -14,77 +23,22 @@ import { buildEffectiveVariantPriceCopExpr } from "@/lib/catalog-query";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
 import { getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm, toCopDisplayMarketing } from "@/lib/pricing";
 
+export type {
+  BrandLogo,
+  CategoryHighlight,
+  ColorCombo,
+  HomeProductCardData,
+  MegaMenuData,
+  MenuCategory,
+  MenuSubcategory,
+  ProductCard,
+  StyleGroup,
+} from "@/lib/home-types";
+
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
 const HOME_CACHE_VERSION = 4;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
-
-export type MenuSubcategory = {
-  key: string;
-  label: string;
-  count: number;
-  href: string;
-};
-
-export type MenuCategory = {
-  key: string;
-  label: string;
-  count: number;
-  href: string;
-  subcategories?: MenuSubcategory[];
-};
-
-export type MegaMenuData = Record<
-  GenderKey,
-  {
-    Superiores: MenuCategory[];
-    Inferiores: MenuCategory[];
-    Accesorios: MenuCategory[];
-  }
->;
-
-export type ProductCard = {
-  id: string;
-  name: string;
-  imageCoverUrl: string;
-  brandName: string;
-  category: string | null;
-  subcategory: string | null;
-  minPrice: string | null;
-  currency: string | null;
-  sourceUrl: string | null;
-};
-
-export type CategoryHighlight = {
-  category: string;
-  label: string;
-  imageCoverUrl: string;
-  href: string;
-};
-
-export type StyleGroup = {
-  styleKey: string;
-  label: string;
-  products: ProductCard[];
-};
-
-export type ColorCombo = {
-  id: string;
-  comboKey: string;
-  detectedLayout: string | null;
-  colors: Array<{
-    hex: string;
-    role: string | null;
-    pantoneName: string | null;
-  }>;
-};
-
-export type BrandLogo = {
-  id: string;
-  slug: string;
-  name: string;
-  logoUrl: string;
-};
 
 export function getRotationSeed(now = new Date()): number {
   return Math.floor(now.getTime() / THREE_DAYS_MS);

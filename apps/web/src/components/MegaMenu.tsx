@@ -12,7 +12,7 @@ import {
   type FocusEvent,
   type MouseEvent,
 } from "react";
-import type { MegaMenuData } from "@/lib/home-data";
+import type { MegaMenuData } from "@/lib/home-types";
 import { logExperienceEvent } from "@/lib/experience-events";
 import { GENDER_ROUTE, type GenderKey } from "@/lib/navigation";
 
