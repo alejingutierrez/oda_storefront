@@ -92,6 +92,18 @@ const readCatalogLastCompletedAt = (heartbeat: {
   return typeof value === "string" ? value : null;
 };
 
+const hasCatalogRunnableInDb = async () => {
+  const row = await prisma.catalogItem.findFirst({
+    where: {
+      run: { status: "processing" },
+      status: { in: ["pending", "queued", "failed"] },
+      attempts: { lt: CATALOG_MAX_ATTEMPTS },
+    },
+    select: { id: true },
+  });
+  return Boolean(row);
+};
+
 const evaluateCatalogWorkerGate = async (heartbeat: {
   online: boolean;
   ttlSeconds: number | null;
@@ -113,6 +125,31 @@ const evaluateCatalogWorkerGate = async (heartbeat: {
     const noRecentProgress =
       !Number.isFinite(lastCompletedMs) ||
       Date.now() - lastCompletedMs > workerNoProgressSeconds * 1000;
+
+    if (backlog === 0 && active === 0) {
+      const dbRunnable = await hasCatalogRunnableInDb();
+      if (dbRunnable) {
+        return {
+          skipDrain: false,
+          meta: {
+            reason: "worker_queue_empty_db_runnable",
+            heartbeat,
+            queue: {
+              name: catalogQueueName,
+              waiting: counts.waiting ?? 0,
+              delayed: counts.delayed ?? 0,
+              active: counts.active ?? 0,
+              backlog,
+              dbRunnable,
+              lastCompletedAt,
+              noRecentProgress,
+              maxNoProgressSeconds: workerNoProgressSeconds,
+            },
+          },
+        };
+      }
+    }
+
     const staleNoProgress = backlog > 0 && active === 0 && noRecentProgress;
     if (staleNoProgress) {
       return {
@@ -128,6 +165,7 @@ const evaluateCatalogWorkerGate = async (heartbeat: {
             backlog,
             lastCompletedAt,
             noRecentProgress,
+            dbRunnable: false,
             maxNoProgressSeconds: workerNoProgressSeconds,
           },
         },
@@ -146,6 +184,7 @@ const evaluateCatalogWorkerGate = async (heartbeat: {
           backlog,
           lastCompletedAt,
           noRecentProgress,
+          dbRunnable: false,
           maxNoProgressSeconds: workerNoProgressSeconds,
         },
       },

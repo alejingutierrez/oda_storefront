@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Queue } from "bullmq";
 import { validateAdminRequest } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { isRedisEnabled, readHeartbeat } from "@/lib/redis";
 
 export const runtime = "nodejs";
@@ -33,10 +34,42 @@ const readQueueCounts = async (name: string) => {
   }
 };
 
+const catalogMaxAttempts = Math.max(1, Number(process.env.CATALOG_MAX_ATTEMPTS ?? 3));
+const enrichmentMaxAttempts = Math.max(
+  1,
+  Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 5),
+);
+
+const readDbRunnableFlags = async () => {
+  const [catalogRow, enrichRow] = await Promise.all([
+    prisma.catalogItem.findFirst({
+      where: {
+        run: { status: "processing" },
+        status: { in: ["pending", "queued", "failed"] },
+        attempts: { lt: catalogMaxAttempts },
+      },
+      select: { id: true },
+    }),
+    prisma.productEnrichmentItem.findFirst({
+      where: {
+        run: { status: "processing" },
+        status: { in: ["pending", "queued", "failed"] },
+        attempts: { lt: enrichmentMaxAttempts },
+      },
+      select: { id: true },
+    }),
+  ]);
+  return {
+    catalogDbRunnable: Boolean(catalogRow),
+    enrichDbRunnable: Boolean(enrichRow),
+  };
+};
+
 const buildWorkerStatus = ({
   workerKey,
   heartbeat,
   counts,
+  dbRunnable,
 }: {
   workerKey: "catalog" | "enrich";
   heartbeat: {
@@ -49,6 +82,7 @@ const buildWorkerStatus = ({
     active?: number;
     delayed?: number;
   };
+  dbRunnable: boolean;
 }) => {
   const lastCompletedAtValue = heartbeat.payload?.lastCompletedAt?.[workerKey];
   const lastCompletedAt =
@@ -60,14 +94,17 @@ const buildWorkerStatus = ({
     !Number.isFinite(lastCompletedMs) ||
     Date.now() - lastCompletedMs > workerNoProgressSeconds * 1000;
   const staleNoProgress = heartbeat.online && backlog > 0 && active === 0 && noRecentProgress;
+  const queueEmptyButDbRunnable = heartbeat.online && backlog === 0 && active === 0 && dbRunnable;
   return {
     online: heartbeat.online,
     ttlSeconds: heartbeat.ttlSeconds,
     lastCompletedAt,
     backlog,
     active,
+    dbRunnable,
     noRecentProgress,
     staleNoProgress,
+    queueEmptyButDbRunnable,
     maxNoProgressSeconds: workerNoProgressSeconds,
   };
 };
@@ -94,23 +131,26 @@ export async function GET(req: Request) {
     });
   }
 
-  const [catalogAlive, enrichAlive, catalogCounts, enrichCounts, plpCounts] = await Promise.all([
+  const [catalogAlive, enrichAlive, catalogCounts, enrichCounts, plpCounts, dbFlags] = await Promise.all([
     readHeartbeat("workers:catalog:alive"),
     readHeartbeat("workers:enrich:alive"),
     readQueueCounts(queueNames.catalog),
     readQueueCounts(queueNames.enrichment),
     readQueueCounts(queueNames.plpSeo),
+    readDbRunnableFlags(),
   ]);
   const workerStatus = {
     catalog: buildWorkerStatus({
       workerKey: "catalog",
       heartbeat: catalogAlive,
       counts: catalogCounts,
+      dbRunnable: dbFlags.catalogDbRunnable,
     }),
     enrich: buildWorkerStatus({
       workerKey: "enrich",
       heartbeat: enrichAlive,
       counts: enrichCounts,
+      dbRunnable: dbFlags.enrichDbRunnable,
     }),
   };
 

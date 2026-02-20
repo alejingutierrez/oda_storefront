@@ -41,6 +41,7 @@ Tip operativo: `GET /api/admin/catalog-refresh/cron` acepta overrides opcionales
 Operación (BullMQ 24/7):
 - `services/worker` publica heartbeats en Redis: `workers:catalog:alive` y `workers:enrich:alive` (TTL 60s, refresh cada 20s).
 - Los drains de Vercel se comportan como fallback: si el heartbeat existe y hay progreso del worker, responden `{ skipped: "worker_online" }` para evitar doble procesamiento. Si hay backlog (`waiting+delayed > 0`) pero `active=0` y sin progreso reciente, el drain entra automáticamente (sin `force`) para recuperar.
+- Si Redis reporta cola vacía (`waiting=0`, `delayed=0`, `active=0`) pero DB aún tiene items runnable en corridas `processing`, el drain también entra automáticamente (`worker_queue_empty_db_runnable`) para reactivar avance.
 - Umbral de recuperación automática por falta de progreso: `WORKER_NO_PROGRESS_SECONDS` (default `300`).
 - Timeout HTTP del worker hacia `process-item`: `WORKER_FETCH_TIMEOUT_MS` (0 = sin abort del cliente worker, recomendado) y overrides por cola (`CATALOG_WORKER_FETCH_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_WORKER_FETCH_TIMEOUT_MS`, `PLP_SEO_WORKER_FETCH_TIMEOUT_MS`).
 - Override manual: `POST /api/admin/catalog-extractor/drain?force=true` o `POST /api/admin/product-enrichment/drain?force=true`.

@@ -12,6 +12,10 @@ export const maxDuration = 60;
 
 const queueConnection = { url: process.env.REDIS_URL ?? "" };
 const enrichmentQueueName = process.env.PRODUCT_ENRICHMENT_QUEUE_NAME ?? "product-enrichment";
+const enrichmentMaxAttempts = Math.max(
+  1,
+  Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 5),
+);
 const workerNoProgressSeconds = Math.max(
   60,
   Number(process.env.WORKER_NO_PROGRESS_SECONDS ?? 300),
@@ -31,6 +35,18 @@ const readEnrichmentLastCompletedAt = (heartbeat: {
 }) => {
   const value = heartbeat.payload?.lastCompletedAt?.enrich;
   return typeof value === "string" ? value : null;
+};
+
+const hasEnrichmentRunnableInDb = async () => {
+  const row = await prisma.productEnrichmentItem.findFirst({
+    where: {
+      run: { status: "processing" },
+      status: { in: ["pending", "queued", "failed"] },
+      attempts: { lt: enrichmentMaxAttempts },
+    },
+    select: { id: true },
+  });
+  return Boolean(row);
 };
 
 const evaluateEnrichmentWorkerGate = async (heartbeat: {
@@ -54,6 +70,31 @@ const evaluateEnrichmentWorkerGate = async (heartbeat: {
     const noRecentProgress =
       !Number.isFinite(lastCompletedMs) ||
       Date.now() - lastCompletedMs > workerNoProgressSeconds * 1000;
+
+    if (backlog === 0 && active === 0) {
+      const dbRunnable = await hasEnrichmentRunnableInDb();
+      if (dbRunnable) {
+        return {
+          skipDrain: false,
+          meta: {
+            reason: "worker_queue_empty_db_runnable",
+            heartbeat,
+            queue: {
+              name: enrichmentQueueName,
+              waiting: counts.waiting ?? 0,
+              delayed: counts.delayed ?? 0,
+              active: counts.active ?? 0,
+              backlog,
+              dbRunnable,
+              lastCompletedAt,
+              noRecentProgress,
+              maxNoProgressSeconds: workerNoProgressSeconds,
+            },
+          },
+        };
+      }
+    }
+
     const staleNoProgress = backlog > 0 && active === 0 && noRecentProgress;
     if (staleNoProgress) {
       return {
@@ -69,6 +110,7 @@ const evaluateEnrichmentWorkerGate = async (heartbeat: {
             backlog,
             lastCompletedAt,
             noRecentProgress,
+            dbRunnable: false,
             maxNoProgressSeconds: workerNoProgressSeconds,
           },
         },
@@ -87,6 +129,7 @@ const evaluateEnrichmentWorkerGate = async (heartbeat: {
           backlog,
           lastCompletedAt,
           noRecentProgress,
+          dbRunnable: false,
           maxNoProgressSeconds: workerNoProgressSeconds,
         },
       },
