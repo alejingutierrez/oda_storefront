@@ -157,7 +157,19 @@ export function parseCatalogSortFromSearchParams(
   params: URLSearchParams,
   fallback = "relevancia",
 ): string {
-  return getParamFromSearch(params, "sort") ?? fallback;
+  const value = getParamFromSearch(params, "sort");
+  if (!value) return fallback;
+  if (
+    value === "relevancia" ||
+    value === "new" ||
+    value === "price_asc" ||
+    value === "price_desc" ||
+    value === "top_picks" ||
+    value === "editorial_favorites"
+  ) {
+    return value;
+  }
+  return fallback;
 }
 
 // --- Legacy category URL canonicalization ---

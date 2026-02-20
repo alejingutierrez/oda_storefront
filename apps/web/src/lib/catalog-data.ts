@@ -1790,6 +1790,8 @@ async function computeCatalogProductsPage(params: {
 
     const q = filters.q ? `%${filters.q}%` : null;
     const isRelevancia = sortKey === "relevancia" && Boolean(q);
+    const isTopPicks = sortKey === "top_picks";
+    const isEditorialFavorites = sortKey === "editorial_favorites";
 
     return prisma.$queryRaw<
       Array<{
@@ -1807,7 +1809,9 @@ async function computeCatalogProductsPage(params: {
         with ids as (
           select
             p.id,
-            p."createdAt" as created_at
+            p."createdAt" as created_at,
+            p."editorialTopPickRank" as editorial_top_pick_rank,
+            p."editorialFavoriteRank" as editorial_favorite_rank
             ${isRelevancia
               ? Prisma.sql`,
                 case
@@ -1821,6 +1825,18 @@ async function computeCatalogProductsPage(params: {
           ${productWhere}
           ${variantExists}
           order by
+            ${isTopPicks
+              ? Prisma.sql`
+                case when p."editorialTopPickRank" is null then 1 else 0 end asc,
+                p."editorialTopPickRank" asc nulls last,
+              `
+              : Prisma.empty}
+            ${isEditorialFavorites
+              ? Prisma.sql`
+                case when p."editorialFavoriteRank" is null then 1 else 0 end asc,
+                p."editorialFavoriteRank" asc nulls last,
+              `
+              : Prisma.empty}
             ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
             p."createdAt" desc
           limit ${CATALOG_PAGE_SIZE}
@@ -1848,6 +1864,18 @@ async function computeCatalogProductsPage(params: {
             ${variantWhere}
         ) vagg on true
         order by
+          ${isTopPicks
+            ? Prisma.sql`
+              case when ids.editorial_top_pick_rank is null then 1 else 0 end asc,
+              ids.editorial_top_pick_rank asc nulls last,
+            `
+            : Prisma.empty}
+          ${isEditorialFavorites
+            ? Prisma.sql`
+              case when ids.editorial_favorite_rank is null then 1 else 0 end asc,
+              ids.editorial_favorite_rank asc nulls last,
+            `
+            : Prisma.empty}
           ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
           ids.created_at desc
       `,
@@ -1998,6 +2026,8 @@ async function computeCatalogProducts(params: {
 
     const q = filters.q ? `%${filters.q}%` : null;
     const isRelevancia = sortKey === "relevancia" && Boolean(q);
+    const isTopPicks = sortKey === "top_picks";
+    const isEditorialFavorites = sortKey === "editorial_favorites";
 
     return prisma.$queryRaw<
       Array<{
@@ -2015,7 +2045,9 @@ async function computeCatalogProducts(params: {
         with ids as (
           select
             p.id,
-            p."createdAt" as created_at
+            p."createdAt" as created_at,
+            p."editorialTopPickRank" as editorial_top_pick_rank,
+            p."editorialFavoriteRank" as editorial_favorite_rank
             ${isRelevancia
               ? Prisma.sql`,
                 case
@@ -2029,6 +2061,18 @@ async function computeCatalogProducts(params: {
           ${productWhere}
           ${variantExists}
           order by
+            ${isTopPicks
+              ? Prisma.sql`
+                case when p."editorialTopPickRank" is null then 1 else 0 end asc,
+                p."editorialTopPickRank" asc nulls last,
+              `
+              : Prisma.empty}
+            ${isEditorialFavorites
+              ? Prisma.sql`
+                case when p."editorialFavoriteRank" is null then 1 else 0 end asc,
+                p."editorialFavoriteRank" asc nulls last,
+              `
+              : Prisma.empty}
             ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
             p."createdAt" desc
           limit ${CATALOG_PAGE_SIZE}
@@ -2056,6 +2100,18 @@ async function computeCatalogProducts(params: {
             ${variantWhere}
         ) vagg on true
         order by
+          ${isTopPicks
+            ? Prisma.sql`
+              case when ids.editorial_top_pick_rank is null then 1 else 0 end asc,
+              ids.editorial_top_pick_rank asc nulls last,
+            `
+            : Prisma.empty}
+          ${isEditorialFavorites
+            ? Prisma.sql`
+              case when ids.editorial_favorite_rank is null then 1 else 0 end asc,
+              ids.editorial_favorite_rank asc nulls last,
+            `
+            : Prisma.empty}
           ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
           ids.created_at desc
       `,

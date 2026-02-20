@@ -56,6 +56,8 @@ export async function GET(req: Request) {
         season: string | null;
         stylePrimary: string | null;
         styleSecondary: string | null;
+        editorialFavoriteRank: number | null;
+        editorialTopPickRank: number | null;
         status: string | null;
         sourceUrl: string | null;
         updatedAt: Date;
@@ -78,6 +80,8 @@ export async function GET(req: Request) {
         p.season,
         p."stylePrimary",
         p."styleSecondary",
+        p."editorialFavoriteRank",
+        p."editorialTopPickRank",
         p.status,
         p."sourceUrl",
         p."updatedAt",
@@ -146,6 +150,8 @@ export async function GET(req: Request) {
       season: row.season,
       stylePrimary: row.stylePrimary,
       styleSecondary: row.styleSecondary,
+      editorialFavoriteRank: row.editorialFavoriteRank,
+      editorialTopPickRank: row.editorialTopPickRank,
       status: row.status,
       sourceUrl: row.sourceUrl,
       updatedAt: row.updatedAt,

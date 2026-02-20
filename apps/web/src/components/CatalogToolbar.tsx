@@ -9,6 +9,8 @@ type SortOption = { value: string; label: string };
 export const SORT_OPTIONS: SortOption[] = [
   { value: "relevancia", label: "Relevancia" },
   { value: "new", label: "Nuevos" },
+  { value: "top_picks", label: "Top Picks" },
+  { value: "editorial_favorites", label: "Favoritos ODA" },
   { value: "price_asc", label: "Precio: menor" },
   { value: "price_desc", label: "Precio: mayor" },
 ];

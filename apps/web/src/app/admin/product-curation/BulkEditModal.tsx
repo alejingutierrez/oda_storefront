@@ -17,20 +17,23 @@ export type BulkField =
   | "patternTags"
   | "occasionTags"
   | "care"
-  | "origin";
+  | "origin"
+  | "editorialBadge";
+
+export type EditorialBadgeValue = {
+  kind: "favorite" | "top_pick";
+  startPriority?: number | null;
+};
 
 export type BulkChange = {
   field: BulkField;
   op: BulkOperation;
-  value: string | string[] | null;
+  value: string | string[] | EditorialBadgeValue | null;
 };
 
-export type BulkResult = {
+export type QueueResult = {
   ok: boolean;
-  updatedCount: number;
-  unchangedCount: number;
-  missingCount: number;
-  missingIds: string[];
+  itemId?: string;
 };
 
 type Props = {
@@ -41,12 +44,19 @@ type Props = {
   searchKey: string;
   taxonomyOptions: TaxonomyOptions | null;
   onClose: () => void;
-  onApply: (payload: { productIds: string[]; changes: BulkChange[] }) => Promise<BulkResult>;
+  onQueue: (payload: {
+    productIds: string[];
+    changes: BulkChange[];
+    note?: string;
+    source?: string;
+    targetScope?: string;
+    searchKeySnapshot?: string;
+  }) => Promise<QueueResult>;
 };
 
 type Option = { value: string; label: string };
 type Scope = "filtered" | "selected";
-type Mode = "taxonomy" | "attributes" | "tags" | "notes";
+type Mode = "taxonomy" | "attributes" | "tags" | "notes" | "editorial";
 
 const MAX_BULK_IDS = 1200;
 
@@ -85,17 +95,55 @@ function normalizeUnique(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort();
 }
 
-function buildValuePreview(change: BulkChange, taxonomy: TaxonomyOptions | null): string {
-  if (change.op === "clear") return "Se limpiará el campo.";
-  if (Array.isArray(change.value)) {
-    return change.value.length ? `${change.value.length} valor(es)` : "—";
+function formatChange(change: BulkChange, taxonomy: TaxonomyOptions | null) {
+  const fieldMap: Record<BulkField, string> = {
+    category: "Categoría",
+    subcategory: "Subcategoría",
+    gender: "Género",
+    season: "Temporada",
+    stylePrimary: "Estilo principal",
+    styleSecondary: "Estilo secundario",
+    styleTags: "Tags estilo",
+    materialTags: "Materiales",
+    patternTags: "Patrones",
+    occasionTags: "Ocasiones",
+    care: "Cuidado",
+    origin: "Origen",
+    editorialBadge: "Editorial",
+  };
+
+  const opMap: Record<BulkOperation, string> = {
+    replace: "Reemplazar",
+    add: "Agregar",
+    remove: "Quitar",
+    clear: "Limpiar",
+  };
+
+  if (change.field === "editorialBadge") {
+    if (change.op === "clear") return `${fieldMap[change.field]} · ${opMap[change.op]} todo`;
+    const value = change.value as EditorialBadgeValue | null;
+    if (!value) return `${fieldMap[change.field]} · ${opMap[change.op]}`;
+    const kindLabel = value.kind === "favorite" ? "❤️ Favorito" : "👑 Top Pick";
+    return `${fieldMap[change.field]} · ${kindLabel}${value.startPriority ? ` (desde #${value.startPriority})` : ""}`;
   }
+
+  if (change.op === "clear") return `${fieldMap[change.field]} · ${opMap[change.op]}`;
+
+  if (Array.isArray(change.value)) {
+    return `${fieldMap[change.field]} · ${opMap[change.op]} (${change.value.length})`;
+  }
+
   const raw = typeof change.value === "string" ? change.value : "";
-  if (!raw) return "—";
-  if (change.field === "category") return taxonomy?.categoryLabels?.[raw] ?? raw;
-  if (change.field === "subcategory") return taxonomy?.subcategoryLabels?.[raw] ?? raw;
-  if (change.field === "stylePrimary" || change.field === "styleSecondary") return taxonomy?.styleProfileLabels?.[raw] ?? raw;
-  return raw;
+  if (!raw) return `${fieldMap[change.field]} · ${opMap[change.op]}`;
+
+  let label = raw;
+  if (change.field === "category") label = taxonomy?.categoryLabels?.[raw] ?? raw;
+  if (change.field === "subcategory") label = taxonomy?.subcategoryLabels?.[raw] ?? raw;
+  if (change.field === "stylePrimary" || change.field === "styleSecondary") {
+    label = taxonomy?.styleProfileLabels?.[raw] ?? raw;
+  }
+
+  return `${fieldMap[change.field]} · ${opMap[change.op]} · ${label}`;
 }
 
 function CheckboxList({
@@ -211,19 +259,21 @@ export default function BulkEditModal({
   searchKey,
   taxonomyOptions,
   onClose,
-  onApply,
+  onQueue,
 }: Props) {
   const [scope, setScope] = useState<Scope>("selected");
   const [mode, setMode] = useState<Mode>("taxonomy");
-  const [applying, setApplying] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [queueing, setQueueing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<BulkResult | null>(null);
+  const [result, setResult] = useState<QueueResult | null>(null);
 
   const [filteredIds, setFilteredIds] = useState<string[]>([]);
   const [filteredHasMore, setFilteredHasMore] = useState(false);
   const [filteredLoading, setFilteredLoading] = useState(false);
   const [filteredError, setFilteredError] = useState<string | null>(null);
+
+  const [queuedChanges, setQueuedChanges] = useState<BulkChange[]>([]);
+  const [note, setNote] = useState("");
 
   const cleanedFilterCategories = useMemo(() => {
     const cleaned = categoriesFromFilters.map((value) => value.trim()).filter(Boolean);
@@ -232,39 +282,39 @@ export default function BulkEditModal({
 
   const singleFilterCategory = cleanedFilterCategories.length === 1 ? cleanedFilterCategories[0] : "";
 
-  // --- Taxonomy form state ---
   const [taxCategoryOp, setTaxCategoryOp] = useState<"replace" | "clear">("replace");
   const [taxCategory, setTaxCategory] = useState<string>("");
   const [taxSubOp, setTaxSubOp] = useState<"none" | "replace" | "clear">("none");
   const [taxSubcategory, setTaxSubcategory] = useState<string>("");
 
-  // --- Attributes form state ---
   const [attrField, setAttrField] = useState<"gender" | "season" | "stylePrimary" | "styleSecondary">("gender");
   const [attrOp, setAttrOp] = useState<"replace" | "clear">("replace");
   const [attrValue, setAttrValue] = useState<string>("");
 
-  // --- Tags form state ---
   const [tagField, setTagField] = useState<"styleTags" | "materialTags" | "patternTags" | "occasionTags">("styleTags");
   const [tagOp, setTagOp] = useState<BulkOperation>("add");
   const [tagValues, setTagValues] = useState<string[]>([]);
 
-  // --- Notes form state ---
   const [noteField, setNoteField] = useState<"care" | "origin">("care");
   const [noteOp, setNoteOp] = useState<"replace" | "clear">("replace");
   const [noteValue, setNoteValue] = useState<string>("");
+
+  const [editorialOp, setEditorialOp] = useState<"replace" | "clear">("replace");
+  const [editorialKind, setEditorialKind] = useState<"favorite" | "top_pick">("favorite");
+  const [editorialPriority, setEditorialPriority] = useState<string>("");
 
   useEffect(() => {
     if (!open) return;
     setError(null);
     setResult(null);
-    setConfirming(false);
     setScope(selectedIds.length > 0 ? "selected" : "filtered");
     setMode("taxonomy");
+    setQueuedChanges([]);
+    setNote("");
   }, [open, selectedIds.length]);
 
   useEffect(() => {
     if (!open) return;
-    // Initialize taxonomy defaults from filters (common case: filter a single category and bulk assign subcategory).
     setTaxCategoryOp("replace");
     setTaxCategory(singleFilterCategory);
     setTaxSubOp("none");
@@ -281,6 +331,10 @@ export default function BulkEditModal({
     setNoteField("care");
     setNoteOp("replace");
     setNoteValue("");
+
+    setEditorialOp("replace");
+    setEditorialKind("favorite");
+    setEditorialPriority("");
   }, [open, singleFilterCategory]);
 
   useEffect(() => {
@@ -349,7 +403,7 @@ export default function BulkEditModal({
     return [];
   }, [tagField, taxonomyOptions]);
 
-  const changes = useMemo((): BulkChange[] => {
+  const currentDraftChanges = useMemo((): BulkChange[] => {
     if (mode === "taxonomy") {
       const out: BulkChange[] = [];
       if (taxCategoryOp === "clear") {
@@ -376,33 +430,52 @@ export default function BulkEditModal({
       return [{ field: tagField, op: tagOp, value: tagValues }];
     }
 
-    // notes
-    if (noteOp === "clear") return [{ field: noteField, op: "clear", value: null }];
-    return [{ field: noteField, op: "replace", value: noteValue.trim() }];
+    if (mode === "notes") {
+      if (noteOp === "clear") return [{ field: noteField, op: "clear", value: null }];
+      return [{ field: noteField, op: "replace", value: noteValue.trim() }];
+    }
+
+    // editorial
+    if (editorialOp === "clear") {
+      return [{ field: "editorialBadge", op: "clear", value: null }];
+    }
+
+    const parsedPriority = editorialPriority.trim().length > 0 ? Number(editorialPriority) : null;
+    return [
+      {
+        field: "editorialBadge",
+        op: "replace",
+        value: {
+          kind: editorialKind,
+          ...(parsedPriority && Number.isFinite(parsedPriority) && parsedPriority > 0
+            ? { startPriority: Math.floor(parsedPriority) }
+            : {}),
+        },
+      },
+    ];
   }, [
-    attrField,
-    attrOp,
-    attrValue,
     mode,
-    noteField,
-    noteOp,
-    noteValue,
-    tagField,
-    tagOp,
-    tagValues,
-    taxCategory,
     taxCategoryOp,
+    taxCategory,
     taxSubOp,
     taxSubcategory,
+    attrOp,
+    attrField,
+    attrValue,
+    tagOp,
+    tagField,
+    tagValues,
+    noteOp,
+    noteField,
+    noteValue,
+    editorialOp,
+    editorialKind,
+    editorialPriority,
   ]);
 
-  const validationError = useMemo(() => {
+  const currentValidationError = useMemo(() => {
     if (!open) return null;
     if (!taxonomyOptions) return "Cargando opciones de taxonomía…";
-    if (targetCount <= 0) return "No hay productos objetivo para aplicar cambios.";
-    if (overLimit) return `La selección excede el límite (${MAX_BULK_IDS.toLocaleString("es-CO")}).`;
-    if (scope === "filtered" && filteredLoading) return "Cargando IDs del filtro…";
-    if (scope === "filtered" && filteredError) return filteredError;
 
     if (mode === "taxonomy") {
       if (taxCategoryOp === "replace" && !taxCategory.trim()) {
@@ -412,6 +485,7 @@ export default function BulkEditModal({
         if (taxCategoryOp !== "replace" || !taxCategory.trim()) return "Para asignar subcategoría, primero define una categoría.";
         if (!taxSubcategory.trim()) return "Selecciona una subcategoría (o usa No tocar/Limpiar).";
       }
+      if (currentDraftChanges.length === 0) return "Define al menos un cambio.";
     }
 
     if (mode === "attributes") {
@@ -426,32 +500,80 @@ export default function BulkEditModal({
       if (noteOp === "replace" && !noteValue.trim()) return "Escribe un valor (o usa Limpiar).";
     }
 
-    if (changes.length === 0) return "Define al menos un cambio.";
+    if (mode === "editorial") {
+      if (editorialOp === "replace" && editorialPriority.trim().length > 0) {
+        const parsed = Number(editorialPriority);
+        if (!Number.isFinite(parsed) || parsed < 1) return "La prioridad debe ser un número entero >= 1.";
+      }
+    }
 
     return null;
   }, [
-    attrOp,
-    attrValue,
-    changes.length,
-    filteredError,
-    filteredLoading,
-    mode,
-    noteOp,
-    noteValue,
     open,
-    overLimit,
-    scope,
-    tagOp,
-    tagValues.length,
-    targetCount,
-    taxCategory,
+    taxonomyOptions,
+    mode,
     taxCategoryOp,
+    taxCategory,
     taxSubOp,
     taxSubcategory,
-    taxonomyOptions,
+    currentDraftChanges.length,
+    attrOp,
+    attrValue,
+    tagOp,
+    tagValues.length,
+    noteOp,
+    noteValue,
+    editorialOp,
+    editorialPriority,
   ]);
 
-  const applyDisabled = Boolean(validationError) || applying;
+  const mergeChanges = (existing: BulkChange[], next: BulkChange[]) => {
+    const map = new Map<BulkField, BulkChange>();
+    for (const change of existing) {
+      map.set(change.field, change);
+    }
+    for (const change of next) {
+      map.set(change.field, change);
+    }
+    return Array.from(map.values());
+  };
+
+  const handleAddRule = () => {
+    if (currentValidationError || currentDraftChanges.length === 0) return;
+    setQueuedChanges((prev) => mergeChanges(prev, currentDraftChanges));
+  };
+
+  const removeRule = (field: BulkField) => {
+    setQueuedChanges((prev) => prev.filter((change) => change.field !== field));
+  };
+
+  const effectiveChanges = useMemo(() => {
+    if (queuedChanges.length > 0) return queuedChanges;
+    if (currentValidationError || currentDraftChanges.length === 0) return [];
+    return currentDraftChanges;
+  }, [queuedChanges, currentValidationError, currentDraftChanges]);
+
+  const queueValidationError = useMemo(() => {
+    if (!open) return null;
+    if (!taxonomyOptions) return "Cargando opciones de taxonomía…";
+    if (targetCount <= 0) return "No hay productos objetivo para encolar cambios.";
+    if (overLimit) return `La selección excede el límite (${MAX_BULK_IDS.toLocaleString("es-CO")}).`;
+    if (scope === "filtered" && filteredLoading) return "Cargando IDs del filtro…";
+    if (scope === "filtered" && filteredError) return filteredError;
+    if (effectiveChanges.length === 0) return "Agrega al menos una regla de cambio.";
+    return null;
+  }, [
+    open,
+    taxonomyOptions,
+    targetCount,
+    overLimit,
+    scope,
+    filteredLoading,
+    filteredError,
+    effectiveChanges.length,
+  ]);
+
+  const queueDisabled = Boolean(queueValidationError) || queueing;
 
   const scopeLabel = useMemo(() => {
     if (scope === "selected") return `Selección (${selectedCount.toLocaleString("es-CO")})`;
@@ -459,29 +581,31 @@ export default function BulkEditModal({
     return `Filtro actual ${suffix}`;
   }, [filteredLoading, scope, selectedCount, targetCount]);
 
-  const handleApply = async () => {
-    if (applyDisabled) return;
-    if (!confirming) {
-      setConfirming(true);
-      return;
-    }
+  const handleQueue = async () => {
+    if (queueDisabled) return;
 
-    setApplying(true);
+    setQueueing(true);
     setError(null);
     try {
-      const response = await onApply({ productIds: targetIds, changes });
+      const response = await onQueue({
+        productIds: targetIds,
+        changes: effectiveChanges,
+        note: note.trim() || undefined,
+        source: "modal_composer",
+        targetScope: scope === "selected" ? "selected_snapshot" : "filter_snapshot",
+        searchKeySnapshot: searchKey,
+      });
       setResult(response);
       if (!response.ok) {
-        setError("No se pudo aplicar el bulk edit.");
+        setError("No se pudo encolar la operación.");
         return;
       }
-      setConfirming(false);
       onClose();
     } catch (err) {
       console.warn(err);
       setError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
-      setApplying(false);
+      setQueueing(false);
     }
   };
 
@@ -490,27 +614,25 @@ export default function BulkEditModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-6" onClick={onClose}>
       <div
-        className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+        className="w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Curación</p>
-            <h3 className="mt-1 text-lg font-semibold text-slate-900">Editar en bloque</h3>
-            <p className="mt-1 text-xs text-slate-500">Aplicar a: {scopeLabel}</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Curación programada</p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-900">Crear operación en cola</h3>
+            <p className="mt-1 text-xs text-slate-500">Objetivo: {scopeLabel}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
-            >
-              Cerrar
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+          >
+            Cerrar
+          </button>
         </div>
 
-        <div className="max-h-[72vh] overflow-y-auto px-6 py-6">
+        <div className="max-h-[75vh] overflow-y-auto px-6 py-6">
           <div className="grid gap-6 lg:grid-cols-[1fr,1fr]">
             <section className="space-y-5">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
@@ -543,7 +665,6 @@ export default function BulkEditModal({
                       onClick={fetchFilteredIds}
                       disabled={filteredLoading}
                       className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 disabled:opacity-50"
-                      title="Recargar IDs del filtro"
                     >
                       {filteredLoading ? "Cargando…" : "Actualizar"}
                     </button>
@@ -558,19 +679,50 @@ export default function BulkEditModal({
                   </p>
                   {scope === "filtered" && filteredHasMore ? (
                     <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-                      Hay más resultados que el límite. Este bulk edit aplica solo a los primeros {MAX_BULK_IDS.toLocaleString("es-CO")} (según el sort actual).
-                    </p>
-                  ) : null}
-                  {scope === "selected" && selectedIds.length > 0 ? (
-                    <p className="text-xs text-slate-500">
-                      Tip: si quieres editar todo el filtro, usa la pestaña <span className="font-semibold">Filtro actual</span> (sin seleccionar manualmente).
+                      Hay más resultados que el límite. La operación se guarda sólo con los primeros {MAX_BULK_IDS.toLocaleString("es-CO")} IDs.
                     </p>
                   ) : null}
                 </div>
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Qué quieres cambiar</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Reglas en cola ({queuedChanges.length})</p>
+                <div className="mt-4 space-y-2">
+                  {queuedChanges.length === 0 ? (
+                    <p className="text-sm text-slate-500">Aún no agregas reglas.</p>
+                  ) : (
+                    queuedChanges.map((change) => (
+                      <div key={change.field} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-xs font-medium text-slate-700">{formatChange(change, taxonomyOptions)}</p>
+                        <button
+                          type="button"
+                          onClick={() => removeRule(change.field)}
+                          className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600"
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="mt-4">
+                  <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-queue-note">
+                    Nota de operación (opcional)
+                  </label>
+                  <textarea
+                    id="bulk-queue-note"
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    placeholder="Ej: Reclasificación campaña febrero"
+                    className="mt-2 min-h-[84px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-5">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Tipo de cambio</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {(
                     [
@@ -578,6 +730,7 @@ export default function BulkEditModal({
                       { key: "attributes", label: "Atributos" },
                       { key: "tags", label: "Tags" },
                       { key: "notes", label: "Notas" },
+                      { key: "editorial", label: "Editorial" },
                     ] as const
                   ).map((entry) => (
                     <button
@@ -595,66 +748,16 @@ export default function BulkEditModal({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Vista previa</p>
-                <div className="mt-4 space-y-2 text-sm text-slate-700">
-                  {changes.length ? (
-                    <div className="space-y-1 text-xs text-slate-600">
-                      {changes.map((change) => (
-                        <p key={change.field}>
-                          <span className="font-semibold text-slate-800">{change.field}:</span> {change.op} ·{" "}
-                          {buildValuePreview(change, taxonomyOptions)}
-                        </p>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-slate-500">—</p>
-                  )}
-                </div>
-
-                {validationError ? (
-                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    {validationError}
-                  </div>
-                ) : null}
-                {error ? (
-                  <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                    {error}
-                  </div>
-                ) : null}
-                {result?.ok ? (
-                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                    Aplicado. Actualizados: {result.updatedCount}. Sin cambios: {result.unchangedCount}.
-                    {result.missingCount ? ` Faltantes: ${result.missingCount}.` : ""}
-                  </div>
-                ) : null}
-              </div>
-            </section>
-
-            <section className="space-y-5">
               {mode === "taxonomy" ? (
                 <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Taxonomía (categoría + subcategoría)</p>
-
-                  {singleFilterCategory && taxCategoryOp === "replace" && taxCategory === singleFilterCategory ? (
-                    <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-                      Detectado desde filtro:{" "}
-                      <span className="font-semibold text-slate-800">
-                        {taxonomyOptions?.categoryLabels?.[singleFilterCategory] ?? singleFilterCategory}
-                      </span>
-                      . Subcategorías se acotan automáticamente.
-                    </p>
-                  ) : null}
-
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Taxonomía</p>
                   <div className="mt-4 grid gap-4">
                     <div>
-                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-cat-op">
-                        Acción categoría
-                      </label>
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-cat-op">Acción categoría</label>
                       <select
                         id="bulk-tax-cat-op"
                         value={taxCategoryOp}
-                        onChange={(event) => setTaxCategoryOp(event.target.value as any)}
+                        onChange={(event) => setTaxCategoryOp(event.target.value as "replace" | "clear")}
                         className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                       >
                         <option value="replace">Reemplazar</option>
@@ -664,9 +767,7 @@ export default function BulkEditModal({
 
                     {taxCategoryOp === "replace" ? (
                       <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-category">
-                          Categoría
-                        </label>
+                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-category">Categoría</label>
                         <select
                           id="bulk-tax-category"
                           value={taxCategory}
@@ -689,29 +790,22 @@ export default function BulkEditModal({
                     ) : null}
 
                     <div>
-                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-sub-op">
-                        Acción subcategoría
-                      </label>
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-sub-op">Acción subcategoría</label>
                       <select
                         id="bulk-tax-sub-op"
                         value={taxSubOp}
-                        onChange={(event) => setTaxSubOp(event.target.value as any)}
+                        onChange={(event) => setTaxSubOp(event.target.value as "none" | "replace" | "clear")}
                         className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                       >
                         <option value="none">No tocar</option>
                         <option value="replace">Reemplazar</option>
                         <option value="clear">Limpiar</option>
                       </select>
-                      <p className="mt-2 text-xs text-slate-500">
-                        Recomendación: si estás asignando subcategoría, mantén categoría en “Reemplazar” para que quede consistente.
-                      </p>
                     </div>
 
                     {taxSubOp === "replace" ? (
                       <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-subcategory">
-                          Subcategoría
-                        </label>
+                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tax-subcategory">Subcategoría</label>
                         <select
                           id="bulk-tax-subcategory"
                           value={taxSubcategory}
@@ -719,11 +813,7 @@ export default function BulkEditModal({
                           disabled={taxCategoryOp !== "replace" || !taxCategory.trim()}
                           className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 disabled:opacity-50"
                         >
-                          <option value="">
-                            {taxCategoryOp !== "replace" || !taxCategory.trim()
-                              ? "Selecciona categoría primero…"
-                              : "Selecciona…"}
-                          </option>
+                          <option value="">{taxCategoryOp !== "replace" || !taxCategory.trim() ? "Selecciona categoría primero…" : "Selecciona…"}</option>
                           {subcategoryOptions.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
@@ -738,64 +828,46 @@ export default function BulkEditModal({
 
               {mode === "attributes" ? (
                 <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Atributos (scalar)</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Atributos</p>
                   <div className="mt-4 grid gap-4">
-                    <div>
-                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-attr-field">
-                        Campo
-                      </label>
-                      <select
-                        id="bulk-attr-field"
-                        value={attrField}
-                        onChange={(event) => {
-                          const next = event.target.value as any;
-                          setAttrField(next);
-                          setAttrOp("replace");
-                          setAttrValue("");
-                        }}
-                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                      >
-                        <option value="gender">Género</option>
-                        <option value="season">Temporada</option>
-                        <option value="stylePrimary">Perfil de estilo (principal)</option>
-                        <option value="styleSecondary">Perfil de estilo (secundario)</option>
-                      </select>
-                    </div>
+                    <select
+                      value={attrField}
+                      onChange={(event) => {
+                        const next = event.target.value as "gender" | "season" | "stylePrimary" | "styleSecondary";
+                        setAttrField(next);
+                        setAttrOp("replace");
+                        setAttrValue("");
+                      }}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    >
+                      <option value="gender">Género</option>
+                      <option value="season">Temporada</option>
+                      <option value="stylePrimary">Perfil de estilo (principal)</option>
+                      <option value="styleSecondary">Perfil de estilo (secundario)</option>
+                    </select>
 
-                    <div>
-                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-attr-op">
-                        Operación
-                      </label>
-                      <select
-                        id="bulk-attr-op"
-                        value={attrOp}
-                        onChange={(event) => setAttrOp(event.target.value as any)}
-                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                      >
-                        <option value="replace">Reemplazar</option>
-                        <option value="clear">Limpiar</option>
-                      </select>
-                    </div>
+                    <select
+                      value={attrOp}
+                      onChange={(event) => setAttrOp(event.target.value as "replace" | "clear")}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    >
+                      <option value="replace">Reemplazar</option>
+                      <option value="clear">Limpiar</option>
+                    </select>
 
                     {attrOp === "replace" ? (
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-attr-value">
-                          Valor
-                        </label>
-                        <select
-                          id="bulk-attr-value"
-                          value={attrValue}
-                          onChange={(event) => setAttrValue(event.target.value)}
-                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        >
-                          <option value="">Selecciona…</option>
-                          {attributeValueOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <select
+                        value={attrValue}
+                        onChange={(event) => setAttrValue(event.target.value)}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="">Selecciona…</option>
+                        {attributeValueOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     ) : null}
                   </div>
                 </div>
@@ -803,46 +875,34 @@ export default function BulkEditModal({
 
               {mode === "tags" ? (
                 <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Tags (arrays)</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Tags</p>
                   <div className="mt-4 grid gap-4">
-                    <div>
-                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tag-field">
-                        Campo
-                      </label>
-                      <select
-                        id="bulk-tag-field"
-                        value={tagField}
-                        onChange={(event) => {
-                          const next = event.target.value as any;
-                          setTagField(next);
-                          setTagValues([]);
-                          setTagOp("add");
-                        }}
-                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                      >
-                        <option value="styleTags">Tags de estilo</option>
-                        <option value="materialTags">Materiales</option>
-                        <option value="patternTags">Patrones</option>
-                        <option value="occasionTags">Ocasiones</option>
-                      </select>
-                    </div>
+                    <select
+                      value={tagField}
+                      onChange={(event) => {
+                        const next = event.target.value as "styleTags" | "materialTags" | "patternTags" | "occasionTags";
+                        setTagField(next);
+                        setTagValues([]);
+                        setTagOp("add");
+                      }}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    >
+                      <option value="styleTags">Tags de estilo</option>
+                      <option value="materialTags">Materiales</option>
+                      <option value="patternTags">Patrones</option>
+                      <option value="occasionTags">Ocasiones</option>
+                    </select>
 
-                    <div>
-                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-tag-op">
-                        Operación
-                      </label>
-                      <select
-                        id="bulk-tag-op"
-                        value={tagOp}
-                        onChange={(event) => setTagOp(event.target.value as any)}
-                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                      >
-                        <option value="add">Agregar</option>
-                        <option value="remove">Quitar</option>
-                        <option value="replace">Reemplazar</option>
-                        <option value="clear">Limpiar</option>
-                      </select>
-                    </div>
+                    <select
+                      value={tagOp}
+                      onChange={(event) => setTagOp(event.target.value as BulkOperation)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    >
+                      <option value="add">Agregar</option>
+                      <option value="remove">Quitar</option>
+                      <option value="replace">Reemplazar</option>
+                      <option value="clear">Limpiar</option>
+                    </select>
 
                     {tagOp === "clear" ? (
                       <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -862,70 +922,113 @@ export default function BulkEditModal({
 
               {mode === "notes" ? (
                 <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Notas (texto)</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Notas</p>
                   <div className="mt-4 grid gap-4">
-                    <div>
-                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-note-field">
-                        Campo
-                      </label>
-                      <select
-                        id="bulk-note-field"
-                        value={noteField}
-                        onChange={(event) => {
-                          const next = event.target.value as any;
-                          setNoteField(next);
-                          setNoteOp("replace");
-                          setNoteValue("");
-                        }}
-                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                      >
-                        <option value="care">Cuidado</option>
-                        <option value="origin">Origen</option>
-                      </select>
-                    </div>
+                    <select
+                      value={noteField}
+                      onChange={(event) => {
+                        const next = event.target.value as "care" | "origin";
+                        setNoteField(next);
+                        setNoteOp("replace");
+                        setNoteValue("");
+                      }}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    >
+                      <option value="care">Cuidado</option>
+                      <option value="origin">Origen</option>
+                    </select>
 
-                    <div>
-                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-note-op">
-                        Operación
-                      </label>
-                      <select
-                        id="bulk-note-op"
-                        value={noteOp}
-                        onChange={(event) => setNoteOp(event.target.value as any)}
-                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                      >
-                        <option value="replace">Reemplazar</option>
-                        <option value="clear">Limpiar</option>
-                      </select>
-                    </div>
+                    <select
+                      value={noteOp}
+                      onChange={(event) => setNoteOp(event.target.value as "replace" | "clear")}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    >
+                      <option value="replace">Reemplazar</option>
+                      <option value="clear">Limpiar</option>
+                    </select>
 
                     {noteOp === "replace" ? (
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor="bulk-note-value">
-                          Valor
-                        </label>
-                        <input
-                          id="bulk-note-value"
-                          value={noteValue}
-                          onChange={(event) => setNoteValue(event.target.value)}
-                          placeholder="Escribe el valor…"
-                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        />
-                        <p className="mt-2 text-xs text-slate-500">Campo libre. Útil para notas estables.</p>
-                      </div>
+                      <input
+                        value={noteValue}
+                        onChange={(event) => setNoteValue(event.target.value)}
+                        placeholder="Escribe el valor…"
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      />
                     ) : null}
                   </div>
                 </div>
               ) : null}
+
+              {mode === "editorial" ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Editorial (❤️ / 👑)</p>
+                  <div className="mt-4 grid gap-4">
+                    <select
+                      value={editorialOp}
+                      onChange={(event) => setEditorialOp(event.target.value as "replace" | "clear")}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    >
+                      <option value="replace">Asignar estado editorial</option>
+                      <option value="clear">Quitar editorial</option>
+                    </select>
+
+                    {editorialOp === "replace" ? (
+                      <>
+                        <select
+                          value={editorialKind}
+                          onChange={(event) => setEditorialKind(event.target.value as "favorite" | "top_pick")}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                        >
+                          <option value="favorite">❤️ Favorito</option>
+                          <option value="top_pick">👑 Top Pick</option>
+                        </select>
+                        <input
+                          value={editorialPriority}
+                          onChange={(event) => setEditorialPriority(event.target.value)}
+                          placeholder="Prioridad opcional (ej: 1)"
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                        />
+                        <p className="text-xs text-slate-500">
+                          Si dejas prioridad vacía, se asigna al final del ranking del tipo seleccionado.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-slate-500">Limpiar quitará ❤️ y 👑 del producto (si existen).</p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {currentValidationError ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  {currentValidationError}
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={handleAddRule}
+                disabled={Boolean(currentValidationError) || currentDraftChanges.length === 0}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
+              >
+                Agregar regla
+              </button>
             </section>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-4">
-          <p className="text-xs text-slate-500">
-            No permite editar descripción ni campos SEO. Guarda trazabilidad en{" "}
-            <code className="text-slate-700">metadata.enrichment_human</code>.
-          </p>
+          <div className="space-y-2">
+            {queueValidationError ? (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{queueValidationError}</p>
+            ) : null}
+            {error ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p> : null}
+            {result?.ok ? (
+              <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                Operación encolada.
+              </p>
+            ) : null}
+          </div>
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -936,16 +1039,11 @@ export default function BulkEditModal({
             </button>
             <button
               type="button"
-              onClick={handleApply}
-              disabled={applyDisabled}
-              className={classNames(
-                "rounded-full px-4 py-2 text-sm font-semibold",
-                confirming ? "bg-rose-600 text-white" : "bg-slate-900 text-white",
-                applyDisabled && "opacity-50",
-              )}
-              title={validationError ?? undefined}
+              onClick={handleQueue}
+              disabled={queueDisabled}
+              className={classNames("rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white", queueDisabled && "opacity-50")}
             >
-              {applying ? "Aplicando…" : confirming ? "Confirmar cambios" : "Aplicar cambios"}
+              {queueing ? "Encolando…" : "Guardar en cola"}
             </button>
           </div>
         </div>
@@ -953,4 +1051,3 @@ export default function BulkEditModal({
     </div>
   );
 }
-

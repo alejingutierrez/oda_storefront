@@ -10,7 +10,11 @@ import {
   SEASON_LABELS,
 } from "@/lib/product-enrichment/constants";
 import type { TaxonomyOptions } from "@/lib/taxonomy/types";
-import BulkEditModal, { type BulkChange, type BulkResult } from "./BulkEditModal";
+import BulkEditModal, { type BulkChange, type QueueResult } from "./BulkEditModal";
+import CurationQueuePanel, {
+  type CurationQueueItem,
+  type QueueStatusFilter,
+} from "./CurationQueuePanel";
 
 type FacetItem = {
   value: string;
@@ -45,6 +49,8 @@ type CurationProduct = {
   season: string | null;
   stylePrimary: string | null;
   styleSecondary: string | null;
+  editorialFavoriteRank: number | null;
+  editorialTopPickRank: number | null;
   status: string | null;
   sourceUrl: string | null;
   updatedAt: string;
@@ -65,10 +71,31 @@ type ProductsResponse = {
   items: CurationProduct[];
 };
 
+type QueueSummary = {
+  pending: number;
+  applying: number;
+  applied: number;
+  failed: number;
+  cancelled: number;
+};
+
 type SelectionBanner = { kind: "info" | "warning"; text: string };
+
+type QueueConflictInfo = {
+  withIds: string[];
+  overlapCount: number;
+};
 
 const PAGE_SIZE = 36;
 const SELECT_ALL_LIMIT = 1200;
+
+const DEFAULT_QUEUE_SUMMARY: QueueSummary = {
+  pending: 0,
+  applying: 0,
+  applied: 0,
+  failed: 0,
+  cancelled: 0,
+};
 
 type CssVarStyle = CSSProperties & Record<`--${string}`, string>;
 
@@ -120,6 +147,122 @@ function formatLabel(value: string | null, map: Record<string, string>) {
   return map[value] ?? value;
 }
 
+function normalizeQueueStatus(raw: unknown): CurationQueueItem["status"] {
+  if (
+    raw === "pending" ||
+    raw === "applying" ||
+    raw === "applied" ||
+    raw === "failed" ||
+    raw === "cancelled"
+  ) {
+    return raw;
+  }
+  return "pending";
+}
+
+function normalizeQueueItem(raw: unknown): CurationQueueItem | null {
+  if (!raw || typeof raw !== "object") return null;
+  const item = raw as Record<string, unknown>;
+  if (typeof item.id !== "string") return null;
+
+  const targetIds = Array.isArray(item.targetIds)
+    ? item.targetIds.filter((value): value is string => typeof value === "string")
+    : [];
+
+  return {
+    id: item.id,
+    status: normalizeQueueStatus(item.status),
+    orderIndex: typeof item.orderIndex === "number" ? item.orderIndex : 0,
+    note: typeof item.note === "string" ? item.note : null,
+    source: typeof item.source === "string" ? item.source : null,
+    targetScope: typeof item.targetScope === "string" ? item.targetScope : null,
+    targetCount: typeof item.targetCount === "number" ? item.targetCount : targetIds.length,
+    targetIds,
+    searchKeySnapshot: typeof item.searchKeySnapshot === "string" ? item.searchKeySnapshot : null,
+    changesJson: item.changesJson ?? null,
+    createdByEmail: typeof item.createdByEmail === "string" ? item.createdByEmail : null,
+    lastError: typeof item.lastError === "string" ? item.lastError : null,
+    createdAt: typeof item.createdAt === "string" ? item.createdAt : new Date().toISOString(),
+    appliedAt: typeof item.appliedAt === "string" ? item.appliedAt : null,
+  };
+}
+
+function extractFieldSet(changesJson: unknown): Set<string> {
+  const fields = new Set<string>();
+  if (!Array.isArray(changesJson)) return fields;
+  for (const entry of changesJson) {
+    if (!entry || typeof entry !== "object") continue;
+    const field = (entry as { field?: unknown }).field;
+    if (typeof field !== "string") continue;
+    fields.add(field);
+  }
+  return fields;
+}
+
+function countOverlap(a: Set<string>, b: Set<string>) {
+  if (a.size === 0 || b.size === 0) return 0;
+  const small = a.size <= b.size ? a : b;
+  const large = a.size <= b.size ? b : a;
+  let count = 0;
+  for (const value of small) {
+    if (large.has(value)) count += 1;
+  }
+  return count;
+}
+
+function hasFieldOverlap(a: Set<string>, b: Set<string>) {
+  if (a.size === 0 || b.size === 0) return false;
+  const small = a.size <= b.size ? a : b;
+  const large = a.size <= b.size ? b : a;
+  for (const value of small) {
+    if (large.has(value)) return true;
+  }
+  return false;
+}
+
+function buildQueueConflicts(items: CurationQueueItem[]): Record<string, QueueConflictInfo> {
+  const pending = items
+    .filter((item) => item.status === "pending")
+    .slice()
+    .sort((a, b) => (a.orderIndex === b.orderIndex ? a.createdAt.localeCompare(b.createdAt) : a.orderIndex - b.orderIndex));
+
+  const byId: Record<string, QueueConflictInfo> = {};
+  const targetMap = new Map(pending.map((item) => [item.id, new Set(item.targetIds)]));
+  const fieldMap = new Map(pending.map((item) => [item.id, extractFieldSet(item.changesJson)]));
+
+  for (let i = 0; i < pending.length; i += 1) {
+    const current = pending[i];
+    const currentTargets = targetMap.get(current.id) ?? new Set<string>();
+    const currentFields = fieldMap.get(current.id) ?? new Set<string>();
+
+    for (let j = 0; j < i; j += 1) {
+      const previous = pending[j];
+      const previousTargets = targetMap.get(previous.id) ?? new Set<string>();
+      const previousFields = fieldMap.get(previous.id) ?? new Set<string>();
+      if (!hasFieldOverlap(currentFields, previousFields)) continue;
+
+      const overlapCount = countOverlap(currentTargets, previousTargets);
+      if (overlapCount <= 0) continue;
+
+      const currentInfo = byId[current.id] ?? { withIds: [], overlapCount: 0 };
+      if (!currentInfo.withIds.includes(previous.id)) {
+        currentInfo.withIds.push(previous.id);
+      }
+      currentInfo.overlapCount += overlapCount;
+      byId[current.id] = currentInfo;
+
+      const previousInfo = byId[previous.id] ?? { withIds: [], overlapCount: 0 };
+      if (!previousInfo.withIds.includes(current.id)) {
+        previousInfo.withIds.push(current.id);
+      }
+      previousInfo.overlapCount += overlapCount;
+      byId[previous.id] = previousInfo;
+    }
+  }
+
+  return byId;
+}
+
 export default function ProductCurationPanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -135,9 +278,18 @@ export default function ProductCurationPanel() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [lastBulkMessage, setLastBulkMessage] = useState<string | null>(null);
   const [selectionBanner, setSelectionBanner] = useState<SelectionBanner | null>(null);
   const [selectingAll, setSelectingAll] = useState(false);
+
+  const [queueItems, setQueueItems] = useState<CurationQueueItem[]>([]);
+  const [queueSummary, setQueueSummary] = useState<QueueSummary>(DEFAULT_QUEUE_SUMMARY);
+  const [queueFilter, setQueueFilter] = useState<QueueStatusFilter>("pending");
+  const [queueLoading, setQueueLoading] = useState(false);
+  const [queueBusy, setQueueBusy] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [queueMessage, setQueueMessage] = useState<string | null>(null);
+  const [selectedQueueIds, setSelectedQueueIds] = useState<Set<string>>(new Set());
+  const [quickEditorialProductId, setQuickEditorialProductId] = useState<string | null>(null);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
@@ -165,6 +317,19 @@ export default function ProductCurationPanel() {
     return Array.from(new Set(raw));
   }, [searchKey]);
   const selectedIdList = useMemo(() => Array.from(selectedIds), [selectedIds]);
+  const selectedQueueIdList = useMemo(() => Array.from(selectedQueueIds), [selectedQueueIds]);
+
+  const visibleQueueItems = useMemo(() => {
+    if (queueFilter === "all") return queueItems;
+    return queueItems.filter((item) => item.status === queueFilter);
+  }, [queueFilter, queueItems]);
+
+  const queueConflicts = useMemo(() => buildQueueConflicts(queueItems), [queueItems]);
+
+  const pendingQueueItems = useMemo(
+    () => queueItems.filter((item) => item.status === "pending"),
+    [queueItems],
+  );
 
   const fetchTaxonomyOptions = useCallback(async () => {
     try {
@@ -181,6 +346,45 @@ export default function ProductCurationPanel() {
     }
   }, []);
 
+  const fetchQueue = useCallback(async () => {
+    setQueueLoading(true);
+    setQueueError(null);
+    try {
+      const res = await fetch("/api/admin/product-curation/queue?status=all&limit=500", {
+        cache: "no-store",
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error ?? "No se pudo cargar la cola");
+      }
+
+      const nextItemsRaw = Array.isArray(payload?.items) ? payload.items : [];
+      const nextItems = nextItemsRaw
+        .map((entry: unknown) => normalizeQueueItem(entry))
+        .filter((entry: CurationQueueItem | null): entry is CurationQueueItem => Boolean(entry));
+
+      const rawSummary = payload?.summary && typeof payload.summary === "object"
+        ? (payload.summary as Record<string, unknown>)
+        : {};
+
+      setQueueItems(nextItems);
+      setQueueSummary({
+        pending: typeof rawSummary.pending === "number" ? rawSummary.pending : 0,
+        applying: typeof rawSummary.applying === "number" ? rawSummary.applying : 0,
+        applied: typeof rawSummary.applied === "number" ? rawSummary.applied : 0,
+        failed: typeof rawSummary.failed === "number" ? rawSummary.failed : 0,
+        cancelled: typeof rawSummary.cancelled === "number" ? rawSummary.cancelled : 0,
+      });
+    } catch (err) {
+      console.warn(err);
+      setQueueError(err instanceof Error ? err.message : "Error cargando cola");
+      setQueueItems([]);
+      setQueueSummary(DEFAULT_QUEUE_SUMMARY);
+    } finally {
+      setQueueLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     try {
       window.sessionStorage.setItem(
@@ -194,7 +398,18 @@ export default function ProductCurationPanel() {
 
   useEffect(() => {
     fetchTaxonomyOptions();
-  }, [fetchTaxonomyOptions]);
+    fetchQueue();
+  }, [fetchQueue, fetchTaxonomyOptions]);
+
+  useEffect(() => {
+    setSelectedQueueIds((prev) => {
+      if (prev.size === 0) return prev;
+      const available = new Set(queueItems.map((item) => item.id));
+      const next = new Set(Array.from(prev).filter((id) => available.has(id)));
+      if (next.size === prev.size) return prev;
+      return next;
+    });
+  }, [queueItems]);
 
   const fetchFacets = useCallback(async () => {
     setError(null);
@@ -271,7 +486,6 @@ export default function ProductCurationPanel() {
   );
 
   useEffect(() => {
-    setLastBulkMessage(null);
     setSelectionBanner(null);
     setPage(1);
     setHasMore(true);
@@ -329,10 +543,10 @@ export default function ProductCurationPanel() {
       }
       const payload = await res.json().catch(() => ({}));
       const ids = Array.isArray(payload?.ids) ? payload.ids.filter((id: unknown) => typeof id === "string") : [];
-      const hasMore = Boolean(payload?.hasMore);
+      const hasMoreIds = Boolean(payload?.hasMore);
       const limit = typeof payload?.limit === "number" ? payload.limit : SELECT_ALL_LIMIT;
       setSelectedIds(new Set(ids));
-      if (hasMore) {
+      if (hasMoreIds) {
         setSelectionBanner({
           kind: "warning",
           text: `Seleccionados ${ids.length.toLocaleString("es-CO")}. Hay más resultados; ajusta filtros para no exceder el límite (${limit.toLocaleString("es-CO")}).`,
@@ -354,31 +568,217 @@ export default function ProductCurationPanel() {
     }
   }, [searchKey, selectingAll]);
 
-  const handleBulkApply = useCallback(
-    async (payload: { productIds: string[]; changes: BulkChange[] }) => {
-      const res = await fetch("/api/admin/product-curation/bulk", {
+  const enqueueOperation = useCallback(
+    async (payload: {
+      productIds: string[];
+      changes: BulkChange[];
+      note?: string;
+      source?: string;
+      targetScope?: string;
+      searchKeySnapshot?: string;
+    }): Promise<QueueResult> => {
+      const res = await fetch("/api/admin/product-curation/queue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productIds: payload.productIds,
-          changes: payload.changes,
-        }),
+        body: JSON.stringify(payload),
       });
       const responsePayload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(responsePayload?.error ?? "No se pudo aplicar el bulk edit");
+        throw new Error(responsePayload?.error ?? "No se pudo encolar la operación");
       }
-      const updatedCount = responsePayload.updatedCount ?? 0;
-      const unchangedCount = responsePayload.unchangedCount ?? 0;
-      setLastBulkMessage(`Actualizados: ${updatedCount}. Sin cambios: ${unchangedCount}.`);
-      clearSelection();
-      // Refresca lista/facets. Es esperado que algunos productos dejen de coincidir con filtros.
-      fetchFacets();
-      fetchPage(1, "reset");
-      return { ok: true, ...responsePayload } as BulkResult;
+      const itemId =
+        responsePayload?.item && typeof responsePayload.item.id === "string"
+          ? responsePayload.item.id
+          : undefined;
+
+      setQueueMessage(
+        `Operación en cola${itemId ? ` #${itemId.slice(0, 8)}` : ""} para ${payload.productIds.length.toLocaleString("es-CO")} producto(s).`,
+      );
+      setQueueError(null);
+      await fetchQueue();
+
+      return {
+        ok: true,
+        itemId,
+      };
     },
-    [clearSelection, fetchFacets, fetchPage],
+    [fetchQueue],
   );
+
+  const runQueueApply = useCallback(
+    async (itemIds?: string[]) => {
+      setQueueBusy(true);
+      setQueueError(null);
+      try {
+        const res = await fetch("/api/admin/product-curation/queue/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(itemIds && itemIds.length > 0 ? { itemIds } : {}),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload?.error ?? "No se pudo aplicar la cola");
+        }
+
+        const summary = payload?.summary && typeof payload.summary === "object"
+          ? (payload.summary as Record<string, unknown>)
+          : null;
+
+        const applied = typeof summary?.applied === "number" ? summary.applied : 0;
+        const failed = typeof summary?.failed === "number" ? summary.failed : 0;
+        const total = typeof summary?.total === "number" ? summary.total : 0;
+
+        setQueueMessage(
+          `Run completado: ${applied.toLocaleString("es-CO")} aplicadas, ${failed.toLocaleString("es-CO")} con error, ${total.toLocaleString("es-CO")} total.`,
+        );
+        setSelectedQueueIds(new Set());
+
+        await Promise.all([fetchQueue(), fetchFacets(), fetchPage(1, "reset")]);
+      } catch (err) {
+        console.warn(err);
+        setQueueError(err instanceof Error ? err.message : "Error aplicando cola");
+      } finally {
+        setQueueBusy(false);
+      }
+    },
+    [fetchFacets, fetchPage, fetchQueue],
+  );
+
+  const deleteQueueItems = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return;
+      setQueueBusy(true);
+      setQueueError(null);
+      try {
+        await Promise.all(
+          ids.map(async (id) => {
+            const res = await fetch(`/api/admin/product-curation/queue/${id}`, {
+              method: "DELETE",
+            });
+            if (!res.ok) {
+              const payload = await res.json().catch(() => ({}));
+              throw new Error(payload?.error ?? "No se pudo eliminar operación de cola");
+            }
+          }),
+        );
+
+        setQueueMessage(`Se eliminaron ${ids.length.toLocaleString("es-CO")} operación(es) de la cola.`);
+        setSelectedQueueIds((prev) => {
+          const next = new Set(prev);
+          for (const id of ids) next.delete(id);
+          return next;
+        });
+        await fetchQueue();
+      } catch (err) {
+        console.warn(err);
+        setQueueError(err instanceof Error ? err.message : "Error eliminando operaciones");
+      } finally {
+        setQueueBusy(false);
+      }
+    },
+    [fetchQueue],
+  );
+
+  const duplicateQueueItem = useCallback(
+    async (id: string) => {
+      setQueueBusy(true);
+      setQueueError(null);
+      try {
+        const res = await fetch(`/api/admin/product-curation/queue/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "duplicate" }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload?.error ?? "No se pudo duplicar operación");
+        }
+        setQueueMessage("Operación duplicada en cola.");
+        await fetchQueue();
+      } catch (err) {
+        console.warn(err);
+        setQueueError(err instanceof Error ? err.message : "Error duplicando operación");
+      } finally {
+        setQueueBusy(false);
+      }
+    },
+    [fetchQueue],
+  );
+
+  const handleQuickEditorial = useCallback(
+    async (product: CurationProduct, kind: "favorite" | "top_pick") => {
+      if (queueBusy) return;
+      const isCurrentKind =
+        kind === "favorite"
+          ? typeof product.editorialFavoriteRank === "number"
+          : typeof product.editorialTopPickRank === "number";
+
+      const actionLabel = kind === "favorite" ? "favorito" : "top pick";
+
+      try {
+        setQuickEditorialProductId(product.id);
+        await enqueueOperation({
+          productIds: [product.id],
+          source: "quick_editorial",
+          note: isCurrentKind
+            ? `Quitar ${actionLabel} desde acción rápida`
+            : `Asignar ${actionLabel} desde acción rápida`,
+          searchKeySnapshot: searchKey,
+          changes: [
+            isCurrentKind
+              ? { field: "editorialBadge", op: "clear", value: null }
+              : { field: "editorialBadge", op: "replace", value: { kind } },
+          ],
+        });
+      } catch (err) {
+        console.warn(err);
+        setQueueError(err instanceof Error ? err.message : "Error creando operación rápida");
+      } finally {
+        setQuickEditorialProductId(null);
+      }
+    },
+    [enqueueOperation, queueBusy, searchKey],
+  );
+
+  const toggleQueueSelection = useCallback((id: string) => {
+    setSelectedQueueIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectAllVisibleQueue = useCallback(() => {
+    const ids = visibleQueueItems.map((item) => item.id);
+    setSelectedQueueIds(new Set(ids));
+  }, [visibleQueueItems]);
+
+  const clearQueueSelection = useCallback(() => setSelectedQueueIds(new Set()), []);
+
+  const applySelectedQueue = useCallback(() => {
+    const pendingIds = queueItems
+      .filter((item) => selectedQueueIds.has(item.id) && item.status === "pending")
+      .map((item) => item.id);
+    if (pendingIds.length === 0) return;
+    runQueueApply(pendingIds);
+  }, [queueItems, runQueueApply, selectedQueueIds]);
+
+  const applyAllQueue = useCallback(() => {
+    runQueueApply();
+  }, [runQueueApply]);
+
+  const applySingleQueue = useCallback(
+    (id: string) => {
+      runQueueApply([id]);
+    },
+    [runQueueApply],
+  );
+
+  const deleteSelectedQueue = useCallback(() => {
+    const ids = Array.from(selectedQueueIds);
+    void deleteQueueItems(ids);
+  }, [deleteQueueItems, selectedQueueIds]);
 
   const catalogThemeVars = useMemo(() => {
     const vars: CssVarStyle = {
@@ -421,9 +821,17 @@ export default function ProductCurationPanel() {
                 onClick={() => setBulkOpen(true)}
                 disabled={loading || selectingAll || totalCount === 0}
                 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
-                title="Abre el modal. Puedes aplicar a la selección o al filtro actual."
+                title="Abre composer para crear operaciones en cola."
               >
-                Editar en bloque
+                Crear operación
+              </button>
+              <button
+                type="button"
+                onClick={applyAllQueue}
+                disabled={queueBusy || pendingQueueItems.length === 0}
+                className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {queueBusy ? "Aplicando…" : `Aplicar pendientes (${pendingQueueItems.length.toLocaleString("es-CO")})`}
               </button>
               <button
                 type="button"
@@ -454,11 +862,6 @@ export default function ProductCurationPanel() {
               {error}
             </p>
           ) : null}
-          {lastBulkMessage ? (
-            <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {lastBulkMessage}
-            </p>
-          ) : null}
           {selectionBanner ? (
             <p
               className={classNames(
@@ -473,140 +876,217 @@ export default function ProductCurationPanel() {
           ) : null}
         </header>
 
-        {loading && products.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-600">
-            Cargando productos…
-          </div>
-        ) : products.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
-            <p className="text-lg font-semibold text-slate-900">No encontramos productos con esos filtros.</p>
-            <p className="mt-2 text-sm text-slate-600">Ajusta filtros o limpia para ampliar resultados.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {products.map((product) => {
-              const selected = selectedIds.has(product.id);
-              return (
-                <article
-                  key={product.id}
-                  className={classNames(
-                    "relative overflow-hidden rounded-2xl border bg-white shadow-sm transition",
-                    selected ? "border-slate-900 ring-2 ring-slate-900/10" : "border-slate-200",
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleSelection(product.id)}
-                    className="absolute left-2 top-2 z-10 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm sm:left-3 sm:top-3 sm:px-3 sm:text-xs"
-                  >
-                    <span
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="space-y-5">
+            {loading && products.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-600">
+                Cargando productos…
+              </div>
+            ) : products.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
+                <p className="text-lg font-semibold text-slate-900">No encontramos productos con esos filtros.</p>
+                <p className="mt-2 text-sm text-slate-600">Ajusta filtros o limpia para ampliar resultados.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                {products.map((product) => {
+                  const selected = selectedIds.has(product.id);
+                  const isFavorite = typeof product.editorialFavoriteRank === "number";
+                  const isTopPick = typeof product.editorialTopPickRank === "number";
+                  const quickBusy = quickEditorialProductId === product.id;
+
+                  return (
+                    <article
+                      key={product.id}
                       className={classNames(
-                        "h-3 w-3 rounded-[6px] border",
-                        selected ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white",
+                        "relative overflow-hidden rounded-2xl border bg-white shadow-sm transition",
+                        selected ? "border-slate-900 ring-2 ring-slate-900/10" : "border-slate-200",
                       )}
-                      aria-hidden
-                    />
-                    {selected ? "Seleccionado" : "Seleccionar"}
-                  </button>
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSelection(product.id)}
+                        className="absolute left-2 top-2 z-10 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm sm:left-3 sm:top-3 sm:px-3 sm:text-xs"
+                      >
+                        <span
+                          className={classNames(
+                            "h-3 w-3 rounded-[6px] border",
+                            selected ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white",
+                          )}
+                          aria-hidden
+                        />
+                        {selected ? "Seleccionado" : "Seleccionar"}
+                      </button>
 
-                  {product.hasEnrichment ? (
-                    <span className="absolute right-2 top-2 z-10 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-emerald-700 sm:right-3 sm:top-3 sm:px-3 sm:text-[10px]">
-                      Enriquecido
-                    </span>
-                  ) : null}
-
-                  <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-100">
-                    {product.imageCoverUrl ? (
-                      <Image
-                        src={product.imageCoverUrl}
-                        alt={product.name}
-                        fill
-                        className="object-cover object-center"
-                        sizes="(min-width: 1280px) 30vw, (min-width: 640px) 45vw, 50vw"
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.2em] text-slate-400">
-                        Sin imagen
+                      <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-1 sm:right-3 sm:top-3">
+                        {product.hasEnrichment ? (
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-emerald-700 sm:px-3 sm:text-[10px]">
+                            Enriquecido
+                          </span>
+                        ) : null}
+                        {isFavorite ? (
+                          <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[9px] font-semibold text-rose-700 sm:px-3 sm:text-[10px]">
+                            ❤️ Favorito #{product.editorialFavoriteRank}
+                          </span>
+                        ) : null}
+                        {isTopPick ? (
+                          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-semibold text-amber-800 sm:px-3 sm:text-[10px]">
+                            👑 Top Pick #{product.editorialTopPickRank}
+                          </span>
+                        ) : null}
                       </div>
-                    )}
-                  </div>
 
-                  <div className="space-y-2 p-3 sm:space-y-3 sm:p-5">
-                    <div className="space-y-1">
-                      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 sm:text-xs">
-                        {product.brandName}
-                      </p>
-                      <h3 className="text-xs font-semibold text-slate-900 line-clamp-2 sm:text-sm">
-                        {product.name}
-                      </h3>
-                      <p className="text-[11px] text-slate-600 sm:text-xs">
-                        {formatPriceRange(product.minPrice, product.maxPrice, product.currency)}
-                        <span className="hidden sm:inline">
-                          {" "}
-                          · {product.inStockCount}/{product.variantCount} en stock
-                        </span>
-                      </p>
-                    </div>
+                      <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-100">
+                        {product.imageCoverUrl ? (
+                          <Image
+                            src={product.imageCoverUrl}
+                            alt={product.name}
+                            fill
+                            className="object-cover object-center"
+                            sizes="(min-width: 1280px) 30vw, (min-width: 640px) 45vw, 50vw"
+                            unoptimized
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.2em] text-slate-400">
+                            Sin imagen
+                          </div>
+                        )}
+                      </div>
 
-                    <div className="hidden gap-2 text-xs text-slate-700 sm:grid">
-                      <p>
-                        <span className="font-semibold text-slate-800">Categoría:</span>{" "}
-                        {formatLabel(product.category, taxonomyOptions?.categoryLabels ?? {})}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-slate-800">Subcategoría:</span>{" "}
-                        {formatLabel(product.subcategory, taxonomyOptions?.subcategoryLabels ?? {})}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-slate-800">Género:</span>{" "}
-                        {formatLabel(product.gender, GENDER_LABELS)}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-slate-800">Temporada:</span>{" "}
-                        {formatLabel(product.season, SEASON_LABELS)}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-slate-800">Estilo:</span>{" "}
-                        {formatStyleProfile(product.stylePrimary, taxonomyOptions?.styleProfileLabels)}
-                      </p>
-                    </div>
+                      <div className="space-y-2 p-3 sm:space-y-3 sm:p-5">
+                        <div className="space-y-1">
+                          <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 sm:text-xs">
+                            {product.brandName}
+                          </p>
+                          <h3 className="text-xs font-semibold text-slate-900 line-clamp-2 sm:text-sm">
+                            {product.name}
+                          </h3>
+                          <p className="text-[11px] text-slate-600 sm:text-xs">
+                            {formatPriceRange(product.minPrice, product.maxPrice, product.currency)}
+                            <span className="hidden sm:inline">
+                              {" "}
+                              · {product.inStockCount}/{product.variantCount} en stock
+                            </span>
+                          </p>
+                        </div>
 
-                    <div className="hidden flex-wrap items-center justify-between gap-2 text-xs sm:flex">
-                      {product.sourceUrl ? (
-                        <a
-                          href={product.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700"
-                        >
-                          Ver fuente
-                        </a>
-                      ) : (
-                        <span className="text-slate-400">Sin fuente</span>
-                      )}
-                      <span className="text-slate-400">
-                        Actualizado: {new Date(product.updatedAt).toLocaleDateString("es-CO")}
-                      </span>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
+                        <div className="flex flex-wrap gap-2 text-[10px] sm:text-xs">
+                          <button
+                            type="button"
+                            onClick={() => handleQuickEditorial(product, "favorite")}
+                            disabled={quickBusy || queueBusy}
+                            className={classNames(
+                              "rounded-full border px-3 py-1 font-semibold disabled:opacity-50",
+                              isFavorite
+                                ? "border-rose-300 bg-rose-50 text-rose-700"
+                                : "border-slate-200 bg-white text-slate-700",
+                            )}
+                          >
+                            {quickBusy ? "Guardando…" : isFavorite ? `❤️ Favorito #${product.editorialFavoriteRank}` : "♡ Favorito"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickEditorial(product, "top_pick")}
+                            disabled={quickBusy || queueBusy}
+                            className={classNames(
+                              "rounded-full border px-3 py-1 font-semibold disabled:opacity-50",
+                              isTopPick
+                                ? "border-amber-300 bg-amber-50 text-amber-800"
+                                : "border-slate-200 bg-white text-slate-700",
+                            )}
+                          >
+                            {quickBusy ? "Guardando…" : isTopPick ? `👑 Top #${product.editorialTopPickRank}` : "👑 Top Pick"}
+                          </button>
+                        </div>
+
+                        <div className="hidden gap-2 text-xs text-slate-700 sm:grid">
+                          <p>
+                            <span className="font-semibold text-slate-800">Categoría:</span>{" "}
+                            {formatLabel(product.category, taxonomyOptions?.categoryLabels ?? {})}
+                          </p>
+                          <p>
+                            <span className="font-semibold text-slate-800">Subcategoría:</span>{" "}
+                            {formatLabel(product.subcategory, taxonomyOptions?.subcategoryLabels ?? {})}
+                          </p>
+                          <p>
+                            <span className="font-semibold text-slate-800">Género:</span>{" "}
+                            {formatLabel(product.gender, GENDER_LABELS)}
+                          </p>
+                          <p>
+                            <span className="font-semibold text-slate-800">Temporada:</span>{" "}
+                            {formatLabel(product.season, SEASON_LABELS)}
+                          </p>
+                          <p>
+                            <span className="font-semibold text-slate-800">Estilo:</span>{" "}
+                            {formatStyleProfile(product.stylePrimary, taxonomyOptions?.styleProfileLabels)}
+                          </p>
+                        </div>
+
+                        <div className="hidden flex-wrap items-center justify-between gap-2 text-xs sm:flex">
+                          {product.sourceUrl ? (
+                            <a
+                              href={product.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700"
+                            >
+                              Ver fuente
+                            </a>
+                          ) : (
+                            <span className="text-slate-400">Sin fuente</span>
+                          )}
+                          <span className="text-slate-400">
+                            Actualizado: {new Date(product.updatedAt).toLocaleDateString("es-CO")}
+                          </span>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+
+            <div ref={sentinelRef} className="h-10" aria-hidden />
+
+            {loadingMore ? (
+              <div className="rounded-2xl border border-slate-200 bg-white px-6 py-4 text-sm text-slate-600">
+                Cargando más…
+              </div>
+            ) : !hasMore && products.length ? (
+              <div className="rounded-2xl border border-slate-200 bg-white px-6 py-4 text-sm text-slate-500">
+                No hay más resultados.
+              </div>
+            ) : null}
           </div>
-        )}
 
-        <div ref={sentinelRef} className="h-10" aria-hidden />
-
-        {loadingMore ? (
-          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-4 text-sm text-slate-600">
-            Cargando más…
-          </div>
-        ) : !hasMore && products.length ? (
-          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-4 text-sm text-slate-500">
-            No hay más resultados.
-          </div>
-        ) : null}
+          <CurationQueuePanel
+            loading={queueLoading}
+            busy={queueBusy}
+            error={queueError}
+            message={queueMessage}
+            items={visibleQueueItems}
+            summary={queueSummary}
+            filter={queueFilter}
+            selectedIds={selectedQueueIdList}
+            conflictsById={queueConflicts}
+            taxonomyOptions={taxonomyOptions}
+            onRefresh={fetchQueue}
+            onFilterChange={setQueueFilter}
+            onToggleSelect={toggleQueueSelection}
+            onSelectAllVisible={selectAllVisibleQueue}
+            onClearSelection={clearQueueSelection}
+            onApplyAll={applyAllQueue}
+            onApplySelected={applySelectedQueue}
+            onApplySingle={applySingleQueue}
+            onDuplicate={(id) => {
+              void duplicateQueueItem(id);
+            }}
+            onDeleteSingle={(id) => {
+              void deleteQueueItems([id]);
+            }}
+            onDeleteSelected={deleteSelectedQueue}
+          />
+        </div>
       </section>
 
       {selectedCount > 0 ? (
@@ -631,7 +1111,7 @@ export default function ProductCurationPanel() {
                 disabled={selectingAll}
                 className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
               >
-                Editar en bloque
+                Programar cambios
               </button>
               <button
                 type="button"
@@ -654,7 +1134,7 @@ export default function ProductCurationPanel() {
         searchKey={searchKey}
         taxonomyOptions={taxonomyOptions}
         onClose={() => setBulkOpen(false)}
-        onApply={handleBulkApply}
+        onQueue={enqueueOperation}
       />
     </div>
   );

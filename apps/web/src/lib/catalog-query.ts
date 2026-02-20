@@ -274,6 +274,20 @@ export function buildOrderBy(sort: string, filters: CatalogFilters | undefined, 
         `;
       }
       return Prisma.sql`order by p."createdAt" desc`;
+    case "top_picks":
+      return Prisma.sql`
+        order by
+          case when p."editorialTopPickRank" is null then 1 else 0 end asc,
+          p."editorialTopPickRank" asc nulls last,
+          p."createdAt" desc
+      `;
+    case "editorial_favorites":
+      return Prisma.sql`
+        order by
+          case when p."editorialFavoriteRank" is null then 1 else 0 end asc,
+          p."editorialFavoriteRank" asc nulls last,
+          p."createdAt" desc
+      `;
     case "new":
       return Prisma.sql`order by p."createdAt" desc`;
     default:

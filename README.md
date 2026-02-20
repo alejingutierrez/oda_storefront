@@ -129,8 +129,13 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Universo de productos alineado con `/catalogo`: por defecto muestra solo productos enriquecidos y con inventario disponible (`enrichedOnly=true`, `inStock=true`).
   - Mobile: grilla 2-up (2 cards por fila) y cards compactas (menos detalle) para selección más rápida.
   - Filtro adicional: **SEO tags** (hasta 300 principales por frecuencia) dentro de la columna de filtros, para curación más rápida.
-  - Bulk edit: la modal puede aplicar cambios a la **selección** o directamente al **filtro actual** (sin seleccionar manualmente), con límite de 1200 productos por request.
+  - Curación programada: la modal ahora funciona como **composer de operaciones** y guarda cambios en una cola persistente compartida (no aplica dentro de la modal).
+  - Cola lateral fija: lista de pendientes/aplicadas/fallidas, conflictos potenciales, acciones por item (aplicar, duplicar, eliminar) y acciones globales (aplicar pendientes / aplicar seleccionados).
+  - Snapshot de alcance: cada operación congela los `productIds` al momento de crearla (máx 1200 por operación).
+  - Acciones rápidas editoriales por card: `❤️ Favorito` y `👑 Top Pick` encolan operaciones de un producto (`source=quick_editorial`) sin aplicar instantáneamente.
+  - Bulk edit/composer: soporta taxonomía, atributos, tags, notas y estado editorial (`editorialBadge` con `favorite|top_pick` o `clear`).
   - Integridad: al reemplazar `category` se limpia `subcategory` si deja de pertenecer; al reemplazar `subcategory` se valida contra la categoría.
+  - Editorial: corazón/corona son excluyentes en DB y en motor de aplicación (nunca ambos ranks simultáneos).
   - No permite editar `description` ni campos SEO. Preserva `products.metadata.enrichment` y registra trazabilidad en `products.metadata.enrichment_human`.
 - Panel `/admin/pricing` (precios/TRM):
   - Editar TRM USD→COP y reglas de auto-clasificación de marcas USD (umbral % + `COP <` sospechoso + incluir variantes ya en USD).
@@ -164,6 +169,11 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 
 ## Catalogo (public)
 - Ruta `/catalogo` (y alias `/buscar`) con filtros, facets y scroll infinito.
+- Sorts disponibles: `relevancia`, `new`, `price_asc`, `price_desc`, `top_picks`, `editorial_favorites`.
+- Sort editorial:
+  - `top_picks`: primero productos con `editorialTopPickRank` (asc), luego resto por `createdAt desc`.
+  - `editorial_favorites`: primero productos con `editorialFavoriteRank` (asc), luego resto por `createdAt desc`.
+  - No renderiza badges editoriales en cards públicas; solo afecta el orden.
 - Rutas canónicas SEO de PLP: `/{femenino|masculino|unisex|infantil}/[categoria]/[subcategoria]` (redirect 308 permanente desde `/g/*`).
 - El catálogo público fuerza `inStock=true` y `enrichedOnly=true` (no muestra productos sin `products.metadata.enrichment`).
 - Facets contextuales: marcas/materiales/patrones vienen de `/api/catalog/facets-lite` según filtros efectivos de la PLP (marcas ordenadas por conteo desc). El contador “X marcas” es `count(distinct brandId)` del set filtrado.

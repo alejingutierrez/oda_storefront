@@ -62,6 +62,20 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Estado: **done (2026-02-18)**.
 - Ajuste incremental (2026-02-18): se compactó el espaciado vertical del panel desktop, se removió el desglose de `ropa_deportiva_y_performance` en subcategorías, y la UI ahora oculta cualquier subcategoría con `count=0`.
 
+### MC-133 Curación programada + señales editoriales (❤️/👑) + sorts PLP
+- Historia: Como operador de catálogo, quiero programar cambios de curación en una cola persistente (sin aplicar dentro de la modal), para ejecutar lotes cuando yo lo decida y acelerar reclasificación/ajustes editoriales.
+- Alcance: nuevo flujo en `/admin/product-curation` con composer de reglas (taxonomía, atributos, tags, notas y editorial), panel lateral de cola compartida (pendientes/aplicadas/fallidas), botón global `Aplicar pendientes`, acciones por item (aplicar/duplicar/eliminar), y acciones rápidas por card para `❤️ Favorito` / `👑 Top Pick`. Backend: motor único de aplicación en `apply-engine`, endpoints `queue` + `queue/apply` y refactor de `bulk` para reutilizar el mismo motor.
+- CA:
+  - Crear operaciones desde selección o filtro y guardar snapshot de IDs (máx 1200).
+  - Aplicar cola en orden y continuar ante fallas por item, con reporte de run.
+  - Exclusividad editorial por producto (nunca `favorite` y `top_pick` simultáneos).
+  - Sorts públicos `top_picks` y `editorial_favorites` funcionales sin badges públicos.
+- Datos: `products.editorialFavoriteRank/editorialTopPickRank/editorialUpdatedAt`, `product_curation_queue_items`, `product_curation_apply_runs`.
+- NF: invalidación de cache de catálogo una sola vez por run con cambios efectivos; trazabilidad por usuario/correo y metadata de cambios.
+- Riesgos: conflictos entre operaciones pendientes sobre los mismos productos/campos; mitigación con detección visual de conflicto en el panel de cola.
+- Métricas: tiempo de curación por lote, % de runs con errores parciales, uso de sorts editoriales en PLP.
+- Estado: **done (2026-02-20)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.
