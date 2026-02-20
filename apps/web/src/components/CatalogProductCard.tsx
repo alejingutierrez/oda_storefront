@@ -302,6 +302,12 @@ export default function CatalogProductCard({
     () => formatPriceRange(product.minPrice, product.maxPrice, product.currency),
     [product.currency, product.maxPrice, product.minPrice],
   );
+  const priceChangeChip =
+    product.priceChangeDirection === "down"
+      ? "↓ Bajó de precio"
+      : product.priceChangeDirection === "up"
+        ? "↑ Subió de precio"
+        : null;
 
   const compared = compare?.isSelected(product.id) ?? false;
 
@@ -448,14 +454,21 @@ export default function CatalogProductCard({
             >
               {product.name}
             </h3>
-            <p
-              className={[
-                "uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)] lg:text-xs",
-                mobileCompact ? "text-[9px]" : "text-[10px]",
-              ].join(" ")}
-            >
-              {priceLabel}
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p
+                className={[
+                  "uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)] lg:text-xs",
+                  mobileCompact ? "text-[9px]" : "text-[10px]",
+                ].join(" ")}
+              >
+                {priceLabel}
+              </p>
+              {priceChangeChip ? (
+                <span className="rounded-full border border-[color:var(--oda-border)] bg-white/85 px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.14em] text-[color:var(--oda-ink)]">
+                  {priceChangeChip}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
       </Link>

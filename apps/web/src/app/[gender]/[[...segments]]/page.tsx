@@ -32,6 +32,7 @@ function isIndexableCatalog(params: URLSearchParams) {
     "price_min",
     "price_max",
     "price_range",
+    "price_change",
     "size",
     "fit",
     "occasion",

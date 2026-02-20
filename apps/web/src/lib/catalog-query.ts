@@ -20,6 +20,7 @@ export type CatalogFilters = {
   materials?: string[];
   patterns?: string[];
   occasions?: string[];
+  priceChange?: "down" | "up";
   seasons?: string[];
   styles?: string[];
   inStock?: boolean;
@@ -130,6 +131,10 @@ export function buildProductConditions(filters: CatalogFilters): Prisma.Sql[] {
   }
   if (filters.occasions && filters.occasions.length > 0) {
     conditions.push(Prisma.sql`p."occasionTags" && ${buildTextArray(filters.occasions)}`);
+  }
+  if (filters.priceChange) {
+    conditions.push(Prisma.sql`p."priceChangeDirection" = ${filters.priceChange}`);
+    conditions.push(Prisma.sql`p."priceChangeAt" >= (now() - interval '30 days')`);
   }
   if (filters.seasons && filters.seasons.length > 0) {
     conditions.push(Prisma.sql`p.season in (${Prisma.join(filters.seasons)})`);

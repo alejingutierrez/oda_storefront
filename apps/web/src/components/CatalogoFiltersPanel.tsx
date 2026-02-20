@@ -20,6 +20,7 @@ type Facets = {
   colors: FacetItem[];
   materials: FacetItem[];
   patterns: FacetItem[];
+  occasions: FacetItem[];
 };
 
 type Props = {
@@ -373,6 +374,8 @@ export default function CatalogoFiltersPanel({
       colors: current.getAll("color"),
       materials: current.getAll("material"),
       patterns: current.getAll("pattern"),
+      occasions: current.getAll("occasion"),
+      priceChange: (current.get("price_change") ?? "").trim().toLowerCase(),
       priceMin: current.get("price_min"),
       priceMax: current.get("price_max"),
       priceRanges: current.getAll("price_range"),
@@ -877,6 +880,16 @@ export default function CatalogoFiltersPanel({
     commitParams(next);
   };
 
+  const togglePriceChange = (value: "down" | "up") => {
+    const next = new URLSearchParams(currentParamsString);
+    const current = (next.get("price_change") ?? "").trim().toLowerCase();
+    next.delete("price_change");
+    if (current !== value) {
+      next.set("price_change", value);
+    }
+    commitParams(next);
+  };
+
   const isChecked = (list: string[], value: string) => list.includes(value);
   const activeCategory = selected.categories[0] ?? null;
   const [categoriesExpanded, setCategoriesExpanded] = useState(false);
@@ -1205,6 +1218,33 @@ export default function CatalogoFiltersPanel({
             ) : null}
           </span>
         </summary>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(
+            [
+              { value: "down", label: "↓ Bajó de precio" },
+              { value: "up", label: "↑ Subió de precio" },
+            ] as const
+          ).map((option) => {
+            const selectedOption = selected.priceChange === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => togglePriceChange(option.value)}
+                disabled={isPending}
+                aria-pressed={selectedOption}
+                className={[
+                  "rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.18em] transition disabled:cursor-not-allowed disabled:opacity-60",
+                  selectedOption
+                    ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                    : "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]",
+                ].join(" ")}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
         <PriceRange
           bounds={resolvedPriceBounds}
           histogram={resolvedPriceHistogram}
@@ -1350,6 +1390,51 @@ export default function CatalogoFiltersPanel({
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggleMulti("pattern", item.value)}
+                    className="h-4 w-4 accent-[color:var(--oda-ink)]"
+                    disabled={disabled}
+                  />
+                  {item.label}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </details>
+
+      <details className="rounded-2xl border border-[color:var(--oda-border)] bg-white p-5">
+        <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
+          <span className="flex items-center gap-3">
+            Ocasión
+            {isPending ? (
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                Actualizando…
+              </span>
+            ) : null}
+          </span>
+          <span className="text-[10px] text-[color:var(--oda-taupe)]">
+            {buildSelectedLabel(selected.occasions.length)}
+          </span>
+        </summary>
+        <div className="mt-4 flex flex-col gap-2">
+          {sortFacetItems(facets.occasions, selected.occasions).map((item) => {
+            const checked = isChecked(selected.occasions, item.value);
+            const countDisabled = item.count === 0 && !checked;
+            const disabled = isPending || (!allowZeroCounts && countDisabled);
+            const faded = !disabled && allowZeroCounts && countDisabled;
+            return (
+              <label
+                key={item.value}
+                className={[
+                  "flex items-center justify-between gap-3 text-sm",
+                  disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+                  faded ? "opacity-70" : "",
+                ].join(" ")}
+              >
+                <span className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleMulti("occasion", item.value)}
                     className="h-4 w-4 accent-[color:var(--oda-ink)]"
                     disabled={disabled}
                   />

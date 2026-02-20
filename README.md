@@ -68,6 +68,7 @@ npx tsx --tsconfig apps/web/tsconfig.json apps/web/scripts/tech-profiler-sweep.t
 node scripts/build-style-assignments.mjs  # seed style_profiles + backfill estilos principal/secundario
 node scripts/apply-catalog-filter-indexes.mjs  # aplica índices de performance del PLP `/catalogo` en Neon (CREATE INDEX CONCURRENTLY)
 node scripts/backfill-product-price-rollups.mjs  # recalcula hasInStock/minPriceCop/maxPriceCop en `products`
+node scripts/backfill-product-price-change-signals.mjs  # recalcula `priceChangeDirection/priceChangeAt` desde `price_history`
 node scripts/seed-color-palette-200.mjs  # carga paleta 200 en color_combinations_colors (desde Excel)
 node scripts/build-color-relations.mjs  # recalcula matches variante↔combinacion con colores estandarizados
 	node scripts/diagnose-catalog-refresh.cjs > ../../reports/catalog_refresh_diagnostics/report.json  # métricas de refresh/fallas (Neon)
@@ -185,6 +186,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Filtro de precio:
   - Slider (rango continuo): `price_min` y `price_max`.
   - Rangos múltiples (unión disjunta real): `price_range=min:max` (parámetro repetible). Si existe al menos un `price_range`, tiene prioridad sobre `price_min/price_max` (la UI limpia `price_range` al interactuar con el slider).
+  - Cambio de precio (30 días): filtro single-select `price_change=down|up` en sección Precio (`Bajó de precio` / `Subió de precio`), combinable con el resto de filtros.
   - Bounds/histograma: `/api/catalog/price-bounds` soporta `mode=lite|full`.
     - `mode=lite`: devuelve `{ bounds }` (rápido).
     - `mode=full` (default): devuelve `{ bounds, histogram, stats }` y usa un dominio robusto (percentiles p02/p98 cuando hay suficientes datos) para que outliers no dominen el rango.
@@ -200,6 +202,11 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   ```bash
   IMAGE_BACKFILL_LIMIT=0 IMAGE_BACKFILL_CONCURRENCY=6 node apps/web/scripts/backfill-image-covers-to-blob.mjs
   ```
+- Cards PLP:
+  - Badge de cambio de precio junto al precio (`↓ Bajó de precio` / `↑ Subió de precio`) cuando `products.priceChangeDirection` existe y `priceChangeAt` está dentro de 30 días.
+  - Sensibilidad de badge/filtro basada en **precio mínimo mostrado** (redondeo marketing `unit_cop`), para evitar ruido de cambios no visibles.
+- Facets lite (`/api/catalog/facets-lite`):
+  - Incluye `occasions` para renderizar la sección **Ocasión** en filtros desktop/mobile de PLP.
 
 ### Performance (filtros `/catalogo`)
 - En Neon (prod/stg), los filtros del catálogo dependen de índices para evitar `seq scan` en queries de `products/variants` (subcategorías, bounds de precio, listados).

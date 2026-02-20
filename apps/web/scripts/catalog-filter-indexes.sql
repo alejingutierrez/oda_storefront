@@ -45,6 +45,13 @@ create index concurrently if not exists idx_products_catalog_occasiontags_gin
   where "imageCoverUrl" is not null
     and ("metadata" -> 'enrichment') is not null;
 
+-- Price-change direction filter (`price_change=down|up`) in PLP.
+create index concurrently if not exists idx_products_catalog_price_change_direction_at
+  on products ("priceChangeDirection", "priceChangeAt" desc)
+  where "priceChangeDirection" is not null
+    and "imageCoverUrl" is not null
+    and ("metadata" -> 'enrichment') is not null;
+
 create index concurrently if not exists idx_variants_instock_productid
   on variants ("productId")
   where (stock > 0 or "stockStatus" in ('in_stock','preorder'));

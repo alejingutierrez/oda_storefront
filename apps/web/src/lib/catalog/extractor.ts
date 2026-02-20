@@ -25,7 +25,14 @@ import {
   safeOrigin,
 } from "@/lib/catalog/utils";
 import { sanitizeCatalogPrice } from "@/lib/catalog-price";
-import { getBrandCurrencyOverride, getPricingConfig, getUsdCopTrm, toCopEffective } from "@/lib/pricing";
+import {
+  getBrandCurrencyOverride,
+  getDisplayRoundingUnitCop,
+  getPricingConfig,
+  getUsdCopTrm,
+  toCopDisplayMarketing,
+  toCopEffective,
+} from "@/lib/pricing";
 
 const toNumber = (value: unknown) => sanitizeCatalogPrice(parsePriceValue(value));
 const chooseString = (
@@ -288,6 +295,7 @@ export const processCatalogRef = async ({
   canUseLlmPdp,
   brandCurrencyOverride,
   trmUsdCop,
+  displayRoundingUnitCop,
   onStage,
 }: {
   brand: { id: string; slug: string };
@@ -297,6 +305,7 @@ export const processCatalogRef = async ({
   canUseLlmPdp: boolean;
   brandCurrencyOverride?: "USD" | null;
   trmUsdCop: number;
+  displayRoundingUnitCop: number;
   onStage?: (stage: string) => void;
 }) => {
   onStage?.("fetch");
@@ -452,6 +461,8 @@ export const processCatalogRef = async ({
       ];
 
   let createdVariants = 0;
+  const previousMinPriceCop = toNumber(product.minPriceCop ?? null);
+  const previousDisplayedMinPrice = toCopDisplayMarketing(previousMinPriceCop, displayRoundingUnitCop);
   let hasInStock = false;
   let minPriceCop: number | null = null;
   let maxPriceCop: number | null = null;
@@ -511,6 +522,18 @@ export const processCatalogRef = async ({
     if (variantResult.created) createdVariants += 1;
   }
 
+  const nextDisplayedMinPrice = toCopDisplayMarketing(minPriceCop, displayRoundingUnitCop);
+  const visiblePriceChanged =
+    previousDisplayedMinPrice !== null &&
+    nextDisplayedMinPrice !== null &&
+    previousDisplayedMinPrice !== nextDisplayedMinPrice;
+  const nextPriceChangeDirection = visiblePriceChanged
+    ? nextDisplayedMinPrice < previousDisplayedMinPrice
+      ? "down"
+      : "up"
+    : product.priceChangeDirection;
+  const nextPriceChangeAt = visiblePriceChanged ? new Date() : product.priceChangeAt;
+
   await prisma.product.update({
     where: { id: product.id },
     data: {
@@ -518,6 +541,8 @@ export const processCatalogRef = async ({
       minPriceCop,
       maxPriceCop,
       priceRollupUpdatedAt: new Date(),
+      priceChangeDirection: nextPriceChangeDirection,
+      priceChangeAt: nextPriceChangeAt,
     },
   });
 
@@ -744,6 +769,7 @@ export const extractCatalogForBrand = async (
   const brandCurrencyOverride = getBrandCurrencyOverride(metadata);
   const pricingConfig = await getPricingConfig();
   const trmUsdCop = getUsdCopTrm(pricingConfig);
+  const displayRoundingUnitCop = getDisplayRoundingUnitCop(pricingConfig);
   const existingState = readCatalogRunState(metadata);
   const storedInference =
     metadata.catalog_extract_inferred_platform &&
@@ -1032,6 +1058,7 @@ export const extractCatalogForBrand = async (
         canUseLlmPdp,
         brandCurrencyOverride,
         trmUsdCop,
+        displayRoundingUnitCop,
         onStage: (stage) => {
           state.lastStage = stage;
         },

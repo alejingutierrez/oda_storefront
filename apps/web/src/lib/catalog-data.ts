@@ -30,7 +30,8 @@ const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 const CATALOG_PRODUCTS_REVALIDATE_SECONDS = 60;
 export const CATALOG_PAGE_SIZE = 24;
 // Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
-const CATALOG_CACHE_VERSION = 9;
+const CATALOG_CACHE_VERSION = 10;
+const PRICE_CHANGE_WINDOW_DAYS = 30;
 
 const buildCatalogCacheOptions = (revalidate: number) => ({
   revalidate,
@@ -95,7 +96,7 @@ export type CatalogFacets = {
 
 export type CatalogFacetsLite = Pick<
   CatalogFacets,
-  "categories" | "genders" | "brands" | "colors" | "materials" | "patterns"
+  "categories" | "genders" | "brands" | "colors" | "materials" | "patterns" | "occasions"
 >;
 
 export type { CatalogFilters };
@@ -109,6 +110,7 @@ export type CatalogProduct = {
   minPrice: string | null;
   maxPrice: string | null;
   currency: string | null;
+  priceChangeDirection: "down" | "up" | null;
 };
 
 export type CatalogProductResult = {
@@ -187,6 +189,7 @@ function buildFacetsCacheKey(filters: CatalogFilters) {
   if (filters.materials?.length) key.materials = normalizeArray(filters.materials);
   if (filters.patterns?.length) key.patterns = normalizeArray(filters.patterns);
   if (filters.occasions?.length) key.occasions = normalizeArray(filters.occasions);
+  if (filters.priceChange) key.priceChange = filters.priceChange;
   if (filters.seasons?.length) key.seasons = normalizeArray(filters.seasons);
   if (filters.styles?.length) key.styles = normalizeArray(filters.styles);
   const priceRanges = normalizePriceRanges(filters.priceRanges);
@@ -338,6 +341,22 @@ function toCopDisplayString(value: string | number | null | undefined, unitCop: 
   return rounded ? String(Math.round(rounded)) : null;
 }
 
+function toPriceChangeDirection(value: string | null | undefined): "down" | "up" | null {
+  if (value === "down" || value === "up") return value;
+  return null;
+}
+
+function buildPriceChangeDirectionSelectExpr() {
+  return Prisma.sql`
+    case
+      when p."priceChangeDirection" in ('down', 'up')
+        and p."priceChangeAt" >= (now() - make_interval(days => ${PRICE_CHANGE_WINDOW_DAYS}))
+      then p."priceChangeDirection"
+      else null
+    end
+  `;
+}
+
 function roundPriceStats(stats: CatalogPriceStats | null, unitCop: number): CatalogPriceStats | null {
   if (!stats) return null;
   const unit = Number.isFinite(unitCop) && unitCop > 0 ? unitCop : 10_000;
@@ -458,6 +477,14 @@ export async function getCatalogFacetsStatic(): Promise<CatalogFacetsLite> {
           count: 1,
         }));
 
+      const occasions = (taxonomy.data.occasions ?? [])
+        .filter((entry) => entry && entry.isActive !== false)
+        .map((entry) => ({
+          value: entry.key,
+          label: taxonomy.occasionLabels[entry.key] ?? labelize(entry.key),
+          count: 1,
+        }));
+
       return {
         categories,
         genders: (["Femenino", "Masculino", "Unisex", "Infantil"] as GenderKey[]).map((gender) => ({
@@ -475,6 +502,7 @@ export async function getCatalogFacetsStatic(): Promise<CatalogFacetsLite> {
         })),
         materials,
         patterns,
+        occasions,
       };
     },
     ["catalog-facets-static", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`],
@@ -1378,17 +1406,19 @@ async function computeCatalogFacetsLite(
   const colorFilters = omitFilters(filters, ["colors"]);
   const materialFilters = omitFilters(filters, ["materials"]);
   const patternFilters = omitFilters(filters, ["patterns"]);
+  const occasionFilters = omitFilters(filters, ["occasions"]);
 
   const categoryWhere = buildWhere(categoryFilters, pricing);
   const genderWhere = buildWhere(genderFilters, pricing);
   const brandWhere = buildWhere(brandFilters, pricing);
   const materialWhere = buildWhere(materialFilters, pricing);
   const patternWhere = buildWhere(patternFilters, pricing);
+  const occasionWhere = buildWhere(occasionFilters, pricing);
 
   const { productWhere: colorProductWhere, variantWhere: colorVariantWhere } =
     buildVariantWhere(colorFilters, pricing);
 
-  const [categories, genders, brands, colors, materials, patterns] = await Promise.all([
+  const [categories, genders, brands, colors, materials, patterns, occasions] = await Promise.all([
     prisma.$queryRaw<Array<{ category: string; cnt: bigint }>>(Prisma.sql`
       select ${CATEGORY_CANON_EXPR} as category, count(*) as cnt
       from products p
@@ -1456,6 +1486,19 @@ async function computeCatalogFacetsLite(
       order by cnt desc
       limit 18
     `),
+    prisma.$queryRaw<Array<{ tag: string; cnt: bigint }>>(Prisma.sql`
+      select tag, count(*) as cnt
+      from (
+        select unnest(p."occasionTags") as tag
+        from products p
+        join brands b on b.id = p."brandId"
+        ${occasionWhere}
+      ) t
+      where tag is not null and tag <> ''
+      group by tag
+      order by cnt desc
+      limit 18
+    `),
   ]);
 
   const genderCounts = new Map<GenderKey, number>();
@@ -1467,6 +1510,7 @@ async function computeCatalogFacetsLite(
   const labelCategory = (value: string) => taxonomy.categoryLabels[value] ?? labelize(value);
   const labelMaterial = (value: string) => taxonomy.materialLabels[value] ?? labelize(value);
   const labelPattern = (value: string) => taxonomy.patternLabels[value] ?? labelize(value);
+  const labelOccasion = (value: string) => taxonomy.occasionLabels[value] ?? labelize(value);
 
   const categoryItems = categories.map((row) => ({
     value: row.category,
@@ -1496,6 +1540,11 @@ async function computeCatalogFacetsLite(
   const patternItems = patterns.map((row) => ({
     value: row.tag,
     label: labelPattern(row.tag),
+    count: Number(row.cnt),
+  }));
+  const occasionItems = occasions.map((row) => ({
+    value: row.tag,
+    label: labelOccasion(row.tag),
     count: Number(row.cnt),
   }));
 
@@ -1595,6 +1644,30 @@ async function computeCatalogFacetsLite(
     }
   }
 
+  const selectedOccasions = filters.occasions ?? [];
+  const missingOccasions = selectedOccasions.filter((value) => !occasionItems.some((item) => item.value === value));
+  if (missingOccasions.length > 0) {
+    const rows = await prisma.$queryRaw<Array<{ tag: string; cnt: bigint }>>(Prisma.sql`
+      select tag, count(*) as cnt
+      from (
+        select unnest(p."occasionTags") as tag
+        from products p
+        join brands b on b.id = p."brandId"
+        ${occasionWhere}
+      ) t
+      where tag in (${Prisma.join(missingOccasions)})
+      group by tag
+    `);
+    const countMap = new Map(rows.map((row) => [row.tag, Number(row.cnt)]));
+    for (const value of missingOccasions) {
+      occasionItems.push({
+        value,
+        label: labelOccasion(value),
+        count: countMap.get(value) ?? 0,
+      });
+    }
+  }
+
   return {
     categories: categoryItems,
     genders: (["Femenino", "Masculino", "Unisex", "Infantil"] as GenderKey[]).map((gender) => ({
@@ -1606,6 +1679,7 @@ async function computeCatalogFacetsLite(
     colors: colorItems,
     materials: materialItems,
     patterns: patternItems,
+    occasions: occasionItems,
   };
 }
 
@@ -1933,6 +2007,7 @@ async function computeCatalogProductsPage(params: {
 
   const sortKey = sort || "new";
   const hasVariantFilters = hasVariantLevelFilters(filters);
+  const priceChangeDirectionExpr = buildPriceChangeDirectionSelectExpr();
 
   const rows: Array<{
     id: string;
@@ -1943,6 +2018,7 @@ async function computeCatalogProductsPage(params: {
     minPrice: string | null;
     maxPrice: string | null;
     currency: string | null;
+    priceChangeDirection: string | null;
   }> = await (async () => {
     if ((sortKey === "price_asc" || sortKey === "price_desc") && (!hasVariantFilters || rollupListingFastPath)) {
       const priceOrder =
@@ -1959,6 +2035,7 @@ async function computeCatalogProductsPage(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          priceChangeDirection: string | null;
         }>
       >(
         Prisma.sql`
@@ -1970,7 +2047,8 @@ async function computeCatalogProductsPage(params: {
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
-            'COP' as currency
+            'COP' as currency,
+            ${priceChangeDirectionExpr} as "priceChangeDirection"
           from products p
           join brands b on b.id = p."brandId"
           ${productWhere}
@@ -1990,11 +2068,12 @@ async function computeCatalogProductsPage(params: {
           name: string;
           imageCoverUrl: string | null;
           brandName: string;
-          sourceUrl: string | null;
-          minPrice: string | null;
-          maxPrice: string | null;
-          currency: string | null;
-        }>
+            sourceUrl: string | null;
+            minPrice: string | null;
+            maxPrice: string | null;
+            currency: string | null;
+            priceChangeDirection: string | null;
+          }>
       >(
         Prisma.sql`
           select
@@ -2005,7 +2084,8 @@ async function computeCatalogProductsPage(params: {
             p."sourceUrl",
             min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
             max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
-            'COP' as currency
+            'COP' as currency,
+            ${priceChangeDirectionExpr} as "priceChangeDirection"
           from products p
           join brands b on b.id = p."brandId"
           join variants v on v."productId" = p.id
@@ -2017,7 +2097,9 @@ async function computeCatalogProductsPage(params: {
             p."imageCoverUrl",
             b.name,
             p."sourceUrl",
-            p."createdAt"
+            p."createdAt",
+            p."priceChangeDirection",
+            p."priceChangeAt"
           ${orderBy}
           limit ${CATALOG_PAGE_SIZE}
           offset ${offset}
@@ -2041,6 +2123,7 @@ async function computeCatalogProductsPage(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          priceChangeDirection: string | null;
         }>
       >(
         Prisma.sql`
@@ -2088,7 +2171,8 @@ async function computeCatalogProductsPage(params: {
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
-            'COP' as currency
+            'COP' as currency,
+            ${priceChangeDirectionExpr} as "priceChangeDirection"
           from ids
           join products p on p.id = ids.id
           join brands b on b.id = p."brandId"
@@ -2121,6 +2205,7 @@ async function computeCatalogProductsPage(params: {
         minPrice: string | null;
         maxPrice: string | null;
         currency: string | null;
+        priceChangeDirection: string | null;
       }>
     >(
       Prisma.sql`
@@ -2168,7 +2253,8 @@ async function computeCatalogProductsPage(params: {
           p."sourceUrl",
           vagg."minPrice",
           vagg."maxPrice",
-          vagg.currency
+          vagg.currency,
+          ${priceChangeDirectionExpr} as "priceChangeDirection"
         from ids
         join products p on p.id = ids.id
         join brands b on b.id = p."brandId"
@@ -2209,6 +2295,7 @@ async function computeCatalogProductsPage(params: {
     minPrice: toCopDisplayString(item.minPrice, displayUnitCop),
     maxPrice: toCopDisplayString(item.maxPrice, displayUnitCop),
     currency: "COP",
+    priceChangeDirection: toPriceChangeDirection(item.priceChangeDirection),
   }));
 }
 
@@ -2273,6 +2360,7 @@ async function computeCatalogProducts(params: {
 
   const sortKey = sort || "new";
   const hasVariantFilters = hasVariantLevelFilters(filters);
+  const priceChangeDirectionExpr = buildPriceChangeDirectionSelectExpr();
   const itemsPromise: Promise<
     Array<{
       id: string;
@@ -2283,6 +2371,7 @@ async function computeCatalogProducts(params: {
       minPrice: string | null;
       maxPrice: string | null;
       currency: string | null;
+      priceChangeDirection: string | null;
     }>
   > = (() => {
     if ((sortKey === "price_asc" || sortKey === "price_desc") && (!hasVariantFilters || rollupListingFastPath)) {
@@ -2300,6 +2389,7 @@ async function computeCatalogProducts(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          priceChangeDirection: string | null;
         }>
       >(
         Prisma.sql`
@@ -2311,7 +2401,8 @@ async function computeCatalogProducts(params: {
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
-            'COP' as currency
+            'COP' as currency,
+            ${priceChangeDirectionExpr} as "priceChangeDirection"
           from products p
           join brands b on b.id = p."brandId"
           ${productWhere}
@@ -2335,6 +2426,7 @@ async function computeCatalogProducts(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          priceChangeDirection: string | null;
         }>
       >(
         Prisma.sql`
@@ -2346,7 +2438,8 @@ async function computeCatalogProducts(params: {
             p."sourceUrl",
             min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
             max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
-            'COP' as currency
+            'COP' as currency,
+            ${priceChangeDirectionExpr} as "priceChangeDirection"
           from products p
           join brands b on b.id = p."brandId"
           join variants v on v."productId" = p.id
@@ -2358,7 +2451,9 @@ async function computeCatalogProducts(params: {
             p."imageCoverUrl",
             b.name,
             p."sourceUrl",
-            p."createdAt"
+            p."createdAt",
+            p."priceChangeDirection",
+            p."priceChangeAt"
           ${orderBy}
           limit ${CATALOG_PAGE_SIZE}
           offset ${offset}
@@ -2382,6 +2477,7 @@ async function computeCatalogProducts(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          priceChangeDirection: string | null;
         }>
       >(
         Prisma.sql`
@@ -2429,7 +2525,8 @@ async function computeCatalogProducts(params: {
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
-            'COP' as currency
+            'COP' as currency,
+            ${priceChangeDirectionExpr} as "priceChangeDirection"
           from ids
           join products p on p.id = ids.id
           join brands b on b.id = p."brandId"
@@ -2462,6 +2559,7 @@ async function computeCatalogProducts(params: {
         minPrice: string | null;
         maxPrice: string | null;
         currency: string | null;
+        priceChangeDirection: string | null;
       }>
     >(
       Prisma.sql`
@@ -2509,7 +2607,8 @@ async function computeCatalogProducts(params: {
           p."sourceUrl",
           vagg."minPrice",
           vagg."maxPrice",
-          vagg.currency
+          vagg.currency,
+          ${priceChangeDirectionExpr} as "priceChangeDirection"
         from ids
         join products p on p.id = ids.id
         join brands b on b.id = p."brandId"
@@ -2555,6 +2654,7 @@ async function computeCatalogProducts(params: {
       minPrice: toCopDisplayString(item.minPrice, displayUnitCop),
       maxPrice: toCopDisplayString(item.maxPrice, displayUnitCop),
       currency: "COP",
+      priceChangeDirection: toPriceChangeDirection(item.priceChangeDirection),
     })),
     totalCount,
   };

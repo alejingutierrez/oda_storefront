@@ -111,6 +111,25 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: estabilidad del build, respuesta visual en desktop/mobile y ausencia de overflow horizontal en mobile.
 - Estado: **done (2026-02-20)**.
 
+### MC-135 PLP: indicador/filtro de cambio de precio + filtro de ocasión
+- Historia: Como usuario del catálogo, quiero identificar rápido si un producto bajó o subió de precio y filtrar por esa señal, además de filtrar por ocasión, para descubrir oportunidades y navegar mejor.
+- Alcance:
+  - Persistencia en `products` de `priceChangeDirection` (`down|up|null`) y `priceChangeAt`.
+  - Cálculo online en extractor al recalcular `minPriceCop`: compara precio mínimo **mostrado** (redondeo marketing) previo vs nuevo; solo marca cambio cuando cambia el valor visible.
+  - Filtro backend `price_change=down|up` con ventana fija de 30 días.
+  - Exposición de `priceChangeDirection` en payload de cards PLP (`/api/catalog/products-page` y `/api/catalog/products`).
+  - Facets lite incluye `occasions` y UI de filtros muestra sección “Ocasión” (desktop + mobile).
+  - UI de Precio agrega single-select `Bajó de precio` / `Subió de precio` (click en activo desactiva).
+  - Card PLP agrega chip junto al precio (`↓ Bajó de precio` / `↑ Subió de precio`).
+  - SEO: `price_change` se considera parámetro no indexable (`noindex`).
+- CA:
+  - Badge visible solo para cambios dentro de 30 días y con cambio visible tras redondeo.
+  - `price_change` combina correctamente con filtros existentes y mantiene conteos consistentes.
+  - “Ocasión” visible y funcional en panel de filtros de PLP.
+- Datos: `products.priceChangeDirection`, `products.priceChangeAt`, `price_history`, `occasionTags`.
+- NF: filtro de cambio de precio con índice parcial para no degradar latencia.
+- Estado: **done (2026-02-20)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

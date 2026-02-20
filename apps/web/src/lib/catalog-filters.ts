@@ -99,6 +99,13 @@ export function parseGenderList(values?: string[]): GenderKey[] | undefined {
   return normalized.length > 0 ? Array.from(new Set(normalized)) : undefined;
 }
 
+function parsePriceChangeParam(value?: string): "down" | "up" | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "down" || normalized === "up") return normalized;
+  return undefined;
+}
+
 type ParseCatalogFiltersOptions = {
   categoryMode?: "single" | "multi";
 };
@@ -140,6 +147,7 @@ export function parseCatalogFiltersFromSearchParams(
     materials: getListFromSearch(params, "material"),
     patterns: getListFromSearch(params, "pattern"),
     occasions: getListFromSearch(params, "occasion"),
+    priceChange: parsePriceChangeParam(getParamFromSearch(params, "price_change")),
     seasons: getListFromSearch(params, "season"),
     styles: getListFromSearch(params, "style"),
     inStock: getBooleanParamFromSearch(params, "in_stock"),

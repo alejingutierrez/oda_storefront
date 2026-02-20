@@ -175,6 +175,8 @@ model Product {
   minPriceCop           Decimal?                @db.Decimal(12, 2)
   maxPriceCop           Decimal?                @db.Decimal(12, 2)
   priceRollupUpdatedAt  DateTime?
+  priceChangeDirection  String? // down | up
+  priceChangeAt         DateTime?
   sourceUrl             String?
   imageCoverUrl         String?
   metadata              Json?

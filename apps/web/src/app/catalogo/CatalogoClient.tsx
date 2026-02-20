@@ -26,6 +26,7 @@ type FacetsLite = {
   colors: FacetItem[];
   materials: FacetItem[];
   patterns: FacetItem[];
+  occasions: FacetItem[];
 };
 
 type FavoriteAddedDetail = {
@@ -118,6 +119,7 @@ function isValidFacetsLite(input: unknown): input is FacetsLite {
     obj.colors,
     obj.materials,
     obj.patterns,
+    obj.occasions,
   ];
   return arrays.every((value) => Array.isArray(value));
 }

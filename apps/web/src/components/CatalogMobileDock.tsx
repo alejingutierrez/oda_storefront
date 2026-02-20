@@ -21,6 +21,7 @@ type Facets = {
   colors: FacetItem[];
   materials: FacetItem[];
   patterns: FacetItem[];
+  occasions: FacetItem[];
 };
 
 const INTERACTION_PENDING_TIMEOUT_MS = 4500;
