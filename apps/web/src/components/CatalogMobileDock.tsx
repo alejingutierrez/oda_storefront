@@ -108,6 +108,36 @@ export default function CatalogMobileDock({
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const root = document.documentElement;
+    const viewport = window.visualViewport;
+
+    const commit = () => {
+      if (!viewport) {
+        root.style.setProperty("--oda-mobile-fixed-bottom-offset", "0px");
+        return;
+      }
+      const offset = Math.max(0, Math.round(window.innerHeight - (viewport.height + viewport.offsetTop)));
+      root.style.setProperty("--oda-mobile-fixed-bottom-offset", `${offset}px`);
+    };
+
+    commit();
+
+    viewport?.addEventListener("resize", commit);
+    viewport?.addEventListener("scroll", commit);
+    window.addEventListener("resize", commit);
+    window.addEventListener("orientationchange", commit);
+
+    return () => {
+      viewport?.removeEventListener("resize", commit);
+      viewport?.removeEventListener("scroll", commit);
+      window.removeEventListener("resize", commit);
+      window.removeEventListener("orientationchange", commit);
+    };
+  }, []);
+
   const sort = params.get("sort") ?? "new";
   const hasFilters = useMemo(() => {
     const next = new URLSearchParams(params.toString());
@@ -269,7 +299,7 @@ export default function CatalogMobileDock({
     <>
       <div
         ref={dockRef}
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-[color:var(--oda-border)] bg-white/92 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-[var(--oda-mobile-fixed-bottom-offset)] z-40 border-t border-[color:var(--oda-border)] bg-white/92 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 lg:hidden"
       >
         <div className="flex items-center justify-between gap-3">
           <button

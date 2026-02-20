@@ -1703,6 +1703,12 @@ function PriceRange({
     if (labels.length <= 3) return labels.join(" · ");
     return `${labels.slice(0, 3).join(" · ")} +${labels.length - 3}`;
   })();
+  const activeTooltip =
+    activeThumb === "min"
+      ? { label: "Mínimo", value: liveMinValue, pct: minPct }
+      : activeThumb === "max"
+        ? { label: "Máximo", value: liveMaxValue, pct: maxPct }
+        : null;
 
   return (
     <div className="mt-4 grid gap-3">
@@ -1761,7 +1767,19 @@ function PriceRange({
         </div>
       ) : null}
 
-      <div className="relative h-10">
+      <div className="oda-price-range relative h-12" data-active-thumb={activeThumb ?? undefined}>
+        {activeTooltip ? (
+          <div
+            className="pointer-events-none absolute -top-2 z-[7] -translate-x-1/2 -translate-y-full"
+            style={{ left: `${activeTooltip.pct}%` }}
+          >
+            <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--oda-ink)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-[color:var(--oda-cream)] shadow-[0_16px_32px_rgba(23,21,19,0.22)]">
+              <span className="opacity-75">{activeTooltip.label}</span>
+              <span className="normal-case tracking-[0.02em]">{formatCop(activeTooltip.value)}</span>
+            </span>
+          </div>
+        ) : null}
+
         {histogramBars ? (
           <div
             className="absolute inset-x-0 top-1/2 flex h-10 -translate-y-1/2 items-end gap-[2px] opacity-75"
@@ -1819,11 +1837,16 @@ function PriceRange({
               commitSliderNow();
             }, 180);
           }}
+          onFocus={() => {
+            if (disabled) return;
+            setActiveThumb("min");
+          }}
           onBlur={() => {
             if (keyboardCommitTimeoutRef.current) {
               window.clearTimeout(keyboardCommitTimeoutRef.current);
               keyboardCommitTimeoutRef.current = null;
             }
+            setActiveThumb(null);
             commitSliderNow();
           }}
           className="oda-range oda-range--min absolute left-0 right-0 top-1/2 w-full -translate-y-1/2 bg-transparent"
@@ -1866,26 +1889,22 @@ function PriceRange({
               commitSliderNow();
             }, 180);
           }}
+          onFocus={() => {
+            if (disabled) return;
+            setActiveThumb("max");
+          }}
           onBlur={() => {
             if (keyboardCommitTimeoutRef.current) {
               window.clearTimeout(keyboardCommitTimeoutRef.current);
               keyboardCommitTimeoutRef.current = null;
             }
+            setActiveThumb(null);
             commitSliderNow();
           }}
           className="oda-range oda-range--max absolute left-0 right-0 top-1/2 w-full -translate-y-1/2 bg-transparent"
           disabled={disabled}
           style={{ zIndex: activeThumb === "max" ? 6 : activeThumb === "min" ? 5 : 5 }}
         />
-      </div>
-
-      <div className="text-xs text-[color:var(--oda-ink-soft)]">
-        Rango disponible: {formatCop(minBound)} a {formatCop(maxBound)}
-        {hasSelectedRanges ? (
-          <span className="ml-2 text-[color:var(--oda-taupe)]">
-            (mueve el slider para rango continuo)
-          </span>
-        ) : null}
       </div>
     </div>
   );

@@ -12,6 +12,8 @@
   /* Used to keep mobile overlays (dock/compare/to-top) from overlapping content. */
   --oda-mobile-dock-h: calc(env(safe-area-inset-bottom) + 5.75rem);
   --oda-mobile-dock-gap: 0.75rem;
+  --oda-mobile-fixed-bottom-offset: 0px;
+  --oda-header-h: 72px;
 }
 
 @theme inline {
@@ -105,6 +107,7 @@ summary::-webkit-details-marker {
   border: 2px solid rgba(255, 255, 255, 0.9);
   box-shadow: 0 14px 30px rgba(23, 21, 19, 0.18);
   cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
 }
 
 .oda-range::-moz-range-thumb {
@@ -116,6 +119,7 @@ summary::-webkit-details-marker {
   border: 2px solid rgba(255, 255, 255, 0.9);
   box-shadow: 0 14px 30px rgba(23, 21, 19, 0.18);
   cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
 }
 
 .oda-range::-webkit-slider-runnable-track {
@@ -134,6 +138,20 @@ summary::-webkit-details-marker {
 
 .oda-range--max {
   z-index: 4;
+}
+
+.oda-price-range[data-active-thumb="min"] .oda-range--min::-webkit-slider-thumb,
+.oda-price-range[data-active-thumb="max"] .oda-range--max::-webkit-slider-thumb {
+  transform: scale(1.14);
+  border-color: rgba(255, 255, 255, 1);
+  box-shadow: 0 18px 34px rgba(23, 21, 19, 0.26), 0 0 0 3px rgba(23, 21, 19, 0.12);
+}
+
+.oda-price-range[data-active-thumb="min"] .oda-range--min::-moz-range-thumb,
+.oda-price-range[data-active-thumb="max"] .oda-range--max::-moz-range-thumb {
+  transform: scale(1.14);
+  border-color: rgba(255, 255, 255, 1);
+  box-shadow: 0 18px 34px rgba(23, 21, 19, 0.26), 0 0 0 3px rgba(23, 21, 19, 0.12);
 }
 
 @media (pointer: coarse) {

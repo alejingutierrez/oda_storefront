@@ -1,12 +1,17 @@
 import Link from "next/link";
 import AccountLink from "@/components/AccountLink";
+import HeaderHeightSync from "@/components/HeaderHeightSync";
 import HeaderMobileMenu from "@/components/HeaderMobileMenu";
 import MegaMenu from "@/components/MegaMenu";
 import type { MegaMenuData } from "@/lib/home-data";
 
 export default function Header({ menu }: { menu: MegaMenuData }) {
   return (
-    <header className="sticky top-0 z-40 border-b border-[color:var(--oda-border)] bg-white/90 backdrop-blur">
+    <header
+      data-oda-header="true"
+      className="sticky top-0 z-40 border-b border-[color:var(--oda-border)] bg-white/90 backdrop-blur"
+    >
+      <HeaderHeightSync />
       <div className="oda-container relative flex items-center gap-4 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center lg:gap-8">
         <Link
           prefetch={false}

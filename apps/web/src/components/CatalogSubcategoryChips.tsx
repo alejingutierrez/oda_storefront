@@ -81,16 +81,16 @@ function buildCategoryAndGenderKey(paramsString: string) {
 }
 
 function RailSkeleton({ density }: { density: "desktop" | "mobile" }) {
-  const circle = density === "mobile" ? "h-7 w-7" : "h-8 w-8";
+  const circle = density === "mobile" ? "h-10 w-10" : "h-12 w-12";
   const label = density === "mobile" ? "h-3 w-20" : "h-3 w-28";
-  const chip = density === "mobile" ? "px-2.5 py-1.5" : "px-3 py-2";
+  const chip = density === "mobile" ? "h-10 pl-0 pr-3" : "h-12 pl-0 pr-4";
   return (
     <div className="oda-no-scrollbar flex gap-2 overflow-x-auto py-1">
       {Array.from({ length: 7 }).map((_, idx) => (
         <div
           key={idx}
           className={[
-            "flex shrink-0 items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)]",
+            "flex shrink-0 items-center gap-2 overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)]",
             chip,
           ].join(" ")}
         >
@@ -248,105 +248,100 @@ export default function CatalogSubcategoryChips({
   const density = mode === "mobile" ? "mobile" : "desktop";
   const showCounts = density === "desktop";
   const labelMaxW = density === "mobile" ? "max-w-[8.5rem]" : "max-w-[10rem]";
-  const circle = density === "mobile" ? "h-7 w-7" : "h-8 w-8";
+  const circle = density === "mobile" ? "h-10 w-10" : "h-12 w-12";
   const circleSizes = density === "mobile" ? "40px" : "48px";
-  const chip = density === "mobile" ? "min-h-10 px-2.5 py-1.5" : "min-h-12 px-3 py-2";
+  const chipPlain = density === "mobile" ? "h-10 px-3" : "h-12 px-4";
+  const chipWithAvatar = density === "mobile" ? "h-10 pl-0 pr-3" : "h-12 pl-0 pr-4";
   const chipGap = density === "mobile" ? "gap-2" : "gap-2.5";
   const labelClass = density === "mobile" ? "text-[12px]" : "text-[13px]";
-  const circleVisual =
-    density === "mobile"
-      ? "-left-[9px] -top-[6px] h-10 w-10"
-      : "-left-[12px] -top-[8px] h-12 w-12";
 
   const wrapperClassName =
     mode === "toolbar"
       ? "mt-2 border-t border-[color:var(--oda-border)] pt-2"
       : [
-          // Avoid mobile horizontal overflow: Safari sometimes counts shadows/backdrop-filter
-          // towards the scrollable overflow area, which makes the whole PLP "wider".
-          "sticky top-20 z-30 w-full min-w-0 max-w-[100vw] overflow-x-hidden border-b border-[color:var(--oda-border)]",
+          // Full-bleed rail in mobile while keeping chips aligned with page content padding.
+          "sticky top-[var(--oda-header-h)] z-30 w-screen min-w-[100vw] max-w-[100vw] overflow-x-hidden border-b border-[color:var(--oda-border)]",
+          "relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw]",
           "bg-[color:var(--oda-cream)] py-2",
           "lg:hidden",
         ].join(" ");
+  const railInnerClassName = mode === "mobile" ? "px-4" : "";
 
   return (
     <div className={wrapperClassName} aria-label="Subcategorías" aria-busy={isPending || loading}>
       <div className="relative">
         {loading && resolved.length === 0 ? (
-          <RailSkeleton density={density} />
+          <div className={railInnerClassName}>
+            <RailSkeleton density={density} />
+          </div>
         ) : (
           <>
-            <div
-              className={[
-                "oda-no-scrollbar flex w-full min-w-0 max-w-full gap-2 overflow-x-auto py-1",
-              ].join(" ")}
-            >
-              <button
-                type="button"
-                onClick={toggleAll}
-                aria-pressed={selected.length === 0}
+            <div className={railInnerClassName}>
+              <div
                 className={[
-                  `group inline-flex shrink-0 items-center ${chipGap} rounded-full border text-left transition`,
-                  chip,
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                  selected.length === 0
-                    ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
-                    : "border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]",
+                  "oda-no-scrollbar flex w-full min-w-0 max-w-full gap-2 overflow-x-auto py-1",
                 ].join(" ")}
-                title="Ver todas"
               >
-                <span className="min-w-0">
-                  <span className={["block truncate font-semibold leading-tight", labelMaxW, labelClass].join(" ")}>
-                    Todas
-                    {showCounts ? (
-                      <span
-                        className={[
-                          "ml-2 text-[11px] font-normal text-[color:var(--oda-taupe)]",
-                          selected.length === 0 ? "text-white/80" : "",
-                        ].join(" ")}
-                      >
-                        {resolved.reduce((acc, item) => acc + (item.count ?? 0), 0).toLocaleString("es-CO")}
-                      </span>
-                    ) : null}
+                <button
+                  type="button"
+                  onClick={toggleAll}
+                  aria-pressed={selected.length === 0}
+                  className={[
+                    `group inline-flex shrink-0 items-center ${chipGap} rounded-full border text-left transition`,
+                    chipPlain,
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                    selected.length === 0
+                      ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                      : "border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]",
+                  ].join(" ")}
+                  title="Ver todas"
+                >
+                  <span className="min-w-0">
+                    <span className={["block truncate font-semibold leading-tight", labelMaxW, labelClass].join(" ")}>
+                      Todas
+                      {showCounts ? (
+                        <span
+                          className={[
+                            "ml-2 text-[11px] font-normal text-[color:var(--oda-taupe)]",
+                            selected.length === 0 ? "text-white/80" : "",
+                          ].join(" ")}
+                        >
+                          {resolved.reduce((acc, item) => acc + (item.count ?? 0), 0).toLocaleString("es-CO")}
+                        </span>
+                      ) : null}
+                    </span>
                   </span>
-                </span>
-              </button>
+                </button>
 
-              {resolved.map((item) => {
-                const active = selectedSet.has(item.value);
-                const img = proxiedImageUrl(item.previewImageUrl, {
-                  productId: item.previewProductId ?? null,
-                  kind: "cover",
-                });
-                return (
-                  <button
-                    key={item.value}
-                    type="button"
-                    onClick={() => toggleSubcategory(item.value)}
-                    aria-pressed={active}
-                    className={[
-                      `group inline-flex shrink-0 items-center ${chipGap} rounded-full border text-left transition`,
-                      chip,
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                      active
-                        ? [
-                            "border-[color:var(--oda-ink)] bg-white text-[color:var(--oda-ink)]",
-                            density === "desktop" ? "shadow-[0_14px_30px_rgba(23,21,19,0.08)]" : "",
-                          ].join(" ")
-                        : "border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]",
-                    ].join(" ")}
-                    title={item.label}
-                  >
-                    <span
+                {resolved.map((item) => {
+                  const active = selectedSet.has(item.value);
+                  const img = proxiedImageUrl(item.previewImageUrl, {
+                    productId: item.previewProductId ?? null,
+                    kind: "cover",
+                  });
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => toggleSubcategory(item.value)}
+                      aria-pressed={active}
                       className={[
-                        "relative",
-                        circle,
+                        `group inline-flex shrink-0 items-center ${chipGap} overflow-hidden rounded-full border text-left transition`,
+                        chipWithAvatar,
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                        active
+                          ? [
+                              "border-[color:var(--oda-ink)] bg-white text-[color:var(--oda-ink)]",
+                              density === "desktop" ? "shadow-[0_14px_30px_rgba(23,21,19,0.08)]" : "",
+                            ].join(" ")
+                          : "border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]",
                       ].join(" ")}
+                      title={item.label}
                     >
                       <span
                         className={[
-                          "absolute overflow-hidden rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-stone)]",
-                          circleVisual,
+                          "relative shrink-0 overflow-hidden rounded-full bg-[color:var(--oda-stone)]",
+                          circle,
                         ].join(" ")}
                         aria-hidden="true"
                       >
@@ -368,20 +363,20 @@ export default function CatalogSubcategoryChips({
                           )}
                         </span>
                       </span>
-                    </span>
-                    <span className="min-w-0">
-                      <span className={["block truncate font-semibold leading-tight", labelMaxW, labelClass].join(" ")}>
-                        {item.label}
-                        {showCounts ? (
-                          <span className="ml-2 text-[11px] font-normal text-[color:var(--oda-taupe)]">
-                            {item.count.toLocaleString("es-CO")}
-                          </span>
-                        ) : null}
+                      <span className="min-w-0">
+                        <span className={["block truncate font-semibold leading-tight", labelMaxW, labelClass].join(" ")}>
+                          {item.label}
+                          {showCounts ? (
+                            <span className="ml-2 text-[11px] font-normal text-[color:var(--oda-taupe)]">
+                              {item.count.toLocaleString("es-CO")}
+                            </span>
+                          ) : null}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </>
         )}

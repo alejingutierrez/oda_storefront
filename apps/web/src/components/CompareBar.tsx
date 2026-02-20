@@ -122,7 +122,7 @@ export default function CompareBar() {
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-[calc(var(--oda-mobile-dock-h)+var(--oda-mobile-dock-gap))] z-40 px-4 lg:bottom-6 lg:px-6">
+      <div className="fixed inset-x-0 bottom-[calc(var(--oda-mobile-fixed-bottom-offset)+var(--oda-mobile-dock-h)+var(--oda-mobile-dock-gap))] z-40 px-4 lg:bottom-6 lg:px-6">
         <div className="mx-auto flex w-full max-w-[1320px] items-center justify-between gap-3 rounded-xl border border-[color:var(--oda-border)] bg-white/92 px-3 py-2 shadow-[0_24px_70px_rgba(23,21,19,0.16)] backdrop-blur">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
