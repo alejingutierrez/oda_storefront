@@ -348,6 +348,13 @@ const runAutonomousTick = async () => {
         },
         autonomousDrainTimeoutMs,
       );
+      if ((payload?.processed ?? 0) > 0) {
+        if (action.queue === 'catalog') {
+          lastCatalogCompletedAtIso = new Date().toISOString();
+        } else if (action.queue === 'enrichment') {
+          lastEnrichCompletedAtIso = new Date().toISOString();
+        }
+      }
       console.warn(
         `[worker-autonomy] triggered queue=${action.queue} reason=${action.reason} processed=${payload?.processed ?? 0} runs=${payload?.runsProcessed ?? 0} skipped=${payload?.skipped ?? 'no'}`,
       );
