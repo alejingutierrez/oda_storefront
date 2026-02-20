@@ -143,11 +143,7 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
             where p.category is not null and p.category <> ''
               and p."imageCoverUrl" is not null
               and (p."metadata" -> 'enrichment') is not null
-              and exists (
-                select 1 from variants v
-                where v."productId" = p.id
-                  and (v.stock > 0 or v."stockStatus" in ('in_stock','preorder'))
-              )
+              and p."hasInStock" = true
           )
           select gender_bucket, category, subcategory, count(*) as cnt
           from bucketed

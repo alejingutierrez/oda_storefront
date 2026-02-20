@@ -36,6 +36,7 @@ type Props = {
   // Hide filter sections that would be redundant within a PLP (e.g. gender PLP hides Gender section).
   hideSections?: { gender?: boolean; category?: boolean; brand?: boolean };
   mode?: "instant" | "draft";
+  externalPending?: boolean;
   // When `mode="draft"` and no external draft state is provided, auto-apply the draft to the URL after a debounce.
   // Used in desktop to avoid firing multiple navigations while users toggle several filters in a row.
   autoApplyDraftMs?: number;
@@ -230,7 +231,8 @@ function sortColorFacetItems(items: FacetItem[], selectedValues: string[]) {
   });
 }
 
-function getStep(_max: number) {
+function getStep(max: number) {
+  void max;
   // Marketing rounding rule: keep slider ticks clean (ends in `0000`).
   // Backend already aligns bounds to multiples of 10k COP.
   return 10_000;
@@ -249,6 +251,7 @@ export default function CatalogoFiltersPanel({
   lockedKeys: lockedKeysList = [],
   hideSections,
   mode = "instant",
+  externalPending = false,
   autoApplyDraftMs,
   draftParamsString = "",
   onDraftParamsStringChange,
@@ -292,7 +295,8 @@ export default function CatalogoFiltersPanel({
     };
   }, []);
 
-  const isPending = transitionPending && isInteractionPending;
+  const isPendingLocal = transitionPending && isInteractionPending;
+  const isPending = isPendingLocal || externalPending;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -445,6 +449,13 @@ export default function CatalogoFiltersPanel({
     () => `oda_catalog_price_insights_full_v1:${priceBoundsFetchKey || "base"}`,
     [priceBoundsFetchKey],
   );
+  const priceInsightsFullDemandedKeysRef = useRef<Set<string>>(new Set());
+  const [priceInsightsFullDemandTick, setPriceInsightsFullDemandTick] = useState(0);
+  const requestPriceInsightsFull = useCallback(() => {
+    if (priceInsightsFullDemandedKeysRef.current.has(priceInsightsFullSessionKey)) return;
+    priceInsightsFullDemandedKeysRef.current.add(priceInsightsFullSessionKey);
+    setPriceInsightsFullDemandTick((prev) => prev + 1);
+  }, [priceInsightsFullSessionKey]);
   const brandSearchResetKey = useMemo(
     () =>
       `${selected.categories.join(",")}::${selected.genders.join(",")}::${selected.subcategories.join(",")}`,
@@ -666,6 +677,7 @@ export default function CatalogoFiltersPanel({
   useEffect(() => {
     if (isPending) return;
     if (typeof document !== "undefined" && document.hidden) return;
+    if (!priceInsightsFullDemandedKeysRef.current.has(priceInsightsFullSessionKey)) return;
     const now = Date.now();
     const isFresh =
       priceInsightsFullLastOkKeyRef.current === priceInsightsFullSessionKey &&
@@ -763,6 +775,7 @@ export default function CatalogoFiltersPanel({
     isPending,
     priceBoundsFetchKey,
     priceBoundsSessionKey,
+    priceInsightsFullDemandTick,
     priceInsightsFullSessionKey,
     resumeTick,
   ]);
@@ -1201,6 +1214,7 @@ export default function CatalogoFiltersPanel({
           selectedRangesRaw={selected.priceRanges}
           searchParamsString={currentParamsString}
           commitParams={commitParams}
+          onDemandFullInsights={requestPriceInsightsFull}
           disabled={isPending}
         />
       </details>
@@ -1362,6 +1376,7 @@ function PriceRange({
   selectedRangesRaw,
   searchParamsString,
   commitParams,
+  onDemandFullInsights,
   disabled,
 }: {
   bounds: CatalogPriceBounds;
@@ -1372,6 +1387,7 @@ function PriceRange({
   selectedRangesRaw?: string[];
   searchParamsString: string;
   commitParams: (next: URLSearchParams) => void;
+  onDemandFullInsights?: () => void;
   disabled?: boolean;
 }) {
   const hasBounds = typeof bounds.min === "number" && typeof bounds.max === "number";
@@ -1658,6 +1674,7 @@ function PriceRange({
   };
 
   const commitMin = (value: number) => {
+    onDemandFullInsights?.();
     const baseMax = dirty ? maxValue : derived.max;
     if (!dirty) setDirty(true);
     const clamped = clamp(value, minBound, maxBound);
@@ -1667,6 +1684,7 @@ function PriceRange({
   };
 
   const commitMax = (value: number) => {
+    onDemandFullInsights?.();
     const baseMin = dirty ? minValue : derived.min;
     if (!dirty) setDirty(true);
     const clamped = clamp(value, minBound, maxBound);
@@ -1709,6 +1727,19 @@ function PriceRange({
       : activeThumb === "max"
         ? { label: "Máximo", value: liveMaxValue, pct: maxPct }
         : null;
+  const activeTooltipPlacement = !activeTooltip
+    ? null
+    : activeTooltip.pct <= 10
+      ? "left"
+      : activeTooltip.pct >= 90
+        ? "right"
+        : "center";
+  const activeTooltipStyle =
+    activeTooltipPlacement === "left"
+      ? ({ left: "0%" } as const)
+      : activeTooltipPlacement === "right"
+        ? ({ right: "0%" } as const)
+        : ({ left: `${activeTooltip?.pct ?? 0}%` } as const);
 
   return (
     <div className="mt-4 grid gap-3">
@@ -1770,8 +1801,11 @@ function PriceRange({
       <div className="oda-price-range relative h-12" data-active-thumb={activeThumb ?? undefined}>
         {activeTooltip ? (
           <div
-            className="pointer-events-none absolute -top-2 z-[7] -translate-x-1/2 -translate-y-full"
-            style={{ left: `${activeTooltip.pct}%` }}
+            className={[
+              "pointer-events-none absolute -top-2 z-[7] -translate-y-full",
+              activeTooltipPlacement === "center" ? "-translate-x-1/2" : "",
+            ].join(" ")}
+            style={activeTooltipStyle}
           >
             <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--oda-ink)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-[color:var(--oda-cream)] shadow-[0_16px_32px_rgba(23,21,19,0.22)]">
               <span className="opacity-75">{activeTooltip.label}</span>

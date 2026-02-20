@@ -30,7 +30,7 @@ const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 const CATALOG_PRODUCTS_REVALIDATE_SECONDS = 60;
 export const CATALOG_PAGE_SIZE = 24;
 // Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
-const CATALOG_CACHE_VERSION = 8;
+const CATALOG_CACHE_VERSION = 9;
 
 const buildCatalogCacheOptions = (revalidate: number) => ({
   revalidate,
@@ -226,6 +226,80 @@ function hasVariantLevelFilters(filters: CatalogFilters) {
     filters.priceMin !== undefined ||
     filters.priceMax !== undefined
   );
+}
+
+function hasNonPriceVariantFilters(filters: CatalogFilters) {
+  return (filters.colors?.length ?? 0) > 0 || (filters.sizes?.length ?? 0) > 0 || (filters.fits?.length ?? 0) > 0;
+}
+
+function hasPriceVariantFilters(filters: CatalogFilters) {
+  return (filters.priceRanges?.length ?? 0) > 0 || filters.priceMin !== undefined || filters.priceMax !== undefined;
+}
+
+function isPriceOnlyVariantFilter(filters: CatalogFilters) {
+  return hasPriceVariantFilters(filters) && !hasNonPriceVariantFilters(filters);
+}
+
+function isInStockOnlyVariantFilter(filters: CatalogFilters) {
+  return Boolean(filters.inStock) && !hasPriceVariantFilters(filters) && !hasNonPriceVariantFilters(filters);
+}
+
+function isPriceRollupFastPathEligible(filters: CatalogFilters) {
+  // `minPriceCop/maxPriceCop` are maintained from in-stock variants only.
+  // Use rollup fast-path only when the request also requires in-stock products.
+  return Boolean(filters.inStock) && isPriceOnlyVariantFilter(filters);
+}
+
+function buildProductRollupPriceValidityCondition() {
+  return Prisma.sql`
+    p."minPriceCop" is not null
+    and p."maxPriceCop" is not null
+    and p."minPriceCop" > 0
+    and p."maxPriceCop" > 0
+    and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE}
+    and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE}
+    and p."maxPriceCop" >= p."minPriceCop"
+  `;
+}
+
+function buildProductRollupPriceOverlapCondition(filters: CatalogFilters) {
+  const ranges: Prisma.Sql[] = [];
+
+  if (filters.priceRanges && filters.priceRanges.length > 0) {
+    for (const range of filters.priceRanges) {
+      const min = typeof range.min === "number" && Number.isFinite(range.min) ? range.min : null;
+      const max = typeof range.max === "number" && Number.isFinite(range.max) ? range.max : null;
+      if (min === null && max === null) continue;
+      if (min !== null && max !== null && max < min) continue;
+
+      if (min !== null && max !== null) {
+        ranges.push(Prisma.sql`(p."maxPriceCop" >= ${min} and p."minPriceCop" <= ${max})`);
+      } else if (min !== null) {
+        ranges.push(Prisma.sql`p."maxPriceCop" >= ${min}`);
+      } else if (max !== null) {
+        ranges.push(Prisma.sql`p."minPriceCop" <= ${max}`);
+      }
+    }
+  } else {
+    const min = typeof filters.priceMin === "number" && Number.isFinite(filters.priceMin) ? filters.priceMin : null;
+    const max = typeof filters.priceMax === "number" && Number.isFinite(filters.priceMax) ? filters.priceMax : null;
+    if (min !== null && max !== null && max >= min) {
+      ranges.push(Prisma.sql`(p."maxPriceCop" >= ${min} and p."minPriceCop" <= ${max})`);
+    } else if (min !== null) {
+      ranges.push(Prisma.sql`p."maxPriceCop" >= ${min}`);
+    } else if (max !== null) {
+      ranges.push(Prisma.sql`p."minPriceCop" <= ${max}`);
+    }
+  }
+
+  const overlap = ranges.length > 0 ? Prisma.sql`and (${Prisma.join(ranges, " or ")})` : Prisma.empty;
+  const inStock = filters.inStock ? Prisma.sql`and p."hasInStock" = true` : Prisma.empty;
+
+  return Prisma.sql`
+    and ${buildProductRollupPriceValidityCondition()}
+    ${inStock}
+    ${overlap}
+  `;
 }
 
 function buildProductWhere(filters: CatalogFilters) {
@@ -502,42 +576,84 @@ export async function getCatalogPriceInsights(
   const cached = unstable_cache(
     async () => {
       const { pricing, roundingUnitCop } = await getPricingContext();
+      const useRollupFastPath = !hasNonPriceVariantFilters(boundsFilters);
+      const productWhere = buildProductWhere(boundsFilters);
       const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
-      const { productWhere, variantWhere } = buildVariantWhere(boundsFilters, pricing);
+      const variantConditions = buildVariantConditions(boundsFilters, pricing);
+      const variantWhere =
+        variantConditions.length > 0
+          ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
+          : Prisma.empty;
 
-      const statsRows = await prisma.$queryRaw<
-        Array<{
-          n: bigint;
-          min_price: string | null;
-          max_price: string | null;
-          p02: string | null;
-          p25: string | null;
-          p50: string | null;
-          p75: string | null;
-          p98: string | null;
-        }>
-      >(Prisma.sql`
-        with prices as (
-          select ${priceCopExpr} as price
-          from products p
-          join brands b on b.id = p."brandId"
-          join variants v on v."productId" = p.id
-          ${productWhere}
-          ${variantWhere}
-          and ${priceCopExpr} > 0
-          and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
-        )
-        select
-          count(*) as n,
-          min(price) as min_price,
-          max(price) as max_price,
-          percentile_cont(0.02) within group (order by price) as p02,
-          percentile_cont(0.25) within group (order by price) as p25,
-          percentile_cont(0.50) within group (order by price) as p50,
-          percentile_cont(0.75) within group (order by price) as p75,
-          percentile_cont(0.98) within group (order by price) as p98
-        from prices
-      `);
+      const statsRows = await (async () => {
+        if (useRollupFastPath) {
+          return prisma.$queryRaw<
+            Array<{
+              n: bigint;
+              min_price: string | null;
+              max_price: string | null;
+              p02: string | null;
+              p25: string | null;
+              p50: string | null;
+              p75: string | null;
+              p98: string | null;
+            }>
+          >(Prisma.sql`
+            with prices as (
+              select least(p."minPriceCop", p."maxPriceCop") as price
+              from products p
+              join brands b on b.id = p."brandId"
+              ${productWhere}
+              and p."hasInStock" = true
+              and ${buildProductRollupPriceValidityCondition()}
+            )
+            select
+              count(*) as n,
+              min(price) as min_price,
+              max(price) as max_price,
+              percentile_cont(0.02) within group (order by price) as p02,
+              percentile_cont(0.25) within group (order by price) as p25,
+              percentile_cont(0.50) within group (order by price) as p50,
+              percentile_cont(0.75) within group (order by price) as p75,
+              percentile_cont(0.98) within group (order by price) as p98
+            from prices
+          `);
+        }
+
+        return prisma.$queryRaw<
+          Array<{
+            n: bigint;
+            min_price: string | null;
+            max_price: string | null;
+            p02: string | null;
+            p25: string | null;
+            p50: string | null;
+            p75: string | null;
+            p98: string | null;
+          }>
+        >(Prisma.sql`
+          with prices as (
+            select ${priceCopExpr} as price
+            from products p
+            join brands b on b.id = p."brandId"
+            join variants v on v."productId" = p.id
+            ${productWhere}
+            ${variantWhere}
+            and ${priceCopExpr} > 0
+            and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
+          )
+          select
+            count(*) as n,
+            min(price) as min_price,
+            max(price) as max_price,
+            percentile_cont(0.02) within group (order by price) as p02,
+            percentile_cont(0.25) within group (order by price) as p25,
+            percentile_cont(0.50) within group (order by price) as p50,
+            percentile_cont(0.75) within group (order by price) as p75,
+            percentile_cont(0.98) within group (order by price) as p98
+          from prices
+        `);
+      })();
       const row = statsRows[0];
 
       const count = Number(row?.n ?? 0);
@@ -639,24 +755,79 @@ export async function getCatalogPriceInsights(
         return { bounds, histogram: null, stats: statsDisplay };
       }
 
-      const rows = await prisma.$queryRaw<Array<{ bucket: number; cnt: bigint }>>(Prisma.sql`
-        with prices as (
-          select ${priceCopExpr} as price
-          from products p
-          join brands b on b.id = p."brandId"
-          join variants v on v."productId" = p.id
-          ${productWhere}
-          ${variantWhere}
-          and ${priceCopExpr} > 0
-          and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
-        )
-        select
-          least(${resolvedBucketCount}, greatest(1, width_bucket(price, ${bounds.min}, ${bounds.max}, ${resolvedBucketCount}))) as bucket,
-          count(*) as cnt
-        from prices
-        group by 1
-        order by 1 asc
-      `);
+      const rows = await (async () => {
+        if (useRollupFastPath) {
+          return prisma.$queryRaw<Array<{ bucket: number; cnt: bigint }>>(Prisma.sql`
+            with priced_products as (
+              select
+                p.id as product_id,
+                p."minPriceCop" as min_price,
+                p."maxPriceCop" as max_price
+              from products p
+              join brands b on b.id = p."brandId"
+              ${productWhere}
+              and p."hasInStock" = true
+              and ${buildProductRollupPriceValidityCondition()}
+            ),
+            bucketed as (
+              select
+                pp.product_id,
+                gs.bucket
+              from priced_products pp
+              cross join lateral generate_series(
+                least(
+                  ${resolvedBucketCount},
+                  greatest(
+                    1,
+                    width_bucket(greatest(pp.min_price, ${bounds.min}), ${bounds.min}, ${bounds.max}, ${resolvedBucketCount})
+                  )
+                ),
+                least(
+                  ${resolvedBucketCount},
+                  greatest(
+                    1,
+                    width_bucket(least(pp.max_price, ${bounds.max}), ${bounds.min}, ${bounds.max}, ${resolvedBucketCount})
+                  )
+                )
+              ) as gs(bucket)
+              where pp.max_price >= ${bounds.min}
+                and pp.min_price <= ${bounds.max}
+            )
+            select bucket, count(*) as cnt
+            from bucketed
+            group by 1
+            order by 1 asc
+          `);
+        }
+
+        return prisma.$queryRaw<Array<{ bucket: number; cnt: bigint }>>(Prisma.sql`
+          with prices as (
+            select
+              p.id as product_id,
+              ${priceCopExpr} as price
+            from products p
+            join brands b on b.id = p."brandId"
+            join variants v on v."productId" = p.id
+            ${productWhere}
+            ${variantWhere}
+            and ${priceCopExpr} > 0
+            and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
+          ),
+          bucketed as (
+            select
+              product_id,
+              least(
+                ${resolvedBucketCount},
+                greatest(1, width_bucket(price, ${bounds.min}, ${bounds.max}, ${resolvedBucketCount}))
+              ) as bucket
+            from prices
+          )
+          select bucket, count(distinct product_id) as cnt
+          from bucketed
+          group by 1
+          order by 1 asc
+        `);
+      })();
 
       const buckets = Array.from({ length: resolvedBucketCount }, () => 0);
       for (const row of rows) {
@@ -1603,8 +1774,31 @@ export async function getCatalogProducts(params: {
 }
 
 async function computeCatalogProductsCount(filters: CatalogFilters): Promise<number> {
-  const { pricing } = await getPricingContext();
   const productWhere = buildProductWhere(filters);
+  if (isPriceRollupFastPathEligible(filters)) {
+    const priceRollupWhere = buildProductRollupPriceOverlapCondition(filters);
+    const rows = await prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
+      select count(*) as total
+      from products p
+      join brands b on b.id = p."brandId"
+      ${productWhere}
+      ${priceRollupWhere}
+    `);
+    return Number(rows[0]?.total ?? 0);
+  }
+
+  if (isInStockOnlyVariantFilter(filters)) {
+    const rows = await prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
+      select count(*) as total
+      from products p
+      join brands b on b.id = p."brandId"
+      ${productWhere}
+      and p."hasInStock" = true
+    `);
+    return Number(rows[0]?.total ?? 0);
+  }
+
+  const { pricing } = await getPricingContext();
   const variantConditions = buildVariantConditions(filters, pricing);
   const variantWhere =
     variantConditions.length > 0
@@ -1633,8 +1827,43 @@ async function computeCatalogProductsCount(filters: CatalogFilters): Promise<num
 }
 
 async function computeCatalogCounts(filters: CatalogFilters): Promise<CatalogCounts> {
-  const { pricing } = await getPricingContext();
   const productWhere = buildProductWhere(filters);
+  if (isPriceRollupFastPathEligible(filters)) {
+    const priceRollupWhere = buildProductRollupPriceOverlapCondition(filters);
+    const rows = await prisma.$queryRaw<Array<{ total: bigint; brand_count: bigint }>>(Prisma.sql`
+      select
+        count(*) as total,
+        count(distinct p."brandId") as brand_count
+      from products p
+      join brands b on b.id = p."brandId"
+      ${productWhere}
+      ${priceRollupWhere}
+    `);
+
+    return {
+      totalCount: Number(rows[0]?.total ?? 0),
+      brandCount: Number(rows[0]?.brand_count ?? 0),
+    };
+  }
+
+  if (isInStockOnlyVariantFilter(filters)) {
+    const rows = await prisma.$queryRaw<Array<{ total: bigint; brand_count: bigint }>>(Prisma.sql`
+      select
+        count(*) as total,
+        count(distinct p."brandId") as brand_count
+      from products p
+      join brands b on b.id = p."brandId"
+      ${productWhere}
+      and p."hasInStock" = true
+    `);
+
+    return {
+      totalCount: Number(rows[0]?.total ?? 0),
+      brandCount: Number(rows[0]?.brand_count ?? 0),
+    };
+  }
+
+  const { pricing } = await getPricingContext();
   const variantConditions = buildVariantConditions(filters, pricing);
   const variantWhere =
     variantConditions.length > 0
@@ -1683,8 +1912,16 @@ async function computeCatalogProductsPage(params: {
     variantConditions.length > 0
       ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
       : Prisma.empty;
+  const priceRollupFastPath = isPriceRollupFastPathEligible(filters);
+  const inStockOnlyRollupFastPath = isInStockOnlyVariantFilter(filters);
+  const rollupListingFastPath = priceRollupFastPath || inStockOnlyRollupFastPath;
+  const rollupListingWhere = priceRollupFastPath
+    ? buildProductRollupPriceOverlapCondition(filters)
+    : inStockOnlyRollupFastPath
+      ? Prisma.sql`and p."hasInStock" = true`
+      : Prisma.empty;
   const variantExists =
-    variantConditions.length > 0
+    variantConditions.length > 0 && !rollupListingFastPath
       ? Prisma.sql`
           and exists (
             select 1 from variants v
@@ -1707,7 +1944,7 @@ async function computeCatalogProductsPage(params: {
     maxPrice: string | null;
     currency: string | null;
   }> = await (async () => {
-    if ((sortKey === "price_asc" || sortKey === "price_desc") && !hasVariantFilters) {
+    if ((sortKey === "price_asc" || sortKey === "price_desc") && (!hasVariantFilters || rollupListingFastPath)) {
       const priceOrder =
         sortKey === "price_asc"
           ? Prisma.sql`p."minPriceCop" asc nulls last`
@@ -1737,7 +1974,7 @@ async function computeCatalogProductsPage(params: {
           from products p
           join brands b on b.id = p."brandId"
           ${productWhere}
-          and p."hasInStock" = true
+          ${rollupListingFastPath ? rollupListingWhere : filters.inStock ? Prisma.sql`and p."hasInStock" = true` : Prisma.empty}
           order by ${priceOrder}, p."createdAt" desc
           limit ${CATALOG_PAGE_SIZE}
           offset ${offset}
@@ -1792,6 +2029,87 @@ async function computeCatalogProductsPage(params: {
     const isRelevancia = sortKey === "relevancia" && Boolean(q);
     const isTopPicks = sortKey === "top_picks";
     const isEditorialFavorites = sortKey === "editorial_favorites";
+
+    if (rollupListingFastPath) {
+      return prisma.$queryRaw<
+        Array<{
+          id: string;
+          name: string;
+          imageCoverUrl: string | null;
+          brandName: string;
+          sourceUrl: string | null;
+          minPrice: string | null;
+          maxPrice: string | null;
+          currency: string | null;
+        }>
+      >(
+        Prisma.sql`
+          with ids as (
+            select
+              p.id,
+              p."createdAt" as created_at,
+              p."editorialTopPickRank" as editorial_top_pick_rank,
+              p."editorialFavoriteRank" as editorial_favorite_rank
+              ${isRelevancia
+                ? Prisma.sql`,
+                  case
+                    when p.name ilike ${q} then 0
+                    when b.name ilike ${q} then 1
+                    else 2
+                  end as rank`
+                : Prisma.empty}
+            from products p
+            join brands b on b.id = p."brandId"
+            ${productWhere}
+            ${rollupListingWhere}
+            order by
+              ${isTopPicks
+                ? Prisma.sql`
+                  case when p."editorialTopPickRank" is null then 1 else 0 end asc,
+                  p."editorialTopPickRank" asc nulls last,
+                `
+                : Prisma.empty}
+              ${isEditorialFavorites
+                ? Prisma.sql`
+                  case when p."editorialFavoriteRank" is null then 1 else 0 end asc,
+                  p."editorialFavoriteRank" asc nulls last,
+                `
+                : Prisma.empty}
+              ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
+              p."createdAt" desc
+            limit ${CATALOG_PAGE_SIZE}
+            offset ${offset}
+          )
+          select
+            p.id,
+            p.name,
+            p."imageCoverUrl",
+            b.name as "brandName",
+            p."sourceUrl",
+            case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
+            case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
+            'COP' as currency
+          from ids
+          join products p on p.id = ids.id
+          join brands b on b.id = p."brandId"
+          order by
+            ${isTopPicks
+              ? Prisma.sql`
+                case when ids.editorial_top_pick_rank is null then 1 else 0 end asc,
+                ids.editorial_top_pick_rank asc nulls last,
+              `
+              : Prisma.empty}
+            ${isEditorialFavorites
+              ? Prisma.sql`
+                case when ids.editorial_favorite_rank is null then 1 else 0 end asc,
+                ids.editorial_favorite_rank asc nulls last,
+              `
+              : Prisma.empty}
+            ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
+            ids.created_at desc
+        `,
+      );
+    }
 
     return prisma.$queryRaw<
       Array<{
@@ -1910,8 +2228,16 @@ async function computeCatalogProducts(params: {
     variantConditions.length > 0
       ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
       : Prisma.empty;
+  const priceRollupFastPath = isPriceRollupFastPathEligible(filters);
+  const inStockOnlyRollupFastPath = isInStockOnlyVariantFilter(filters);
+  const rollupListingFastPath = priceRollupFastPath || inStockOnlyRollupFastPath;
+  const rollupListingWhere = priceRollupFastPath
+    ? buildProductRollupPriceOverlapCondition(filters)
+    : inStockOnlyRollupFastPath
+      ? Prisma.sql`and p."hasInStock" = true`
+      : Prisma.empty;
   const variantExists =
-    variantConditions.length > 0
+    variantConditions.length > 0 && !rollupListingFastPath
       ? Prisma.sql`
           and exists (
             select 1 from variants v
@@ -1921,13 +2247,29 @@ async function computeCatalogProducts(params: {
         `
       : Prisma.empty;
 
-  const countPromise = prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
-    select count(*) as total
-    from products p
-    join brands b on b.id = p."brandId"
-    ${productWhere}
-    ${variantExists}
-  `);
+  const countPromise = priceRollupFastPath
+    ? prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
+        select count(*) as total
+        from products p
+        join brands b on b.id = p."brandId"
+        ${productWhere}
+        ${rollupListingWhere}
+      `)
+    : inStockOnlyRollupFastPath
+      ? prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
+          select count(*) as total
+          from products p
+          join brands b on b.id = p."brandId"
+          ${productWhere}
+          and p."hasInStock" = true
+        `)
+    : prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
+        select count(*) as total
+        from products p
+        join brands b on b.id = p."brandId"
+        ${productWhere}
+        ${variantExists}
+      `);
 
   const sortKey = sort || "new";
   const hasVariantFilters = hasVariantLevelFilters(filters);
@@ -1943,7 +2285,7 @@ async function computeCatalogProducts(params: {
       currency: string | null;
     }>
   > = (() => {
-    if ((sortKey === "price_asc" || sortKey === "price_desc") && !hasVariantFilters) {
+    if ((sortKey === "price_asc" || sortKey === "price_desc") && (!hasVariantFilters || rollupListingFastPath)) {
       const priceOrder =
         sortKey === "price_asc"
           ? Prisma.sql`p."minPriceCop" asc nulls last`
@@ -1973,7 +2315,7 @@ async function computeCatalogProducts(params: {
           from products p
           join brands b on b.id = p."brandId"
           ${productWhere}
-          and p."hasInStock" = true
+          ${rollupListingFastPath ? rollupListingWhere : filters.inStock ? Prisma.sql`and p."hasInStock" = true` : Prisma.empty}
           order by ${priceOrder}, p."createdAt" desc
           limit ${CATALOG_PAGE_SIZE}
           offset ${offset}
@@ -2028,6 +2370,87 @@ async function computeCatalogProducts(params: {
     const isRelevancia = sortKey === "relevancia" && Boolean(q);
     const isTopPicks = sortKey === "top_picks";
     const isEditorialFavorites = sortKey === "editorial_favorites";
+
+    if (rollupListingFastPath) {
+      return prisma.$queryRaw<
+        Array<{
+          id: string;
+          name: string;
+          imageCoverUrl: string | null;
+          brandName: string;
+          sourceUrl: string | null;
+          minPrice: string | null;
+          maxPrice: string | null;
+          currency: string | null;
+        }>
+      >(
+        Prisma.sql`
+          with ids as (
+            select
+              p.id,
+              p."createdAt" as created_at,
+              p."editorialTopPickRank" as editorial_top_pick_rank,
+              p."editorialFavoriteRank" as editorial_favorite_rank
+              ${isRelevancia
+                ? Prisma.sql`,
+                  case
+                    when p.name ilike ${q} then 0
+                    when b.name ilike ${q} then 1
+                    else 2
+                  end as rank`
+                : Prisma.empty}
+            from products p
+            join brands b on b.id = p."brandId"
+            ${productWhere}
+            ${rollupListingWhere}
+            order by
+              ${isTopPicks
+                ? Prisma.sql`
+                  case when p."editorialTopPickRank" is null then 1 else 0 end asc,
+                  p."editorialTopPickRank" asc nulls last,
+                `
+                : Prisma.empty}
+              ${isEditorialFavorites
+                ? Prisma.sql`
+                  case when p."editorialFavoriteRank" is null then 1 else 0 end asc,
+                  p."editorialFavoriteRank" asc nulls last,
+                `
+                : Prisma.empty}
+              ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
+              p."createdAt" desc
+            limit ${CATALOG_PAGE_SIZE}
+            offset ${offset}
+          )
+          select
+            p.id,
+            p.name,
+            p."imageCoverUrl",
+            b.name as "brandName",
+            p."sourceUrl",
+            case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
+            case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
+            'COP' as currency
+          from ids
+          join products p on p.id = ids.id
+          join brands b on b.id = p."brandId"
+          order by
+            ${isTopPicks
+              ? Prisma.sql`
+                case when ids.editorial_top_pick_rank is null then 1 else 0 end asc,
+                ids.editorial_top_pick_rank asc nulls last,
+              `
+              : Prisma.empty}
+            ${isEditorialFavorites
+              ? Prisma.sql`
+                case when ids.editorial_favorite_rank is null then 1 else 0 end asc,
+                ids.editorial_favorite_rank asc nulls last,
+              `
+              : Prisma.empty}
+            ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
+            ids.created_at desc
+        `,
+      );
+    }
 
     return prisma.$queryRaw<
       Array<{

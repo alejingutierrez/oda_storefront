@@ -501,8 +501,7 @@ export default function CatalogoClient({
   );
   const [resolvedTotalCount, setResolvedTotalCount] = useState<number | null>(() => {
     if (typeof totalCount === "number" && Number.isFinite(totalCount) && totalCount >= 0) return totalCount;
-    const cached = readSessionJson<unknown>(totalCountSessionKey);
-    return typeof cached === "number" && Number.isFinite(cached) && cached >= 0 ? cached : null;
+    return null;
   });
   const totalCountLastOkAtRef = useRef<number>(0);
   const totalCountLastOkKeyRef = useRef<string>("");
@@ -512,10 +511,7 @@ export default function CatalogoClient({
     () => `oda_catalog_brands_count_v1:${totalCountFetchKey || "base"}`,
     [totalCountFetchKey],
   );
-  const [resolvedBrandCount, setResolvedBrandCount] = useState<number | null>(() => {
-    const cached = readSessionJson<unknown>(brandCountSessionKey);
-    return typeof cached === "number" && Number.isFinite(cached) && cached >= 0 ? cached : null;
-  });
+  const [resolvedBrandCount, setResolvedBrandCount] = useState<number | null>(null);
   const brandCountLastOkAtRef = useRef<number>(0);
   const brandCountLastOkKeyRef = useRef<string>("");
 
@@ -526,6 +522,7 @@ export default function CatalogoClient({
       totalCountLastOkAtRef.current = Date.now();
       totalCountLastOkKeyRef.current = totalCountSessionKey;
       // `totalCount` no incluye brandCount; se resuelve por cache/fetch.
+      return;
     }
 
     const cached = readSessionJson<unknown>(totalCountSessionKey);
@@ -556,8 +553,7 @@ export default function CatalogoClient({
   );
   const [facets, setFacets] = useState<FacetsLite | null>(() => {
     if (isValidFacetsLite(initialFacets)) return initialFacets;
-    const cached = readSessionJson<unknown>(facetsSessionKey);
-    return isValidFacetsLite(cached) ? cached : null;
+    return null;
   });
   const [facetsLoading, setFacetsLoading] = useState(false);
   const facetsAbortRef = useRef<AbortController | null>(null);
@@ -1037,8 +1033,6 @@ export default function CatalogoClient({
                     paramsString={effectiveParamsString}
                     lockedKeys={lockedKeysList}
                     hideSections={hideFilters}
-                    mode="draft"
-                    autoApplyDraftMs={400}
                   />
                 ) : (
                   <FiltersSkeleton />
@@ -1089,6 +1083,7 @@ export default function CatalogoClient({
         priceHistogram={priceHistogram}
         priceStats={priceStats}
         facetsLoading={facetsLoading}
+        navigationPending={navigationPending}
         paramsString={effectiveParamsString}
         lockedKeys={lockedKeysList}
         hideSections={hideFilters}

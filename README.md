@@ -204,15 +204,32 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 ### Performance (filtros `/catalogo`)
 - En Neon (prod/stg), los filtros del catálogo dependen de índices para evitar `seq scan` en queries de `products/variants` (subcategorías, bounds de precio, listados).
 - El sort por precio (`price_asc`/`price_desc`) y `price-bounds` en modo lite usan rollups persistidos en `products` (`hasInStock`, `minPriceCop`, `maxPriceCop`, `priceRollupUpdatedAt`) para evitar agregaciones pesadas por request.
+- El histograma de precio (`mode=full`) cuenta productos por bin (no variantes crudas): fast-path por rollups cuando no hay filtros `color/size/fit`, y deduplicación por `productId` dentro de cada bin cuando sí existen.
 - SQL (re-aplicable): `apps/web/scripts/catalog-filter-indexes.sql`
 - Script: `apps/web/scripts/apply-catalog-filter-indexes.sh` (usa `NEON_DATABASE_URL` desde `.env` y `CREATE INDEX CONCURRENTLY`).
 - Backfill de rollups: `apps/web/scripts/backfill-product-price-rollups.mjs` (usar después de migrar/agregar columnas).
-- Benchmark E2E (latencia por endpoint + resumen p50/p95 + casos >2s):
+- Benchmark E2E (`warm/cold` por endpoint y por escenario):
   ```bash
-  BASE_URL=https://oda-moda.vercel.app node apps/web/scripts/benchmark-catalog-filters.mjs
-  node apps/web/scripts/benchmark-catalog-filters.mjs --limit 30
-  node apps/web/scripts/benchmark-catalog-filters.mjs --no-price-sort
+  # Baseline (pre-cambio)
+  BASE_URL=https://oda-moda.vercel.app node apps/web/scripts/benchmark-catalog-filters.mjs --limit 30 > reports/bench-catalog-pre.txt
+
+  # Post-cambio
+  BASE_URL=https://oda-moda.vercel.app node apps/web/scripts/benchmark-catalog-filters.mjs --limit 30 > reports/bench-catalog-post.txt
+
+  # Opcional: sin price sorts para aislar costo de filtros
+  BASE_URL=https://oda-moda.vercel.app node apps/web/scripts/benchmark-catalog-filters.mjs --limit 30 --no-price-sort > reports/bench-catalog-post-nopsort.txt
   ```
+- Escenarios incluidos automáticamente por caso (`category + gender`):
+  - `base` (sin filtro de precio explícito)
+  - `price_min_max` (con `price_min/price_max`)
+  - `price_range` (con `price_range` repetible)
+- Lectura del reporte:
+  - `Summary (endpoint + phase)` agrega latencias por endpoint separando `cold` y `warm`.
+  - `Summary (endpoint + phase + scenario)` desglosa por escenario para comparar impacto directo de precio.
+  - `SLO (p95)` valida objetivo por fase.
+- SLO acordado para aplicar filtros de precio:
+  - `warm`: p95 `< 1.2s`
+  - `cold`: p95 `< 3s`
 
 ## Home (public)
 - Ruta `/` con home editorial (estilo Farfetch) y grillas cuadradas.

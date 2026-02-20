@@ -76,6 +76,24 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: tiempo de curación por lote, % de runs con errores parciales, uso de sorts editoriales en PLP.
 - Estado: **done (2026-02-20)**.
 
+### MC-133 PLP `/catalogo`: corrección de filtro de precios (histograma + UX + performance medible)
+- Historia: Como usuario de catálogo, quiero que el filtro de precios represente productos reales, responda rápido y tenga feedback claro en desktop/mobile, para evitar resultados confusos y frustración al aplicar filtros.
+- Alcance:
+  - Backend (`catalog-data`): histograma orientado a producto (fast-path por rollups cuando no hay `color/size/fit`, fallback con dedupe por `productId` por bin cuando sí los hay), y fast-path `price-only` para `products-count`, `counts`, `products-page` y `products` usando `products.minPriceCop/maxPriceCop/hasInStock`.
+  - UI desktop (`CatalogoFiltersPanel`): fetch `price-bounds mode=full` bajo demanda real de interacción en Precio (no automático global), cache de sesión por key y tooltip del slider con edge-clamp en extremos (min/max sin clipping).
+  - UI mobile (`CatalogMobileDock`): lock duro de aplicación con overlay/scrim + loading, deshabilitando `Filtrar`, `Ordenar`, `Limpiar` y re-aplicaciones hasta navegación estable; watchdog para liberar estados atascados.
+  - Benchmark: script `benchmark-catalog-filters.mjs` renovado con fases `cold/warm`, escenarios `base`, `price_min_max`, `price_range`, resumen por endpoint/fase y chequeo SLO.
+- CA:
+  - Histograma no se infla por múltiples variantes del mismo producto en un mismo bin.
+  - Tooltip de slider visible en extremos en desktop.
+  - En mobile, durante apply: scrim + loading + bloqueo de interacción hasta estado estable.
+  - Reporte de benchmark con separación `warm/cold` y validación de SLO objetivo.
+- NF: mantener contratos HTTP (`/api/catalog/price-bounds`, `/api/catalog/products-page`, `/api/catalog/products-count`) sin breaking changes.
+- Métricas/SLO:
+  - `warm`: p95 `< 1.2s`
+  - `cold`: p95 `< 3s`
+- Estado: **done (2026-02-20)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

@@ -24,6 +24,7 @@ type Facets = {
 };
 
 const INTERACTION_PENDING_TIMEOUT_MS = 4500;
+const MOBILE_FILTER_LOCK_TIMEOUT_MS = 12_000;
 
 function countActiveFilters(params: URLSearchParams) {
   let count = 0;
@@ -50,6 +51,7 @@ export default function CatalogMobileDock({
   priceHistogram,
   priceStats,
   facetsLoading = false,
+  navigationPending = false,
   paramsString,
   lockedKeys: lockedKeysList = [],
   hideSections,
@@ -62,6 +64,7 @@ export default function CatalogMobileDock({
   priceHistogram?: CatalogPriceHistogram | null;
   priceStats?: CatalogPriceStats | null;
   facetsLoading?: boolean;
+  navigationPending?: boolean;
   paramsString: string;
   lockedKeys?: string[];
   hideSections?: { gender?: boolean; category?: boolean; brand?: boolean };
@@ -70,7 +73,10 @@ export default function CatalogMobileDock({
   const router = useRouter();
   const [transitionPending, startTransition] = useTransition();
   const [isInteractionPending, setIsInteractionPending] = useState(false);
+  const [mobileFilterLocked, setMobileFilterLocked] = useState(false);
   const pendingUnlockTimeoutRef = useRef<number | null>(null);
+  const mobileLockWatchdogRef = useRef<number | null>(null);
+  const mobileLockSawPendingRef = useRef(false);
   const dockRef = useRef<HTMLDivElement | null>(null);
   const lockedKeysKey = lockedKeysList.join("|");
   const lockedKeys = useMemo(
@@ -163,6 +169,29 @@ export default function CatalogMobileDock({
     setIsInteractionPending(false);
   }, []);
 
+  const clearMobileLockWatchdog = useCallback(() => {
+    if (mobileLockWatchdogRef.current !== null) {
+      window.clearTimeout(mobileLockWatchdogRef.current);
+      mobileLockWatchdogRef.current = null;
+    }
+  }, []);
+
+  const releaseMobileFilterLock = useCallback(() => {
+    clearMobileLockWatchdog();
+    mobileLockSawPendingRef.current = false;
+    setMobileFilterLocked(false);
+  }, [clearMobileLockWatchdog]);
+
+  const activateMobileFilterLock = useCallback(() => {
+    setMobileFilterLocked(true);
+    clearMobileLockWatchdog();
+    mobileLockWatchdogRef.current = window.setTimeout(() => {
+      mobileLockWatchdogRef.current = null;
+      mobileLockSawPendingRef.current = false;
+      setMobileFilterLocked(false);
+    }, MOBILE_FILTER_LOCK_TIMEOUT_MS);
+  }, [clearMobileLockWatchdog]);
+
   useEffect(() => {
     if (!transitionPending) {
       releaseInteractionLock();
@@ -200,10 +229,37 @@ export default function CatalogMobileDock({
       if (pendingUnlockTimeoutRef.current !== null) {
         window.clearTimeout(pendingUnlockTimeoutRef.current);
       }
+      clearMobileLockWatchdog();
     };
-  }, []);
+  }, [clearMobileLockWatchdog]);
 
   const isPending = transitionPending && isInteractionPending;
+  const isDockLocked = mobileFilterLocked || navigationPending || isPending;
+
+  useEffect(() => {
+    if (!mobileFilterLocked) return;
+
+    if (navigationPending || transitionPending || isInteractionPending) {
+      mobileLockSawPendingRef.current = true;
+      clearMobileLockWatchdog();
+      mobileLockWatchdogRef.current = window.setTimeout(() => {
+        mobileLockWatchdogRef.current = null;
+        mobileLockSawPendingRef.current = false;
+        setMobileFilterLocked(false);
+      }, MOBILE_FILTER_LOCK_TIMEOUT_MS);
+      return;
+    }
+
+    if (!mobileLockSawPendingRef.current) return;
+    releaseMobileFilterLock();
+  }, [
+    clearMobileLockWatchdog,
+    isInteractionPending,
+    mobileFilterLocked,
+    navigationPending,
+    releaseMobileFilterLock,
+    transitionPending,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -220,6 +276,7 @@ export default function CatalogMobileDock({
   }, [open]);
 
   const openSheet = () => {
+    if (isDockLocked) return;
     const next = new URLSearchParams(params.toString());
     next.delete("page");
     setDraftParamsString(next.toString());
@@ -227,6 +284,7 @@ export default function CatalogMobileDock({
   };
 
   const applyDraft = () => {
+    if (isDockLocked) return;
     const next = new URLSearchParams(draftParamsString);
     next.delete("page");
     const urlParams = new URLSearchParams(next.toString());
@@ -240,6 +298,7 @@ export default function CatalogMobileDock({
     }
 
     const url = query ? `${pathname}?${query}` : pathname;
+    activateMobileFilterLock();
     startTransition(() => {
       router.replace(url, { scroll: false });
     });
@@ -255,6 +314,7 @@ export default function CatalogMobileDock({
   };
 
   const clearAll = () => {
+    if (isDockLocked) return;
     const current = new URLSearchParams(draftParamsString);
     const kept = new URLSearchParams();
     for (const key of lockedKeys) {
@@ -265,6 +325,7 @@ export default function CatalogMobileDock({
   };
 
   const handleSortChange = (value: string) => {
+    if (isDockLocked) return;
     const next = new URLSearchParams(params.toString());
     if (!value || value === "new") next.delete("sort");
     else next.set("sort", value);
@@ -277,15 +338,18 @@ export default function CatalogMobileDock({
     if (query === currentUrlParams.toString()) return;
 
     const url = query ? `${pathname}?${query}` : pathname;
+    activateMobileFilterLock();
     startTransition(() => {
       router.replace(url, { scroll: false });
     });
   };
 
   const handleClearCommitted = () => {
+    if (isDockLocked) return;
     const currentUrlParams = new URLSearchParams(params.toString());
     for (const key of lockedKeys) currentUrlParams.delete(key);
     if (currentUrlParams.toString().length === 0) return;
+    activateMobileFilterLock();
     startTransition(() => {
       router.replace(pathname, { scroll: false });
     });
@@ -305,6 +369,7 @@ export default function CatalogMobileDock({
           <button
             type="button"
             onClick={openSheet}
+            disabled={isDockLocked}
             className="inline-flex items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-3 text-xs font-semibold text-[color:var(--oda-ink)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             Filtrar
@@ -327,6 +392,7 @@ export default function CatalogMobileDock({
                 value={selectedOption.value}
                 onChange={(event) => handleSortChange(event.target.value)}
                 aria-label="Ordenar"
+                disabled={isDockLocked}
                 className="h-11 min-w-[8.25rem] appearance-none rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 pr-9 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
               >
                 {SORT_OPTIONS.map((option) => (
@@ -347,10 +413,10 @@ export default function CatalogMobileDock({
           <button
             type="button"
             onClick={handleClearCommitted}
-            disabled={!hasFilters || isPending}
+            disabled={!hasFilters || isDockLocked}
             className={[
               "inline-flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold transition",
-              hasFilters && !isPending
+              hasFilters && !isDockLocked
                 ? "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink)]"
                 : "cursor-not-allowed border-[color:var(--oda-border)] bg-white text-[color:var(--oda-taupe)] opacity-70",
             ].join(" ")}
@@ -383,7 +449,10 @@ export default function CatalogMobileDock({
             type="button"
             className="absolute inset-0 bg-black/40"
             aria-label="Cerrar filtros"
-            onClick={() => setOpen(false)}
+            onClick={() => {
+              if (isDockLocked) return;
+              setOpen(false);
+            }}
           />
           <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-hidden rounded-t-3xl border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] shadow-[0_-30px_80px_rgba(23,21,19,0.30)]">
             <div className="flex items-center justify-between gap-3 border-b border-[color:var(--oda-border)] bg-white px-5 py-4">
@@ -397,7 +466,11 @@ export default function CatalogMobileDock({
               </div>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  if (isDockLocked) return;
+                  setOpen(false);
+                }}
+                disabled={isDockLocked}
                 className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
               >
                 Cerrar
@@ -419,6 +492,7 @@ export default function CatalogMobileDock({
                   paramsString={paramsString}
                   lockedKeys={lockedKeysList}
                   hideSections={hideSections}
+                  externalPending={isDockLocked}
                 />
               ) : (
                 <div className="grid gap-3">
@@ -440,7 +514,7 @@ export default function CatalogMobileDock({
                 <button
                   type="button"
                   onClick={clearAll}
-                  disabled={!facets}
+                  disabled={!facets || isDockLocked}
                   className="rounded-full border border-[color:var(--oda-border)] bg-white px-5 py-3 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
                 >
                   Limpiar
@@ -448,16 +522,30 @@ export default function CatalogMobileDock({
                 <button
                   type="button"
                   onClick={applyDraft}
-                  disabled={isPending || !facets}
+                  disabled={isDockLocked || !facets}
                   className="rounded-full bg-[color:var(--oda-ink)] px-6 py-3 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-cream)] disabled:opacity-70"
                 >
-                  {isPending ? "Aplicando…" : "Aplicar"}
+                  {isDockLocked ? "Aplicando…" : "Aplicar"}
                 </button>
               </div>
               <p className="mt-3 text-[8px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                 Tip: puedes seleccionar varios filtros antes de aplicar.
               </p>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isDockLocked ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 backdrop-blur-[1px] lg:hidden">
+          <div
+            className="inline-flex items-center gap-3 rounded-full border border-white/40 bg-white/90 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] shadow-[0_22px_56px_rgba(23,21,19,0.24)]"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-[color:var(--oda-ink)] border-r-transparent" />
+            Aplicando filtros…
           </div>
         </div>
       ) : null}

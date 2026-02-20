@@ -39,11 +39,15 @@ export default async function CatalogoView({
   const sort = parseCatalogSortFromSearchParams(params, "new");
   const parsedFilters = parseCatalogFiltersFromSearchParams(params, { categoryMode: "single" });
   const filters: CatalogFilters = { ...parsedFilters, inStock: true, enrichedOnly: true };
+  const hasPriceFilter =
+    (parsedFilters.priceRanges?.length ?? 0) > 0 ||
+    parsedFilters.priceMin !== undefined ||
+    parsedFilters.priceMax !== undefined;
 
   const [menu, page, facets] = await Promise.all([
     getMegaMenuData(),
     getCatalogProductsPage({ filters, page: 1, sort }),
-    getCatalogFacetsLite(filters),
+    hasPriceFilter ? Promise.resolve(null) : getCatalogFacetsLite(filters),
   ]);
   const searchKeyParams = new URLSearchParams(params.toString());
   searchKeyParams.delete("page");
