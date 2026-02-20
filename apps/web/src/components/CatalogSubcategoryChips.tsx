@@ -260,8 +260,7 @@ export default function CatalogSubcategoryChips({
       ? "mt-2 border-t border-[color:var(--oda-border)] pt-2"
       : [
           // Full-bleed rail in mobile while keeping chips aligned with page content padding.
-          "sticky top-[var(--oda-header-h)] z-30 w-screen min-w-[100vw] max-w-[100vw] overflow-x-hidden border-b border-[color:var(--oda-border)]",
-          "relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw]",
+          "sticky top-[var(--oda-header-h)] z-30 -mx-6 w-auto overflow-x-hidden border-b border-[color:var(--oda-border)]",
           "bg-[color:var(--oda-cream)] py-2",
           "lg:hidden",
         ].join(" ");
