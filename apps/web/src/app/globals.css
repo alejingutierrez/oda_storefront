@@ -265,6 +265,13 @@ summary::-webkit-details-marker {
     border-radius: inherit;
     transform: translateZ(0);
   }
+
+  .oda-carousel-layer {
+    transition-property: opacity;
+    transition-duration: 680ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: opacity;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -278,5 +285,9 @@ summary::-webkit-details-marker {
 
   .home-drag-scroll {
     scroll-behavior: auto;
+  }
+
+  .oda-carousel-layer {
+    transition: none !important;
   }
 }

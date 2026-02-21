@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type TransitionEvent as ReactTransitionEvent,
+} from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { CatalogProduct } from "@/lib/catalog-data";
@@ -10,6 +17,104 @@ import { proxiedImageUrl } from "@/lib/image-proxy";
 
 const IMAGE_BLUR_DATA_URL =
   "data:image/gif;base64,R0lGODlhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=";
+
+type CarouselMode = "inactive" | "desktop" | "mobile";
+type CarouselRunState =
+  | "idle"
+  | "scheduled"
+  | "playing"
+  | "waiting_preload"
+  | "transitioning"
+  | "paused"
+  | "blocked";
+
+type CarouselConfig = {
+  desktopArmDelayMs: number;
+  dwellMs: number;
+  retryDelayMs: number;
+  preloadTimeoutMs: number;
+  transitionMs: number;
+  mobile: {
+    startRatio: number;
+    stopRatio: number;
+    startDebounceMs: number;
+    restartCooldownMs: number;
+    scrollIdleMs: number;
+  };
+};
+
+type PauseOptions = {
+  runState?: CarouselRunState;
+  markMobileCooldown?: boolean;
+};
+
+type LayerId = "a" | "b";
+
+type ImageLoadState = "loading" | "loaded" | "error";
+
+const CAROUSEL_CONFIG: CarouselConfig = {
+  desktopArmDelayMs: 360,
+  dwellMs: 3400,
+  retryDelayMs: 1400,
+  preloadTimeoutMs: 700,
+  transitionMs: 680,
+  mobile: {
+    startRatio: 0.86,
+    stopRatio: 0.58,
+    startDebounceMs: 300,
+    restartCooldownMs: 900,
+    scrollIdleMs: 180,
+  },
+};
+
+const MOBILE_OWNER_EVENT = "oda-mobile-carousel-owner-change";
+const mobileCandidateRatios = new Map<string, number>();
+let mobileOwnerId: string | null = null;
+
+function emitMobileOwnerChange() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<{ ownerId: string | null }>(MOBILE_OWNER_EVENT, {
+      detail: { ownerId: mobileOwnerId },
+    }),
+  );
+}
+
+function recomputeMobileOwner() {
+  let bestId: string | null = null;
+  let bestRatio = 0;
+  for (const [id, ratio] of mobileCandidateRatios.entries()) {
+    if (ratio > bestRatio) {
+      bestRatio = ratio;
+      bestId = id;
+    }
+  }
+  if (bestRatio < CAROUSEL_CONFIG.mobile.startRatio) {
+    bestId = null;
+  }
+  if (bestId === mobileOwnerId) return;
+  mobileOwnerId = bestId;
+  emitMobileOwnerChange();
+}
+
+function setMobileCandidateRatio(id: string, ratio: number) {
+  if (ratio > 0) {
+    mobileCandidateRatios.set(id, ratio);
+  } else {
+    mobileCandidateRatios.delete(id);
+  }
+  recomputeMobileOwner();
+}
+
+function removeMobileCandidate(id: string) {
+  const hadEntry = mobileCandidateRatios.delete(id);
+  if (!hadEntry && mobileOwnerId !== id) return;
+  recomputeMobileOwner();
+}
+
+function getMobileOwnerId() {
+  return mobileOwnerId;
+}
 
 function uniqStrings(values: Array<string | null | undefined>) {
   const next: string[] = [];
@@ -84,10 +189,25 @@ export default function CatalogProductCard({
   mobileCompact?: boolean;
 }) {
   const compare = useCompare();
+  const instanceId = useId();
+  const mobileCandidateId = useMemo(() => `${product.id}:${instanceId}`, [product.id, instanceId]);
+
   const href = product.sourceUrl ?? "#";
   const openInNewTab = href !== "#";
   const coverUrl = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
-  // Vercel/Next bloquea optimizacion de `next/image` cuando el src es un endpoint `/api/*` (INVALID_IMAGE_OPTIMIZE_REQUEST).
+
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const productIdRef = useRef(product.id);
+  useEffect(() => {
+    productIdRef.current = product.id;
+  }, [product.id]);
+
   const [images, setImages] = useState<string[]>(() => (coverUrl ? [coverUrl] : []));
   const imagesRef = useRef(images);
   useEffect(() => {
@@ -95,10 +215,406 @@ export default function CatalogProductCard({
   }, [images]);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const activeIndexRef = useRef(0);
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
+
   const [extrasLoaded, setExtrasLoaded] = useState(false);
+  const extrasLoadedRef = useRef(false);
+  useEffect(() => {
+    extrasLoadedRef.current = extrasLoaded;
+  }, [extrasLoaded]);
   const extrasLoadingRef = useRef(false);
 
   const [canHover, setCanHover] = useState(false);
+  const canHoverRef = useRef(false);
+  useEffect(() => {
+    canHoverRef.current = canHover;
+  }, [canHover]);
+
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const prefersReducedMotionRef = useRef(false);
+  useEffect(() => {
+    prefersReducedMotionRef.current = prefersReducedMotion;
+  }, [prefersReducedMotion]);
+
+  const [isMobileOwner, setIsMobileOwner] = useState(false);
+  const isMobileOwnerRef = useRef(false);
+  useEffect(() => {
+    isMobileOwnerRef.current = isMobileOwner;
+  }, [isMobileOwner]);
+
+  const [carouselMode, setCarouselMode] = useState<CarouselMode>("inactive");
+  const carouselModeRef = useRef<CarouselMode>("inactive");
+  const [carouselRunState, setCarouselRunState] = useState<CarouselRunState>("idle");
+  const carouselRunStateRef = useRef<CarouselRunState>("idle");
+
+  const [layerAUrl, setLayerAUrl] = useState<string | null>(() => coverUrl ?? null);
+  const [layerBUrl, setLayerBUrl] = useState<string | null>(null);
+  const [visibleLayer, setVisibleLayer] = useState<LayerId>("a");
+  const [incomingLayer, setIncomingLayer] = useState<LayerId | null>(null);
+  const pendingLayerRef = useRef<{ layer: LayerId; url: string } | null>(null);
+
+  const viewRef = useRef<HTMLAnchorElement | null>(null);
+
+  const playingRef = useRef(false);
+  const startTimeoutRef = useRef<number | null>(null);
+  const stepTimeoutRef = useRef<number | null>(null);
+  const scrollIdleTimeoutRef = useRef<number | null>(null);
+
+  const mobileVisibilityRatioRef = useRef(0);
+  const mobileIntersectingRef = useRef(false);
+  const mobileScrollIdleRef = useRef(true);
+  const mobileCooldownUntilRef = useRef(0);
+
+  const pendingCommitUrlRef = useRef<string | null>(null);
+
+  const imageLoadStateRef = useRef<Map<string, ImageLoadState>>(new Map());
+  const imageLoadPromiseRef = useRef<Map<string, Promise<boolean>>>(new Map());
+
+  const pauseCarouselRef = useRef<(options?: PauseOptions) => void>(() => {});
+  const onVisualCommitRef = useRef<(url: string | null) => void>(() => {});
+  const evaluateMobilePlaybackRef = useRef<() => void>(() => {});
+
+  function setCarouselModeSafe(nextMode: CarouselMode) {
+    if (carouselModeRef.current === nextMode) return;
+    carouselModeRef.current = nextMode;
+    if (!mountedRef.current) return;
+    setCarouselMode(nextMode);
+  }
+
+  function setCarouselRunStateSafe(nextState: CarouselRunState) {
+    if (carouselRunStateRef.current === nextState) return;
+    carouselRunStateRef.current = nextState;
+    if (!mountedRef.current) return;
+    setCarouselRunState(nextState);
+  }
+
+  function clearStartTimer() {
+    if (!startTimeoutRef.current) return;
+    window.clearTimeout(startTimeoutRef.current);
+    startTimeoutRef.current = null;
+  }
+
+  function clearStepTimer() {
+    if (!stepTimeoutRef.current) return;
+    window.clearTimeout(stepTimeoutRef.current);
+    stepTimeoutRef.current = null;
+  }
+
+  function clearScrollIdleTimer() {
+    if (!scrollIdleTimeoutRef.current) return;
+    window.clearTimeout(scrollIdleTimeoutRef.current);
+    scrollIdleTimeoutRef.current = null;
+  }
+
+  function pauseCarousel(options?: PauseOptions) {
+    clearStartTimer();
+    clearStepTimer();
+    playingRef.current = false;
+    pendingCommitUrlRef.current = null;
+
+    if (options?.markMobileCooldown) {
+      mobileCooldownUntilRef.current = Date.now() + CAROUSEL_CONFIG.mobile.restartCooldownMs;
+    }
+
+    setCarouselRunStateSafe(options?.runState ?? "paused");
+    setCarouselModeSafe("inactive");
+  }
+
+  pauseCarouselRef.current = pauseCarousel;
+
+  function preloadImage(url: string): Promise<boolean> {
+    const knownState = imageLoadStateRef.current.get(url);
+    if (knownState === "loaded") return Promise.resolve(true);
+    if (knownState === "error") return Promise.resolve(false);
+
+    const inFlight = imageLoadPromiseRef.current.get(url);
+    if (inFlight) return inFlight;
+
+    if (typeof window === "undefined") {
+      return Promise.resolve(false);
+    }
+
+    imageLoadStateRef.current.set(url, "loading");
+
+    const promise = new Promise<boolean>((resolve) => {
+      const img = new window.Image();
+      img.decoding = "async";
+
+      const finish = (success: boolean) => {
+        imageLoadStateRef.current.set(url, success ? "loaded" : "error");
+        imageLoadPromiseRef.current.delete(url);
+        resolve(success);
+      };
+
+      img.onload = () => finish(true);
+      img.onerror = () => finish(false);
+      img.src = url;
+    });
+
+    imageLoadPromiseRef.current.set(url, promise);
+    return promise;
+  }
+
+  async function ensureImageReady(url: string, timeoutMs: number): Promise<boolean> {
+    const knownState = imageLoadStateRef.current.get(url);
+    if (knownState === "loaded") return true;
+    if (knownState === "error") return false;
+
+    const preloadPromise = preloadImage(url);
+    if (timeoutMs <= 0) {
+      return preloadPromise;
+    }
+
+    if (typeof window === "undefined") {
+      return preloadPromise;
+    }
+
+    let timeoutRef: number | null = null;
+    const timeoutPromise = new Promise<boolean>((resolve) => {
+      timeoutRef = window.setTimeout(() => resolve(false), timeoutMs);
+    });
+
+    const result = await Promise.race([preloadPromise, timeoutPromise]);
+    if (timeoutRef) {
+      window.clearTimeout(timeoutRef);
+    }
+    return result;
+  }
+
+  async function ensureExtrasLoaded() {
+    if (extrasLoadedRef.current) return;
+    if (extrasLoadingRef.current) return;
+    extrasLoadingRef.current = true;
+
+    try {
+      const res = await fetch(
+        `/api/catalog/product-images?productId=${encodeURIComponent(productIdRef.current)}`,
+        {
+          cache: "force-cache",
+        },
+      );
+      if (!res.ok) return;
+      const payload = (await res.json()) as { images?: string[] };
+      const nextImages = Array.isArray(payload.images) ? payload.images : [];
+      const proxied = nextImages.map((url) =>
+        proxiedImageUrl(url, { productId: productIdRef.current, kind: "gallery" }),
+      );
+
+      setImages((prev) => {
+        const merged = uniqStrings([...prev, ...proxied]);
+        imagesRef.current = merged;
+        for (const url of merged) {
+          if (url) {
+            void preloadImage(url);
+          }
+        }
+        return merged;
+      });
+
+      extrasLoadedRef.current = true;
+      if (mountedRef.current) {
+        setExtrasLoaded(true);
+      }
+    } catch {
+      // ignore
+    } finally {
+      extrasLoadingRef.current = false;
+    }
+  }
+
+  async function findNextReadyIndex(list: string[], currentIndex: number) {
+    for (let offset = 1; offset < list.length; offset += 1) {
+      const nextIndex = (currentIndex + offset) % list.length;
+      const candidate = list[nextIndex];
+      if (!candidate) continue;
+      const ready = await ensureImageReady(candidate, CAROUSEL_CONFIG.preloadTimeoutMs);
+      if (ready) {
+        return nextIndex;
+      }
+    }
+    return null;
+  }
+
+  function scheduleNextStep(delayMs: number) {
+    if (!playingRef.current) return;
+    clearStepTimer();
+    stepTimeoutRef.current = window.setTimeout(() => {
+      void runCarouselStep();
+    }, delayMs);
+  }
+
+  function onVisualCommit(committedUrl: string | null) {
+    if (!committedUrl) return;
+    if (pendingCommitUrlRef.current && pendingCommitUrlRef.current !== committedUrl) return;
+    pendingCommitUrlRef.current = null;
+
+    if (!playingRef.current) return;
+
+    setCarouselRunStateSafe("playing");
+    scheduleNextStep(CAROUSEL_CONFIG.dwellMs);
+  }
+
+  onVisualCommitRef.current = onVisualCommit;
+
+  async function runCarouselStep() {
+    if (!playingRef.current) return;
+    if (!mountedRef.current) return;
+
+    if (typeof document !== "undefined" && document.hidden) {
+      pauseCarousel({ runState: "blocked" });
+      return;
+    }
+
+    if (prefersReducedMotionRef.current) {
+      pauseCarousel({ runState: "blocked" });
+      return;
+    }
+
+    const list = imagesRef.current;
+    if (list.length <= 1) {
+      pauseCarousel({ runState: "blocked" });
+      return;
+    }
+
+    setCarouselRunStateSafe("waiting_preload");
+
+    const current = activeIndexRef.current;
+    const nextIndex = await findNextReadyIndex(list, current);
+
+    if (!playingRef.current || !mountedRef.current) {
+      return;
+    }
+
+    if (nextIndex === null) {
+      setCarouselRunStateSafe("blocked");
+      scheduleNextStep(CAROUSEL_CONFIG.retryDelayMs);
+      return;
+    }
+
+    const targetUrl = list[nextIndex];
+    if (!targetUrl) {
+      scheduleNextStep(CAROUSEL_CONFIG.retryDelayMs);
+      return;
+    }
+
+    pendingCommitUrlRef.current = targetUrl;
+    setCarouselRunStateSafe("transitioning");
+    setActiveIndex(nextIndex);
+  }
+
+  async function startCarousel(mode: CarouselMode) {
+    if (playingRef.current) return;
+    if (prefersReducedMotionRef.current) {
+      setCarouselRunStateSafe("blocked");
+      return;
+    }
+    if (typeof document !== "undefined" && document.hidden) {
+      setCarouselRunStateSafe("blocked");
+      return;
+    }
+
+    await ensureExtrasLoaded();
+
+    const list = imagesRef.current;
+    if (list.length <= 1) {
+      setCarouselRunStateSafe("blocked");
+      setCarouselModeSafe("inactive");
+      return;
+    }
+
+    const nextPreview = list[(activeIndexRef.current + 1) % list.length];
+    if (nextPreview) {
+      void ensureImageReady(nextPreview, CAROUSEL_CONFIG.preloadTimeoutMs);
+    }
+
+    playingRef.current = true;
+    setCarouselModeSafe(mode);
+    setCarouselRunStateSafe("playing");
+    scheduleNextStep(CAROUSEL_CONFIG.dwellMs);
+  }
+
+  function scheduleCarouselStart(mode: CarouselMode, delayMs: number) {
+    if (playingRef.current) return;
+    if (prefersReducedMotionRef.current) {
+      setCarouselRunStateSafe("blocked");
+      return;
+    }
+    if (startTimeoutRef.current) return;
+
+    setCarouselModeSafe(mode);
+    setCarouselRunStateSafe("scheduled");
+
+    startTimeoutRef.current = window.setTimeout(() => {
+      startTimeoutRef.current = null;
+      void startCarousel(mode);
+    }, delayMs);
+  }
+
+  function evaluateMobilePlayback() {
+    if (canHoverRef.current) return;
+
+    const hidden = typeof document !== "undefined" ? document.hidden : false;
+    const ratio = mobileVisibilityRatioRef.current;
+    const canStart =
+      mobileIntersectingRef.current &&
+      ratio >= CAROUSEL_CONFIG.mobile.startRatio &&
+      isMobileOwnerRef.current &&
+      mobileScrollIdleRef.current &&
+      !hidden &&
+      !prefersReducedMotionRef.current &&
+      Date.now() >= mobileCooldownUntilRef.current;
+
+    if (canStart) {
+      if (!playingRef.current && !startTimeoutRef.current) {
+        scheduleCarouselStart("mobile", CAROUSEL_CONFIG.mobile.startDebounceMs);
+      }
+      return;
+    }
+
+    if (startTimeoutRef.current) {
+      const shouldCancelSchedule =
+        !mobileIntersectingRef.current ||
+        ratio < CAROUSEL_CONFIG.mobile.startRatio ||
+        !isMobileOwnerRef.current ||
+        !mobileScrollIdleRef.current ||
+        hidden ||
+        prefersReducedMotionRef.current;
+      if (shouldCancelSchedule) {
+        clearStartTimer();
+        if (!playingRef.current) {
+          setCarouselRunStateSafe("idle");
+          setCarouselModeSafe("inactive");
+        }
+      }
+    }
+
+    const shouldStop =
+      !mobileIntersectingRef.current ||
+      ratio <= CAROUSEL_CONFIG.mobile.stopRatio ||
+      !isMobileOwnerRef.current ||
+      !mobileScrollIdleRef.current ||
+      hidden ||
+      prefersReducedMotionRef.current;
+
+    if (shouldStop && (playingRef.current || carouselModeRef.current === "mobile")) {
+      pauseCarousel({
+        markMobileCooldown: true,
+        runState: mobileScrollIdleRef.current ? "paused" : "blocked",
+      });
+      return;
+    }
+
+    if (shouldStop && !playingRef.current) {
+      setCarouselRunStateSafe(hidden || prefersReducedMotionRef.current ? "blocked" : "idle");
+      setCarouselModeSafe("inactive");
+    }
+  }
+
+  evaluateMobilePlaybackRef.current = evaluateMobilePlayback;
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const media = window.matchMedia("(hover: hover) and (pointer: fine)");
@@ -109,92 +625,76 @@ export default function CatalogProductCard({
   }, []);
 
   useEffect(() => {
-    setImages(coverUrl ? [coverUrl] : []);
-    setActiveIndex(0);
-    setExtrasLoaded(false);
-    extrasLoadingRef.current = false;
-  }, [coverUrl]);
-
-  const ensureExtras = useCallback(async () => {
-    if (extrasLoaded) return;
-    if (extrasLoadingRef.current) return;
-    extrasLoadingRef.current = true;
-    try {
-      const res = await fetch(`/api/catalog/product-images?productId=${encodeURIComponent(product.id)}`, {
-        cache: "force-cache",
-      });
-      if (!res.ok) return;
-      const payload = (await res.json()) as { images?: string[] };
-      const nextImages = Array.isArray(payload.images) ? payload.images : [];
-      const proxied = nextImages.map((url) =>
-        proxiedImageUrl(url, { productId: product.id, kind: "gallery" }),
-      );
-      setImages((prev) => {
-        const merged = uniqStrings([...prev, ...proxied]);
-        // Importante: `beginCarousel()` lee `imagesRef.current` inmediatamente después de `ensureExtras()`.
-        // Sin esto, el carrusel puede ser intermitente por el timing del setState/useEffect.
-        imagesRef.current = merged;
-        return merged;
-      });
-      setExtrasLoaded(true);
-    } catch {
-      // ignore
-    } finally {
-      extrasLoadingRef.current = false;
-    }
-  }, [extrasLoaded, product.id]);
-
-  const startTimeoutRef = useRef<number | null>(null);
-  const intervalRef = useRef<number | null>(null);
-
-  const stopCarousel = useCallback(() => {
-    if (startTimeoutRef.current) {
-      window.clearTimeout(startTimeoutRef.current);
-      startTimeoutRef.current = null;
-    }
-    if (intervalRef.current) {
-      window.clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    setActiveIndex(0);
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setPrefersReducedMotion(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
   }, []);
 
-  const beginCarousel = useCallback(async () => {
-    if (typeof document !== "undefined" && document.hidden) return;
-    await ensureExtras();
-    const list = imagesRef.current;
-    if (list.length <= 1) return;
+  useEffect(() => {
+    if (!prefersReducedMotion) return;
+    pauseCarouselRef.current({ runState: "blocked" });
+  }, [prefersReducedMotion]);
 
-    setActiveIndex((current) => {
-      if (current === 0 && list.length > 1) return 1;
-      return current;
-    });
+  useEffect(() => {
+    imageLoadStateRef.current.clear();
+    imageLoadPromiseRef.current.clear();
+    pendingLayerRef.current = null;
 
-    if (intervalRef.current) return;
-    intervalRef.current = window.setInterval(() => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      const latest = imagesRef.current;
-      if (latest.length <= 1) return;
-      setActiveIndex((current) => {
-        const next = current + 1;
-        return next >= latest.length ? 0 : next;
-      });
-    }, 2000);
-  }, [ensureExtras]);
+    setImages(coverUrl ? [coverUrl] : []);
+    imagesRef.current = coverUrl ? [coverUrl] : [];
 
-  const scheduleCarousel = useCallback(() => {
-    if (intervalRef.current) return;
-    if (startTimeoutRef.current) return;
-    startTimeoutRef.current = window.setTimeout(() => {
-      startTimeoutRef.current = null;
-      void beginCarousel();
-    }, 350);
-  }, [beginCarousel]);
+    setActiveIndex(0);
+    activeIndexRef.current = 0;
 
-  const viewRef = useRef<HTMLAnchorElement | null>(null);
+    setExtrasLoaded(false);
+    extrasLoadedRef.current = false;
+    extrasLoadingRef.current = false;
+
+    setLayerAUrl(coverUrl ?? null);
+    setLayerBUrl(null);
+    setVisibleLayer("a");
+    setIncomingLayer(null);
+
+    pauseCarouselRef.current({ runState: "idle" });
+  }, [coverUrl]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (canHover) return;
+
+    const syncOwner = () => setIsMobileOwner(getMobileOwnerId() === mobileCandidateId);
+    syncOwner();
+
+    const onOwnerChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ ownerId: string | null }>).detail;
+      setIsMobileOwner(detail?.ownerId === mobileCandidateId);
+    };
+
+    window.addEventListener(MOBILE_OWNER_EVENT, onOwnerChange as EventListener);
+
+    return () => {
+      window.removeEventListener(MOBILE_OWNER_EVENT, onOwnerChange as EventListener);
+      removeMobileCandidate(mobileCandidateId);
+    };
+  }, [mobileCandidateId]);
+
+  useEffect(() => {
+    evaluateMobilePlaybackRef.current();
+  }, [isMobileOwner]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (canHover) {
+      removeMobileCandidate(mobileCandidateId);
+      mobileIntersectingRef.current = false;
+      mobileVisibilityRatioRef.current = 0;
+      mobileScrollIdleRef.current = true;
+      clearScrollIdleTimer();
+      return;
+    }
+
     const node = viewRef.current;
     if (!node) return;
 
@@ -202,88 +702,192 @@ export default function CatalogProductCard({
       (entries) => {
         const entry = entries[0];
         if (!entry) return;
-        const visible = entry.isIntersecting && entry.intersectionRatio >= 0.82;
-        if (visible) {
-          scheduleCarousel();
-        } else {
-          stopCarousel();
-        }
+        const ratio = entry.isIntersecting ? entry.intersectionRatio : 0;
+        mobileIntersectingRef.current = entry.isIntersecting;
+        mobileVisibilityRatioRef.current = ratio;
+        setMobileCandidateRatio(mobileCandidateId, ratio);
+        evaluateMobilePlaybackRef.current();
       },
-      { threshold: [0, 0.82, 1] },
+      {
+        threshold: [0, CAROUSEL_CONFIG.mobile.stopRatio, CAROUSEL_CONFIG.mobile.startRatio, 1],
+      },
     );
 
     observer.observe(node);
+
     return () => {
       observer.disconnect();
-      stopCarousel();
+      removeMobileCandidate(mobileCandidateId);
+      mobileIntersectingRef.current = false;
+      mobileVisibilityRatioRef.current = 0;
     };
-  }, [canHover, scheduleCarousel, stopCarousel]);
+  }, [canHover, mobileCandidateId]);
 
   useEffect(() => {
-    return () => stopCarousel();
-  }, [stopCarousel]);
+    if (typeof window === "undefined") return;
+    if (canHover) return;
+
+    const onScroll = () => {
+      const wasIdle = mobileScrollIdleRef.current;
+      mobileScrollIdleRef.current = false;
+
+      if (wasIdle && (playingRef.current || carouselModeRef.current === "mobile")) {
+        pauseCarouselRef.current({ markMobileCooldown: true, runState: "blocked" });
+      }
+
+      clearScrollIdleTimer();
+      scrollIdleTimeoutRef.current = window.setTimeout(() => {
+        scrollIdleTimeoutRef.current = null;
+        mobileScrollIdleRef.current = true;
+        evaluateMobilePlaybackRef.current();
+      }, CAROUSEL_CONFIG.mobile.scrollIdleMs);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      clearScrollIdleTimer();
+      mobileScrollIdleRef.current = true;
+    };
+  }, [canHover]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
-    const onVis = () => {
-      if (document.hidden) stopCarousel();
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        pauseCarouselRef.current({ runState: "blocked" });
+      } else {
+        evaluateMobilePlaybackRef.current();
+      }
     };
-    document.addEventListener("visibilitychange", onVis);
-    window.addEventListener("blur", onVis);
+
+    const onBlur = () => {
+      pauseCarouselRef.current({
+        runState: "blocked",
+        markMobileCooldown: carouselModeRef.current === "mobile",
+      });
+    };
+
+    const onFocus = () => {
+      evaluateMobilePlaybackRef.current();
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+
     return () => {
-      document.removeEventListener("visibilitychange", onVis);
-      window.removeEventListener("blur", onVis);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
     };
-  }, [stopCarousel]);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      removeMobileCandidate(mobileCandidateId);
+      clearScrollIdleTimer();
+      pauseCarouselRef.current({ runState: "idle" });
+    };
+  }, [mobileCandidateId]);
 
   const activeImageUrl = images[activeIndex] ?? coverUrl ?? null;
 
-  // Crossfade: mantenemos una imagen base y montamos una overlay que hace fade-in
-  // solo cuando la nueva imagen termina de cargar (evita flicker/flash blanco).
-  const [baseImageUrl, setBaseImageUrl] = useState<string | null>(() => activeImageUrl);
-  const [overlayImageUrl, setOverlayImageUrl] = useState<string | null>(null);
-  const [overlayVisible, setOverlayVisible] = useState(false);
-  const overlayTimeoutRef = useRef<number | null>(null);
-  const overlayTargetRef = useRef<string | null>(null);
-
   useEffect(() => {
-    if (overlayTimeoutRef.current) {
-      window.clearTimeout(overlayTimeoutRef.current);
-      overlayTimeoutRef.current = null;
-    }
-
     if (!activeImageUrl) {
-      setBaseImageUrl(null);
-      setOverlayImageUrl(null);
-      setOverlayVisible(false);
+      setLayerAUrl(null);
+      setLayerBUrl(null);
+      setVisibleLayer("a");
+      setIncomingLayer(null);
+      pendingLayerRef.current = null;
+      pendingCommitUrlRef.current = null;
       return;
     }
 
-    if (!baseImageUrl) {
-      setBaseImageUrl(activeImageUrl);
-      setOverlayImageUrl(null);
-      setOverlayVisible(false);
+    if (prefersReducedMotionRef.current) {
+      setLayerAUrl(activeImageUrl);
+      setLayerBUrl(null);
+      setVisibleLayer("a");
+      setIncomingLayer(null);
+      pendingLayerRef.current = null;
+      onVisualCommitRef.current(activeImageUrl);
       return;
     }
 
-    if (activeImageUrl === baseImageUrl) return;
+    const visibleUrl = visibleLayer === "a" ? layerAUrl : layerBUrl;
+    if (!visibleUrl) {
+      setLayerAUrl(activeImageUrl);
+      setLayerBUrl(null);
+      setVisibleLayer("a");
+      setIncomingLayer(null);
+      pendingLayerRef.current = null;
+      onVisualCommitRef.current(activeImageUrl);
+      return;
+    }
 
-    overlayTargetRef.current = activeImageUrl;
-    setOverlayImageUrl(activeImageUrl);
-    setOverlayVisible(false);
+    if (activeImageUrl === visibleUrl && !incomingLayer) {
+      onVisualCommitRef.current(activeImageUrl);
+      return;
+    }
 
-    return () => {
-      if (overlayTimeoutRef.current) {
-        window.clearTimeout(overlayTimeoutRef.current);
-        overlayTimeoutRef.current = null;
-      }
-    };
-  }, [activeImageUrl, baseImageUrl]);
+    const nextLayer: LayerId = visibleLayer === "a" ? "b" : "a";
+    pendingLayerRef.current = { layer: nextLayer, url: activeImageUrl };
+    setIncomingLayer(null);
 
-  const aspectClass =
-    mobileAspect === "square"
-      ? "aspect-square"
-      : "aspect-[3/4]";
+    if (nextLayer === "a") {
+      setLayerAUrl(activeImageUrl);
+    } else {
+      setLayerBUrl(activeImageUrl);
+    }
+  }, [activeImageUrl, layerAUrl, layerBUrl, visibleLayer, incomingLayer]);
+
+  function handleLayerLoaded(layer: LayerId, url: string) {
+    if (!pendingLayerRef.current) return;
+    if (pendingLayerRef.current.layer !== layer) return;
+    if (pendingLayerRef.current.url !== url) return;
+
+    if (prefersReducedMotionRef.current) {
+      setVisibleLayer(layer);
+      setIncomingLayer(null);
+      pendingLayerRef.current = null;
+      onVisualCommitRef.current(url);
+      return;
+    }
+
+    setIncomingLayer(layer);
+  }
+
+  function handleLayerTransitionEnd(layer: LayerId, event: ReactTransitionEvent<HTMLDivElement>) {
+    if (event.propertyName !== "opacity") return;
+    if (incomingLayer !== layer) return;
+
+    const committedUrl = layer === "a" ? layerAUrl : layerBUrl;
+
+    setVisibleLayer(layer);
+    setIncomingLayer(null);
+    pendingLayerRef.current = null;
+    onVisualCommitRef.current(committedUrl);
+  }
+
+  const layerAOpacityClass = incomingLayer
+    ? incomingLayer === "a"
+      ? "opacity-100"
+      : "opacity-0"
+    : visibleLayer === "a"
+      ? "opacity-100"
+      : "opacity-0";
+
+  const layerBOpacityClass = incomingLayer
+    ? incomingLayer === "b"
+      ? "opacity-100"
+      : "opacity-0"
+    : visibleLayer === "b"
+      ? "opacity-100"
+      : "opacity-0";
+
+  const aspectClass = mobileAspect === "square" ? "aspect-square" : "aspect-[3/4]";
 
   const cornerSize = mobileCompact ? "h-8 w-8" : "h-9 w-9";
   const cornerInset = mobileCompact ? "left-2 top-2" : "left-3 top-3";
@@ -302,6 +906,7 @@ export default function CatalogProductCard({
     () => formatPriceRange(product.minPrice, product.maxPrice, product.currency),
     [product.currency, product.maxPrice, product.minPrice],
   );
+
   const priceChangeChip =
     product.priceChangeDirection === "down"
       ? "↓ Bajó de precio"
@@ -313,12 +918,15 @@ export default function CatalogProductCard({
 
   return (
     <article
+      data-carousel-state={`${carouselMode}:${carouselRunState}`}
       className="group relative overflow-hidden rounded-xl border border-[color:var(--oda-border)] bg-white shadow-[0_10px_20px_rgba(23,21,19,0.07)] lg:shadow-[0_12px_28px_rgba(23,21,19,0.08)] lg:transition lg:duration-500 lg:ease-out lg:[transform-style:preserve-3d] lg:hover:shadow-[0_30px_60px_rgba(23,21,19,0.14)] lg:group-hover:[transform:perspective(900px)_rotateX(6deg)_translateY(-10px)]"
       onMouseEnter={() => {
-        if (canHover) scheduleCarousel();
+        if (!canHoverRef.current) return;
+        scheduleCarouselStart("desktop", CAROUSEL_CONFIG.desktopArmDelayMs);
       }}
       onMouseLeave={() => {
-        if (canHover) stopCarousel();
+        if (!canHoverRef.current) return;
+        pauseCarousel({ runState: "paused" });
       }}
     >
       {compare && !mobileCompact ? (
@@ -344,6 +952,7 @@ export default function CatalogProductCard({
           </button>
         </div>
       ) : null}
+
       <div className={["absolute z-10", favInset].join(" ")}>
         <FavoriteToggle
           productId={product.id}
@@ -352,6 +961,7 @@ export default function CatalogProductCard({
           className={[cornerSize, "lg:h-10 lg:w-10"].join(" ")}
         />
       </div>
+
       <Link
         href={href}
         ref={viewRef}
@@ -363,60 +973,63 @@ export default function CatalogProductCard({
           "lg:aspect-[3/4]",
         ].join(" ")}
       >
-        {baseImageUrl ? (
+        {activeImageUrl ? (
           <>
-            <Image
-              src={baseImageUrl}
-              alt={product.name}
-              fill
-              unoptimized={!!baseImageUrl && baseImageUrl.startsWith("/api/image-proxy")}
-              sizes={
-                mobileCompact
-                  ? "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 46vw"
-                  : "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
-              }
-              className="object-cover object-center transition duration-700 group-hover:scale-[1.07] group-hover:-translate-y-1 motion-reduce:transition-none"
-              placeholder="blur"
-              blurDataURL={IMAGE_BLUR_DATA_URL}
-              priority={false}
-            />
-            {overlayImageUrl ? (
-              <Image
-                key={overlayImageUrl}
-                src={overlayImageUrl}
-                alt={product.name}
-                fill
-                unoptimized={!!overlayImageUrl && overlayImageUrl.startsWith("/api/image-proxy")}
-                sizes={
-                  mobileCompact
-                    ? "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 46vw"
-                    : "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
-                }
-                onLoadingComplete={() => {
-                  if (overlayTargetRef.current !== overlayImageUrl) return;
-                  // Fade-in, then commit the overlay as the new base.
-                  setOverlayVisible(true);
-                  if (overlayTimeoutRef.current) {
-                    window.clearTimeout(overlayTimeoutRef.current);
+            <div
+              className={[
+                "pointer-events-none absolute inset-0 oda-carousel-layer",
+                layerAOpacityClass,
+                "motion-reduce:transition-none",
+              ].join(" ")}
+              onTransitionEnd={(event) => handleLayerTransitionEnd("a", event)}
+            >
+              {layerAUrl ? (
+                <Image
+                  src={layerAUrl}
+                  alt={product.name}
+                  fill
+                  unoptimized={layerAUrl.startsWith("/api/image-proxy")}
+                  sizes={
+                    mobileCompact
+                      ? "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 46vw"
+                      : "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
                   }
-                  overlayTimeoutRef.current = window.setTimeout(() => {
-                    if (overlayTargetRef.current !== overlayImageUrl) return;
-                    setBaseImageUrl(overlayImageUrl);
-                    setOverlayImageUrl(null);
-                    setOverlayVisible(false);
-                    overlayTimeoutRef.current = null;
-                  }, 360);
-                }}
-                className={[
-                  "object-cover object-center transition-[opacity,transform] duration-400 ease-out",
-                  overlayVisible ? "opacity-100" : "opacity-0",
-                  "group-hover:scale-[1.07] group-hover:-translate-y-1 motion-reduce:transition-none",
-                ].join(" ")}
-                placeholder="blur"
-                blurDataURL={IMAGE_BLUR_DATA_URL}
-                priority={false}
-              />
-            ) : null}
+                  className="object-cover object-center transition-transform duration-700 group-hover:scale-[1.07] group-hover:-translate-y-1 motion-reduce:transition-none"
+                  placeholder="blur"
+                  blurDataURL={IMAGE_BLUR_DATA_URL}
+                  priority={false}
+                  onLoadingComplete={() => handleLayerLoaded("a", layerAUrl)}
+                />
+              ) : null}
+            </div>
+
+            <div
+              className={[
+                "pointer-events-none absolute inset-0 oda-carousel-layer",
+                layerBOpacityClass,
+                "motion-reduce:transition-none",
+              ].join(" ")}
+              onTransitionEnd={(event) => handleLayerTransitionEnd("b", event)}
+            >
+              {layerBUrl ? (
+                <Image
+                  src={layerBUrl}
+                  alt={product.name}
+                  fill
+                  unoptimized={layerBUrl.startsWith("/api/image-proxy")}
+                  sizes={
+                    mobileCompact
+                      ? "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 46vw"
+                      : "(min-width: 1280px) 20vw, (min-width: 1024px) 22vw, (min-width: 768px) 45vw, 90vw"
+                  }
+                  className="object-cover object-center transition-transform duration-700 group-hover:scale-[1.07] group-hover:-translate-y-1 motion-reduce:transition-none"
+                  placeholder="blur"
+                  blurDataURL={IMAGE_BLUR_DATA_URL}
+                  priority={false}
+                  onLoadingComplete={() => handleLayerLoaded("b", layerBUrl)}
+                />
+              ) : null}
+            </div>
           </>
         ) : (
           <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
@@ -424,7 +1037,6 @@ export default function CatalogProductCard({
           </div>
         )}
 
-        {/* Mobile: siempre visible (bottom glass). Desktop: aparece al hover desde abajo. */}
         <div
           className={[
             `absolute inset-x-0 bottom-0 ${glassHeight} border-t border-white/40 bg-white/45 backdrop-blur-xl`,
