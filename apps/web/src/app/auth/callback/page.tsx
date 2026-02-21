@@ -3,13 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSessionToken, useDescope, useSession, useUser } from "@descope/nextjs-sdk/client";
-
-const normalizeNext = (value?: string | null) => {
-  if (!value) return "/perfil";
-  if (!value.startsWith("/") || value.startsWith("//")) return "/perfil";
-  if (value.startsWith("/auth/callback")) return "/perfil";
-  return value;
-};
+import { normalizeAuthReturnPath } from "@/lib/auth-return";
 
 const LOGIN_NEXT_KEY = "oda_login_next_v1";
 
@@ -22,13 +16,13 @@ export default function AuthCallbackPage() {
     if (typeof window === "undefined") return "/perfil";
     const params = new URLSearchParams(window.location.search);
     if (params.has("next")) {
-      return normalizeNext(params.get("next"));
+      return normalizeAuthReturnPath(params.get("next"));
     }
     try {
       const stored = window.sessionStorage.getItem(LOGIN_NEXT_KEY);
       if (stored) {
         window.sessionStorage.removeItem(LOGIN_NEXT_KEY);
-        return normalizeNext(stored);
+        return normalizeAuthReturnPath(stored);
       }
     } catch {
       // ignore

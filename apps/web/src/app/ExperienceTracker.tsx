@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "@descope/nextjs-sdk/client";
+import { isAuthFlowPathname } from "@/lib/auth-return";
 
 const SESSION_KEY = "oda_session_id";
 
@@ -48,7 +49,7 @@ export default function ExperienceTracker() {
     if (lastPathRef.current === path) return;
     lastPathRef.current = path;
 
-    if (typeof window !== "undefined" && path !== "/sign-in") {
+    if (typeof window !== "undefined" && !isAuthFlowPathname(pathname)) {
       window.sessionStorage.setItem("oda_last_path", path);
     }
 

@@ -4,7 +4,8 @@ import type { ComponentType } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Descope as DescopeBase } from "@descope/nextjs-sdk";
-import { getSessionToken, useSession } from "@descope/nextjs-sdk/client";
+import { getSessionToken, useDescope, useSession } from "@descope/nextjs-sdk/client";
+import { sanitizeAuthReturnPath } from "@/lib/auth-return";
 
 const LOGIN_NEXT_KEY = "oda_login_next_v1";
 
@@ -88,24 +89,18 @@ const computeReturnTo = () => {
   if (typeof window === "undefined") return null;
   const params = new URLSearchParams(window.location.search);
   const candidate = params.get("next") || params.get("returnTo");
-  const normalize = (value: string | null) => {
-    if (!value) return null;
-    if (!value.startsWith("/")) return null;
-    if (value.startsWith("//")) return null;
-    return value;
-  };
-  const normalized = normalize(candidate);
+  const normalized = sanitizeAuthReturnPath(candidate);
   if (normalized) return normalized;
 
-  const stored = normalize(window.sessionStorage.getItem("oda_last_path"));
-  if (stored && stored !== "/sign-in") return stored;
+  const stored = sanitizeAuthReturnPath(window.sessionStorage.getItem("oda_last_path"));
+  if (stored) return stored;
 
   const referrer = document.referrer;
   if (!referrer) return null;
   try {
     const refUrl = new URL(referrer);
-    if (refUrl.origin === window.location.origin && refUrl.pathname !== "/sign-in") {
-      return `${refUrl.pathname}${refUrl.search}${refUrl.hash}`;
+    if (refUrl.origin === window.location.origin) {
+      return sanitizeAuthReturnPath(`${refUrl.pathname}${refUrl.search}${refUrl.hash}`);
     }
   } catch (error) {
     console.error("Unable to parse referrer for return", error);
@@ -116,6 +111,7 @@ const computeReturnTo = () => {
 export default function SignInClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const sdk = useDescope();
   const { isAuthenticated, isSessionLoading, sessionToken } = useSession();
   const callbackError = searchParams.get("error")?.trim() || null;
   const oauthErr = searchParams.get("err")?.trim() || null;
@@ -152,7 +148,7 @@ export default function SignInClient() {
   const [flowError, setFlowError] = useState<string | null>(null);
   const [oauthExchangeMessage, setOauthExchangeMessage] = useState<string | null>(null);
   const [oauthBootstrapExpired, setOauthBootstrapExpired] = useState(false);
-  const oauthResolveStartedRef = useRef(false);
+  const lastHandledCodeRef = useRef<string | null>(null);
   const redirectAfterSuccess = "/auth/callback";
 
   const readSessionToken = useMemo(() => {
@@ -166,9 +162,12 @@ export default function SignInClient() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!returnTo) return;
     try {
-      window.sessionStorage.setItem(LOGIN_NEXT_KEY, returnTo);
+      if (returnTo) {
+        window.sessionStorage.setItem(LOGIN_NEXT_KEY, returnTo);
+      } else {
+        window.sessionStorage.removeItem(LOGIN_NEXT_KEY);
+      }
     } catch {
       // ignore
     }
@@ -194,7 +193,7 @@ export default function SignInClient() {
   useEffect(() => {
     if (!oauthCode) {
       setOauthBootstrapExpired(false);
-      oauthResolveStartedRef.current = false;
+      lastHandledCodeRef.current = null;
       return;
     }
     if (!isSessionLoading) {
@@ -223,7 +222,8 @@ export default function SignInClient() {
 
   const resetToCleanSignIn = useCallback(() => {
     const qs = new URLSearchParams();
-    if (returnTo) qs.set("next", returnTo);
+    const cleanNext = sanitizeAuthReturnPath(returnTo);
+    if (cleanNext) qs.set("next", cleanNext);
     router.replace(qs.size ? `/sign-in?${qs.toString()}` : "/sign-in");
   }, [returnTo, router]);
 
@@ -234,8 +234,8 @@ export default function SignInClient() {
       setOauthExchangeMessage("Confirmando sesión…");
       return;
     }
-    if (oauthResolveStartedRef.current) return;
-    oauthResolveStartedRef.current = true;
+    if (lastHandledCodeRef.current === oauthCode) return;
+    lastHandledCodeRef.current = oauthCode;
 
     let cancelled = false;
     const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -243,26 +243,103 @@ export default function SignInClient() {
     const run = async () => {
       setFlowError(null);
       setOauthExchangeMessage("Confirmando sesión…");
-      try {
-        // No hacemos `oauth.exchange` manual para evitar carreras y 401 visibles en consola.
-        // El objetivo del callback es esperar la sesión que el SDK ya está resolviendo.
-        const MAX_SESSION_POLLS = 12;
-        for (let attempt = 1; attempt <= MAX_SESSION_POLLS; attempt += 1) {
-          if (cancelled) return;
+      const hostname = typeof window !== "undefined" ? window.location.hostname : null;
+      const pollForSession = async (attempts: number, delayMs: number) => {
+        for (let attempt = 1; attempt <= attempts; attempt += 1) {
+          if (cancelled) return false;
           const token = readSessionToken();
-          if (isAuthenticated || token) {
+          if (token) return true;
+          await delay(delayMs);
+        }
+        return false;
+      };
+      try {
+        const preExistingToken = readSessionToken();
+        if (preExistingToken) {
+          router.replace(redirectAfterSuccess);
+          return;
+        }
+
+        const response = await sdk.oauth.exchange(oauthCode);
+        if (cancelled) return;
+
+        if (response?.ok) {
+          router.replace(redirectAfterSuccess);
+          return;
+        }
+
+        const errorCode =
+          typeof response?.error?.errorCode === "string"
+            ? response.error.errorCode.trim().toUpperCase()
+            : null;
+        const errorDescription =
+          typeof response?.error?.errorDescription === "string"
+            ? response.error.errorDescription
+            : null;
+
+        if (errorCode === "E061301") {
+          if (debugFlow) {
+            console.debug("Descope OAuth exchange recoverable race", {
+              code: response?.code,
+              errorCode,
+              errorDescription,
+            });
+          }
+          const recovered = await pollForSession(8, 200);
+          if (recovered) {
             router.replace(redirectAfterSuccess);
             return;
           }
-          await delay(200);
+          resetToCleanSignIn();
+          return;
         }
+
+        console.error("Descope OAuth exchange failed", {
+          hostname,
+          flowId,
+          projectId: process.env.NEXT_PUBLIC_DESCOPE_PROJECT_ID,
+          code: response?.code,
+          errorCode,
+          errorDescription,
+        });
+
+        setFlowError(
+          buildDescopeUiMessage({
+            errorCode,
+            hostname,
+            fallback: "No pudimos confirmar tu sesión. Intenta de nuevo.",
+          }),
+        );
+      } catch (error) {
         if (cancelled) return;
-        if (debugFlow) {
-          console.debug("OAuth callback without local session after polling; resetting URL", {
-            oauthCodePresent: true,
-          });
+        const parsed = parseDescopeError(error);
+        if (parsed.errorCode?.toUpperCase() === "E061301") {
+          if (debugFlow) {
+            console.debug("Descope OAuth exchange crashed with recoverable race", {
+              errorCode: parsed.errorCode,
+              errorDescription: parsed.errorDescription,
+              message: parsed.message,
+            });
+          }
+          const recovered = await pollForSession(8, 200);
+          if (recovered) {
+            router.replace(redirectAfterSuccess);
+            return;
+          }
+          resetToCleanSignIn();
+          return;
         }
-        resetToCleanSignIn();
+
+        console.error("Descope OAuth exchange crashed", {
+          hostname,
+          flowId,
+          projectId: process.env.NEXT_PUBLIC_DESCOPE_PROJECT_ID,
+          errorCode: parsed.errorCode,
+          errorDescription: parsed.errorDescription,
+          message: parsed.message,
+          error,
+        });
+        setFlowError("No pudimos confirmar tu sesión. Intenta de nuevo.");
       } finally {
         if (!cancelled) setOauthExchangeMessage(null);
       }
@@ -274,7 +351,6 @@ export default function SignInClient() {
     };
   }, [
     debugFlow,
-    isAuthenticated,
     isSessionLoading,
     oauthBootstrapExpired,
     oauthCode,
@@ -282,6 +358,8 @@ export default function SignInClient() {
     resetToCleanSignIn,
     redirectAfterSuccess,
     router,
+    sdk.oauth,
+    flowId,
   ]);
 
   return (

@@ -709,7 +709,8 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Se agregó logging estructurado en cliente para diagnóstico rápido (`hostname`, `flowId`, `projectId`, `errorCode`, `errorDescription`).
 - Actualización (2026-02-21, fix UX):
   - `E061301` (exchange token ya consumido/expirado por carrera) ahora se trata como condición recuperable silenciosa.
-  - `/sign-in` resuelve `?code=` con espera de bootstrap + polling corto de sesión/token (sin `oauth.exchange` manual); si aparece la carrera `E061301`, recupera automáticamente sin mostrar error ni botón `Reintentar`.
+  - `/sign-in` resuelve `?code=` con espera de bootstrap y `oauth.exchange` controlado (una sola vez por código) cuando no hay sesión local; si aparece la carrera `E061301`, recupera automáticamente con poll corto sin mostrar error ni botón `Reintentar`.
+  - `next/returnTo` se sanitiza para bloquear rutas de auth y query params OAuth, evitando loops como `next=/sign-in?code=...`.
   - Se mantiene visibilidad de errores no recuperables (`E108202`, `E062209`) con mensaje claro.
 
 ### MC-115 Curación humana: bulk edit de características de productos
