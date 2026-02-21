@@ -21,6 +21,8 @@ import {
 } from "@/lib/home-data";
 
 export const revalidate = 3600;
+// Avoid flaky SSG timeouts for `/` in Vercel builds; home data is still cached in `home-data` via `unstable_cache`.
+export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const seed = getRotationSeed();
