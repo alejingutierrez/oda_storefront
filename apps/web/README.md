@@ -32,6 +32,7 @@ Flujo:
 
 - `/sign-in` renderiza el flow de Descope.
 - Al completar login redirige a `/auth/callback?next=...`, que hace el sync del usuario en Neon y luego devuelve al `next`.
+- Si Descope regresa con `?code=...`, la UI espera bootstrap de sesión y recupera token/sesión en polling corto (sin `oauth.exchange` manual); `E061301` se maneja como carrera recuperable (sin error visible ni botón de reintento) con redirect automático a `/auth/callback` o limpieza de URL.
 
 ## Descope Approved Domains
 

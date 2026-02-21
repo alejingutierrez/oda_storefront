@@ -1,10 +1,10 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Descope as DescopeBase } from "@descope/nextjs-sdk";
-import { useDescope, useSession } from "@descope/nextjs-sdk/client";
+import { getSessionToken, useSession } from "@descope/nextjs-sdk/client";
 
 const LOGIN_NEXT_KEY = "oda_login_next_v1";
 
@@ -79,7 +79,7 @@ const buildDescopeUiMessage = ({
     return "Google no pudo completar el login (configuración OAuth). Intenta de nuevo o avísanos para revisar la configuración.";
   }
   if (errorCode === "E061301") {
-    return "El intento de login expiró. Intenta de nuevo.";
+    return null;
   }
   return fallback;
 };
@@ -116,8 +116,7 @@ const computeReturnTo = () => {
 export default function SignInClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const sdk = useDescope();
-  const { isAuthenticated, isSessionLoading } = useSession();
+  const { isAuthenticated, isSessionLoading, sessionToken } = useSession();
   const callbackError = searchParams.get("error")?.trim() || null;
   const oauthErr = searchParams.get("err")?.trim() || null;
   const oauthCode = searchParams.get("code")?.trim() || null;
@@ -152,8 +151,18 @@ export default function SignInClient() {
   const flowId = flowOverride || process.env.NEXT_PUBLIC_DESCOPE_SIGNIN_FLOW_ID || "sign-up-or-in";
   const [flowError, setFlowError] = useState<string | null>(null);
   const [oauthExchangeMessage, setOauthExchangeMessage] = useState<string | null>(null);
-  const oauthExchangeStartedRef = useRef(false);
+  const [oauthBootstrapExpired, setOauthBootstrapExpired] = useState(false);
+  const oauthResolveStartedRef = useRef(false);
   const redirectAfterSuccess = "/auth/callback";
+
+  const readSessionToken = useMemo(() => {
+    return () => {
+      const sdkToken = getSessionToken();
+      if (typeof sdkToken === "string" && sdkToken.trim().length > 0) return sdkToken.trim();
+      if (typeof sessionToken === "string" && sessionToken.trim().length > 0) return sessionToken.trim();
+      return null;
+    };
+  }, [sessionToken]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -168,7 +177,6 @@ export default function SignInClient() {
   useEffect(() => {
     if (callbackError) return;
     if (oauthErr) return;
-    if (oauthCode) return;
     if (isSessionLoading) return;
     if (!isAuthenticated) return;
     // Si el usuario ya esta autenticado, no mostramos el flow (puede causar estados raros en Descope);
@@ -176,13 +184,30 @@ export default function SignInClient() {
     router.replace(redirectAfterSuccess);
   }, [
     callbackError,
-    oauthCode,
     oauthErr,
     isAuthenticated,
     isSessionLoading,
     redirectAfterSuccess,
     router,
   ]);
+
+  useEffect(() => {
+    if (!oauthCode) {
+      setOauthBootstrapExpired(false);
+      oauthResolveStartedRef.current = false;
+      return;
+    }
+    if (!isSessionLoading) {
+      setOauthBootstrapExpired(false);
+      return;
+    }
+
+    const timeoutMs = 2500;
+    const timer = window.setTimeout(() => {
+      setOauthBootstrapExpired(true);
+    }, timeoutMs);
+    return () => window.clearTimeout(timer);
+  }, [oauthCode, isSessionLoading]);
 
   const oauthUiMessage = useMemo(() => {
     if (callbackError) return "No pudimos confirmar tu sesión. Intenta de nuevo.";
@@ -196,50 +221,48 @@ export default function SignInClient() {
     });
   }, [callbackError, oauthErr]);
 
+  const resetToCleanSignIn = useCallback(() => {
+    const qs = new URLSearchParams();
+    if (returnTo) qs.set("next", returnTo);
+    router.replace(qs.size ? `/sign-in?${qs.toString()}` : "/sign-in");
+  }, [returnTo, router]);
+
   useEffect(() => {
     if (!oauthCode) return;
-    if (oauthExchangeStartedRef.current) return;
-    oauthExchangeStartedRef.current = true;
+    if (isSessionLoading && !oauthBootstrapExpired) {
+      setFlowError(null);
+      setOauthExchangeMessage("Confirmando sesión…");
+      return;
+    }
+    if (oauthResolveStartedRef.current) return;
+    oauthResolveStartedRef.current = true;
 
     let cancelled = false;
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const run = async () => {
       setFlowError(null);
       setOauthExchangeMessage("Confirmando sesión…");
       try {
-        const response = await sdk.oauth.exchange(oauthCode);
-        if (cancelled) return;
-
-        if (response?.ok) {
-          router.replace(redirectAfterSuccess);
-          return;
+        // No hacemos `oauth.exchange` manual para evitar carreras y 401 visibles en consola.
+        // El objetivo del callback es esperar la sesión que el SDK ya está resolviendo.
+        const MAX_SESSION_POLLS = 12;
+        for (let attempt = 1; attempt <= MAX_SESSION_POLLS; attempt += 1) {
+          if (cancelled) return;
+          const token = readSessionToken();
+          if (isAuthenticated || token) {
+            router.replace(redirectAfterSuccess);
+            return;
+          }
+          await delay(200);
         }
-
-        const errorCode =
-          typeof response?.error?.errorCode === "string" ? response.error.errorCode : null;
-        const errorDescription =
-          typeof response?.error?.errorDescription === "string"
-            ? response.error.errorDescription
-            : null;
-
-        console.error("Descope OAuth exchange failed", {
-          code: response?.code,
-          errorCode,
-          errorDescription,
-        });
-
-        const hostname = typeof window !== "undefined" ? window.location.hostname : null;
-        setFlowError(
-          buildDescopeUiMessage({
-            errorCode,
-            hostname,
-            fallback: "No pudimos confirmar tu sesión. Intenta de nuevo.",
-          }),
-        );
-      } catch (error) {
         if (cancelled) return;
-        console.error("Descope OAuth exchange crashed", error);
-        setFlowError("No pudimos confirmar tu sesión. Intenta de nuevo.");
+        if (debugFlow) {
+          console.debug("OAuth callback without local session after polling; resetting URL", {
+            oauthCodePresent: true,
+          });
+        }
+        resetToCleanSignIn();
       } finally {
         if (!cancelled) setOauthExchangeMessage(null);
       }
@@ -249,13 +272,17 @@ export default function SignInClient() {
     return () => {
       cancelled = true;
     };
-  }, [oauthCode, redirectAfterSuccess, router, sdk.oauth]);
-
-  const resetToCleanSignIn = () => {
-    const qs = new URLSearchParams();
-    if (returnTo) qs.set("next", returnTo);
-    router.replace(qs.size ? `/sign-in?${qs.toString()}` : "/sign-in");
-  };
+  }, [
+    debugFlow,
+    isAuthenticated,
+    isSessionLoading,
+    oauthBootstrapExpired,
+    oauthCode,
+    readSessionToken,
+    resetToCleanSignIn,
+    redirectAfterSuccess,
+    router,
+  ]);
 
   return (
     <main className="min-h-screen bg-[color:var(--oda-cream)]">
@@ -298,15 +325,17 @@ export default function SignInClient() {
                   onError={(error: unknown) => {
                     const parsed = parseDescopeError(error);
                     const hostname = typeof window !== "undefined" ? window.location.hostname : null;
-                    console.error("Descope login error", {
-                      hostname,
-                      flowId,
-                      projectId: process.env.NEXT_PUBLIC_DESCOPE_PROJECT_ID,
-                      errorCode: parsed.errorCode,
-                      errorDescription: parsed.errorDescription,
-                      message: parsed.message,
-                      error,
-                    });
+                    if (parsed.errorCode !== "E061301") {
+                      console.error("Descope login error", {
+                        hostname,
+                        flowId,
+                        projectId: process.env.NEXT_PUBLIC_DESCOPE_PROJECT_ID,
+                        errorCode: parsed.errorCode,
+                        errorDescription: parsed.errorDescription,
+                        message: parsed.message,
+                        error,
+                      });
+                    }
                     setFlowError(
                       buildDescopeUiMessage({
                         errorCode: parsed.errorCode,

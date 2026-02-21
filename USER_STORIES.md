@@ -707,6 +707,10 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Se corrigió bloqueo de login por dominio no aprobado (`E108202`) actualizando `trustedDomains` en Descope para producción, alias `git-main` y local (`localhost`, `127.0.0.1`).
   - `/sign-in` ahora parsea errores de Descope (`CustomEvent.detail`) y muestra mensaje accionable para `E108202` con el host actual, manteniendo mensajes existentes para `E062209` y `E061301`.
   - Se agregó logging estructurado en cliente para diagnóstico rápido (`hostname`, `flowId`, `projectId`, `errorCode`, `errorDescription`).
+- Actualización (2026-02-21, fix UX):
+  - `E061301` (exchange token ya consumido/expirado por carrera) ahora se trata como condición recuperable silenciosa.
+  - `/sign-in` resuelve `?code=` con espera de bootstrap + polling corto de sesión/token (sin `oauth.exchange` manual); si aparece la carrera `E061301`, recupera automáticamente sin mostrar error ni botón `Reintentar`.
+  - Se mantiene visibilidad de errores no recuperables (`E108202`, `E062209`) con mensaje claro.
 
 ### MC-115 Curación humana: bulk edit de características de productos
 - Historia: Como admin/curador, quiero filtrar y seleccionar productos y luego editar características en masa (sin tocar descripción ni SEO), para corregir y completar la clasificación rápidamente sin romper el enrichment automático.
