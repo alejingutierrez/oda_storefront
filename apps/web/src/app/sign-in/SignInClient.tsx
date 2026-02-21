@@ -174,18 +174,16 @@ export default function SignInClient() {
   }, [returnTo]);
 
   useEffect(() => {
-    if (callbackError) return;
-    if (oauthErr) return;
     if (isSessionLoading) return;
-    if (!isAuthenticated) return;
+    const token = readSessionToken();
+    if (!isAuthenticated && !token) return;
     // Si el usuario ya esta autenticado, no mostramos el flow (puede causar estados raros en Descope);
     // forzamos el callback para sincronizar en Neon y devolver al `next`.
     router.replace(redirectAfterSuccess);
   }, [
-    callbackError,
-    oauthErr,
     isAuthenticated,
     isSessionLoading,
+    readSessionToken,
     redirectAfterSuccess,
     router,
   ]);
