@@ -10,9 +10,9 @@ import {
   getDisplayRoundingUnitCop,
   getPricingConfig,
   getUsdCopTrm,
-  toCopDisplayMarketing,
 } from "@/lib/pricing";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
+import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
 
 const normalizeString = (value: unknown) => {
   if (value === null || value === undefined) return null;
@@ -155,7 +155,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     SELECT
       (SELECT COUNT(*)::int FROM "products" p WHERE p."brandId" = ${brandId}) AS "productCount",
       (SELECT AVG(min_price) FROM product_min) AS "avgPrice",
-      'COP' AS "avgPriceCurrency"
+      (case when ${forceUsd} then 'USD' else 'COP' end) AS "avgPriceCurrency"
   `);
 
   const previewRows = await prisma.$queryRaw<ProductPreviewRow[]>(Prisma.sql`
@@ -164,11 +164,11 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         v."productId",
         MIN(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)::numeric AS "minPrice",
         MAX(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)::numeric AS "maxPrice",
-        'COP' AS currency
+        p.currency AS currency
       FROM "variants" v
       JOIN "products" p ON p.id = v."productId"
       WHERE p."brandId" = ${brandId}
-      GROUP BY v."productId"
+      GROUP BY v."productId", p.currency
     )
     SELECT
       p.id,
@@ -192,8 +192,15 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     productCount: statsRow?.productCount ?? 0,
     avgPrice: (() => {
       const value = toNumber(statsRow?.avgPrice);
-      const rounded = toCopDisplayMarketing(value, displayUnitCop);
-      return rounded ? Math.round(rounded) : null;
+      const applyMarketingRounding = shouldApplyMarketingRounding({
+        brandOverride: forceUsd,
+        sourceCurrency: statsRow?.avgPriceCurrency ?? null,
+      });
+      return toDisplayedCop({
+        effectiveCop: value,
+        applyMarketingRounding,
+        unitCop: displayUnitCop,
+      });
     })(),
     avgPriceCurrency: "COP",
   };
@@ -208,13 +215,27 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     updatedAt: row.updatedAt,
     minPrice: (() => {
       const value = toNumber(row.minPrice);
-      const rounded = toCopDisplayMarketing(value, displayUnitCop);
-      return rounded ? Math.round(rounded) : null;
+      const applyMarketingRounding = shouldApplyMarketingRounding({
+        brandOverride: forceUsd,
+        sourceCurrency: row.currency,
+      });
+      return toDisplayedCop({
+        effectiveCop: value,
+        applyMarketingRounding,
+        unitCop: displayUnitCop,
+      });
     })(),
     maxPrice: (() => {
       const value = toNumber(row.maxPrice);
-      const rounded = toCopDisplayMarketing(value, displayUnitCop);
-      return rounded ? Math.round(rounded) : null;
+      const applyMarketingRounding = shouldApplyMarketingRounding({
+        brandOverride: forceUsd,
+        sourceCurrency: row.currency,
+      });
+      return toDisplayedCop({
+        effectiveCop: value,
+        applyMarketingRounding,
+        unitCop: displayUnitCop,
+      });
     })(),
     currency: "COP",
   }));

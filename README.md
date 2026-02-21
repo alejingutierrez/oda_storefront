@@ -200,7 +200,9 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Prefetch defensivo de navegación: `next/link` del header/mega menu (desktop y mobile) usa `prefetch={false}` para evitar ráfagas de requests `_rsc` que compitan con la actualización de filtros (en especial precio).
 - Filtro de precio:
   - Slider (rango continuo): `price_min` y `price_max`.
+  - Regla de display: si el precio fuente es `COP`, se muestra sin redondeo marketing; si es `USD` (o la marca tiene `currency_override=USD`), se convierte a COP y sí se redondea al `unit_cop` configurado.
   - Rangos múltiples (unión disjunta real): `price_range=min:max` (parámetro repetible). Si existe al menos un `price_range`, tiene prioridad sobre `price_min/price_max` (la UI limpia `price_range` al interactuar con el slider).
+  - Step del slider: dinámico por rango (`1.000`, `5.000`, `10.000`, `50.000`, `100.000`) en vez de fijo a `10.000`.
   - Cambio de precio (30 días): filtro single-select `price_change=down|up` en sección Precio (`Bajó de precio` / `Subió de precio`), combinable con el resto de filtros.
   - Bounds/histograma: `/api/catalog/price-bounds` soporta `mode=lite|full`.
     - `mode=lite`: devuelve `{ bounds }` (rápido).
@@ -219,7 +221,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   ```
 - Cards PLP:
   - Badge de cambio de precio junto al precio (`↓ Bajó de precio` / `↑ Subió de precio`) cuando `products.priceChangeDirection` existe y `priceChangeAt` está dentro de 30 días.
-  - Sensibilidad de badge/filtro basada en **precio mínimo mostrado** (redondeo marketing `unit_cop`), para evitar ruido de cambios no visibles.
+  - Sensibilidad de badge/filtro basada en **precio mínimo mostrado**: `COP` compara valor exacto capturado y `USD` compara valor mostrado con redondeo marketing (`unit_cop`), para evitar ruido de cambios no visibles.
 - Facets lite (`/api/catalog/facets-lite`):
   - Incluye `occasions` para renderizar la sección **Ocasión** en filtros desktop/mobile de PLP.
 
@@ -358,6 +360,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - `GET /api/admin/pricing/auto-usd-brands/cron`: misma lógica para cron (autoriza `x-vercel-cron` o `Authorization: Bearer ADMIN_TOKEN`).
 - `GET /api/admin/pricing/brands`: lista marcas con override USD.
 - `PATCH /api/admin/pricing/brands/:id/override`: set/clear override manual (body `{ currency_override: "USD" | null }`).
+- Regla efectiva de visualización (catálogo/home/compare/admin/favoritos/listas): `COP` se muestra exacto; `USD` (o override `USD`) se convierte a COP y usa redondeo marketing.
 
 ## API interna (curación de productos)
 - `GET /api/admin/product-curation/products`: listado paginado (interno) para scroll infinito (query: filtros del catálogo + `page`, `pageSize`, `sort`).

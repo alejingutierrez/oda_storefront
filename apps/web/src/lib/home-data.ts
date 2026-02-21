@@ -21,7 +21,8 @@ import {
 } from "@/lib/navigation";
 import { buildEffectiveVariantPriceCopExpr } from "@/lib/catalog-query";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
-import { getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm, toCopDisplayMarketing } from "@/lib/pricing";
+import { getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm } from "@/lib/pricing";
+import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
 
 export type {
   BrandLogo,
@@ -37,19 +38,36 @@ export type {
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 4;
+const HOME_CACHE_VERSION = 5;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 
 export function getRotationSeed(now = new Date()): number {
   return Math.floor(now.getTime() / THREE_DAYS_MS);
 }
 
-function toCopDisplayString(value: string | number | null | undefined, unitCop: number) {
+function toFiniteNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined) return null;
   const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  const rounded = toCopDisplayMarketing(parsed, unitCop);
-  return rounded ? String(Math.round(rounded)) : null;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toCopDisplayString(input: {
+  value: string | number | null | undefined;
+  unitCop: number;
+  sourceCurrency: string | null | undefined;
+  brandOverrideUsd: boolean;
+}) {
+  const numeric = toFiniteNumber(input.value);
+  const applyMarketingRounding = shouldApplyMarketingRounding({
+    brandOverride: input.brandOverrideUsd,
+    sourceCurrency: input.sourceCurrency,
+  });
+  const displayed = toDisplayedCop({
+    effectiveCop: numeric,
+    applyMarketingRounding,
+    unitCop: input.unitCop,
+  });
+  return displayed ? String(displayed) : null;
 }
 
 export async function getMegaMenuData(): Promise<MegaMenuData> {
@@ -178,7 +196,9 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
       const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
       const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
       const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
-      const rows = await prisma.$queryRaw<ProductCard[]>(
+      const rows = await prisma.$queryRaw<
+        Array<ProductCard & { sourceCurrency: string | null; brandOverrideUsd: boolean }>
+      >(
         Prisma.sql`
           select
             p.id,
@@ -193,6 +213,8 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
               from variants v
               where v."productId" = p.id
             ) as "minPrice",
+            p.currency as "sourceCurrency",
+            (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
             'COP' as currency
           from products p
           join brands b on b.id = p."brandId"
@@ -203,9 +225,15 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
       );
       const row = rows[0] ?? null;
       if (!row) return null;
+      const { sourceCurrency, brandOverrideUsd, ...baseRow } = row;
       return {
-        ...row,
-        minPrice: toCopDisplayString(row.minPrice, displayUnitCop),
+        ...baseRow,
+        minPrice: toCopDisplayString({
+          value: row.minPrice,
+          unitCop: displayUnitCop,
+          sourceCurrency,
+          brandOverrideUsd,
+        }),
         currency: "COP",
       };
     },
@@ -224,7 +252,9 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
       const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
       const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
 
-      const rows = await prisma.$queryRaw<ProductCard[]>(
+      const rows = await prisma.$queryRaw<
+        Array<ProductCard & { sourceCurrency: string | null; brandOverrideUsd: boolean }>
+      >(
         Prisma.sql`
           select
             p.id,
@@ -239,6 +269,8 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
               from variants v
               where v."productId" = p.id
             ) as "minPrice",
+            p.currency as "sourceCurrency",
+            (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
             'COP' as currency
           from products p
           join brands b on b.id = p."brandId"
@@ -248,9 +280,14 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
         `
       );
 
-      return rows.map((row) => ({
+      return rows.map(({ sourceCurrency, brandOverrideUsd, ...row }) => ({
         ...row,
-        minPrice: toCopDisplayString(row.minPrice, displayUnitCop),
+        minPrice: toCopDisplayString({
+          value: row.minPrice,
+          unitCop: displayUnitCop,
+          sourceCurrency,
+          brandOverrideUsd,
+        }),
         currency: "COP",
       }));
     },
@@ -269,7 +306,9 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
       const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
       const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
 
-      const rows = await prisma.$queryRaw<ProductCard[]>(
+      const rows = await prisma.$queryRaw<
+        Array<ProductCard & { sourceCurrency: string | null; brandOverrideUsd: boolean }>
+      >(
         Prisma.sql`
           select
             p.id,
@@ -284,6 +323,8 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
               from variants v
               where v."productId" = p.id
             ) as "minPrice",
+            p.currency as "sourceCurrency",
+            (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
             'COP' as currency
           from products p
           join brands b on b.id = p."brandId"
@@ -293,9 +334,14 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
         `
       );
 
-      return rows.map((row) => ({
+      return rows.map(({ sourceCurrency, brandOverrideUsd, ...row }) => ({
         ...row,
-        minPrice: toCopDisplayString(row.minPrice, displayUnitCop),
+        minPrice: toCopDisplayString({
+          value: row.minPrice,
+          unitCop: displayUnitCop,
+          sourceCurrency,
+          brandOverrideUsd,
+        }),
         currency: "COP",
       }));
     },
@@ -420,7 +466,9 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
       const groups: StyleGroup[] = [];
       for (const style of styles) {
         const styleKey = style.stylePrimary;
-        const rows = await prisma.$queryRaw<ProductCard[]>(
+        const rows = await prisma.$queryRaw<
+          Array<ProductCard & { sourceCurrency: string | null; brandOverrideUsd: boolean }>
+        >(
           Prisma.sql`
             select
               p.id,
@@ -435,6 +483,8 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
                 from variants v
                 where v."productId" = p.id
               ) as "minPrice",
+              p.currency as "sourceCurrency",
+              (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
               'COP' as currency
             from products p
             join brands b on b.id = p."brandId"
@@ -443,9 +493,14 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
             limit 6
           `
         );
-        const products = rows.map((row) => ({
+        const products = rows.map(({ sourceCurrency, brandOverrideUsd, ...row }) => ({
           ...row,
-          minPrice: toCopDisplayString(row.minPrice, displayUnitCop),
+          minPrice: toCopDisplayString({
+            value: row.minPrice,
+            unitCop: displayUnitCop,
+            sourceCurrency,
+            brandOverrideUsd,
+          }),
           currency: "COP",
         }));
 

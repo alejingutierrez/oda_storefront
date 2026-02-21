@@ -186,12 +186,28 @@ async function main() {
           select
             current.product_id,
             current.captured_at as change_at,
-            round(current.effective_price_cop / $3::numeric) * $3::numeric as current_display,
-            round(previous.effective_price_cop / $3::numeric) * $3::numeric as previous_display
+            (
+              case
+                when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD'
+                  or upper(coalesce(p.currency, '')) = 'USD'
+                then round(current.effective_price_cop / $3::numeric) * $3::numeric
+                else round(current.effective_price_cop)
+              end
+            ) as current_display,
+            (
+              case
+                when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD'
+                  or upper(coalesce(p.currency, '')) = 'USD'
+                then round(previous.effective_price_cop / $3::numeric) * $3::numeric
+                else round(previous.effective_price_cop)
+              end
+            ) as previous_display
           from history_ranked current
           join history_ranked previous
             on previous.product_id = current.product_id
            and previous.rn = 2
+          join products p on p.id = current.product_id
+          join brands b on b.id = p."brandId"
           where current.rn = 1
         ),
         signals as (

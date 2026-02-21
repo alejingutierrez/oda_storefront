@@ -7,9 +7,9 @@ import {
   getDisplayRoundingUnitCop,
   getPricingConfig,
   getUsdCopTrm,
-  toCopDisplayMarketing,
   toCopEffective,
 } from "@/lib/pricing";
+import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
 
 export async function GET(req: Request) {
   const session = await requireUser(req);
@@ -53,8 +53,16 @@ export async function GET(req: Request) {
                 brandOverride,
                 trmUsdCop,
               });
-              const display = toCopDisplayMarketing(effective, displayUnitCop);
-              return display ? String(Math.round(display)) : "0";
+              const applyMarketingRounding = shouldApplyMarketingRounding({
+                brandOverride,
+                sourceCurrency: favorite.variant!.currency,
+              });
+              const display = toDisplayedCop({
+                effectiveCop: effective,
+                applyMarketingRounding,
+                unitCop: displayUnitCop,
+              });
+              return display ? String(display) : "0";
             })(),
             currency: "COP",
             color: favorite.variant.color,

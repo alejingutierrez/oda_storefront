@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
 import { buildEffectiveVariantPriceCopExpr } from "@/lib/catalog-query";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
-import { getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm, toCopDisplayMarketing } from "@/lib/pricing";
+import { getBrandCurrencyOverride, getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm } from "@/lib/pricing";
+import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
 
 export const runtime = "nodejs";
 
@@ -43,7 +44,7 @@ export async function GET(req: Request) {
     skip: (page - 1) * pageSize,
     take: pageSize,
     include: {
-      brand: { select: { id: true, name: true, logoUrl: true } },
+      brand: { select: { id: true, name: true, logoUrl: true, metadata: true } },
     },
   });
 
@@ -86,11 +87,9 @@ export async function GET(req: Request) {
   variantAgg.forEach((row) => {
     const minRaw = toNumber(row.minPrice);
     const maxRaw = toNumber(row.maxPrice);
-    const minRounded = toCopDisplayMarketing(minRaw, displayUnitCop);
-    const maxRounded = toCopDisplayMarketing(maxRaw, displayUnitCop);
     variantMap.set(row.productId, {
-      minPrice: minRounded ? Math.round(minRounded) : null,
-      maxPrice: maxRounded ? Math.round(maxRounded) : null,
+      minPrice: minRaw,
+      maxPrice: maxRaw,
       count: Number(row.count ?? 0),
     });
   });
@@ -124,6 +123,21 @@ export async function GET(req: Request) {
 
   const payload = products.map((product) => {
     const stats = variantMap.get(product.id);
+    const brandOverride = getBrandCurrencyOverride(product.brand?.metadata);
+    const applyMarketingRounding = shouldApplyMarketingRounding({
+      brandOverride,
+      sourceCurrency: product.currency,
+    });
+    const minPrice = toDisplayedCop({
+      effectiveCop: stats?.minPrice ?? null,
+      applyMarketingRounding,
+      unitCop: displayUnitCop,
+    });
+    const maxPrice = toDisplayedCop({
+      effectiveCop: stats?.maxPrice ?? null,
+      applyMarketingRounding,
+      unitCop: displayUnitCop,
+    });
     return {
       id: product.id,
       name: product.name,
@@ -145,11 +159,11 @@ export async function GET(req: Request) {
       imageGallery: imageMap.get(product.id) ?? [],
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
-      brand: product.brand,
+      brand: product.brand ? { id: product.brand.id, name: product.brand.name, logoUrl: product.brand.logoUrl } : null,
       variantCount: stats?.count ?? 0,
       inStockCount: stockMap.get(product.id) ?? 0,
-      minPrice: stats?.minPrice ?? null,
-      maxPrice: stats?.maxPrice ?? null,
+      minPrice,
+      maxPrice,
     };
   });
 

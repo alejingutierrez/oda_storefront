@@ -21,8 +21,12 @@ import {
   getDisplayRoundingUnitCop,
   getPricingConfig,
   getUsdCopTrm,
-  toCopDisplayMarketing,
 } from "@/lib/pricing";
+import {
+  getDynamicPriceStepCop,
+  shouldApplyMarketingRounding,
+  toDisplayedCop,
+} from "@/lib/price-display";
 
 const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 // Products can change frequently (stock/price), but we still want to avoid DB spikes on filters.
@@ -30,7 +34,7 @@ const CATALOG_REVALIDATE_SECONDS = 60 * 30;
 const CATALOG_PRODUCTS_REVALIDATE_SECONDS = 60;
 export const CATALOG_PAGE_SIZE = 24;
 // Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
-const CATALOG_CACHE_VERSION = 10;
+const CATALOG_CACHE_VERSION = 11;
 const PRICE_CHANGE_WINDOW_DAYS = 30;
 
 const buildCatalogCacheOptions = (revalidate: number) => ({
@@ -204,12 +208,8 @@ function buildFacetsCacheKey(filters: CatalogFilters) {
   return JSON.stringify(key);
 }
 
-function getPriceStep(max: number, unitCop: number) {
-  if (!Number.isFinite(max) || max <= 0) return unitCop;
-  if (!Number.isFinite(unitCop) || unitCop <= 0) return 10_000;
-  // En precios COP "de marketing", el step debe seguir el unit configurado (default 10k)
-  // para mantener bounds y ticks limpios (terminan en `0000`).
-  return unitCop;
+function getPriceStep(min: number, max: number) {
+  return getDynamicPriceStepCop({ min, max });
 }
 
 function omitFilters(filters: CatalogFilters, keys: (keyof CatalogFilters)[]): CatalogFilters {
@@ -335,10 +335,28 @@ function toFiniteNumber(value: string | number | null | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function toCopDisplayString(value: string | number | null | undefined, unitCop: number) {
+function toCopDisplayString(input: {
+  value: string | number | null | undefined;
+  unitCop: number;
+  sourceCurrency: string | null | undefined;
+  brandOverrideUsd: boolean;
+}) {
+  const numeric = toFiniteNumber(input.value);
+  const applyMarketingRounding = shouldApplyMarketingRounding({
+    brandOverride: input.brandOverrideUsd,
+    sourceCurrency: input.sourceCurrency,
+  });
+  const displayed = toDisplayedCop({
+    effectiveCop: numeric,
+    applyMarketingRounding,
+    unitCop: input.unitCop,
+  });
+  return displayed ? String(displayed) : null;
+}
+
+function toCopDisplayValue(value: number | null | undefined) {
   const numeric = toFiniteNumber(value);
-  const rounded = toCopDisplayMarketing(numeric, unitCop);
-  return rounded ? String(Math.round(rounded)) : null;
+  return numeric === null ? null : Math.round(numeric);
 }
 
 function toPriceChangeDirection(value: string | null | undefined): "down" | "up" | null {
@@ -357,13 +375,9 @@ function buildPriceChangeDirectionSelectExpr() {
   `;
 }
 
-function roundPriceStats(stats: CatalogPriceStats | null, unitCop: number): CatalogPriceStats | null {
+function roundPriceStats(stats: CatalogPriceStats | null): CatalogPriceStats | null {
   if (!stats) return null;
-  const unit = Number.isFinite(unitCop) && unitCop > 0 ? unitCop : 10_000;
-  const r = (value: number | null) => {
-    const rounded = toCopDisplayMarketing(value, unit);
-    return rounded ? Math.round(rounded) : null;
-  };
+  const r = (value: number | null) => toCopDisplayValue(value);
   return {
     count: stats.count,
     min: r(stats.min) ?? stats.min,
@@ -533,7 +547,7 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
   const cacheKey = buildFacetsCacheKey(boundsFilters);
   const cached = unstable_cache(
     async () => {
-      const { pricing, roundingUnitCop } = await getPricingContext();
+      const { pricing } = await getPricingContext();
       const rows = await (async () => {
         if (!hasVariantLevelFilters(boundsFilters)) {
           const productWhere = buildProductWhere(boundsFilters);
@@ -575,12 +589,12 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
 
       if (!minOk || !maxOk) return { min: null, max: null };
 
-      const unit = Number.isFinite(roundingUnitCop) && roundingUnitCop > 0 ? roundingUnitCop : 10_000;
-      const alignedMin = Math.max(0, Math.floor((min as number) / unit) * unit);
-      const alignedMax = Math.ceil((max as number) / unit) * unit;
+      const step = getPriceStep(min as number, max as number);
+      const alignedMin = Math.max(0, Math.floor((min as number) / step) * step);
+      const alignedMax = Math.ceil((max as number) / step) * step;
       return {
         min: alignedMin,
-        max: alignedMax > alignedMin ? alignedMax : alignedMin + unit,
+        max: alignedMax > alignedMin ? alignedMax : alignedMin + step,
       };
     },
     ["catalog-price-bounds", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
@@ -603,7 +617,7 @@ export async function getCatalogPriceInsights(
   const cacheKey = `${buildFacetsCacheKey(boundsFilters)}::buckets:${bucketKey}`;
   const cached = unstable_cache(
     async () => {
-      const { pricing, roundingUnitCop } = await getPricingContext();
+      const { pricing } = await getPricingContext();
       const useRollupFastPath = !hasNonPriceVariantFilters(boundsFilters);
       const productWhere = buildProductWhere(boundsFilters);
       const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
@@ -712,7 +726,7 @@ export async function getCatalogPriceInsights(
             p98: typeof p98 === "number" && Number.isFinite(p98) ? p98 : null,
           }
         : null;
-      const statsDisplay = roundPriceStats(stats, roundingUnitCop);
+      const statsDisplay = roundPriceStats(stats);
 
       let min = hardOk ? minHard : null;
       let max = hardOk ? maxHard : null;
@@ -734,7 +748,7 @@ export async function getCatalogPriceInsights(
 
       // Alinea el rango a pasos “humanos” para que el slider no muestre números raros.
       if (hardOk && typeof min === "number" && typeof max === "number") {
-        const step = getPriceStep(max, roundingUnitCop);
+        const step = getPriceStep(min, max);
         const alignedMin = Math.max(0, Math.floor(min / step) * step);
         const alignedMax = Math.ceil(max / step) * step;
         min = alignedMin;
@@ -2018,6 +2032,7 @@ async function computeCatalogProductsPage(params: {
     minPrice: string | null;
     maxPrice: string | null;
     currency: string | null;
+    brandOverrideUsd: boolean;
     priceChangeDirection: string | null;
   }> = await (async () => {
     if ((sortKey === "price_asc" || sortKey === "price_desc") && (!hasVariantFilters || rollupListingFastPath)) {
@@ -2035,6 +2050,7 @@ async function computeCatalogProductsPage(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          brandOverrideUsd: boolean;
           priceChangeDirection: string | null;
         }>
       >(
@@ -2047,7 +2063,8 @@ async function computeCatalogProductsPage(params: {
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
-            'COP' as currency,
+            p.currency as currency,
+            (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
             ${priceChangeDirectionExpr} as "priceChangeDirection"
           from products p
           join brands b on b.id = p."brandId"
@@ -2069,11 +2086,12 @@ async function computeCatalogProductsPage(params: {
           imageCoverUrl: string | null;
           brandName: string;
             sourceUrl: string | null;
-            minPrice: string | null;
-            maxPrice: string | null;
-            currency: string | null;
-            priceChangeDirection: string | null;
-          }>
+              minPrice: string | null;
+              maxPrice: string | null;
+              currency: string | null;
+              brandOverrideUsd: boolean;
+              priceChangeDirection: string | null;
+            }>
       >(
         Prisma.sql`
           select
@@ -2084,7 +2102,8 @@ async function computeCatalogProductsPage(params: {
             p."sourceUrl",
             min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
             max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
-            'COP' as currency,
+            p.currency as currency,
+            bool_or(upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
             ${priceChangeDirectionExpr} as "priceChangeDirection"
           from products p
           join brands b on b.id = p."brandId"
@@ -2097,6 +2116,7 @@ async function computeCatalogProductsPage(params: {
             p."imageCoverUrl",
             b.name,
             p."sourceUrl",
+            p.currency,
             p."createdAt",
             p."priceChangeDirection",
             p."priceChangeAt"
@@ -2123,6 +2143,7 @@ async function computeCatalogProductsPage(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          brandOverrideUsd: boolean;
           priceChangeDirection: string | null;
         }>
       >(
@@ -2171,7 +2192,8 @@ async function computeCatalogProductsPage(params: {
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
-            'COP' as currency,
+            p.currency as currency,
+            (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
             ${priceChangeDirectionExpr} as "priceChangeDirection"
           from ids
           join products p on p.id = ids.id
@@ -2205,6 +2227,7 @@ async function computeCatalogProductsPage(params: {
         minPrice: string | null;
         maxPrice: string | null;
         currency: string | null;
+        brandOverrideUsd: boolean;
         priceChangeDirection: string | null;
       }>
     >(
@@ -2253,7 +2276,8 @@ async function computeCatalogProductsPage(params: {
           p."sourceUrl",
           vagg."minPrice",
           vagg."maxPrice",
-          vagg.currency,
+          p.currency as currency,
+          (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
           ${priceChangeDirectionExpr} as "priceChangeDirection"
         from ids
         join products p on p.id = ids.id
@@ -2261,8 +2285,7 @@ async function computeCatalogProductsPage(params: {
         left join lateral (
           select
             min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
-            max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
-            'COP' as currency
+            max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice"
           from variants v
           where v."productId" = p.id
             ${variantWhere}
@@ -2292,8 +2315,18 @@ async function computeCatalogProductsPage(params: {
     imageCoverUrl: item.imageCoverUrl,
     brandName: item.brandName,
     sourceUrl: item.sourceUrl,
-    minPrice: toCopDisplayString(item.minPrice, displayUnitCop),
-    maxPrice: toCopDisplayString(item.maxPrice, displayUnitCop),
+    minPrice: toCopDisplayString({
+      value: item.minPrice,
+      unitCop: displayUnitCop,
+      sourceCurrency: item.currency,
+      brandOverrideUsd: item.brandOverrideUsd,
+    }),
+    maxPrice: toCopDisplayString({
+      value: item.maxPrice,
+      unitCop: displayUnitCop,
+      sourceCurrency: item.currency,
+      brandOverrideUsd: item.brandOverrideUsd,
+    }),
     currency: "COP",
     priceChangeDirection: toPriceChangeDirection(item.priceChangeDirection),
   }));
@@ -2371,6 +2404,7 @@ async function computeCatalogProducts(params: {
       minPrice: string | null;
       maxPrice: string | null;
       currency: string | null;
+      brandOverrideUsd: boolean;
       priceChangeDirection: string | null;
     }>
   > = (() => {
@@ -2389,6 +2423,7 @@ async function computeCatalogProducts(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          brandOverrideUsd: boolean;
           priceChangeDirection: string | null;
         }>
       >(
@@ -2401,7 +2436,8 @@ async function computeCatalogProducts(params: {
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
-            'COP' as currency,
+            p.currency as currency,
+            (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
             ${priceChangeDirectionExpr} as "priceChangeDirection"
           from products p
           join brands b on b.id = p."brandId"
@@ -2426,6 +2462,7 @@ async function computeCatalogProducts(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          brandOverrideUsd: boolean;
           priceChangeDirection: string | null;
         }>
       >(
@@ -2438,7 +2475,8 @@ async function computeCatalogProducts(params: {
             p."sourceUrl",
             min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
             max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
-            'COP' as currency,
+            p.currency as currency,
+            bool_or(upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
             ${priceChangeDirectionExpr} as "priceChangeDirection"
           from products p
           join brands b on b.id = p."brandId"
@@ -2451,6 +2489,7 @@ async function computeCatalogProducts(params: {
             p."imageCoverUrl",
             b.name,
             p."sourceUrl",
+            p.currency,
             p."createdAt",
             p."priceChangeDirection",
             p."priceChangeAt"
@@ -2477,6 +2516,7 @@ async function computeCatalogProducts(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          brandOverrideUsd: boolean;
           priceChangeDirection: string | null;
         }>
       >(
@@ -2525,7 +2565,8 @@ async function computeCatalogProducts(params: {
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
-            'COP' as currency,
+            p.currency as currency,
+            (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
             ${priceChangeDirectionExpr} as "priceChangeDirection"
           from ids
           join products p on p.id = ids.id
@@ -2559,6 +2600,7 @@ async function computeCatalogProducts(params: {
         minPrice: string | null;
         maxPrice: string | null;
         currency: string | null;
+        brandOverrideUsd: boolean;
         priceChangeDirection: string | null;
       }>
     >(
@@ -2607,7 +2649,8 @@ async function computeCatalogProducts(params: {
           p."sourceUrl",
           vagg."minPrice",
           vagg."maxPrice",
-          vagg.currency,
+          p.currency as currency,
+          (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
           ${priceChangeDirectionExpr} as "priceChangeDirection"
         from ids
         join products p on p.id = ids.id
@@ -2615,8 +2658,7 @@ async function computeCatalogProducts(params: {
         left join lateral (
           select
             min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
-            max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
-            'COP' as currency
+            max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice"
           from variants v
           where v."productId" = p.id
             ${variantWhere}
@@ -2651,8 +2693,18 @@ async function computeCatalogProducts(params: {
       imageCoverUrl: item.imageCoverUrl,
       brandName: item.brandName,
       sourceUrl: item.sourceUrl,
-      minPrice: toCopDisplayString(item.minPrice, displayUnitCop),
-      maxPrice: toCopDisplayString(item.maxPrice, displayUnitCop),
+      minPrice: toCopDisplayString({
+        value: item.minPrice,
+        unitCop: displayUnitCop,
+        sourceCurrency: item.currency,
+        brandOverrideUsd: item.brandOverrideUsd,
+      }),
+      maxPrice: toCopDisplayString({
+        value: item.maxPrice,
+        unitCop: displayUnitCop,
+        sourceCurrency: item.currency,
+        brandOverrideUsd: item.brandOverrideUsd,
+      }),
       currency: "COP",
       priceChangeDirection: toPriceChangeDirection(item.priceChangeDirection),
     })),

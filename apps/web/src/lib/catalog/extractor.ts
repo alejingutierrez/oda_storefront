@@ -30,9 +30,9 @@ import {
   getDisplayRoundingUnitCop,
   getPricingConfig,
   getUsdCopTrm,
-  toCopDisplayMarketing,
   toCopEffective,
 } from "@/lib/pricing";
+import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
 
 const toNumber = (value: unknown) => sanitizeCatalogPrice(parsePriceValue(value));
 const chooseString = (
@@ -462,7 +462,15 @@ export const processCatalogRef = async ({
 
   let createdVariants = 0;
   const previousMinPriceCop = toNumber(product.minPriceCop ?? null);
-  const previousDisplayedMinPrice = toCopDisplayMarketing(previousMinPriceCop, displayRoundingUnitCop);
+  const applyMarketingRounding = shouldApplyMarketingRounding({
+    brandOverride: brandCurrencyOverride,
+    sourceCurrency: product.currency,
+  });
+  const previousDisplayedMinPrice = toDisplayedCop({
+    effectiveCop: previousMinPriceCop,
+    applyMarketingRounding,
+    unitCop: displayRoundingUnitCop,
+  });
   let hasInStock = false;
   let minPriceCop: number | null = null;
   let maxPriceCop: number | null = null;
@@ -522,7 +530,11 @@ export const processCatalogRef = async ({
     if (variantResult.created) createdVariants += 1;
   }
 
-  const nextDisplayedMinPrice = toCopDisplayMarketing(minPriceCop, displayRoundingUnitCop);
+  const nextDisplayedMinPrice = toDisplayedCop({
+    effectiveCop: minPriceCop,
+    applyMarketingRounding,
+    unitCop: displayRoundingUnitCop,
+  });
   const visiblePriceChanged =
     previousDisplayedMinPrice !== null &&
     nextDisplayedMinPrice !== null &&

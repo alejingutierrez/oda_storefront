@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { CatalogPriceBounds, CatalogPriceHistogram, CatalogPriceStats } from "@/lib/catalog-data";
 import { labelizeSubcategory } from "@/lib/navigation";
+import { getDynamicPriceStepCop } from "@/lib/price-display";
 
 type FacetItem = {
   value: string;
@@ -232,11 +233,8 @@ function sortColorFacetItems(items: FacetItem[], selectedValues: string[]) {
   });
 }
 
-function getStep(max: number) {
-  void max;
-  // Marketing rounding rule: keep slider ticks clean (ends in `0000`).
-  // Backend already aligns bounds to multiples of 10k COP.
-  return 10_000;
+function getStep(min: number, max: number) {
+  return getDynamicPriceStepCop({ min, max });
 }
 
 const INTERACTION_PENDING_TIMEOUT_MS = 4500;
@@ -1478,7 +1476,7 @@ function PriceRange({
   const hasBounds = typeof bounds.min === "number" && typeof bounds.max === "number";
   const minBound = typeof bounds.min === "number" ? bounds.min : 0;
   const maxBound = typeof bounds.max === "number" ? bounds.max : 0;
-  const rawStep = getStep(maxBound);
+  const rawStep = getStep(minBound, maxBound);
   const step = Math.max(1, Math.min(rawStep, Math.max(1, maxBound - minBound)));
   const hasRange = hasBounds && Number.isFinite(minBound) && Number.isFinite(maxBound) && maxBound > minBound;
 

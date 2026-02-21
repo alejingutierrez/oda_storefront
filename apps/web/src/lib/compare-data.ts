@@ -6,9 +6,9 @@ import {
   getDisplayRoundingUnitCop,
   getPricingConfig,
   getUsdCopTrm,
-  toCopDisplayMarketing,
   toCopEffective,
 } from "@/lib/pricing";
+import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
 
 export type CompareProductDetails = {
   id: string;
@@ -128,8 +128,20 @@ export async function getCompareProductDetails(ids: string[]): Promise<ComparePr
     const sizesPreferred = uniqSorted(inStockSizes);
     const sizes = sizesPreferred.length > 0 ? sizesPreferred : uniqSorted(allSizes);
 
-    const minDisplay = toCopDisplayMarketing(minCop, displayUnitCop);
-    const maxDisplay = toCopDisplayMarketing(maxCop, displayUnitCop);
+    const applyMarketingRounding = shouldApplyMarketingRounding({
+      brandOverride,
+      sourceCurrency: row.currency,
+    });
+    const minDisplay = toDisplayedCop({
+      effectiveCop: minCop,
+      applyMarketingRounding,
+      unitCop: displayUnitCop,
+    });
+    const maxDisplay = toDisplayedCop({
+      effectiveCop: maxCop,
+      applyMarketingRounding,
+      unitCop: displayUnitCop,
+    });
 
     return [
       {

@@ -7,8 +7,9 @@ import {
   parseCatalogFiltersFromSearchParams,
   parseCatalogSortFromSearchParams,
 } from "@/lib/catalog-filters";
-import { getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm, toCopDisplayMarketing } from "@/lib/pricing";
+import { getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm } from "@/lib/pricing";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
+import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -64,6 +65,7 @@ export async function GET(req: Request) {
         minPrice: string | null;
         maxPrice: string | null;
         currency: string | null;
+        brandOverrideUsd: boolean;
         variantCount: bigint;
         inStockCount: bigint;
         hasEnrichment: boolean;
@@ -95,7 +97,8 @@ export async function GET(req: Request) {
           from variants v
           where v."productId" = p.id
         ) as "maxPrice",
-        'COP' as currency,
+        p.currency as currency,
+        (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
         (
           select count(*)
           from variants v
@@ -127,10 +130,18 @@ export async function GET(req: Request) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const hasMore = page < totalPages;
 
-  const toDisplay = (value: string | null) => {
-    const numeric = value ? Number(value) : null;
-    const rounded = toCopDisplayMarketing(numeric, displayUnitCop);
-    return rounded ? String(Math.round(rounded)) : null;
+  const toDisplay = (input: { value: string | null; sourceCurrency: string | null; brandOverrideUsd: boolean }) => {
+    const numeric = input.value ? Number(input.value) : null;
+    const applyMarketingRounding = shouldApplyMarketingRounding({
+      brandOverride: input.brandOverrideUsd,
+      sourceCurrency: input.sourceCurrency,
+    });
+    const displayed = toDisplayedCop({
+      effectiveCop: numeric,
+      applyMarketingRounding,
+      unitCop: displayUnitCop,
+    });
+    return displayed ? String(displayed) : null;
   };
 
   return NextResponse.json({
@@ -155,8 +166,16 @@ export async function GET(req: Request) {
       status: row.status,
       sourceUrl: row.sourceUrl,
       updatedAt: row.updatedAt,
-      minPrice: toDisplay(row.minPrice),
-      maxPrice: toDisplay(row.maxPrice),
+      minPrice: toDisplay({
+        value: row.minPrice,
+        sourceCurrency: row.currency,
+        brandOverrideUsd: row.brandOverrideUsd,
+      }),
+      maxPrice: toDisplay({
+        value: row.maxPrice,
+        sourceCurrency: row.currency,
+        brandOverrideUsd: row.brandOverrideUsd,
+      }),
       currency: "COP",
       variantCount: Number(row.variantCount ?? 0),
       inStockCount: Number(row.inStockCount ?? 0),

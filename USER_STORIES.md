@@ -115,7 +115,7 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Historia: Como usuario del catálogo, quiero identificar rápido si un producto bajó o subió de precio y filtrar por esa señal, además de filtrar por ocasión, para descubrir oportunidades y navegar mejor.
 - Alcance:
   - Persistencia en `products` de `priceChangeDirection` (`down|up|null`) y `priceChangeAt`.
-  - Cálculo online en extractor al recalcular `minPriceCop`: compara precio mínimo **mostrado** (redondeo marketing) previo vs nuevo; solo marca cambio cuando cambia el valor visible.
+  - Cálculo online en extractor al recalcular `minPriceCop`: compara precio mínimo **mostrado** previo vs nuevo; para `COP` usa valor exacto y para `USD` (u override USD) usa redondeo marketing. Solo marca cambio cuando cambia el valor visible.
   - Filtro backend `price_change=down|up` con ventana fija de 30 días.
   - Exposición de `priceChangeDirection` en payload de cards PLP (`/api/catalog/products-page` y `/api/catalog/products`).
   - Facets lite incluye `occasions` y UI de filtros muestra sección “Ocasión” (desktop + mobile).
@@ -129,6 +129,20 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Datos: `products.priceChangeDirection`, `products.priceChangeAt`, `price_history`, `occasionTags`.
 - NF: filtro de cambio de precio con índice parcial para no degradar latencia.
 - Estado: **done (2026-02-20)**.
+
+### MC-136 Corrección de precios: COP exacto, USD con redondeo marketing
+- Historia: Como usuario/admin, quiero ver precios COP tal como fueron capturados y aplicar redondeo marketing solo cuando el origen es USD, para evitar pérdida de precisión en marcas locales y mantener consistencia en conversiones.
+- Alcance:
+  - Nuevo helper compartido `src/lib/price-display.ts` (`shouldApplyMarketingRounding`, `toDisplayedCop`, `getDynamicPriceStepCop`).
+  - Catálogo/home/compare/admin/favoritos/listas migran a la regla condicional: `COP` sin redondeo marketing, `USD` (o `currency_override=USD`) con redondeo.
+  - Slider de precio en PLP cambia de step fijo `10.000` a step dinámico por rango.
+  - Señal de cambio de precio (`catalog/extractor` + script backfill) usa la misma regla condicional para evitar falsos positivos por redondeo.
+- CA:
+  - Un precio COP como `189900` se muestra `189900` (formateado en UI), no `190000`.
+  - Un precio USD convertido a COP mantiene redondeo marketing.
+  - `price_asc/price_desc` y filtros siguen operando sobre precio COP efectivo sin redondeo.
+  - No hay cambios de esquema DB ni de shape API (se mantiene `currency: "COP"` en payloads).
+- Estado: **done (2026-02-21)**.
 
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.

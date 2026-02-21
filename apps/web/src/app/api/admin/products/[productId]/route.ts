@@ -6,9 +6,9 @@ import {
   getDisplayRoundingUnitCop,
   getPricingConfig,
   getUsdCopTrm,
-  toCopDisplayMarketing,
   toCopEffective,
 } from "@/lib/pricing";
+import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
 
 export const runtime = "nodejs";
 
@@ -51,12 +51,20 @@ export async function GET(req: Request, context: { params: Promise<{ productId: 
         brandOverride,
         trmUsdCop,
       });
-      const displayCop = toCopDisplayMarketing(effectiveCop, displayUnitCop);
+      const applyMarketingRounding = shouldApplyMarketingRounding({
+        brandOverride,
+        sourceCurrency: storedCurrency,
+      });
+      const displayCop = toDisplayedCop({
+        effectiveCop,
+        applyMarketingRounding,
+        unitCop: displayUnitCop,
+      });
 
       return {
         ...variant,
         // Always show prices in COP for admin display.
-        price: displayCop ? Math.round(displayCop) : null,
+        price: displayCop,
         currency: "COP",
         // Keep the raw values for debugging / audits in admin.
         priceStored: variant.price,
