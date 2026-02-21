@@ -162,11 +162,26 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Login en `/sign-in` con Descope (Google/Apple/Facebook).
 - En `/sign-in` el flow de Descope usa `redirectUrl=<origin>/sign-in` para que los proveedores OAuth redirijan en la misma pestaña (evita popups bloqueados y “click que no hace nada” en algunos navegadores/in-app browsers).
 - OAuth callback hardening: si Descope vuelve a `/sign-in` con `?code=` o `?err=`, la UI hace `sdk.oauth.exchange(code)` explícito, muestra feedback y permite reintentar limpiando la URL (evita estados pegados y dobles exchanges).
+- Hardening de dominio no aprobado (`E108202`): `/sign-in` detecta errores del `CustomEvent` de Descope y muestra mensaje explícito cuando el host actual no está en `trustedDomains`.
 - Perfil privado en `/perfil` (nombre, bio, favoritos + listas, borrado de cuenta). Botón "Guardar" en cards de `/catalogo` para agregar a favoritos.
 - Tokens: persistimos el **session token** en storage del browser (evita límites de tamaño de cookie) y el **refresh token** en cookie (`refreshTokenViaCookie`) para que el SDK pueda auto‑refrescar la sesión.
 - Backend: todas las rutas de usuario (`/api/user/*`) exigen `Authorization: Bearer <sessionToken>` y validan server‑side con Descope (`validateSession`). No dependen de la cookie `DS`.
 - `/perfil` se protege en el cliente (si no hay sesión, redirige a `/sign-in?next=/perfil`).
 - Eventos de experiencia UI viven en `experience_events` y se vinculan a `experience_subjects` usando cookie persistente `oda_anon_id`.
+
+### Descope Approved Domains
+- Cargar dominios en Descope sin protocolo (`https://`), separados por coma, en `project.json.trustedDomains` (Project Settings).
+- Lista requerida para este repo:
+  - `oda-moda.vercel.app`
+  - `oda-storefront-6ee5-alejingutierrezs-projects.vercel.app`
+  - `oda-storefront-6ee5-git-main-alejingutierrezs-projects.vercel.app`
+  - `localhost`
+  - `127.0.0.1`
+- Regla operativa: QA de login en preview debe usar el alias estable `oda-storefront-6ee5-git-main-alejingutierrezs-projects.vercel.app` (no URLs efímeras de deployment hash).
+- Antes de probar login en un host nuevo:
+  1. Agregar el host en `trustedDomains` de Descope.
+  2. Guardar cambios en Descope.
+  3. Reintentar `/sign-in`; si falla con `E108202`, validar que el host exacto quedó incluido.
 
 ## Catalogo (public)
 - Ruta `/catalogo` (y alias `/buscar`) con filtros, facets y scroll infinito.

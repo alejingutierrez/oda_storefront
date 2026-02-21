@@ -33,6 +33,28 @@ Flujo:
 - `/sign-in` renderiza el flow de Descope.
 - Al completar login redirige a `/auth/callback?next=...`, que hace el sync del usuario en Neon y luego devuelve al `next`.
 
+## Descope Approved Domains
+
+Configurar hosts aprobados en Descope (Project Settings) dentro de `trustedDomains` **sin protocolo** (`https://`) y separados por coma.
+
+Hosts requeridos:
+
+- `oda-moda.vercel.app`
+- `oda-storefront-6ee5-alejingutierrezs-projects.vercel.app`
+- `oda-storefront-6ee5-git-main-alejingutierrezs-projects.vercel.app`
+- `localhost`
+- `127.0.0.1`
+
+Regla operativa:
+
+- Para QA de auth en preview, usar el alias estable `oda-storefront-6ee5-git-main-alejingutierrezs-projects.vercel.app` y evitar URLs efímeras.
+
+Checklist antes de probar login en un host nuevo:
+
+1. Agregar el host exacto en `trustedDomains`.
+2. Guardar configuración en Descope.
+3. Reintentar `/sign-in` y validar que no aparezca `E108202`.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More

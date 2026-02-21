@@ -8,6 +8,82 @@ import { useDescope, useSession } from "@descope/nextjs-sdk/client";
 
 const LOGIN_NEXT_KEY = "oda_login_next_v1";
 
+type ParsedDescopeError = {
+  errorCode: string | null;
+  errorDescription: string | null;
+  message: string | null;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const readString = (source: Record<string, unknown> | null, key: string) => {
+  if (!source) return null;
+  const value = source[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+};
+
+const safeDecode = (value: string) => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+const extractDescopeErrorCode = (value: string | null) => {
+  if (!value) return null;
+  const decoded = safeDecode(value);
+  const match = decoded.match(/\bE\d{6}\b/i);
+  return match ? match[0].toUpperCase() : null;
+};
+
+const parseDescopeError = (error: unknown): ParsedDescopeError => {
+  const base = isRecord(error) ? error : null;
+  const detail = isRecord(base?.detail) ? (base.detail as Record<string, unknown>) : base;
+  const nestedError = isRecord(detail?.error) ? (detail.error as Record<string, unknown>) : null;
+  return {
+    errorCode:
+      readString(detail, "errorCode") ??
+      readString(nestedError, "errorCode") ??
+      readString(detail, "code") ??
+      null,
+    errorDescription:
+      readString(detail, "errorDescription") ??
+      readString(nestedError, "errorDescription") ??
+      readString(detail, "description") ??
+      null,
+    message:
+      readString(detail, "message") ??
+      readString(nestedError, "message") ??
+      (error instanceof Error ? error.message : null),
+  };
+};
+
+const domainNotApprovedMessage = (hostname: string | null) => {
+  const hostInfo = hostname ? ` Dominio actual: ${hostname}.` : "";
+  return `Este dominio no está autorizado para login en Descope.${hostInfo} Avísanos para habilitarlo.`;
+};
+
+const buildDescopeUiMessage = ({
+  errorCode,
+  fallback,
+  hostname,
+}: {
+  errorCode: string | null;
+  fallback: string;
+  hostname: string | null;
+}) => {
+  if (errorCode === "E108202") return domainNotApprovedMessage(hostname);
+  if (errorCode === "E062209") {
+    return "Google no pudo completar el login (configuración OAuth). Intenta de nuevo o avísanos para revisar la configuración.";
+  }
+  if (errorCode === "E061301") {
+    return "El intento de login expiró. Intenta de nuevo.";
+  }
+  return fallback;
+};
+
 const computeReturnTo = () => {
   if (typeof window === "undefined") return null;
   const params = new URLSearchParams(window.location.search);
@@ -111,11 +187,13 @@ export default function SignInClient() {
   const oauthUiMessage = useMemo(() => {
     if (callbackError) return "No pudimos confirmar tu sesión. Intenta de nuevo.";
     if (!oauthErr) return null;
-    const decoded = decodeURIComponent(oauthErr);
-    if (decoded.includes("E062209")) {
-      return "Google no pudo completar el login (configuración OAuth). Intenta de nuevo o avísanos para revisar la configuración.";
-    }
-    return "No pudimos completar el login con Google. Intenta de nuevo.";
+    const errorCode = extractDescopeErrorCode(oauthErr);
+    const hostname = typeof window !== "undefined" ? window.location.hostname : null;
+    return buildDescopeUiMessage({
+      errorCode,
+      hostname,
+      fallback: "No pudimos completar el login con Google. Intenta de nuevo.",
+    });
   }, [callbackError, oauthErr]);
 
   useEffect(() => {
@@ -150,11 +228,14 @@ export default function SignInClient() {
           errorDescription,
         });
 
-        if (errorCode === "E061301") {
-          setFlowError("El intento de login expiró. Intenta de nuevo.");
-        } else {
-          setFlowError("No pudimos confirmar tu sesión. Intenta de nuevo.");
-        }
+        const hostname = typeof window !== "undefined" ? window.location.hostname : null;
+        setFlowError(
+          buildDescopeUiMessage({
+            errorCode,
+            hostname,
+            fallback: "No pudimos confirmar tu sesión. Intenta de nuevo.",
+          }),
+        );
       } catch (error) {
         if (cancelled) return;
         console.error("Descope OAuth exchange crashed", error);
@@ -215,8 +296,24 @@ export default function SignInClient() {
                     // marca la sesion como autenticada, el effect de arriba redirige a `/auth/callback`.
                   }}
                   onError={(error: unknown) => {
-                    console.error("Descope login error", error);
-                    setFlowError("No pudimos cargar el login. Reintenta en unos segundos.");
+                    const parsed = parseDescopeError(error);
+                    const hostname = typeof window !== "undefined" ? window.location.hostname : null;
+                    console.error("Descope login error", {
+                      hostname,
+                      flowId,
+                      projectId: process.env.NEXT_PUBLIC_DESCOPE_PROJECT_ID,
+                      errorCode: parsed.errorCode,
+                      errorDescription: parsed.errorDescription,
+                      message: parsed.message,
+                      error,
+                    });
+                    setFlowError(
+                      buildDescopeUiMessage({
+                        errorCode: parsed.errorCode,
+                        hostname,
+                        fallback: "No pudimos cargar el login. Reintenta en unos segundos.",
+                      }),
+                    );
                   }}
                 />
                 {oauthUiMessage ? (

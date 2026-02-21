@@ -703,6 +703,10 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Riesgos: Configuración OAuth incompleta en Descope; mitigación con checklist de providers.
 - Métricas: % usuarios con perfil completo, favoritos por usuario, ratio de eventos UI por sesión.
 - Estado: **done (2026-02-05)**.
+- Actualización (2026-02-21, fix):
+  - Se corrigió bloqueo de login por dominio no aprobado (`E108202`) actualizando `trustedDomains` en Descope para producción, alias `git-main` y local (`localhost`, `127.0.0.1`).
+  - `/sign-in` ahora parsea errores de Descope (`CustomEvent.detail`) y muestra mensaje accionable para `E108202` con el host actual, manteniendo mensajes existentes para `E062209` y `E061301`.
+  - Se agregó logging estructurado en cliente para diagnóstico rápido (`hostname`, `flowId`, `projectId`, `errorCode`, `errorDescription`).
 
 ### MC-115 Curación humana: bulk edit de características de productos
 - Historia: Como admin/curador, quiero filtrar y seleccionar productos y luego editar características en masa (sin tocar descripción ni SEO), para corregir y completar la clasificación rápidamente sin romper el enrichment automático.
