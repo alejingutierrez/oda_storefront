@@ -30,6 +30,9 @@ type CarouselRunState =
 
 type CarouselConfig = {
   desktopArmDelayMs: number;
+  desktopFirstStepDelayMs: number;
+  desktopFirstPreloadTimeoutMs: number;
+  desktopRetryMs: number;
   dwellMs: number;
   retryDelayMs: number;
   preloadTimeoutMs: number;
@@ -48,12 +51,20 @@ type PauseOptions = {
   markMobileCooldown?: boolean;
 };
 
+type RunStepOptions = {
+  preloadTimeoutMs?: number;
+  retryDelayMs?: number;
+};
+
 type LayerId = "a" | "b";
 
 type ImageLoadState = "loading" | "loaded" | "error";
 
 const CAROUSEL_CONFIG: CarouselConfig = {
   desktopArmDelayMs: 360,
+  desktopFirstStepDelayMs: 420,
+  desktopFirstPreloadTimeoutMs: 1600,
+  desktopRetryMs: 650,
   dwellMs: 3400,
   retryDelayMs: 1400,
   preloadTimeoutMs: 700,
@@ -425,12 +436,16 @@ export default function CatalogProductCard({
     }
   }
 
-  async function findNextReadyIndex(list: string[], currentIndex: number) {
+  async function findNextReadyIndex(
+    list: string[],
+    currentIndex: number,
+    preloadTimeoutMs = CAROUSEL_CONFIG.preloadTimeoutMs,
+  ) {
     for (let offset = 1; offset < list.length; offset += 1) {
       const nextIndex = (currentIndex + offset) % list.length;
       const candidate = list[nextIndex];
       if (!candidate) continue;
-      const ready = await ensureImageReady(candidate, CAROUSEL_CONFIG.preloadTimeoutMs);
+      const ready = await ensureImageReady(candidate, preloadTimeoutMs);
       if (ready) {
         return nextIndex;
       }
@@ -438,11 +453,11 @@ export default function CatalogProductCard({
     return null;
   }
 
-  function scheduleNextStep(delayMs: number) {
+  function scheduleNextStep(delayMs: number, stepOptions?: RunStepOptions) {
     if (!playingRef.current) return;
     clearStepTimer();
     stepTimeoutRef.current = window.setTimeout(() => {
-      void runCarouselStep();
+      void runCarouselStep(stepOptions);
     }, delayMs);
   }
 
@@ -459,7 +474,7 @@ export default function CatalogProductCard({
 
   onVisualCommitRef.current = onVisualCommit;
 
-  async function runCarouselStep() {
+  async function runCarouselStep(stepOptions?: RunStepOptions) {
     if (!playingRef.current) return;
     if (!mountedRef.current) return;
 
@@ -482,7 +497,11 @@ export default function CatalogProductCard({
     setCarouselRunStateSafe("waiting_preload");
 
     const current = activeIndexRef.current;
-    const nextIndex = await findNextReadyIndex(list, current);
+    const nextIndex = await findNextReadyIndex(
+      list,
+      current,
+      stepOptions?.preloadTimeoutMs ?? CAROUSEL_CONFIG.preloadTimeoutMs,
+    );
 
     if (!playingRef.current || !mountedRef.current) {
       return;
@@ -490,13 +509,13 @@ export default function CatalogProductCard({
 
     if (nextIndex === null) {
       setCarouselRunStateSafe("blocked");
-      scheduleNextStep(CAROUSEL_CONFIG.retryDelayMs);
+      scheduleNextStep(stepOptions?.retryDelayMs ?? CAROUSEL_CONFIG.retryDelayMs);
       return;
     }
 
     const targetUrl = list[nextIndex];
     if (!targetUrl) {
-      scheduleNextStep(CAROUSEL_CONFIG.retryDelayMs);
+      scheduleNextStep(stepOptions?.retryDelayMs ?? CAROUSEL_CONFIG.retryDelayMs);
       return;
     }
 
@@ -527,12 +546,24 @@ export default function CatalogProductCard({
 
     const nextPreview = list[(activeIndexRef.current + 1) % list.length];
     if (nextPreview) {
-      void ensureImageReady(nextPreview, CAROUSEL_CONFIG.preloadTimeoutMs);
+      void ensureImageReady(
+        nextPreview,
+        mode === "desktop"
+          ? CAROUSEL_CONFIG.desktopFirstPreloadTimeoutMs
+          : CAROUSEL_CONFIG.preloadTimeoutMs,
+      );
     }
 
     playingRef.current = true;
     setCarouselModeSafe(mode);
     setCarouselRunStateSafe("playing");
+    if (mode === "desktop") {
+      scheduleNextStep(CAROUSEL_CONFIG.desktopFirstStepDelayMs, {
+        preloadTimeoutMs: CAROUSEL_CONFIG.desktopFirstPreloadTimeoutMs,
+        retryDelayMs: CAROUSEL_CONFIG.desktopRetryMs,
+      });
+      return;
+    }
     scheduleNextStep(CAROUSEL_CONFIG.dwellMs);
   }
 
@@ -919,6 +950,8 @@ export default function CatalogProductCard({
   return (
     <article
       data-carousel-state={`${carouselMode}:${carouselRunState}`}
+      data-carousel-mode={carouselMode}
+      data-carousel-active-index={String(activeIndex)}
       className="group relative overflow-hidden rounded-xl border border-[color:var(--oda-border)] bg-white shadow-[0_10px_20px_rgba(23,21,19,0.07)] lg:shadow-[0_12px_28px_rgba(23,21,19,0.08)] lg:transition lg:duration-500 lg:ease-out lg:[transform-style:preserve-3d] lg:hover:shadow-[0_30px_60px_rgba(23,21,19,0.14)] lg:group-hover:[transform:perspective(900px)_rotateX(6deg)_translateY(-10px)]"
       onMouseEnter={() => {
         if (!canHoverRef.current) return;
