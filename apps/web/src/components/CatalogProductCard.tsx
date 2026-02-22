@@ -28,6 +28,17 @@ type CarouselRunState =
   | "paused"
   | "blocked";
 
+type DesktopActivationSource = "pointerenter" | "mouseover-fallback" | "focus" | "programmatic";
+type DesktopCapabilityState = "eligible" | "not-eligible" | "unknown";
+type CarouselBlockReason =
+  | "none"
+  | "unknown"
+  | "desktop-not-eligible"
+  | "no-images"
+  | "preload-timeout"
+  | "reduced-motion"
+  | "document-hidden";
+
 type CarouselConfig = {
   desktopArmDelayMs: number;
   desktopFirstStepDelayMs: number;
@@ -49,11 +60,16 @@ type CarouselConfig = {
 type PauseOptions = {
   runState?: CarouselRunState;
   markMobileCooldown?: boolean;
+  blockReason?: CarouselBlockReason;
 };
 
 type RunStepOptions = {
   preloadTimeoutMs?: number;
   retryDelayMs?: number;
+};
+
+type ScheduleStartOptions = {
+  desktopTrigger?: DesktopActivationSource;
 };
 
 type LayerId = "a" | "b";
@@ -243,6 +259,12 @@ export default function CatalogProductCard({
   useEffect(() => {
     canHoverRef.current = canHover;
   }, [canHover]);
+  const [desktopCapabilityState, setDesktopCapabilityState] =
+    useState<DesktopCapabilityState>("unknown");
+  const desktopCapabilityStateRef = useRef<DesktopCapabilityState>("unknown");
+  useEffect(() => {
+    desktopCapabilityStateRef.current = desktopCapabilityState;
+  }, [desktopCapabilityState]);
 
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const prefersReducedMotionRef = useRef(false);
@@ -260,6 +282,10 @@ export default function CatalogProductCard({
   const carouselModeRef = useRef<CarouselMode>("inactive");
   const [carouselRunState, setCarouselRunState] = useState<CarouselRunState>("idle");
   const carouselRunStateRef = useRef<CarouselRunState>("idle");
+  const [carouselBlockReason, setCarouselBlockReason] = useState<CarouselBlockReason>("none");
+  const carouselBlockReasonRef = useRef<CarouselBlockReason>("none");
+  const [desktopTrigger, setDesktopTrigger] = useState<DesktopActivationSource | "none">("none");
+  const desktopTriggerRef = useRef<DesktopActivationSource | "none">("none");
 
   const [layerAUrl, setLayerAUrl] = useState<string | null>(() => coverUrl ?? null);
   const [layerBUrl, setLayerBUrl] = useState<string | null>(null);
@@ -271,6 +297,7 @@ export default function CatalogProductCard({
 
   const playingRef = useRef(false);
   const startTimeoutRef = useRef<number | null>(null);
+  const startModeRef = useRef<CarouselMode | null>(null);
   const stepTimeoutRef = useRef<number | null>(null);
   const scrollIdleTimeoutRef = useRef<number | null>(null);
 
@@ -302,10 +329,32 @@ export default function CatalogProductCard({
     setCarouselRunState(nextState);
   }
 
+  function setCarouselBlockReasonSafe(nextReason: CarouselBlockReason) {
+    if (carouselBlockReasonRef.current === nextReason) return;
+    carouselBlockReasonRef.current = nextReason;
+    if (!mountedRef.current) return;
+    setCarouselBlockReason(nextReason);
+  }
+
+  function setDesktopTriggerSafe(nextTrigger: DesktopActivationSource | "none") {
+    if (desktopTriggerRef.current === nextTrigger) return;
+    desktopTriggerRef.current = nextTrigger;
+    if (!mountedRef.current) return;
+    setDesktopTrigger(nextTrigger);
+  }
+
+  function setDesktopCapabilityStateSafe(nextState: DesktopCapabilityState) {
+    if (desktopCapabilityStateRef.current === nextState) return;
+    desktopCapabilityStateRef.current = nextState;
+    if (!mountedRef.current) return;
+    setDesktopCapabilityState(nextState);
+  }
+
   function clearStartTimer() {
     if (!startTimeoutRef.current) return;
     window.clearTimeout(startTimeoutRef.current);
     startTimeoutRef.current = null;
+    startModeRef.current = null;
   }
 
   function clearStepTimer() {
@@ -330,7 +379,13 @@ export default function CatalogProductCard({
       mobileCooldownUntilRef.current = Date.now() + CAROUSEL_CONFIG.mobile.restartCooldownMs;
     }
 
-    setCarouselRunStateSafe(options?.runState ?? "paused");
+    const nextRunState = options?.runState ?? "paused";
+    setCarouselRunStateSafe(nextRunState);
+    if (nextRunState === "blocked") {
+      setCarouselBlockReasonSafe(options?.blockReason ?? "unknown");
+    } else {
+      setCarouselBlockReasonSafe("none");
+    }
     setCarouselModeSafe("inactive");
   }
 
@@ -393,6 +448,44 @@ export default function CatalogProductCard({
       window.clearTimeout(timeoutRef);
     }
     return result;
+  }
+
+  function normalizePointerType(pointerType?: string | null) {
+    if (pointerType === "mouse" || pointerType === "pen" || pointerType === "touch") {
+      return pointerType;
+    }
+    return "unknown";
+  }
+
+  function canStartDesktopCarousel(source: DesktopActivationSource, pointerType?: string | null) {
+    if (prefersReducedMotionRef.current) {
+      setCarouselBlockReasonSafe("reduced-motion");
+      return false;
+    }
+
+    const normalizedPointer = normalizePointerType(pointerType);
+    if (normalizedPointer === "touch") {
+      setCarouselBlockReasonSafe("desktop-not-eligible");
+      return false;
+    }
+
+    if (normalizedPointer === "mouse" || normalizedPointer === "pen") {
+      if (!canHoverRef.current) {
+        canHoverRef.current = true;
+        if (mountedRef.current) {
+          setCanHover(true);
+        }
+      }
+      setDesktopCapabilityStateSafe("eligible");
+      return true;
+    }
+
+    if (desktopCapabilityStateRef.current === "not-eligible") {
+      setCarouselBlockReasonSafe("desktop-not-eligible");
+      return false;
+    }
+
+    return true;
   }
 
   async function ensureExtrasLoaded() {
@@ -469,6 +562,7 @@ export default function CatalogProductCard({
     if (!playingRef.current) return;
 
     setCarouselRunStateSafe("playing");
+    setCarouselBlockReasonSafe("none");
     scheduleNextStep(CAROUSEL_CONFIG.dwellMs);
   }
 
@@ -479,22 +573,23 @@ export default function CatalogProductCard({
     if (!mountedRef.current) return;
 
     if (typeof document !== "undefined" && document.hidden) {
-      pauseCarousel({ runState: "blocked" });
+      pauseCarousel({ runState: "blocked", blockReason: "document-hidden" });
       return;
     }
 
     if (prefersReducedMotionRef.current) {
-      pauseCarousel({ runState: "blocked" });
+      pauseCarousel({ runState: "blocked", blockReason: "reduced-motion" });
       return;
     }
 
     const list = imagesRef.current;
     if (list.length <= 1) {
-      pauseCarousel({ runState: "blocked" });
+      pauseCarousel({ runState: "blocked", blockReason: "no-images" });
       return;
     }
 
     setCarouselRunStateSafe("waiting_preload");
+    setCarouselBlockReasonSafe("none");
 
     const current = activeIndexRef.current;
     const nextIndex = await findNextReadyIndex(
@@ -509,6 +604,7 @@ export default function CatalogProductCard({
 
     if (nextIndex === null) {
       setCarouselRunStateSafe("blocked");
+      setCarouselBlockReasonSafe("preload-timeout");
       scheduleNextStep(stepOptions?.retryDelayMs ?? CAROUSEL_CONFIG.retryDelayMs);
       return;
     }
@@ -524,14 +620,18 @@ export default function CatalogProductCard({
     setActiveIndex(nextIndex);
   }
 
-  async function startCarousel(mode: CarouselMode) {
+  async function startCarousel(mode: CarouselMode, startOptions?: ScheduleStartOptions) {
     if (playingRef.current) return;
     if (prefersReducedMotionRef.current) {
       setCarouselRunStateSafe("blocked");
+      setCarouselBlockReasonSafe("reduced-motion");
+      setCarouselModeSafe("inactive");
       return;
     }
     if (typeof document !== "undefined" && document.hidden) {
       setCarouselRunStateSafe("blocked");
+      setCarouselBlockReasonSafe("document-hidden");
+      setCarouselModeSafe("inactive");
       return;
     }
 
@@ -540,6 +640,7 @@ export default function CatalogProductCard({
     const list = imagesRef.current;
     if (list.length <= 1) {
       setCarouselRunStateSafe("blocked");
+      setCarouselBlockReasonSafe("no-images");
       setCarouselModeSafe("inactive");
       return;
     }
@@ -557,6 +658,12 @@ export default function CatalogProductCard({
     playingRef.current = true;
     setCarouselModeSafe(mode);
     setCarouselRunStateSafe("playing");
+    setCarouselBlockReasonSafe("none");
+    if (mode === "desktop") {
+      setDesktopTriggerSafe(startOptions?.desktopTrigger ?? "programmatic");
+    } else {
+      setDesktopTriggerSafe("none");
+    }
     if (mode === "desktop") {
       scheduleNextStep(CAROUSEL_CONFIG.desktopFirstStepDelayMs, {
         preloadTimeoutMs: CAROUSEL_CONFIG.desktopFirstPreloadTimeoutMs,
@@ -567,25 +674,59 @@ export default function CatalogProductCard({
     scheduleNextStep(CAROUSEL_CONFIG.dwellMs);
   }
 
-  function scheduleCarouselStart(mode: CarouselMode, delayMs: number) {
+  function scheduleCarouselStart(mode: CarouselMode, delayMs: number, startOptions?: ScheduleStartOptions) {
     if (playingRef.current) return;
     if (prefersReducedMotionRef.current) {
       setCarouselRunStateSafe("blocked");
+      setCarouselBlockReasonSafe("reduced-motion");
+      setCarouselModeSafe("inactive");
       return;
     }
-    if (startTimeoutRef.current) return;
+    if (startTimeoutRef.current) {
+      if (startModeRef.current !== mode) {
+        clearStartTimer();
+      } else {
+        if (mode === "desktop") {
+          setDesktopTriggerSafe(startOptions?.desktopTrigger ?? "programmatic");
+        }
+        return;
+      }
+    }
 
     setCarouselModeSafe(mode);
     setCarouselRunStateSafe("scheduled");
+    setCarouselBlockReasonSafe("none");
+    if (mode === "desktop") {
+      setDesktopTriggerSafe(startOptions?.desktopTrigger ?? "programmatic");
+    } else {
+      setDesktopTriggerSafe("none");
+    }
+    startModeRef.current = mode;
 
     startTimeoutRef.current = window.setTimeout(() => {
       startTimeoutRef.current = null;
-      void startCarousel(mode);
+      startModeRef.current = null;
+      void startCarousel(mode, startOptions);
     }, delayMs);
   }
 
+  function requestDesktopStart(source: DesktopActivationSource, pointerType?: string | null) {
+    setDesktopTriggerSafe(source);
+    if (!canStartDesktopCarousel(source, pointerType)) {
+      if (!playingRef.current && !startTimeoutRef.current) {
+        setCarouselModeSafe("inactive");
+        setCarouselRunStateSafe("blocked");
+      }
+      return;
+    }
+
+    setCarouselBlockReasonSafe("none");
+    scheduleCarouselStart("desktop", CAROUSEL_CONFIG.desktopArmDelayMs, { desktopTrigger: source });
+  }
+
   function evaluateMobilePlayback() {
-    if (canHoverRef.current) return;
+    if (desktopCapabilityStateRef.current !== "not-eligible") return;
+    if (carouselModeRef.current === "desktop" || startModeRef.current === "desktop") return;
 
     const hidden = typeof document !== "undefined" ? document.hidden : false;
     const ratio = mobileVisibilityRatioRef.current;
@@ -605,7 +746,7 @@ export default function CatalogProductCard({
       return;
     }
 
-    if (startTimeoutRef.current) {
+    if (startTimeoutRef.current && startModeRef.current === "mobile") {
       const shouldCancelSchedule =
         !mobileIntersectingRef.current ||
         ratio < CAROUSEL_CONFIG.mobile.startRatio ||
@@ -617,6 +758,7 @@ export default function CatalogProductCard({
         clearStartTimer();
         if (!playingRef.current) {
           setCarouselRunStateSafe("idle");
+          setCarouselBlockReasonSafe("none");
           setCarouselModeSafe("inactive");
         }
       }
@@ -630,16 +772,26 @@ export default function CatalogProductCard({
       hidden ||
       prefersReducedMotionRef.current;
 
-    if (shouldStop && (playingRef.current || carouselModeRef.current === "mobile")) {
+    if (shouldStop && carouselModeRef.current === "mobile") {
       pauseCarousel({
         markMobileCooldown: true,
         runState: mobileScrollIdleRef.current ? "paused" : "blocked",
+        blockReason: mobileScrollIdleRef.current ? "none" : "unknown",
       });
       return;
     }
 
     if (shouldStop && !playingRef.current) {
-      setCarouselRunStateSafe(hidden || prefersReducedMotionRef.current ? "blocked" : "idle");
+      if (hidden) {
+        setCarouselRunStateSafe("blocked");
+        setCarouselBlockReasonSafe("document-hidden");
+      } else if (prefersReducedMotionRef.current) {
+        setCarouselRunStateSafe("blocked");
+        setCarouselBlockReasonSafe("reduced-motion");
+      } else {
+        setCarouselRunStateSafe("idle");
+        setCarouselBlockReasonSafe("none");
+      }
       setCarouselModeSafe("inactive");
     }
   }
@@ -649,7 +801,14 @@ export default function CatalogProductCard({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const media = window.matchMedia("(hover: hover) and (pointer: fine)");
-    const update = () => setCanHover(media.matches);
+    const update = () => {
+      const nextCanHover = media.matches;
+      canHoverRef.current = nextCanHover;
+      if (mountedRef.current) {
+        setCanHover(nextCanHover);
+      }
+      setDesktopCapabilityStateSafe(nextCanHover ? "eligible" : "not-eligible");
+    };
     update();
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
@@ -666,7 +825,7 @@ export default function CatalogProductCard({
 
   useEffect(() => {
     if (!prefersReducedMotion) return;
-    pauseCarouselRef.current({ runState: "blocked" });
+    pauseCarouselRef.current({ runState: "blocked", blockReason: "reduced-motion" });
   }, [prefersReducedMotion]);
 
   useEffect(() => {
@@ -763,7 +922,11 @@ export default function CatalogProductCard({
       mobileScrollIdleRef.current = false;
 
       if (wasIdle && (playingRef.current || carouselModeRef.current === "mobile")) {
-        pauseCarouselRef.current({ markMobileCooldown: true, runState: "blocked" });
+        pauseCarouselRef.current({
+          markMobileCooldown: true,
+          runState: "blocked",
+          blockReason: "unknown",
+        });
       }
 
       clearScrollIdleTimer();
@@ -788,7 +951,7 @@ export default function CatalogProductCard({
 
     const onVisibility = () => {
       if (document.hidden) {
-        pauseCarouselRef.current({ runState: "blocked" });
+        pauseCarouselRef.current({ runState: "blocked", blockReason: "document-hidden" });
       } else {
         evaluateMobilePlaybackRef.current();
       }
@@ -798,6 +961,7 @@ export default function CatalogProductCard({
       pauseCarouselRef.current({
         runState: "blocked",
         markMobileCooldown: carouselModeRef.current === "mobile",
+        blockReason: "document-hidden",
       });
     };
 
@@ -952,13 +1116,38 @@ export default function CatalogProductCard({
       data-carousel-state={`${carouselMode}:${carouselRunState}`}
       data-carousel-mode={carouselMode}
       data-carousel-active-index={String(activeIndex)}
+      data-carousel-trigger={desktopTrigger}
+      data-carousel-block-reason={carouselBlockReason}
+      data-carousel-image-count={String(images.length)}
       className="group relative overflow-hidden rounded-xl border border-[color:var(--oda-border)] bg-white shadow-[0_10px_20px_rgba(23,21,19,0.07)] lg:shadow-[0_12px_28px_rgba(23,21,19,0.08)] lg:transition lg:duration-500 lg:ease-out lg:[transform-style:preserve-3d] lg:hover:shadow-[0_30px_60px_rgba(23,21,19,0.14)] lg:group-hover:[transform:perspective(900px)_rotateX(6deg)_translateY(-10px)]"
       onMouseEnter={() => {
-        if (!canHoverRef.current) return;
-        scheduleCarouselStart("desktop", CAROUSEL_CONFIG.desktopArmDelayMs);
+        requestDesktopStart("pointerenter", "mouse");
+      }}
+      onPointerEnter={(event) => {
+        requestDesktopStart("pointerenter", event.pointerType);
+      }}
+      onMouseOver={(event) => {
+        const related = event.relatedTarget;
+        if (related instanceof Node && event.currentTarget.contains(related)) {
+          return;
+        }
+        requestDesktopStart("mouseover-fallback", "mouse");
       }}
       onMouseLeave={() => {
-        if (!canHoverRef.current) return;
+        pauseCarousel({ runState: "paused" });
+      }}
+      onPointerLeave={(event) => {
+        if (event.pointerType === "touch") return;
+        pauseCarousel({ runState: "paused" });
+      }}
+      onFocus={() => {
+        requestDesktopStart("focus");
+      }}
+      onBlur={(event) => {
+        const related = event.relatedTarget;
+        if (related instanceof Node && event.currentTarget.contains(related)) {
+          return;
+        }
         pauseCarousel({ runState: "paused" });
       }}
     >
