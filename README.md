@@ -19,7 +19,9 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Vercel CLI: usar `VERCEL_TOKEN` desde `.env` (no solicitarlo de nuevo).
 - Base de datos (Neon): `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `NEON_DATABASE_URL`, `PGHOST`, `PGHOST_UNPOOLED`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`, `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL_NO_SSL`, `POSTGRES_PRISMA_URL`, `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`.
 - Redis: `REDIS_URL`.
-- Storage: `VERCEL_BLOB_READ_WRITE_TOKEN`, `BLOB_READ_WRITE_TOKEN`.
+- Storage: `VERCEL_BLOB_READ_WRITE_TOKEN`, `BLOB_READ_WRITE_TOKEN`, `ALLOW_EXTERNAL_MEDIA_WRITE` (default `false`), `IMAGE_PROXY_LIST_FALLBACK` (default `false`), `BLOB_ENABLE_LIST_FALLBACK` (default `false`).
+- Blob FinOps (operación): `BLOB_PRUNE_MIN_AGE_DAYS`, `BLOB_PRUNE_MIN_AGE_DAYS_CATALOG` (default `14`), `BLOB_PRUNE_MIN_AGE_DAYS_IMAGE_PROXY` (default `7`), `BLOB_PRUNE_BATCH`, `BLOB_PRUNE_DRY_RUN`, `BLOB_PRUNE_MAX_ERROR_RATE`, `BLOB_PRUNE_MAX_DELETE`, `BLOB_PRUNE_MAX_SCAN_BLOBS`, `BACKFILL_LIMIT`, `BACKFILL_CONCURRENCY`, `BACKFILL_MAX_ITEMS_PER_HOUR`, `BACKFILL_BRAND_SLUG`, `VARIANT_IMAGE_BACKFILL_LIMIT`, `VARIANT_IMAGE_BACKFILL_CONCURRENCY`, `VARIANT_IMAGE_BACKFILL_BRAND_SLUG`, `VARIANT_IMAGE_BACKFILL_MAX_ITEMS_PER_HOUR`, `VARIANT_IMAGE_BACKFILL_DRY_RUN`.
+- Media optimization antes de Blob: `IMAGE_OPTIMIZE_BEFORE_BLOB` (default `true`), `IMAGE_OPTIMIZE_QUALITY` (default `88`), `IMAGE_OPTIMIZE_EFFORT` (default `6`), `IMAGE_OPTIMIZE_MIN_SAVINGS_PCT` (default `8`), `IMAGE_OPTIMIZE_MAX_EDGE_CATALOG` (default `2200`), `IMAGE_OPTIMIZE_MAX_EDGE_PROXY` (default `1800`), `IMAGE_OPTIMIZE_SKIP_ANIMATED` (default `true`), `BLOB_UPLOAD_MAX_SOURCE_IMAGE_BYTES`, `IMAGE_PROXY_MAX_SOURCE_IMAGE_BYTES`.
 - Billing: `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY`.
 - Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`.
 - Auth usuarios (Descope): `NEXT_PUBLIC_DESCOPE_PROJECT_ID`, `NEXT_PUBLIC_DESCOPE_BASE_URL`, `NEXT_PUBLIC_DESCOPE_SIGNIN_FLOW_ID`, `NEXT_PUBLIC_DESCOPE_LINK_FLOW_ID`, `DESCOPE_MANAGEMENT_KEY`.
@@ -28,7 +30,8 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 - Catalog extractor: `CATALOG_TRY_SITEMAP_FIRST` (true|false), `CATALOG_TRY_SITEMAP_VTEX` (true|false), `CATALOG_FORCE_SITEMAP` (true|false), `CATALOG_EXTRACT_SITEMAP_BUDGET_MS`, `CATALOG_EXTRACT_SITEMAP_LIMIT` (0 = sin límite), `CATALOG_EXTRACT_SITEMAP_MAX_FILES`, `CATALOG_EXTRACT_SITEMAP_SCAN_MAX_URLS` (0 = sin límite por sitemap), `CATALOG_EXTRACT_DISCOVERY_LIMIT`, `CATALOG_DISCOVERY_MULTIPLIER`, `CATALOG_DISCOVERY_MAX_LIMIT`, `CATALOG_SITEMAP_MAX_LIMIT`, `CATALOG_EXTRACT_MAX_RUNTIME_MS`, `CATALOG_EXTRACT_CONSECUTIVE_ERROR_LIMIT`, `CATALOG_AUTO_PAUSE_ON_ERRORS`, `CATALOG_MAX_ATTEMPTS`, `CATALOG_QUEUE_ENQUEUE_LIMIT`, `CATALOG_QUEUE_NAME`, `CATALOG_QUEUE_STALE_MINUTES`, `CATALOG_ITEM_STUCK_MINUTES`, `CATALOG_RESUME_STUCK_MINUTES`, `CATALOG_QUEUE_TIMEOUT_MS`, `CATALOG_QUEUE_DISABLED`, `CATALOG_QUEUE_ATTEMPTS`, `CATALOG_QUEUE_BACKOFF_MS`, `CATALOG_DRAIN_BATCH`, `CATALOG_DRAIN_MAX_RUNTIME_MS`, `CATALOG_DRAIN_CONCURRENCY`, `CATALOG_DRAIN_MAX_RUNS`, `CATALOG_DRAIN_ON_RUN`, `CATALOG_DRAIN_ON_RUN_BATCH`, `CATALOG_DRAIN_ON_RUN_MAX_RUNTIME_MS`, `CATALOG_DRAIN_ON_RUN_CONCURRENCY`, `CATALOG_DRAIN_DISABLED`, `CATALOG_WORKER_CONCURRENCY`, `CATALOG_WORKER_API_URL`, `CATALOG_WORKER_FETCH_TIMEOUT_MS`, `CATALOG_LLM_NORMALIZE_MODE` (auto|always|never), `CATALOG_LLM_NORMALIZE_DISABLE_MINUTES`, `CATALOG_LLM_NORMALIZE_MAX_DESC_CHARS`, `CATALOG_LLM_NORMALIZE_MAX_IMAGES`, `CATALOG_LLM_NORMALIZE_MAX_VARIANTS`, `CATALOG_LLM_NORMALIZE_MAX_OPTION_VALUES`.
 - Catálogo público (precio): `CATALOG_PRICE_MAX_VALID` (default `100000000`) define el techo de precio válido para PLP/filtros/sort y saneamiento de ingestión (evita outliers corruptos).
 - Catalog VTEX: `CATALOG_VTEX_MAX_PRODUCTS`, `CATALOG_VTEX_PAGE_SIZE`.
-- Catalog refresh semanal: `CATALOG_REFRESH_INTERVAL_DAYS`, `CATALOG_REFRESH_JITTER_HOURS`, `CATALOG_REFRESH_MAX_BRANDS`, `CATALOG_REFRESH_BRAND_CONCURRENCY`, `CATALOG_REFRESH_MAX_RUNTIME_MS`, `CATALOG_REFRESH_MIN_GAP_HOURS`, `CATALOG_REFRESH_MAX_FAILED_ITEMS`, `CATALOG_REFRESH_MAX_FAILED_RATE`, `CATALOG_REFRESH_DISCOVERY_LIMIT` (0 = sin límite), `CATALOG_REFRESH_COVERAGE_ENABLED`, `CATALOG_REFRESH_AUTO_RECOVER`, `CATALOG_REFRESH_RECOVER_MAX_RUNS`, `CATALOG_REFRESH_RECOVER_STUCK_MINUTES`, `CATALOG_REFRESH_ENRICH_RECOVER_STUCK_MINUTES`, `CATALOG_REFRESH_FAILED_LOOKBACK_DAYS`, `CATALOG_REFRESH_FAILED_URL_LIMIT`, `CATALOG_REFRESH_ENRICH_LOOKBACK_DAYS`, `CATALOG_REFRESH_ENRICH_MAX_PRODUCTS`, `CATALOG_REFRESH_DRAIN_ON_RUN`, `CATALOG_ALERT_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_ALERT_STUCK_MINUTES`.
+- Catalog refresh semanal: `CATALOG_REFRESH_INTERVAL_DAYS`, `CATALOG_REFRESH_JITTER_HOURS`, `CATALOG_REFRESH_MAX_BRANDS`, `CATALOG_REFRESH_BRAND_CONCURRENCY`, `CATALOG_REFRESH_MAX_RUNTIME_MS`, `CATALOG_REFRESH_MIN_GAP_HOURS`, `CATALOG_REFRESH_MAX_FAILED_ITEMS` (default `30`), `CATALOG_REFRESH_MAX_FAILED_RATE` (default `0.10`), `CATALOG_REFRESH_FAILED_BACKOFF_BASE_HOURS` (default `6`), `CATALOG_REFRESH_FAILED_BACKOFF_MAX_HOURS` (default `72`), `CATALOG_REFRESH_DISCOVERY_LIMIT` (0 = sin límite), `CATALOG_REFRESH_COVERAGE_ENABLED`, `CATALOG_REFRESH_AUTO_RECOVER`, `CATALOG_REFRESH_RECOVER_MAX_RUNS`, `CATALOG_REFRESH_RECOVER_STUCK_MINUTES`, `CATALOG_REFRESH_ENRICH_RECOVER_STUCK_MINUTES`, `CATALOG_REFRESH_FAILED_LOOKBACK_DAYS`, `CATALOG_REFRESH_FAILED_URL_LIMIT`, `CATALOG_REFRESH_ENRICH_LOOKBACK_DAYS`, `CATALOG_REFRESH_ENRICH_MAX_PRODUCTS`, `CATALOG_REFRESH_DRAIN_ON_RUN`, `CATALOG_REFRESH_REQUIRE_BLOB_IMAGES` (default `true`), `CATALOG_ALERT_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_ALERT_STUCK_MINUTES`.
+- Catalog media guardrails: `CATALOG_REQUIRE_BLOB_IMAGES` (default `true`, aplica a todos los runs; cuando está activo no se persisten imágenes externas si Blob falla).
 - Catalog extractor (PDP LLM): `CATALOG_OPENAI_MODEL`, `CATALOG_OPENAI_TEMPERATURE`, `CATALOG_OPENAI_DISABLE_TEMPERATURE`, `CATALOG_PDP_LLM_ENABLED`, `CATALOG_PDP_LLM_CONFIDENCE_MIN`, `CATALOG_PDP_LLM_MAX_HTML_CHARS`, `CATALOG_PDP_LLM_MAX_TEXT_CHARS`, `CATALOG_PDP_LLM_MAX_IMAGES`.
 - Product enrichment (switch OpenAI/Bedrock): `PRODUCT_ENRICHMENT_PROVIDER` (`openai|bedrock`), `PRODUCT_ENRICHMENT_MODEL`, `BEDROCK_INFERENCE_PROFILE_ID`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `PRODUCT_ENRICHMENT_MAX_TOKENS`, `PRODUCT_ENRICHMENT_MAX_RETRIES`, `PRODUCT_ENRICHMENT_MAX_ATTEMPTS`, `PRODUCT_ENRICHMENT_MAX_IMAGES`, `PRODUCT_ENRICHMENT_VARIANT_CHUNK_SIZE`, `PRODUCT_ENRICHMENT_REPAIR_MAX_CHARS`, `PRODUCT_ENRICHMENT_BEDROCK_MAX_IMAGES`, `PRODUCT_ENRICHMENT_BEDROCK_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_BEDROCK_INCLUDE_IMAGES`, `PRODUCT_ENRICHMENT_BEDROCK_IMAGE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_BEDROCK_IMAGE_MAX_BYTES`, `PRODUCT_ENRICHMENT_BEDROCK_TOP_K`, `PRODUCT_ENRICHMENT_BEDROCK_TEMPERATURE`, `PRODUCT_ENRICHMENT_BEDROCK_LATENCY`, `PRODUCT_ENRICHMENT_BEDROCK_STOP_SEQUENCES`, `PRODUCT_ENRICHMENT_QUEUE_NAME`, `PRODUCT_ENRICHMENT_QUEUE_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_QUEUE_DISABLED`, `PRODUCT_ENRICHMENT_QUEUE_ENQUEUE_LIMIT`, `PRODUCT_ENRICHMENT_QUEUE_STALE_MINUTES`, `PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_RESUME_STUCK_MINUTES`, `PRODUCT_ENRICHMENT_AUTO_PAUSE_ON_ERRORS`, `PRODUCT_ENRICHMENT_CONSECUTIVE_ERROR_LIMIT`, `PRODUCT_ENRICHMENT_DRAIN_ON_RUN`, `PRODUCT_ENRICHMENT_DRAIN_BATCH`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNTIME_MS`, `PRODUCT_ENRICHMENT_DRAIN_CONCURRENCY`, `PRODUCT_ENRICHMENT_DRAIN_MAX_RUNS`, `PRODUCT_ENRICHMENT_WORKER_CONCURRENCY`, `PRODUCT_ENRICHMENT_WORKER_API_URL`, `PRODUCT_ENRICHMENT_WORKER_FETCH_TIMEOUT_MS`, `PRODUCT_ENRICHMENT_ALLOW_REENRICH`.
 - PLP SEO (admin + Bedrock + cola): `PLP_SEO_BEDROCK_INFERENCE_PROFILE_ID` (fallback: `BEDROCK_INFERENCE_PROFILE_ID`), `PLP_SEO_BEDROCK_MAX_TOKENS`, `PLP_SEO_BEDROCK_TIMEOUT_MS`, `PLP_SEO_BEDROCK_TEMPERATURE`, `PLP_SEO_BEDROCK_TOP_K`, `PLP_SEO_MAX_RETRIES`, `PLP_SEO_SAMPLE_PRODUCTS`, `PLP_SEO_MAX_ATTEMPTS`, `PLP_SEO_QUEUE_NAME`, `PLP_SEO_QUEUE_DISABLED`, `PLP_SEO_QUEUE_TIMEOUT_MS`, `PLP_SEO_QUEUE_ENQUEUE_LIMIT`, `PLP_SEO_QUEUE_STALE_MINUTES`, `PLP_SEO_ITEM_STUCK_MINUTES`, `PLP_SEO_WORKER_CONCURRENCY`, `PLP_SEO_WORKER_API_URL`, `PLP_SEO_WORKER_FETCH_TIMEOUT_MS`, `WORKER_FETCH_TIMEOUT_MS`.
@@ -38,6 +41,7 @@ Copiar `.env.example` a `.env`/`.env.local` y completar:
 
 Nota: el refresh de catálogo puede detectar productos nuevos sin `metadata.enrichment` y crear un `product_enrichment_run` (mode `new_products`). Por defecto queda en `paused` para evitar consumo inesperado de cuota; se reanuda manualmente con el Admin o con `POST /api/admin/product-enrichment/run` (brandId). Si quieres que se procese automáticamente (sin intervención), setea `CATALOG_REFRESH_ENRICH_AUTO_START=true` en Vercel. Hardening adicional: si existe una corrida heredada `catalog_refresh` con `auto_start=false`, el sistema puede reanudarla cuando el flag está activo; si el flag está apagado, la normaliza a `paused` (`auto_start_disabled`) para impedir ejecución automática.
 Tip operativo: `GET /api/admin/catalog-refresh/cron` acepta overrides opcionales `maxBrands`, `brandConcurrency` y `maxRuntimeMs` para pruebas controladas de throughput (por ejemplo: `/api/admin/catalog-refresh/cron?force=true&maxBrands=12&brandConcurrency=4&maxRuntimeMs=90000`). Si no envías esos query params, el endpoint usa los valores de entorno (`CATALOG_REFRESH_*`) sin aplicar overrides.
+Semántica KPI (admin refresh): `freshBrands`/`staleBrands` ahora representan cobertura operativa automática (último intento finalizado en ventana semanal para marcas auto‑elegibles). Además, `GET /api/admin/catalog-refresh/state` expone `operationalFreshBrands`, `qualityFreshBrands`, `operationalStaleBrands`, `qualityStaleBrands`, `autoEligibleBrands` y `staleBreakdown` para separar cobertura operativa vs calidad de refresh.
 Operación (BullMQ 24/7):
 - `services/worker` publica heartbeats en Redis: `workers:catalog:alive` y `workers:enrich:alive` (TTL 60s, refresh cada 20s).
 - `services/worker` incluye autopilot de recuperación: consulta `GET /api/admin/queue-health` y, si detecta `queueEmptyButDbRunnable` o `staleNoProgress`, dispara `POST /api/admin/catalog-extractor/drain` / `POST /api/admin/product-enrichment/drain` automáticamente.
@@ -69,10 +73,16 @@ node scripts/build-style-assignments.mjs  # seed style_profiles + backfill estil
 node scripts/apply-catalog-filter-indexes.mjs  # aplica índices de performance del PLP `/catalogo` en Neon (CREATE INDEX CONCURRENTLY)
 node scripts/backfill-product-price-rollups.mjs  # recalcula hasInStock/minPriceCop/maxPriceCop en `products`
 node scripts/backfill-product-price-change-signals.mjs  # recalcula `priceChangeDirection/priceChangeAt` desde `price_history`
+node scripts/blob-cost-audit.mjs  # auditoría diaria de Blob (size/prefix, huérfanos, hosts externos, top marcas)
+node scripts/prune-orphan-blobs.mjs  # limpieza segura de huérfanos con `BLOB_PRUNE_*` (dry-run por default)
 node scripts/seed-color-palette-200.mjs  # carga paleta 200 en color_combinations_colors (desde Excel)
 node scripts/build-color-relations.mjs  # recalcula matches variante↔combinacion con colores estandarizados
+node scripts/backfill-image-covers-to-blob.mjs  # migra covers externos a Blob
+node scripts/backfill-variant-images-to-blob.mjs  # migra `variants.images[]` externos a Blob por lotes
 	node scripts/diagnose-catalog-refresh.cjs > ../../reports/catalog_refresh_diagnostics/report.json  # métricas de refresh/fallas (Neon)
 	node scripts/reschedule-catalog-refresh-nextdue.mjs --dry-run  # recalcula nextDueAt para scheduling con jitter (usa CATALOG_REFRESH_INTERVAL_DAYS/JITTER_HOURS)
+	node scripts/rebaseline-catalog-refresh-metadata.mjs --dry-run  # rebaseline metadata de refresh con gate actual (30 + 10%) y reporte JSON
+	node scripts/rebaseline-catalog-refresh-metadata.mjs --apply  # aplica el rebaseline en DB (usar después de validar dry-run)
 	node scripts/recover-bullmq-queues.mjs --dry-run  # obliterate BullMQ + reset DB queued->pending + reseed coherente (requiere --yes)
 
 	# worker (cola/enriquecimiento)
@@ -120,9 +130,12 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
     El estado vive en `brands.metadata.onboarding`.
 - Los paneles de Scraping/Tech profiler/Catalog extractor se ocultaron del menú: el flujo vive en el modal de creación.
 - Panel `/admin/catalog-refresh`:
-  - Monitor semanal de frescura por marca (% actualizado).
+  - Monitor semanal con KPI dual: cobertura automática operativa y calidad de refresh.
+  - `manualReview=true` queda fuera del denominador automático y visible en breakdown.
   - Métricas globales: nuevos productos, cambios de precio, cambios de stock y cambios de estado.
   - Acciones de forzar refresh y reintentos por marca.
+  - Guardrail Blob: si el runtime del refresh no tiene `BLOB_READ_WRITE_TOKEN` válido (o recibe `Access denied`), el run se bloquea (`status=blocked`) para evitar persistir imágenes externas por fallback accidental.
+  - Guardrail media strict (`CATALOG_REFRESH_REQUIRE_BLOB_IMAGES=true` por default): en runs detectados como `catalog_refresh`, si no se logra subir al menos una imagen a Blob para un producto, ese item falla (`blob_required_no_blob_images`) y no se escribe cover/galería externa.
 - Panel `/admin/products` (productos):
   - Directorio de productos scrapeados con cards (carrusel de imágenes si hay múltiples fotos), modal de detalle enriquecido (precio/stock, tallas y colores visibles con swatches, fit/material por variante) y filtros por marca.
 - Panel `/admin/product-curation` (curación humana):
@@ -218,6 +231,33 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Backfill opcional de covers a Blob (recomendado cuando se detectan muchos covers remotos):
   ```bash
   IMAGE_BACKFILL_LIMIT=0 IMAGE_BACKFILL_CONCURRENCY=6 node apps/web/scripts/backfill-image-covers-to-blob.mjs
+  ```
+- Backfill de imágenes de variantes a Blob (lotes controlados):
+  ```bash
+  VARIANT_IMAGE_BACKFILL_LIMIT=1000 VARIANT_IMAGE_BACKFILL_CONCURRENCY=6 VARIANT_IMAGE_BACKFILL_MAX_ERROR_RATE=0.02 node apps/web/scripts/backfill-variant-images-to-blob.mjs
+  ```
+  - Guardrails recomendados:
+    - `VARIANT_IMAGE_BACKFILL_MAX_ERROR_RATE` (default `0.02`): corta la corrida automáticamente cuando `failed/processed` supera el umbral.
+    - `VARIANT_IMAGE_BACKFILL_ERROR_RATE_MIN_SAMPLES` (default `100`): mínimo de muestras antes de evaluar el corte por tasa de error.
+    - En corte por guardrail, el script termina con exit code `2` y registra `abortReason` en el resumen final.
+- Auditoría/limpieza FinOps de Blob:
+  ```bash
+  # baseline de costo/huérfanos (JSON+CSV en reports/blob-cost/)
+  node apps/web/scripts/blob-cost-audit.mjs
+
+  # dry-run (default) de limpieza segura de huérfanos >=14d
+  BLOB_PRUNE_MIN_AGE_DAYS=14 BLOB_PRUNE_BATCH=500 node apps/web/scripts/prune-orphan-blobs.mjs
+
+  # apply explícito (solo cuando el dry-run esté validado)
+  APPLY=true BLOB_PRUNE_DRY_RUN=false BLOB_PRUNE_MIN_AGE_DAYS=14 BLOB_PRUNE_BATCH=500 node apps/web/scripts/prune-orphan-blobs.mjs
+  ```
+- Cron operativo externo (ejemplo diario):
+  ```bash
+  # 03:10 UTC -> auditoría completa
+  10 3 * * * cd /Volumes/MyApps/oda_storefront && node apps/web/scripts/blob-cost-audit.mjs >> reports/blob-cost/cron.log 2>&1
+
+  # 03:40 UTC -> prune dry-run para validar candidatos >=14d
+  40 3 * * * cd /Volumes/MyApps/oda_storefront && BLOB_PRUNE_MIN_AGE_DAYS=14 BLOB_PRUNE_BATCH=500 node apps/web/scripts/prune-orphan-blobs.mjs >> reports/blob-cost/cron.log 2>&1
   ```
 - Cards PLP:
   - Badge de cambio de precio junto al precio (`↓ Bajó de precio` / `↑ Subió de precio`) cuando `products.priceChangeDirection` existe y `priceChangeAt` está dentro de 30 días.

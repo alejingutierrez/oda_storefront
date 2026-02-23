@@ -31,6 +31,8 @@ type CatalogRefreshMeta = {
   lastCompletedAt?: string;
   lastFinishedAt?: string;
   nextDueAt?: string;
+  consecutiveFailedRuns?: number;
+  failedBackoffUntil?: string | null;
   lastRunId?: string;
   lastStatus?: string;
   lastNewProducts?: number;
@@ -112,11 +114,23 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     : envBrandConcurrency;
   const brandConcurrency = Math.max(1, Math.min(maxBrands, brandConcurrencyRaw));
   const minGapHours = Math.max(1, Number(process.env.CATALOG_REFRESH_MIN_GAP_HOURS ?? 3));
-  const maxFailedItems = Math.max(0, Number(process.env.CATALOG_REFRESH_MAX_FAILED_ITEMS ?? 5));
-  const maxFailedRateRaw = Number(process.env.CATALOG_REFRESH_MAX_FAILED_RATE ?? 0.01);
+  const maxFailedItems = Math.max(0, Number(process.env.CATALOG_REFRESH_MAX_FAILED_ITEMS ?? 30));
+  const maxFailedRateRaw = Number(process.env.CATALOG_REFRESH_MAX_FAILED_RATE ?? 0.10);
   const maxFailedRate = Number.isFinite(maxFailedRateRaw)
     ? Math.max(0, Math.min(1, maxFailedRateRaw))
-    : 0.01;
+    : 0.10;
+  const failedBackoffBaseHoursRaw = Number(
+    process.env.CATALOG_REFRESH_FAILED_BACKOFF_BASE_HOURS ?? 6,
+  );
+  const failedBackoffBaseHours = Number.isFinite(failedBackoffBaseHoursRaw)
+    ? Math.max(1, failedBackoffBaseHoursRaw)
+    : 6;
+  const failedBackoffMaxHoursRaw = Number(
+    process.env.CATALOG_REFRESH_FAILED_BACKOFF_MAX_HOURS ?? 72,
+  );
+  const failedBackoffMaxHours = Number.isFinite(failedBackoffMaxHoursRaw)
+    ? Math.max(failedBackoffBaseHours, failedBackoffMaxHoursRaw)
+    : Math.max(failedBackoffBaseHours, 72);
   const drainOnRun = process.env.CATALOG_REFRESH_DRAIN_ON_RUN === "true";
   const autoRecover = process.env.CATALOG_REFRESH_AUTO_RECOVER !== "false";
   const recoverMaxRuns = Math.max(
@@ -158,6 +172,8 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     minGapHours,
     maxFailedItems,
     maxFailedRate,
+    failedBackoffBaseHours,
+    failedBackoffMaxHours,
     drainOnRun,
     autoRecover,
     recoverMaxRuns,
@@ -178,6 +194,24 @@ const computeNextDueAt = (now: Date, intervalDays: number, jitterHours: number) 
   return new Date(now.getTime() + baseMs + offset).toISOString();
 };
 
+const readNonNegativeInt = (value: unknown) => {
+  const parsed =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.floor(parsed);
+};
+
+const computeFailedBackoffUntil = (
+  now: Date,
+  consecutiveFailedRuns: number,
+  baseHours: number,
+  maxHours: number,
+) => {
+  const failures = Math.max(1, Math.floor(consecutiveFailedRuns));
+  const backoffHours = Math.min(maxHours, baseHours * 2 ** (failures - 1));
+  return new Date(now.getTime() + backoffHours * 60 * 60 * 1000).toISOString();
+};
+
 export const isBrandDueForRefresh = (
   metadata: Record<string, unknown>,
   now: Date,
@@ -188,6 +222,8 @@ export const isBrandDueForRefresh = (
   // If nextDueAt is present, treat it as the authoritative schedule. This makes jitter effective
   // and avoids re-running brands earlier than planned.
   if (nextDue) return nextDue <= now;
+  const failedBackoffUntil = parseDate(refresh.failedBackoffUntil);
+  if (failedBackoffUntil) return failedBackoffUntil <= now;
   const lastCompleted = parseDate(refresh.lastCompletedAt);
   if (lastCompleted) {
     const windowMs = config.intervalDays * 24 * 60 * 60 * 1000;
@@ -241,13 +277,37 @@ export const markRefreshCompleted = async (params: {
   if (!brand) return;
   const metadata = readMetadata(brand.metadata);
   const config = getRefreshConfig();
+  const refresh = readRefreshMeta(metadata);
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const previousFailedRuns = readNonNegativeInt(refresh.consecutiveFailedRuns);
+  const statusPatch: CatalogRefreshMeta =
+    params.status === "completed"
+      ? {
+          nextDueAt: computeNextDueAt(now, config.intervalDays, config.jitterHours),
+          consecutiveFailedRuns: 0,
+          failedBackoffUntil: null,
+        }
+      : params.status === "failed"
+        ? (() => {
+            const consecutiveFailedRuns = previousFailedRuns + 1;
+            const failedBackoffUntil = computeFailedBackoffUntil(
+              now,
+              consecutiveFailedRuns,
+              config.failedBackoffBaseHours,
+              config.failedBackoffMaxHours,
+            );
+            return {
+              nextDueAt: failedBackoffUntil,
+              consecutiveFailedRuns,
+              failedBackoffUntil,
+            } as CatalogRefreshMeta;
+          })()
+        : {};
   const nextMetadata = withRefreshMeta(metadata, {
-    lastCompletedAt: params.status === "completed" ? new Date().toISOString() : undefined,
-    lastFinishedAt: new Date().toISOString(),
-    nextDueAt:
-      params.status === "completed"
-        ? computeNextDueAt(new Date(), config.intervalDays, config.jitterHours)
-        : undefined,
+    lastCompletedAt: params.status === "completed" ? nowIso : undefined,
+    lastFinishedAt: nowIso,
+    ...statusPatch,
     lastRunId: params.runId,
     lastStatus: params.status,
     lastNewProducts: params.newProducts,

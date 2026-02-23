@@ -4,8 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type RefreshSummary = {
   totalBrands: number;
+  autoEligibleBrands: number;
   freshBrands: number;
   staleBrands: number;
+  operationalFreshBrands: number;
+  qualityFreshBrands: number;
+  operationalStaleBrands: number;
+  qualityStaleBrands: number;
+  staleBreakdown: {
+    processing: number;
+    failed: number;
+    no_status: number;
+    manual_review: number;
+  };
   avgDiscoveryCoverage: number;
   avgRunSuccessRate: number;
   newProducts: number;
@@ -16,6 +27,7 @@ type RefreshSummary = {
 
 type RefreshMeta = {
   lastCompletedAt?: string | null;
+  lastFinishedAt?: string | null;
   lastStatus?: string | null;
   lastError?: string | null;
   lastRunSuccessRate?: number | null;
@@ -178,10 +190,18 @@ export default function CatalogRefreshPanel() {
   const windowStart = state?.windowStart;
   const alerts = state?.alerts ?? [];
 
-  const freshness = useMemo(() => {
+  const operationalCoverage = useMemo(() => {
     if (!summary) return { fresh: 0, total: 0, percent: 0 };
-    const total = summary.totalBrands;
-    const fresh = summary.freshBrands;
+    const total = summary.autoEligibleBrands ?? summary.totalBrands;
+    const fresh = summary.operationalFreshBrands ?? summary.freshBrands;
+    const value = total > 0 ? Math.round((fresh / total) * 100) : 0;
+    return { fresh, total, percent: value };
+  }, [summary]);
+
+  const qualityCoverage = useMemo(() => {
+    if (!summary) return { fresh: 0, total: 0, percent: 0 };
+    const total = summary.autoEligibleBrands ?? summary.totalBrands;
+    const fresh = summary.qualityFreshBrands ?? summary.freshBrands;
     const value = total > 0 ? Math.round((fresh / total) * 100) : 0;
     return { fresh, total, percent: value };
   }, [summary]);
@@ -269,19 +289,43 @@ export default function CatalogRefreshPanel() {
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs uppercase text-slate-500">Frescura global</p>
+          <p className="text-xs uppercase text-slate-500">Cobertura automática (operativa)</p>
           <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {percent(freshness.fresh, freshness.total)}
+            {percent(operationalCoverage.fresh, operationalCoverage.total)}
           </p>
           <p className="text-sm text-slate-600">
-            {freshness.fresh} de {freshness.total} marcas
+            {operationalCoverage.fresh} de {operationalCoverage.total} auto‑elegibles
           </p>
           <div className="mt-3 h-2 w-full rounded-full bg-slate-200">
             <div
               className="h-2 rounded-full bg-slate-900 transition-all"
-              style={{ width: `${freshness.percent}%` }}
+              style={{ width: `${operationalCoverage.percent}%` }}
             />
           </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Stale: processing {summary?.staleBreakdown?.processing ?? 0} · failed{" "}
+            {summary?.staleBreakdown?.failed ?? 0} · sin estado{" "}
+            {summary?.staleBreakdown?.no_status ?? 0}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-xs uppercase text-slate-500">Calidad de refresh</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {percent(qualityCoverage.fresh, qualityCoverage.total)}
+          </p>
+          <p className="text-sm text-slate-600">
+            {qualityCoverage.fresh} de {qualityCoverage.total} con run exitoso
+          </p>
+          <div className="mt-3 h-2 w-full rounded-full bg-emerald-100">
+            <div
+              className="h-2 rounded-full bg-emerald-600 transition-all"
+              style={{ width: `${qualityCoverage.percent}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Manual review fuera de cobertura automática:{" "}
+            {summary?.staleBreakdown?.manual_review ?? 0}
+          </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <p className="text-xs uppercase text-slate-500">Nuevos productos</p>
@@ -368,7 +412,7 @@ export default function CatalogRefreshPanel() {
                   <td className="px-3 py-3 text-slate-600">{brand.ecommercePlatform ?? "—"}</td>
                   <td className="px-3 py-3 text-slate-600">{brand.productCount}</td>
                   <td className="px-3 py-3 text-slate-600">
-                    {formatDate(refresh.lastCompletedAt)}
+                    {formatDate(refresh.lastFinishedAt ?? refresh.lastCompletedAt)}
                   </td>
                   <td className="px-3 py-3 text-slate-600" title={refresh.lastError ?? ""}>
                     {refresh.lastStatus ?? "—"}

@@ -144,6 +144,28 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - No hay cambios de esquema DB ni de shape API (se mantiene `currency: "COP"` en payloads).
 - Estado: **done (2026-02-21)**.
 
+### MC-137 FinOps Blob: ahorro seguro + backfill total en lotes controlados
+- Historia: Como operador de ODA, quiero identificar con precisión por qué sube el costo de Blob y ejecutar una reducción segura (sin romper imágenes) con limpieza de huérfanos y migración de URLs externas, para bajar gasto recurrente y frenar crecimiento desordenado.
+- Alcance:
+  - Definición técnica de huérfano alineada: un blob solo es “referenciado” si su `pathname` existe en `products.imageCoverUrl`, `variants.images[]`, `assets.url` o `assets.blobPath`.
+  - Script `apps/web/scripts/blob-cost-audit.mjs`: baseline diario JSON/CSV en `reports/blob-cost/`, con métricas nuevas `variantsAllExternal`, `variantsMixed` y agregados de optimización (`original vs optimized`, p50/p90 ahorro).
+  - Script `apps/web/scripts/prune-orphan-blobs.mjs`: limpieza segura por prefijo con umbral de edad (`catalog>=14d`, `image-proxy>=7d`), lotes y guardrails (`maxDelete`, `maxErrorRate`). En `APPLY` exige concordancia contra `blob-cost-audit-latest.json` con tolerancia `<1%`.
+  - Scripts de backfill (`backfill-image-covers-to-blob.mjs`, `backfill-variant-images-to-blob.mjs`): lote/concurrencia/ritmo por hora, resolución `head()` first y fallback `list()` desactivado por default, con guardrails de error-rate.
+  - Compresión obligatoria antes de Blob con `sharp`: nuevo módulo `apps/web/src/lib/media/optimize-before-blob.ts` e integración en `catalog/blob.ts`, `api/image-proxy/route.ts` y scripts de backfill.
+  - Guardrails de escritura para no reintroducir externas: `apps/web/src/lib/catalog/processor.ts` usa `CATALOG_REQUIRE_BLOB_IMAGES=true` por default y `apps/web/src/lib/catalog/extractor.ts` bloquea persistencia externa en create sin escape hatch.
+  - Integridad en DB: migración Prisma `20260223163000_enforce_blob_media_urls` agrega triggers que bloquean `products.imageCoverUrl` y `variants.images[]` no-blob (con escape hatch controlado).
+- CA:
+  - `blob-cost-audit.mjs` genera archivos `*-latest` y timestamped en `reports/blob-cost/` sin errores.
+  - `prune-orphan-blobs.mjs` en dry-run identifica candidatos por prefijo/edad sin borrar; en apply solo continúa si coincide con la auditoría `<1%` y produce bitácora JSONL por batch.
+  - Backfills de covers/variantes convierten a Blob en lotes controlados y reportan resumen de optimización por corrida.
+  - `image-proxy` y backfills operan con `head()` como default (`list()` solo por flag explícito).
+  - Nuevas escrituras en catálogo no deben introducir URLs externas salvo escape hatch.
+  - En corridas de refresh, no se deben crear nuevas URLs externas cuando el upload a Blob falla; el item queda en failed y la corrida continúa.
+  - No hay cambios breaking en APIs públicas de usuario final.
+- Datos: `products.imageCoverUrl`, `variants.images[]`, `assets.url`, `assets.blobPath`, inventario completo de Vercel Blob (`list` paginado).
+- NF: ejecución segura (dry-run primero), guardrails operativos (>2% error corta apply), outputs auditables en disco y control por variables de entorno.
+- Estado: **done (2026-02-23)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.
@@ -245,13 +267,13 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 
 ### MC-110 Refresh semanal de catálogo + monitor admin
 - Historia: Como operador, quiero que el catálogo completo se refresque semanalmente (sitemaps + productos), detectando cambios y nuevos productos, para mantener la plataforma al día y con calidad.
-- Alcance: Cron `/api/admin/catalog-refresh/cron` selecciona marcas vencidas con jitter y límites por batch; inicia `catalog_runs/items` para refresco completo; soporta concurrencia por marca configurable (`CATALOG_REFRESH_BRAND_CONCURRENCY`) y overrides por request (`maxBrands`, `brandConcurrency`, `maxRuntimeMs`) para tuning operativo; guarda métricas y estado en `brands.metadata.catalog_refresh`; re‑encola URLs fallidas recientes; al completar, **crea** un `product_enrichment_run` en `paused` (mode `new_products`) para productos nuevos sin `metadata.enrichment` (queda listo para reanudar manualmente, sin drenar automáticamente). Panel `/admin/catalog-refresh` muestra % de frescura, cobertura vs sitemap/API, nuevos productos y cambios de precio/stock, y lista alertas con acciones (reanudar/forzar). VTEX usa API `/api/catalog_system/pub/products/search` y evita depender de sitemaps truncados.
-- CA: Cada marca activa con `siteUrl` se refresca al menos cada 7 días; el cron no sobrecarga el sistema (límite de marcas + tiempo máx por ejecución + concurrencia configurable); los nuevos productos quedan **en cola** para enriquecimiento (run `paused`, sin ejecución automática para evitar cuota de OpenAI); cambios de precio/stock alimentan `price_history`/`stock_history`; el panel muestra frescura global, cobertura y métricas de la ventana; alertas muestran runs atascados y marcas vencidas con acción directa; no se crean tablas nuevas (solo metadata y tablas existentes).
+- Alcance: Cron `/api/admin/catalog-refresh/cron` selecciona marcas vencidas con jitter y límites por batch; inicia `catalog_runs/items` para refresco completo; soporta concurrencia por marca configurable (`CATALOG_REFRESH_BRAND_CONCURRENCY`) y overrides por request (`maxBrands`, `brandConcurrency`, `maxRuntimeMs`) para tuning operativo; guarda métricas y estado en `brands.metadata.catalog_refresh`; re‑encola URLs fallidas recientes; al completar, **crea** un `product_enrichment_run` en `paused` (mode `new_products`) para productos nuevos sin `metadata.enrichment` (queda listo para reanudar manualmente, sin drenar automáticamente). Panel `/admin/catalog-refresh` muestra KPI dual (cobertura operativa automática vs calidad), cobertura discovery, cambios de precio/stock y alertas con acciones (reanudar/forzar). VTEX usa API `/api/catalog_system/pub/products/search` y evita depender de sitemaps truncados. Se endurece el gate de éxito (`CATALOG_REFRESH_MAX_FAILED_ITEMS=30`, `CATALOG_REFRESH_MAX_FAILED_RATE=0.10`) y se añade backoff exponencial por fallos (`CATALOG_REFRESH_FAILED_BACKOFF_BASE_HOURS=6`, `CATALOG_REFRESH_FAILED_BACKOFF_MAX_HOURS=72`) con metadata `consecutiveFailedRuns/failedBackoffUntil`.
+- CA: Cada marca activa con `siteUrl` se refresca al menos cada 7 días; el cron no sobrecarga el sistema (límite de marcas + tiempo máx por ejecución + concurrencia configurable); los nuevos productos quedan **en cola** para enriquecimiento (run `paused`, sin ejecución automática para evitar cuota de OpenAI); cambios de precio/stock alimentan `price_history`/`stock_history`; el panel separa cobertura operativa automática (usa `lastFinishedAt`/`lastCompletedAt`) y calidad (usa `lastCompletedAt`), con `manualReview` fuera del denominador automático y breakdown explícito (`processing`, `failed`, `no_status`, `manual_review`); alertas muestran runs atascados y marcas vencidas con acción directa; no se crean tablas nuevas (solo metadata y tablas existentes).
 - Datos: `brands.metadata.catalog_refresh`, `catalog_runs/items`, `products/variants`, `price_history`, `stock_history`, `product_enrichment_runs/items`.
 - NF: Proceso gradual con aleatoriedad, timeouts y backoff; reintentos controlados por env; el cron no debe interrumpir runs activos ni disparar enriquecimiento automático; normalización con LLM debe tener fallback determinista ante errores de cuota/billing.
 - Riesgos: Catálogos grandes pueden saturar recursos si no se limitan; mitigación con `CATALOG_REFRESH_MAX_BRANDS`, `CATALOG_REFRESH_MAX_RUNTIME_MS` y `CATALOG_VTEX_MAX_PRODUCTS`.
 - Métricas: % marcas frescas vs total, nuevos productos por semana, cambios de precio/stock, tiempo promedio de refresh por marca.
-- Estado: **done (2026-02-04) · hardening (2026-02-08, 2026-02-11: perfil agresivo + fix parse query params opcionales en `/api/admin/catalog-refresh/cron`)**.
+- Estado: **done (2026-02-04) · hardening (2026-02-08, 2026-02-11, 2026-02-23: perfil agresivo + fix parse query params opcionales en `/api/admin/catalog-refresh/cron` + gate 30/10 + backoff exponencial + KPI dual + script de rebaseline metadata)**.
 
 ### MC-111 Paleta 200 + matching estandarizado de combinaciones de color
 - Historia: Como admin de catálogo, quiero reducir las combinaciones a una paleta de 200 colores y hacer el matching contra 60 colores estándar, para aumentar cobertura por combinación y mantener consistencia en el admin.

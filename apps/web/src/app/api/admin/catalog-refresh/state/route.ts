@@ -30,25 +30,6 @@ export async function GET(req: Request) {
   const now = new Date();
   const windowStart = new Date(now.getTime() - config.intervalDays * 24 * 60 * 60 * 1000);
 
-  const [brandTotals] = await prisma.$queryRaw<
-    Array<{ total: number; fresh: number; stale: number }>
-  >(
-    Prisma.sql`
-      SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (
-          WHERE (\"metadata\" -> 'catalog_refresh' ->> 'lastCompletedAt')::timestamptz >= ${windowStart}
-        )::int AS fresh,
-        COUNT(*) FILTER (
-          WHERE (\"metadata\" -> 'catalog_refresh' ->> 'lastCompletedAt') IS NULL
-             OR (\"metadata\" -> 'catalog_refresh' ->> 'lastCompletedAt')::timestamptz < ${windowStart}
-        )::int AS stale
-      FROM \"brands\"
-      WHERE \"isActive\" = true
-        AND \"siteUrl\" IS NOT NULL
-    `,
-  );
-
   const [newProducts] = await prisma.$queryRaw<Array<{ count: number }>>(
     Prisma.sql`
       SELECT COUNT(*)::int AS count
@@ -110,11 +91,66 @@ export async function GET(req: Request) {
     };
   });
 
+  const getLastCompletedAt = (brand: (typeof brandRows)[number]) =>
+    parseDate(brand.refresh?.lastCompletedAt);
+
+  const getLastFinishedAt = (brand: (typeof brandRows)[number]) =>
+    parseDate(brand.refresh?.lastFinishedAt);
+
+  const getOperationalTimestamp = (brand: (typeof brandRows)[number]) =>
+    getLastFinishedAt(brand) ?? getLastCompletedAt(brand);
+
+  const isAutoEligible = (brand: (typeof brandRows)[number]) => !brand.manualReview;
+
+  const isOperationalFresh = (brand: (typeof brandRows)[number]) => {
+    if (!isAutoEligible(brand)) return false;
+    const operationalAt = getOperationalTimestamp(brand);
+    return operationalAt ? operationalAt >= windowStart : false;
+  };
+
+  const isQualityFresh = (brand: (typeof brandRows)[number]) => {
+    if (!isAutoEligible(brand)) return false;
+    const completedAt = getLastCompletedAt(brand);
+    return completedAt ? completedAt >= windowStart : false;
+  };
+
+  const autoEligibleBrands = brandRows.filter(isAutoEligible).length;
+  const operationalFreshBrands = brandRows.filter(isOperationalFresh).length;
+  const qualityFreshBrands = brandRows.filter(isQualityFresh).length;
+  const operationalStaleBrands = Math.max(0, autoEligibleBrands - operationalFreshBrands);
+  const qualityStaleBrands = Math.max(0, autoEligibleBrands - qualityFreshBrands);
+
+  const staleBreakdown = {
+    processing: 0,
+    failed: 0,
+    no_status: 0,
+    manual_review: 0,
+  };
+
+  for (const brand of brandRows) {
+    if (brand.manualReview) {
+      staleBreakdown.manual_review += 1;
+      continue;
+    }
+    if (isOperationalFresh(brand)) continue;
+    const status = typeof brand.refresh?.lastStatus === "string" ? brand.refresh.lastStatus : "";
+    if (status === "processing") {
+      staleBreakdown.processing += 1;
+      continue;
+    }
+    if (status === "failed") {
+      staleBreakdown.failed += 1;
+      continue;
+    }
+    staleBreakdown.no_status += 1;
+  }
+
   // Metrics are aligned to the same window shown in the UI. We treat "coverage" as discovery
   // coverage (sitemap/adapter refs already present in DB pre-run), and "success" as run success
   // rate (completed items / total items).
   const windowBrands = brandRows.filter((brand) => {
-    const finishedAt = parseDate(brand.refresh?.lastFinishedAt);
+    if (brand.manualReview) return false;
+    const finishedAt = getOperationalTimestamp(brand);
     return finishedAt ? finishedAt >= windowStart : false;
   });
 
@@ -192,14 +228,14 @@ export async function GET(req: Request) {
     action?: { type: string; label: string; brandId?: string };
   }> = [];
 
-  const dueBrands = brandRows.filter((brand) => brand.due).slice(0, alertLimit);
+  const dueBrands = brandRows.filter((brand) => !brand.manualReview && brand.due).slice(0, alertLimit);
   dueBrands.forEach((brand) => {
     alerts.push({
       id: `stale:${brand.id}`,
       type: "stale_brand",
       level: "warning",
       title: `Marca vencida: ${brand.name}`,
-      detail: `Último refresh: ${brand.refresh?.lastCompletedAt ?? "sin registro"}.`,
+      detail: `Último refresh finalizado: ${brand.refresh?.lastFinishedAt ?? brand.refresh?.lastCompletedAt ?? "sin registro"}.`,
       brandId: brand.id,
       action: { type: "force_refresh", label: "Forzar refresh", brandId: brand.id },
     });
@@ -295,9 +331,15 @@ export async function GET(req: Request) {
     config,
     windowStart: windowStart.toISOString(),
     summary: {
-      totalBrands: brandTotals?.total ?? 0,
-      freshBrands: brandTotals?.fresh ?? 0,
-      staleBrands: brandTotals?.stale ?? 0,
+      totalBrands: brandRows.length,
+      autoEligibleBrands,
+      freshBrands: operationalFreshBrands,
+      staleBrands: operationalStaleBrands,
+      operationalFreshBrands,
+      qualityFreshBrands,
+      operationalStaleBrands,
+      qualityStaleBrands,
+      staleBreakdown,
       avgDiscoveryCoverage,
       avgRunSuccessRate,
       newProducts: newProducts?.count ?? 0,
