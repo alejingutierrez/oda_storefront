@@ -26,6 +26,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const includeEnrichmentAlerts = new URL(req.url).searchParams.get("includeEnrichmentAlerts") === "true";
   const config = getRefreshConfig();
   const now = new Date();
   const windowStart = new Date(now.getTime() - config.intervalDays * 24 * 60 * 60 * 1000);
@@ -79,6 +80,7 @@ export async function GET(req: Request) {
   const brandRows = brands.map((brand) => {
     const metadata = readMetadata(brand.metadata);
     const refresh = (metadata.catalog_refresh ?? {}) as Record<string, unknown>;
+    const schedulerDue = isBrandDueForRefresh(metadata, now, config);
     return {
       id: brand.id,
       name: brand.name,
@@ -87,7 +89,8 @@ export async function GET(req: Request) {
       manualReview: brand.manualReview,
       productCount: brand._count.products,
       refresh,
-      due: isBrandDueForRefresh(metadata, now, config),
+      schedulerDue,
+      due: schedulerDue,
     };
   });
 
@@ -108,15 +111,30 @@ export async function GET(req: Request) {
     return operationalAt ? operationalAt >= windowStart : false;
   };
 
+  const isOperationalOverdue = (brand: (typeof brandRows)[number]) => {
+    if (!isAutoEligible(brand)) return false;
+    const operationalAt = getOperationalTimestamp(brand);
+    return !operationalAt || operationalAt < windowStart;
+  };
+
   const isQualityFresh = (brand: (typeof brandRows)[number]) => {
     if (!isAutoEligible(brand)) return false;
     const completedAt = getLastCompletedAt(brand);
     return completedAt ? completedAt >= windowStart : false;
   };
 
-  const autoEligibleBrands = brandRows.filter(isAutoEligible).length;
-  const operationalFreshBrands = brandRows.filter(isOperationalFresh).length;
-  const qualityFreshBrands = brandRows.filter(isQualityFresh).length;
+  const rowsWithOperationalStatus = brandRows.map((brand) => {
+    const operationalAt = getOperationalTimestamp(brand);
+    return {
+      ...brand,
+      lastOperationalAt: operationalAt ? operationalAt.toISOString() : null,
+      operationalOverdue: isOperationalOverdue(brand),
+    };
+  });
+
+  const autoEligibleBrands = rowsWithOperationalStatus.filter(isAutoEligible).length;
+  const operationalFreshBrands = rowsWithOperationalStatus.filter(isOperationalFresh).length;
+  const qualityFreshBrands = rowsWithOperationalStatus.filter(isQualityFresh).length;
   const operationalStaleBrands = Math.max(0, autoEligibleBrands - operationalFreshBrands);
   const qualityStaleBrands = Math.max(0, autoEligibleBrands - qualityFreshBrands);
 
@@ -127,7 +145,7 @@ export async function GET(req: Request) {
     manual_review: 0,
   };
 
-  for (const brand of brandRows) {
+  for (const brand of rowsWithOperationalStatus) {
     if (brand.manualReview) {
       staleBreakdown.manual_review += 1;
       continue;
@@ -148,7 +166,7 @@ export async function GET(req: Request) {
   // Metrics are aligned to the same window shown in the UI. We treat "coverage" as discovery
   // coverage (sitemap/adapter refs already present in DB pre-run), and "success" as run success
   // rate (completed items / total items).
-  const windowBrands = brandRows.filter((brand) => {
+  const windowBrands = rowsWithOperationalStatus.filter((brand) => {
     if (brand.manualReview) return false;
     const finishedAt = getOperationalTimestamp(brand);
     return finishedAt ? finishedAt >= windowStart : false;
@@ -228,7 +246,9 @@ export async function GET(req: Request) {
     action?: { type: string; label: string; brandId?: string };
   }> = [];
 
-  const dueBrands = brandRows.filter((brand) => !brand.manualReview && brand.due).slice(0, alertLimit);
+  const dueBrands = rowsWithOperationalStatus
+    .filter((brand) => !brand.manualReview && brand.operationalOverdue)
+    .slice(0, alertLimit);
   dueBrands.forEach((brand) => {
     alerts.push({
       id: `stale:${brand.id}`,
@@ -269,63 +289,105 @@ export async function GET(req: Request) {
     });
   });
 
-  const enrichmentAlertMinutes = Math.max(
-    5,
-    Number(process.env.PRODUCT_ENRICHMENT_ALERT_STUCK_MINUTES ?? 90),
-  );
-  const stuckEnrichCutoff = new Date(Date.now() - enrichmentAlertMinutes * 60 * 1000);
-  const stuckEnrichmentRuns = await prisma.productEnrichmentRun.findMany({
-    where: {
-      status: { in: ["processing", "paused", "blocked"] },
-      updatedAt: { lt: stuckEnrichCutoff },
-    },
-    orderBy: { updatedAt: "asc" },
-    take: alertLimit,
-    include: { brand: { select: { id: true, name: true } } },
-  });
-  stuckEnrichmentRuns.forEach((run) => {
-    const meta = readMetadata(run.metadata);
-    const createdBy = typeof meta.created_by === "string" ? meta.created_by : null;
-    const autoStart = typeof meta.auto_start === "boolean" ? meta.auto_start : null;
-    const isQueuedByRefresh = createdBy === "catalog_refresh" && autoStart === false;
-
-    const titlePrefix =
-      run.status === "processing"
-        ? "Enriquecimiento atascado"
-        : run.status === "blocked"
-          ? "Enriquecimiento bloqueado"
-          : isQueuedByRefresh
-            ? "Enriquecimiento pendiente"
-            : "Enriquecimiento pausado";
-
-    const level =
-      run.status === "processing"
-        ? ("danger" as const)
-        : run.status === "blocked"
-          ? ("danger" as const)
-          : isQueuedByRefresh
-            ? ("info" as const)
-            : ("warning" as const);
-
-    const parts = [
-      `Status ${run.status}`,
-      run.blockReason ? `Bloqueo ${run.blockReason}` : null,
-      run.lastError ? `Error ${run.lastError}` : null,
-      `Última actividad ${run.updatedAt.toISOString()}`,
-    ].filter(Boolean) as string[];
-
-    alerts.push({
-      id: `enrich_stuck:${run.id}`,
-      type: isQueuedByRefresh ? "enrichment_queued" : "enrichment_stuck",
-      level,
-      title: `${titlePrefix}: ${run.brand?.name ?? "Marca"}`,
-      detail: parts.join(" · "),
-      brandId: run.brandId ?? undefined,
-      action: run.brandId
-        ? { type: "resume_enrichment", label: isQueuedByRefresh ? "Procesar" : "Reanudar", brandId: run.brandId }
-        : undefined,
+  if (includeEnrichmentAlerts) {
+    const enrichmentAlertMinutes = Math.max(
+      5,
+      Number(process.env.PRODUCT_ENRICHMENT_ALERT_STUCK_MINUTES ?? 90),
+    );
+    const stuckEnrichCutoff = new Date(Date.now() - enrichmentAlertMinutes * 60 * 1000);
+    const stuckEnrichmentRuns = await prisma.productEnrichmentRun.findMany({
+      where: {
+        status: { in: ["processing", "paused", "blocked"] },
+        updatedAt: { lt: stuckEnrichCutoff },
+      },
+      orderBy: { updatedAt: "asc" },
+      take: alertLimit,
+      include: { brand: { select: { id: true, name: true } } },
     });
-  });
+    stuckEnrichmentRuns.forEach((run) => {
+      const meta = readMetadata(run.metadata);
+      const createdBy = typeof meta.created_by === "string" ? meta.created_by : null;
+      const autoStart = typeof meta.auto_start === "boolean" ? meta.auto_start : null;
+      const isQueuedByRefresh = createdBy === "catalog_refresh" && autoStart === false;
+
+      const titlePrefix =
+        run.status === "processing"
+          ? "Enriquecimiento atascado"
+          : run.status === "blocked"
+            ? "Enriquecimiento bloqueado"
+            : isQueuedByRefresh
+              ? "Enriquecimiento pendiente"
+              : "Enriquecimiento pausado";
+
+      const level =
+        run.status === "processing"
+          ? ("danger" as const)
+          : run.status === "blocked"
+            ? ("danger" as const)
+            : isQueuedByRefresh
+              ? ("info" as const)
+              : ("warning" as const);
+
+      const parts = [
+        `Status ${run.status}`,
+        run.blockReason ? `Bloqueo ${run.blockReason}` : null,
+        run.lastError ? `Error ${run.lastError}` : null,
+        `Última actividad ${run.updatedAt.toISOString()}`,
+      ].filter(Boolean) as string[];
+
+      alerts.push({
+        id: `enrich_stuck:${run.id}`,
+        type: isQueuedByRefresh ? "enrichment_queued" : "enrichment_stuck",
+        level,
+        title: `${titlePrefix}: ${run.brand?.name ?? "Marca"}`,
+        detail: parts.join(" · "),
+        brandId: run.brandId ?? undefined,
+        action: run.brandId
+          ? {
+              type: "resume_enrichment",
+              label: isQueuedByRefresh ? "Procesar" : "Reanudar",
+              brandId: run.brandId,
+            }
+          : undefined,
+      });
+    });
+  }
+
+  const operationalMissingBrands = rowsWithOperationalStatus
+    .filter((brand) => brand.operationalOverdue)
+    .map((brand) => {
+      const operationalAt = getOperationalTimestamp(brand);
+      const daysStale = operationalAt
+        ? Math.max(0, Math.floor((now.getTime() - operationalAt.getTime()) / (24 * 60 * 60 * 1000)))
+        : null;
+      return {
+        id: brand.id,
+        name: brand.name,
+        lastOperationalAt: operationalAt ? operationalAt.toISOString() : null,
+        lastStatus: typeof brand.refresh?.lastStatus === "string" ? brand.refresh.lastStatus : null,
+        daysStale,
+      };
+    })
+    .sort((a, b) => {
+      if (!a.lastOperationalAt && !b.lastOperationalAt) return a.name.localeCompare(b.name, "es");
+      if (!a.lastOperationalAt) return -1;
+      if (!b.lastOperationalAt) return 1;
+      return new Date(a.lastOperationalAt).getTime() - new Date(b.lastOperationalAt).getTime();
+    });
+
+  const oldestOperationalCandidate = rowsWithOperationalStatus
+    .filter((brand) => !brand.manualReview)
+    .map((brand) => ({
+      id: brand.id,
+      name: brand.name,
+      lastOperationalAt: brand.lastOperationalAt,
+    }))
+    .sort((a, b) => {
+      if (!a.lastOperationalAt && !b.lastOperationalAt) return a.name.localeCompare(b.name, "es");
+      if (!a.lastOperationalAt) return -1;
+      if (!b.lastOperationalAt) return 1;
+      return new Date(a.lastOperationalAt).getTime() - new Date(b.lastOperationalAt).getTime();
+    })[0];
 
   return NextResponse.json({
     config,
@@ -347,7 +409,16 @@ export async function GET(req: Request) {
       stockChanges: stockChanges?.count ?? 0,
       stockStatusChanges: stockStatusChanges?.count ?? 0,
     },
-    brands: brandRows,
+    brands: rowsWithOperationalStatus,
+    operationalMissingBrands,
+    oldestOperationalRefresh: oldestOperationalCandidate
+      ? {
+          brandId: oldestOperationalCandidate.id,
+          brandName: oldestOperationalCandidate.name,
+          lastOperationalAt: oldestOperationalCandidate.lastOperationalAt,
+          neverRefreshed: oldestOperationalCandidate.lastOperationalAt === null,
+        }
+      : null,
     alerts,
   });
 }

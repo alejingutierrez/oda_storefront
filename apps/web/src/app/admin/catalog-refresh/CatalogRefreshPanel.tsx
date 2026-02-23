@@ -50,13 +50,9 @@ type RefreshBrand = {
   productCount: number;
   refresh: RefreshMeta;
   due: boolean;
-};
-
-type RefreshState = {
-  summary: RefreshSummary;
-  brands: RefreshBrand[];
-  windowStart: string;
-  alerts: RefreshAlert[];
+  schedulerDue?: boolean;
+  operationalOverdue?: boolean;
+  lastOperationalAt?: string | null;
 };
 
 type RefreshAlert = {
@@ -69,39 +65,113 @@ type RefreshAlert = {
   action?: { type: string; label: string; brandId?: string };
 };
 
+type OperationalMissingBrand = {
+  id: string;
+  name: string;
+  lastOperationalAt: string | null;
+  lastStatus: string | null;
+  daysStale: number | null;
+};
+
+type OldestOperationalRefresh = {
+  brandId: string;
+  brandName: string;
+  lastOperationalAt: string | null;
+  neverRefreshed: boolean;
+};
+
+type RefreshState = {
+  summary: RefreshSummary;
+  brands: RefreshBrand[];
+  windowStart: string;
+  alerts: RefreshAlert[];
+  operationalMissingBrands?: OperationalMissingBrand[];
+  oldestOperationalRefresh?: OldestOperationalRefresh | null;
+};
+
+type WorkerStatus = {
+  online: boolean;
+  ttlSeconds: number | null;
+  backlog: number;
+  active: number;
+};
+
+type QueueHealthState = {
+  redisEnabled: boolean;
+  workerStatus?: {
+    catalog?: WorkerStatus;
+    enrich?: WorkerStatus;
+  };
+  queues?: {
+    catalog?: {
+      waiting?: number;
+      active?: number;
+      delayed?: number;
+    };
+    enrichment?: {
+      waiting?: number;
+      active?: number;
+      delayed?: number;
+    };
+  };
+};
+
 const POLL_MS = 15000;
 
 const formatDate = (value?: string | null) => {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" });
 };
 
 const percent = (value: number, total: number) =>
   total > 0 ? `${Math.round((value / total) * 100)}%` : "0%";
 
+const alertLabel = (type: string) => {
+  if (type === "stale_brand") return "stale brand";
+  if (type === "catalog_stuck") return "catalog stuck";
+  return type.replace(/_/g, " ");
+};
+
 export default function CatalogRefreshPanel() {
   const [state, setState] = useState<RefreshState | null>(null);
+  const [queueHealth, setQueueHealth] = useState<QueueHealthState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const alertsRef = useRef<HTMLDivElement | null>(null);
 
   const fetchState = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/catalog-refresh/state", {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-      if (res.status === 401) {
+      const [stateRes, queueRes] = await Promise.all([
+        fetch("/api/admin/catalog-refresh/state", {
+          cache: "no-store",
+          credentials: "same-origin",
+        }),
+        fetch("/api/admin/queue-health", {
+          cache: "no-store",
+          credentials: "same-origin",
+        }),
+      ]);
+
+      if (stateRes.status === 401 || queueRes.status === 401) {
         window.location.href = "/admin";
         return;
       }
-      if (!res.ok) throw new Error("No se pudo cargar el estado de refresh.");
-      const payload = (await res.json()) as RefreshState;
+      if (!stateRes.ok) throw new Error("No se pudo cargar el estado de refresh.");
+
+      const payload = (await stateRes.json()) as RefreshState;
       setState(payload);
+
+      if (queueRes.ok) {
+        const queuePayload = (await queueRes.json()) as QueueHealthState;
+        setQueueHealth(queuePayload);
+      }
+
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido");
@@ -110,25 +180,31 @@ export default function CatalogRefreshPanel() {
     }
   }, []);
 
-  const triggerBatch = useCallback(async (force = false) => {
-    try {
-      const res = await fetch(`/api/admin/catalog-refresh/cron${force ? "?force=true" : ""}`);
-      if (!res.ok) throw new Error("No se pudo iniciar el refresh.");
-      await fetchState();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error desconocido");
-    }
-  }, [fetchState]);
+  const triggerBatch = useCallback(
+    async (force = false) => {
+      try {
+        const res = await fetch(`/api/admin/catalog-refresh/cron${force ? "?force=true" : ""}`);
+        if (!res.ok) throw new Error("No se pudo iniciar el refresh.");
+        await fetchState();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error desconocido");
+      }
+    },
+    [fetchState],
+  );
 
-  const triggerBrand = useCallback(async (brandId: string) => {
-    try {
-      const res = await fetch(`/api/admin/catalog-refresh/cron?brandId=${brandId}&force=true`);
-      if (!res.ok) throw new Error("No se pudo iniciar el refresh de la marca.");
-      await fetchState();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error desconocido");
-    }
-  }, [fetchState]);
+  const triggerBrand = useCallback(
+    async (brandId: string) => {
+      try {
+        const res = await fetch(`/api/admin/catalog-refresh/cron?brandId=${brandId}&force=true`);
+        if (!res.ok) throw new Error("No se pudo iniciar el refresh de la marca.");
+        await fetchState();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error desconocido");
+      }
+    },
+    [fetchState],
+  );
 
   const handleAlertAction = useCallback(
     async (alert: RefreshAlert) => {
@@ -143,24 +219,13 @@ export default function CatalogRefreshPanel() {
           const res = await fetch("/api/admin/catalog-extractor/run", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ brandId: alert.action.brandId, resume: true, drainOnRun: true }),
-          });
-          if (!res.ok) throw new Error("No se pudo reanudar el catálogo.");
-          await fetchState();
-          return;
-        }
-        if (alert.action.type === "resume_enrichment" && alert.action.brandId) {
-          const res = await fetch("/api/admin/product-enrichment/run", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
             body: JSON.stringify({
               brandId: alert.action.brandId,
-              scope: "brand",
               resume: true,
               drainOnRun: true,
             }),
           });
-          if (!res.ok) throw new Error("No se pudo reanudar el enriquecimiento.");
+          if (!res.ok) throw new Error("No se pudo reanudar el catalogo.");
           await fetchState();
           return;
         }
@@ -183,12 +248,36 @@ export default function CatalogRefreshPanel() {
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
-  }, [fetchState, state]);
+  }, [fetchState, state, queueHealth]);
+
+  useEffect(() => {
+    if (!alertsOpen) return;
+
+    const onClickAway = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (alertsRef.current && !alertsRef.current.contains(target)) {
+        setAlertsOpen(false);
+      }
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAlertsOpen(false);
+    };
+
+    window.addEventListener("mousedown", onClickAway);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onClickAway);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [alertsOpen]);
 
   const summary = state?.summary;
   const brands = state?.brands ?? [];
   const windowStart = state?.windowStart;
   const alerts = state?.alerts ?? [];
+  const operationalMissingBrands = state?.operationalMissingBrands ?? [];
+  const oldestOperationalRefresh = state?.oldestOperationalRefresh ?? null;
 
   const operationalCoverage = useMemo(() => {
     if (!summary) return { fresh: 0, total: 0, percent: 0 };
@@ -210,12 +299,77 @@ export default function CatalogRefreshPanel() {
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Refresh semanal de catálogo</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Refresh semanal de catalogo</h2>
           <p className="text-sm text-slate-600">
-            Ventana analizada desde {windowStart ? formatDate(windowStart) : "—"}.
+            Ventana analizada desde {windowStart ? formatDate(windowStart) : "-"}.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative" ref={alertsRef}>
+            <button
+              type="button"
+              className="relative inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+              onClick={() => setAlertsOpen((open) => !open)}
+              aria-expanded={alertsOpen}
+              aria-haspopup="menu"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.8">
+                <path d="M6 9a6 6 0 1 1 12 0v4.4l1.6 2.4H4.4L6 13.4V9Z" />
+                <path d="M10 18a2 2 0 0 0 4 0" />
+              </svg>
+              <span>Alertas</span>
+              <span className="rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
+                {alerts.length}
+              </span>
+            </button>
+            {alertsOpen ? (
+              <div className="absolute right-0 z-30 mt-2 w-[min(94vw,28rem)] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-900">Alertas de refresh</h3>
+                  <span className="text-xs text-slate-500">{alerts.length} activas</span>
+                </div>
+                {alerts.length ? (
+                  <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                    {alerts.map((alert) => {
+                      const badge =
+                        alert.level === "danger"
+                          ? "bg-rose-100 text-rose-700"
+                          : alert.level === "warning"
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-slate-100 text-slate-700";
+                      return (
+                        <div
+                          key={alert.id}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase ${badge}`}>
+                              {alertLabel(alert.type)}
+                            </span>
+                            <p className="text-sm font-semibold text-slate-900">{alert.title}</p>
+                          </div>
+                          {alert.detail ? (
+                            <p className="mt-1 text-xs text-slate-600">{alert.detail}</p>
+                          ) : null}
+                          {alert.action ? (
+                            <button
+                              className="mt-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+                              onClick={() => handleAlertAction(alert)}
+                              disabled={actionId === alert.id}
+                            >
+                              {actionId === alert.id ? "Ejecutando..." : alert.action.label}
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">Sin alertas de refresh.</p>
+                )}
+              </div>
+            ) : null}
+          </div>
           <button
             className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
             onClick={() => triggerBatch(false)}
@@ -239,62 +393,14 @@ export default function CatalogRefreshPanel() {
         </div>
       ) : null}
 
-      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-slate-900">Alertas operativas</h3>
-          <span className="text-xs text-slate-500">{alerts.length} activas</span>
-        </div>
-        {alerts.length ? (
-          <div className="mt-3 grid gap-2">
-            {alerts.map((alert) => {
-              const badge =
-                alert.level === "danger"
-                  ? "bg-rose-100 text-rose-700"
-                  : alert.level === "warning"
-                    ? "bg-amber-100 text-amber-700"
-                    : "bg-slate-100 text-slate-700";
-              return (
-                <div
-                  key={alert.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${badge}`}>
-                        {alert.type.replace(/_/g, " ")}
-                      </span>
-                      <p className="text-sm font-semibold text-slate-900">{alert.title}</p>
-                    </div>
-                    {alert.detail ? (
-                      <p className="mt-1 text-xs text-slate-600">{alert.detail}</p>
-                    ) : null}
-                  </div>
-                  {alert.action ? (
-                    <button
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
-                      onClick={() => handleAlertAction(alert)}
-                      disabled={actionId === alert.id}
-                    >
-                      {actionId === alert.id ? "Ejecutando..." : alert.action.label}
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="mt-2 text-xs text-slate-500">Sin alertas activas.</p>
-        )}
-      </div>
-
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs uppercase text-slate-500">Cobertura automática (operativa)</p>
+          <p className="text-xs uppercase text-slate-500">Cobertura automatica (operativa)</p>
           <p className="mt-2 text-2xl font-semibold text-slate-900">
             {percent(operationalCoverage.fresh, operationalCoverage.total)}
           </p>
           <p className="text-sm text-slate-600">
-            {operationalCoverage.fresh} de {operationalCoverage.total} auto‑elegibles
+            {operationalCoverage.fresh} de {operationalCoverage.total} auto-elegibles
           </p>
           <div className="mt-3 h-2 w-full rounded-full bg-slate-200">
             <div
@@ -303,8 +409,8 @@ export default function CatalogRefreshPanel() {
             />
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Stale: processing {summary?.staleBreakdown?.processing ?? 0} · failed{" "}
-            {summary?.staleBreakdown?.failed ?? 0} · sin estado{" "}
+            Stale: processing {summary?.staleBreakdown?.processing ?? 0} - failed{" "}
+            {summary?.staleBreakdown?.failed ?? 0} - sin estado{" "}
             {summary?.staleBreakdown?.no_status ?? 0}
           </p>
         </div>
@@ -323,24 +429,19 @@ export default function CatalogRefreshPanel() {
             />
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Manual review fuera de cobertura automática:{" "}
-            {summary?.staleBreakdown?.manual_review ?? 0}
+            Manual review fuera de cobertura automatica: {summary?.staleBreakdown?.manual_review ?? 0}
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <p className="text-xs uppercase text-slate-500">Nuevos productos</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {summary?.newProducts ?? 0}
-          </p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{summary?.newProducts ?? 0}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <p className="text-xs uppercase text-slate-500">Cambios de precio</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {summary?.priceChanges ?? 0}
-          </p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{summary?.priceChanges ?? 0}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <p className="text-xs uppercase text-slate-500">Éxito promedio</p>
+          <p className="text-xs uppercase text-slate-500">Exito promedio</p>
           <p className="mt-2 text-2xl font-semibold text-slate-900">
             {summary ? `${Math.round(summary.avgRunSuccessRate * 100)}%` : "0%"}
           </p>
@@ -351,19 +452,94 @@ export default function CatalogRefreshPanel() {
           <p className="mt-2 text-2xl font-semibold text-slate-900">
             {summary ? `${Math.round(summary.avgDiscoveryCoverage * 100)}%` : "0%"}
           </p>
-          <p className="mt-1 text-xs text-slate-500">Refs (sitemap+adapter) ya existentes en DB</p>
+          <p className="mt-1 text-xs text-slate-500">Refs (sitemap+adapter) existentes en DB</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <p className="text-xs uppercase text-slate-500">Cambios de stock</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {summary?.stockChanges ?? 0}
-          </p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{summary?.stockChanges ?? 0}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <p className="text-xs uppercase text-slate-500">Estado stock</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {summary?.stockStatusChanges ?? 0}
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{summary?.stockStatusChanges ?? 0}</p>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-4 xl:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-xs uppercase text-slate-500">
+            Faltan {operationalMissingBrands.length} para 100% operativo
           </p>
+          {operationalMissingBrands.length ? (
+            <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+              {operationalMissingBrands.map((brand) => (
+                <div
+                  key={brand.id}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{brand.name}</p>
+                    <p className="text-xs text-slate-600">
+                      Ultimo: {formatDate(brand.lastOperationalAt)} - status {brand.lastStatus ?? "-"}
+                    </p>
+                  </div>
+                  <button
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+                    onClick={() => triggerBrand(brand.id)}
+                    disabled={loading}
+                  >
+                    Forzar
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500">Cobertura operativa en 100%.</p>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-xs uppercase text-slate-500">Refresh mas antiguo</p>
+          {oldestOperationalRefresh ? (
+            <div className="mt-3 space-y-1 text-sm text-slate-700">
+              <p className="font-semibold text-slate-900">{oldestOperationalRefresh.brandName}</p>
+              <p>
+                Ultimo refresh operativo: {formatDate(oldestOperationalRefresh.lastOperationalAt)}
+              </p>
+              <p>
+                {oldestOperationalRefresh.neverRefreshed
+                  ? "Nunca refrescada"
+                  : "Con historial operativo"}
+              </p>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500">Sin datos de antiguedad.</p>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-xs uppercase text-slate-500">Estado de jobs</p>
+          {queueHealth?.redisEnabled === false ? (
+            <p className="mt-2 text-xs text-slate-500">Redis no habilitado.</p>
+          ) : (
+            <div className="mt-3 space-y-2 text-xs text-slate-700">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="font-semibold text-slate-900">Catalog</p>
+                <p>
+                  Online: {queueHealth?.workerStatus?.catalog?.online ? "si" : "no"} - backlog{" "}
+                  {queueHealth?.workerStatus?.catalog?.backlog ?? 0} - active{" "}
+                  {queueHealth?.workerStatus?.catalog?.active ?? 0}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="font-semibold text-slate-900">Enrichment</p>
+                <p>
+                  Online: {queueHealth?.workerStatus?.enrich?.online ? "si" : "no"} - backlog{" "}
+                  {queueHealth?.workerStatus?.enrich?.backlog ?? 0} - active{" "}
+                  {queueHealth?.workerStatus?.enrich?.active ?? 0}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -374,9 +550,9 @@ export default function CatalogRefreshPanel() {
               <th className="px-3">Marca</th>
               <th className="px-3">Plataforma</th>
               <th className="px-3">Productos</th>
-              <th className="px-3">Último refresh</th>
-              <th className="px-3">Estado</th>
-              <th className="px-3">Éxito</th>
+              <th className="px-3">Ultimo refresh</th>
+              <th className="px-3">Status run</th>
+              <th className="px-3">Exito</th>
               <th className="px-3">Fallos</th>
               <th className="px-3">Nuevos</th>
               <th
@@ -387,7 +563,7 @@ export default function CatalogRefreshPanel() {
               </th>
               <th className="px-3">Precio</th>
               <th className="px-3">Stock</th>
-              <th className="px-3">Estado</th>
+              <th className="px-3">Estado stock</th>
               <th className="px-3">Acciones</th>
             </tr>
           </thead>
@@ -403,19 +579,19 @@ export default function CatalogRefreshPanel() {
                         manual
                       </span>
                     ) : null}
-                    {brand.due ? (
+                    {brand.operationalOverdue ? (
                       <span className="ml-2 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
                         overdue
                       </span>
                     ) : null}
                   </td>
-                  <td className="px-3 py-3 text-slate-600">{brand.ecommercePlatform ?? "—"}</td>
+                  <td className="px-3 py-3 text-slate-600">{brand.ecommercePlatform ?? "-"}</td>
                   <td className="px-3 py-3 text-slate-600">{brand.productCount}</td>
                   <td className="px-3 py-3 text-slate-600">
                     {formatDate(refresh.lastFinishedAt ?? refresh.lastCompletedAt)}
                   </td>
                   <td className="px-3 py-3 text-slate-600" title={refresh.lastError ?? ""}>
-                    {refresh.lastStatus ?? "—"}
+                    {refresh.lastStatus ?? "-"}
                   </td>
                   <td className="px-3 py-3 text-slate-600">
                     {typeof refresh.lastRunSuccessRate === "number"
@@ -424,28 +600,20 @@ export default function CatalogRefreshPanel() {
                           typeof refresh.lastRunTotalItems === "number" &&
                           refresh.lastRunTotalItems > 0
                         ? `${Math.round((refresh.lastRunCompletedItems / refresh.lastRunTotalItems) * 100)}%`
-                        : "—"}
+                        : "-"}
                   </td>
                   <td className="px-3 py-3 text-slate-600">
-                    {typeof refresh.lastRunFailedItems === "number" ? refresh.lastRunFailedItems : "—"}
+                    {typeof refresh.lastRunFailedItems === "number" ? refresh.lastRunFailedItems : "-"}
                   </td>
-                  <td className="px-3 py-3 text-slate-600">
-                    {refresh.lastNewProducts ?? 0}
-                  </td>
+                  <td className="px-3 py-3 text-slate-600">{refresh.lastNewProducts ?? 0}</td>
                   <td className="px-3 py-3 text-slate-600">
                     {typeof refresh.lastCombinedCoverage === "number"
                       ? `${Math.round(refresh.lastCombinedCoverage * 100)}%`
-                      : "—"}
+                      : "-"}
                   </td>
-                  <td className="px-3 py-3 text-slate-600">
-                    {refresh.lastPriceChanges ?? 0}
-                  </td>
-                  <td className="px-3 py-3 text-slate-600">
-                    {refresh.lastStockChanges ?? 0}
-                  </td>
-                  <td className="px-3 py-3 text-slate-600">
-                    {refresh.lastStockStatusChanges ?? 0}
-                  </td>
+                  <td className="px-3 py-3 text-slate-600">{refresh.lastPriceChanges ?? 0}</td>
+                  <td className="px-3 py-3 text-slate-600">{refresh.lastStockChanges ?? 0}</td>
+                  <td className="px-3 py-3 text-slate-600">{refresh.lastStockStatusChanges ?? 0}</td>
                   <td className="px-3 py-3">
                     <button
                       className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700"
