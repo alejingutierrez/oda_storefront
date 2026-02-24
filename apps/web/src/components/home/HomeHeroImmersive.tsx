@@ -1,10 +1,35 @@
 "use client";
 
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import type { HomeProductCardData } from "@/lib/home-types";
+
+function toLabel(value: string | null | undefined) {
+  if (!value) return null;
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+}
+
+function formatPrice(amount: string | null, currency: string | null) {
+  if (!amount) return null;
+  const numeric = Number(amount);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+
+  try {
+    return new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency: currency || "COP",
+      maximumFractionDigits: 0,
+    }).format(numeric);
+  } catch {
+    return `${currency || "COP"} ${numeric.toFixed(0)}`;
+  }
+}
 
 export default function HomeHeroImmersive({ hero }: { hero: HomeProductCardData | null }) {
   const sectionRef = useRef<HTMLElement | null>(null);
@@ -15,6 +40,12 @@ export default function HomeHeroImmersive({ hero }: { hero: HomeProductCardData 
   });
   const mediaY = useTransform(scrollYProgress, [0, 1], [0, 84]);
   const mediaScale = useTransform(scrollYProgress, [0, 1], [1, 1.08]);
+  const contextualBadge = useMemo(() => {
+    const values = [toLabel(hero?.category), toLabel(hero?.subcategory)].filter(Boolean) as string[];
+    return values.length > 0 ? values.join(" · ") : "Edicion curada";
+  }, [hero?.category, hero?.subcategory]);
+  const heroPrice = formatPrice(hero?.minPrice ?? null, hero?.currency ?? null);
+  const showProductSupport = Boolean(hero?.name && hero?.brandName && hero?.sourceUrl && heroPrice);
 
   return (
     <section
@@ -50,15 +81,42 @@ export default function HomeHeroImmersive({ hero }: { hero: HomeProductCardData 
       <div className="absolute inset-0 bg-[linear-gradient(100deg,rgba(10,10,10,0.84)_10%,rgba(10,10,10,0.48)_48%,rgba(10,10,10,0.72)_100%)]" />
 
       <div className="oda-container relative flex min-h-[94svh] flex-col justify-end gap-8 py-14 sm:py-16 lg:py-20">
-        <div className="max-w-[58rem] space-y-6">
-          <p className="text-[11px] uppercase tracking-[0.28em] text-[color:var(--oda-gold)]">ODA editorial</p>
-          <h1 className="font-display text-5xl leading-[0.94] sm:text-7xl lg:text-[7.4rem]">
-            Moda colombiana en una experiencia inmersiva.
-          </h1>
-          <p className="max-w-2xl text-sm leading-relaxed text-white/82 sm:text-base">
-            Curaduria viva con rotacion determinista cada 3 dias. Descubre piezas de autor, categorias clave y
-            combinaciones editoriales en un home pensado como revista digital.
-          </p>
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-end">
+          <div className="max-w-[58rem] space-y-6">
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-[11px] uppercase tracking-[0.28em] text-[color:var(--oda-gold)]">ODA editorial</p>
+              <span className="rounded-full border border-white/30 bg-black/25 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/88">
+                {contextualBadge}
+              </span>
+            </div>
+
+            <h1 className="font-display text-5xl leading-[0.94] sm:text-7xl lg:text-[7.2rem]">
+              Descubre moda colombiana
+              <br className="hidden md:block" /> con criterio editorial.
+            </h1>
+
+            <p className="max-w-2xl text-sm leading-relaxed text-white/82 sm:text-base">
+              Curaduria viva con rotacion determinista cada 3 dias. Priorizamos producto real, navegacion rapida y
+              composiciones visuales pensadas para descubrir mejor.
+            </p>
+          </div>
+
+          {showProductSupport ? (
+            <div className="hidden rounded-[1.15rem] border border-white/20 bg-white/10 p-5 backdrop-blur-sm lg:flex lg:flex-col lg:gap-3">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white/76">Pieza destacada</p>
+              <p className="line-clamp-2 text-lg leading-tight text-white">{hero?.name}</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-gold)]">{hero?.brandName}</p>
+              <p className="text-sm text-white/88">{heroPrice}</p>
+              <a
+                href={hero?.sourceUrl ?? "#"}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-flex w-fit rounded-full border border-white/45 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-white transition hover:bg-white/10"
+              >
+                Ver en tienda
+              </a>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-4 pb-2">
@@ -75,7 +133,8 @@ export default function HomeHeroImmersive({ hero }: { hero: HomeProductCardData 
             Ver catalogo
           </Link>
 
-          <div className="ml-auto hidden rounded-full border border-white/25 bg-black/20 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white/80 md:block">
+          <div className="ml-auto hidden rounded-full border border-white/25 bg-black/20 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white/80 md:flex md:items-center md:gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--oda-gold)]" />
             Rotacion semilla 3 dias
           </div>
         </div>

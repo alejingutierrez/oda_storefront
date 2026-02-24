@@ -6,10 +6,17 @@ import type { BrandLogo } from "@/lib/home-types";
 
 export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
   if (brands.length === 0) {
-    return null;
+    return (
+      <div className="flex flex-col gap-3 rounded-[1.2rem] border border-[color:var(--oda-border)] bg-white p-6">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Marcas</p>
+        <p className="text-sm leading-relaxed text-[color:var(--oda-ink-soft)]">
+          Estamos sincronizando marcas destacadas. Puedes navegar el catalogo completo mientras cargamos este modulo.
+        </p>
+      </div>
+    );
   }
 
-  const duplicated = [...brands, ...brands];
+  const [featured, ...rest] = brands;
 
   return (
     <div className="flex flex-col gap-8">
@@ -18,38 +25,74 @@ export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
         <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">Marcas destacadas</h2>
       </div>
 
-      <div className="relative overflow-hidden rounded-[1.5rem] border border-[color:var(--oda-border)] bg-white px-0 py-7">
-        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-20 bg-gradient-to-r from-white to-transparent" />
-        <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-20 bg-gradient-to-l from-white to-transparent" />
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
+        <Link
+          href={`/marca/${encodeURIComponent(featured.slug)}`}
+          className="group relative overflow-hidden rounded-[1.4rem] border border-[color:var(--oda-border)] bg-white"
+        >
+          <div className="relative aspect-[4/3] w-full overflow-hidden bg-[color:var(--oda-stone)]">
+            {featured.heroImageUrl ? (
+              <Image
+                src={featured.heroImageUrl}
+                alt={featured.name}
+                fill
+                sizes="(max-width: 1024px) 100vw, 52vw"
+                className="object-cover transition duration-700 ease-out group-hover:scale-[1.03]"
+                unoptimized
+              />
+            ) : null}
+            <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.62),rgba(0,0,0,0.2),rgba(0,0,0,0.04))]" />
+            <div className="absolute left-6 top-6 h-14 w-36 rounded-xl border border-white/28 bg-white/88 p-2 backdrop-blur-sm">
+              <Image src={featured.logoUrl} alt={featured.name} fill sizes="144px" className="object-contain p-2" unoptimized />
+            </div>
+            <div className="absolute bottom-6 left-6 right-6">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white/76">Spotlight</p>
+              <p className="mt-2 font-display text-3xl leading-none text-white sm:text-4xl">{featured.name}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 border-t border-[color:var(--oda-border)] px-6 py-5">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Productos</p>
+              <p className="mt-1 text-lg text-[color:var(--oda-ink)]">{new Intl.NumberFormat("es-CO").format(featured.productCount)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Categorias</p>
+              <p className="mt-1 text-lg text-[color:var(--oda-ink)]">{new Intl.NumberFormat("es-CO").format(featured.categoryCount)}</p>
+            </div>
+          </div>
+        </Link>
 
-        <ul className="home-marquee-track group flex w-max items-center gap-10 px-8">
-          {duplicated.map((brand, index) => {
-            const isClone = index >= brands.length;
-            return (
-              <li
-                key={`${brand.id}-${index}`}
-                className="relative flex h-14 w-[132px] shrink-0 items-center justify-center"
-                aria-hidden={isClone}
-              >
-                <Link
-                  href={`/marca/${encodeURIComponent(brand.slug)}`}
-                  tabIndex={isClone ? -1 : 0}
-                  className="relative flex h-full w-full items-center justify-center rounded-lg opacity-85 transition hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2"
-                  aria-label={brand.name}
-                >
-                  <Image
-                    src={brand.logoUrl}
-                    alt={brand.name}
-                    fill
-                    sizes="132px"
-                    className="object-contain"
-                    unoptimized
-                  />
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="rounded-[1.4rem] border border-[color:var(--oda-border)] bg-white p-4 sm:p-5">
+          {rest.length > 0 ? (
+            <ul className="flex flex-col divide-y divide-[color:var(--oda-border)]">
+              {rest.slice(0, 8).map((brand) => (
+                <li key={brand.id} className="py-3 first:pt-0 last:pb-0">
+                  <Link
+                    href={`/marca/${encodeURIComponent(brand.slug)}`}
+                    className="group flex items-center justify-between gap-3 rounded-xl px-2 py-1.5 transition hover:bg-[color:var(--oda-cream)]"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="relative h-8 w-24 shrink-0">
+                        <Image src={brand.logoUrl} alt={brand.name} fill sizes="96px" className="object-contain" unoptimized />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm text-[color:var(--oda-ink)]">{brand.name}</p>
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                          {brand.productCount} productos · {brand.categoryCount} categorias
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)] transition group-hover:text-[color:var(--oda-ink)]">
+                      Ver
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-[color:var(--oda-ink-soft)]">Sumaremos mas marcas destacadas en la siguiente rotacion.</p>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -186,6 +186,23 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Build/lint pasan con las rutas y contratos nuevos.
 - Estado: **done (2026-02-24)**.
 
+### MC-139 Home Fase 1 inspirada: Hero/Categorías/Trending/Marcas V2 + bloque de conversión
+- Historia: Como usuario de ODA, quiero una home con ritmo editorial más marcado y foco en descubrimiento real de catálogo, para navegar mejor sin perder identidad visual de la plataforma.
+- Alcance:
+  - Reemplazo in-place de 4 módulos en `/`: `HomeHeroImmersive` V2, `CategoryGallery` V2, `HomeTrendingGrid` (nuevo componente en lugar del carrusel de trending) y `BrandMarquee` V2.
+  - Nuevo `ConversionCoverageBlock` ubicado inmediatamente después de Trending, con métricas reales de cobertura y botón deshabilitado `Próximamente`.
+  - Integración server-side en `src/app/page.tsx`: mantiene `seed = getRotationSeed()` (3 días), extiende `Promise.all` con `getHomeCoverageStats()` y preserva el resto del flujo de secciones.
+  - Capa de datos home extendida: `BrandLogo` ahora expone `productCount/categoryCount/heroImageUrl`; nuevo tipo `HomeCoverageStats` y nuevo fetch `getHomeCoverageStats` en `src/lib/home-data.ts`.
+  - Agregados de cobertura y marcas ajustados a universo activo (`brands.isActive=true` y productos no archivados), sin cambios de contratos HTTP públicos.
+  - Fallbacks elegantes por módulo: hero sin imagen/campos incompletos, categorías vacías/parciales, trending vacío/filtrado sin resultados, marcas sin logos, y bloque de cobertura con contadores en `0` + estado de actualización.
+- CA:
+  - Home renderiza Hero/Categorías/Trending/Marcas/Conversión con datos reales.
+  - Botón `Próximamente` visible y no interactivo (`disabled`, `aria-disabled=true`).
+  - Bloque de conversión aparece justo después de Trending.
+  - Semilla de 3 días mantiene estabilidad intra-ventana y cambia variaciones al rotar la seed.
+  - Build pasa y la home responde sin romper layout en mobile/tablet/desktop.
+- Estado: **done (2026-02-24)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

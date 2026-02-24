@@ -4,7 +4,9 @@ import Header from "@/components/Header";
 import BrandMarquee from "@/components/home/BrandMarquee";
 import CategoryGallery from "@/components/home/CategoryGallery";
 import ColorSwatchPalette from "@/components/home/ColorSwatchPalette";
+import ConversionCoverageBlock from "@/components/home/ConversionCoverageBlock";
 import CuratedStickyEdit from "@/components/home/CuratedStickyEdit";
+import HomeTrendingGrid from "@/components/home/HomeTrendingGrid";
 import HomeHeroImmersive from "@/components/home/HomeHeroImmersive";
 import ProductCarousel from "@/components/home/ProductCarousel";
 import RevealOnScroll from "@/components/home/RevealOnScroll";
@@ -12,6 +14,7 @@ import {
   getBrandLogos,
   getCategoryHighlights,
   getColorCombos,
+  getHomeCoverageStats,
   getHeroProduct,
   getMegaMenuData,
   getNewArrivals,
@@ -35,6 +38,7 @@ export default async function Home() {
     colorCombos,
     brandLogos,
     trending,
+    coverageStats,
   ] = await Promise.all([
     getMegaMenuData(),
     getHeroProduct(seed),
@@ -44,6 +48,7 @@ export default async function Home() {
     getColorCombos(seed, 6),
     getBrandLogos(seed, 24),
     getTrendingPicks(seed, 8),
+    getHomeCoverageStats(),
   ]);
 
   return (
@@ -91,12 +96,13 @@ export default async function Home() {
 
       <section className="oda-container pb-22">
         <RevealOnScroll>
-          <ProductCarousel
-            title="Trending picks"
-            subtitle="Rotacion"
-            products={trending}
-            ariaLabel="Carrusel de trending picks"
-          />
+          <HomeTrendingGrid products={trending} />
+        </RevealOnScroll>
+      </section>
+
+      <section className="oda-container pb-22">
+        <RevealOnScroll>
+          <ConversionCoverageBlock stats={coverageStats} seed={seed} />
         </RevealOnScroll>
       </section>
 

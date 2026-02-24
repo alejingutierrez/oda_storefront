@@ -316,6 +316,12 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Módulos nuevos: `HomeHeroImmersive`, `ProductCarousel` (swipe/drag + keyboard), `CategoryGallery` (3:4), `CuratedStickyEdit`, `ColorSwatchPalette`, `BrandMarquee` y `RevealOnScroll`.
   - Tipos compartidos movidos a `src/lib/home-types.ts` para evitar acoplar componentes client al módulo `server-only` (`home-data.ts`).
   - Accesibilidad y motion: se respeta `prefers-reduced-motion` (desactiva marquee/parallax y reduce animación no esencial), foco visible y labels en controles de carrusel/marquee.
+- Home Fase 1 inspirada (MC-139, 2026-02-24):
+  - Reemplazos in-place en `/`: `HomeHeroImmersive` V2, `CategoryGallery` V2, `HomeTrendingGrid` (sustituye carrusel de trending) y `BrandMarquee` V2.
+  - Nuevo módulo `ConversionCoverageBlock` inmediatamente después de Trending con métricas reales (`productos/marcas/categorías`) y CTA deshabilitado `Próximamente`.
+  - Datos de home ampliados: `BrandLogo` incluye `productCount/categoryCount/heroImageUrl` y se agrega `HomeCoverageStats` + `getHomeCoverageStats()` en `src/lib/home-data.ts`.
+  - Cobertura “activa”: agregados de home para marcas activas y productos no archivados (sin cambiar APIs públicas).
+  - Degradación elegante: cada bloque nuevo tiene fallback visual cuando no hay data (incluye CTAs a `/catalogo` o `/buscar` donde aplica).
 - Header + mega menu (actualización 2026-02-18):
   - Desktop: layout del header en grid (`auto | minmax(0,1fr) | auto`), input de búsqueda responsivo (`w-[clamp(12rem,18vw,20rem)]`) y panel de megamenu compartido a ancho completo del container.
   - Desktop (ajuste UX): menor densidad vertical en líneas del panel para una lectura más compacta.

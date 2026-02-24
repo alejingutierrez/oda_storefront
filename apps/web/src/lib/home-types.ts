@@ -67,4 +67,14 @@ export type BrandLogo = {
   slug: string;
   name: string;
   logoUrl: string;
+  productCount: number;
+  categoryCount: number;
+  heroImageUrl: string | null;
+};
+
+export type HomeCoverageStats = {
+  productCount: number;
+  brandCount: number;
+  categoryCount: number;
+  lastUpdatedAt: string | null;
 };

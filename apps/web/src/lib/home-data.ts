@@ -8,6 +8,7 @@ import type {
   BrandLogo,
   CategoryHighlight,
   ColorCombo,
+  HomeCoverageStats,
   MegaMenuData,
   MenuCategory,
   ProductCard,
@@ -28,6 +29,7 @@ export type {
   BrandLogo,
   CategoryHighlight,
   ColorCombo,
+  HomeCoverageStats,
   HomeProductCardData,
   MegaMenuData,
   MenuCategory,
@@ -38,7 +40,7 @@ export type {
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 5;
+const HOME_CACHE_VERSION = 6;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 
 export function getRotationSeed(now = new Date()): number {
@@ -584,17 +586,119 @@ export async function getBrandLogos(seed: number, limit = 24): Promise<BrandLogo
     async () => {
       return prisma.$queryRaw<BrandLogo[]>(
         Prisma.sql`
-          select id, slug, name, "logoUrl"
-          from brands
-          where "logoUrl" is not null
-            and slug is not null
-            and slug <> ''
-          order by md5(concat(id::text, ${seed}::text, 'brands'))
+          with brand_metrics as (
+            select
+              p."brandId" as brand_id,
+              count(*)::int as "productCount",
+              count(distinct case when p.category is not null and p.category <> '' then p.category end)::int as "categoryCount"
+            from products p
+            join brands b on b.id = p."brandId"
+            where p."imageCoverUrl" is not null
+              and b."isActive" = true
+              and (p.status is null or lower(p.status) <> 'archived')
+            group by 1
+          ),
+          brand_cover as (
+            select
+              q."brandId" as brand_id,
+              q."imageCoverUrl" as "heroImageUrl"
+            from (
+              select
+                p."brandId",
+                p."imageCoverUrl",
+                row_number() over (
+                  partition by p."brandId"
+                  order by md5(concat(p.id::text, ${seed}::text, 'brand-cover'))
+                ) as rn
+              from products p
+              join brands b on b.id = p."brandId"
+              where p."imageCoverUrl" is not null
+                and b."isActive" = true
+                and (p.status is null or lower(p.status) <> 'archived')
+            ) q
+            where q.rn = 1
+          )
+          select
+            b.id,
+            b.slug,
+            b.name,
+            b."logoUrl",
+            coalesce(m."productCount", 0)::int as "productCount",
+            coalesce(m."categoryCount", 0)::int as "categoryCount",
+            c."heroImageUrl"
+          from brands b
+          join brand_metrics m on m.brand_id = b.id
+          left join brand_cover c on c.brand_id = b.id
+          where b."logoUrl" is not null
+            and b.slug is not null
+            and b.slug <> ''
+            and b."isActive" = true
+          order by md5(concat(b.id::text, ${seed}::text, 'brands'))
           limit ${limit}
         `
       );
     },
     [`home-v${HOME_CACHE_VERSION}-brands-${seed}-${limit}`],
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
+  );
+
+  return cached();
+}
+
+export async function getHomeCoverageStats(): Promise<HomeCoverageStats | null> {
+  const cached = unstable_cache(
+    async () => {
+      const rows = await prisma.$queryRaw<
+        Array<{
+          productCount: number | bigint;
+          brandCount: number | bigint;
+          categoryCount: number | bigint;
+          lastUpdatedAt: Date | string | null;
+        }>
+      >(
+        Prisma.sql`
+          with eligible_products as (
+            select
+              p.id,
+              p."brandId",
+              p.category,
+              p."updatedAt"
+            from products p
+            join brands b on b.id = p."brandId"
+            where p."imageCoverUrl" is not null
+              and b."isActive" = true
+              and (p.status is null or lower(p.status) <> 'archived')
+          )
+          select
+            count(*)::int as "productCount",
+            count(distinct "brandId")::int as "brandCount",
+            count(distinct case when category is not null and category <> '' then category end)::int as "categoryCount",
+            max("updatedAt") as "lastUpdatedAt"
+          from eligible_products
+        `
+      );
+
+      const row = rows[0];
+      if (!row) return null;
+
+      const productCount = Number(row.productCount ?? 0);
+      const brandCount = Number(row.brandCount ?? 0);
+      const categoryCount = Number(row.categoryCount ?? 0);
+      const lastUpdatedAt =
+        row.lastUpdatedAt instanceof Date
+          ? row.lastUpdatedAt.toISOString()
+          : row.lastUpdatedAt
+            ? new Date(row.lastUpdatedAt).toISOString()
+            : null;
+
+      return {
+        productCount,
+        brandCount,
+        categoryCount,
+        lastUpdatedAt,
+      };
+    },
+    [`home-v${HOME_CACHE_VERSION}-coverage`],
     { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
