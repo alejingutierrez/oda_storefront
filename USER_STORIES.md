@@ -278,6 +278,36 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Build pasa y lint focalizado de archivos tocados queda limpio.
 - Estado: **done (2026-02-24)**.
 
+### MC-144 Home nunca vacía (hotfix crítico SSR/ISR para Novedades, Categorías, Foco, Price Drop y Tendencia diaria)
+- Historia: Como usuario de ODA, quiero que la home nunca publique rails críticos vacíos cuando sí existe inventario activo, para evitar experiencia degradada y pérdida de confianza.
+- Alcance:
+  - Se eliminó la degradación crítica a `[]` en `HomeBelowFold` para módulos core y se reemplazó por fetchers resilientes en `home-data`:
+    - `getResilientNewArrivals`: `getNewArrivals` -> `getTrendingPicks` -> `getMostFavoritedPicks`.
+    - `getResilientCategoryHighlights`: `getCategoryHighlights` -> fallback set-based simplificado.
+    - `getResilientFocusPicks`: `getFocusPicks` -> `getTrendingPicks` -> `getMostFavoritedPicks`.
+    - `getResilientPriceDropPicks`: `7d/5%` -> `20d/5%` -> `20d/2%` -> señal reciente `down`.
+    - `getResilientDailyTrendingPicks`: snapshot/live -> trending -> pool editorial rápido.
+  - Se añadió guard de publicación ISR: si `coverageStats.productCount > 0` y alguna sección crítica queda en `0`, se lanza `HOME_CORE_EMPTY` para evitar publicar regeneración degradada.
+  - Se añadió fallback local no-bloqueante para `daily_trending` desde pool ya cargado en la misma request, evitando huecos por latencia extrema de DB.
+  - `ProductCarousel` ahora tiene estado editorial explícito (sin carrusel visual en blanco).
+  - Optimizaciones de query:
+    - `getNewArrivals/getTrendingPicks` migran a `products.minPriceCop` (sin subquery correlacionada por variante).
+    - `getCategoryHighlights` migrado a selección set-based con `window functions`.
+    - `getPriceDropPicks` usa candidatos por señal producto + histórico acotado.
+    - `getDailyTrendingPicks` usa snapshot y fallback live de `experience_events` (7 días).
+  - Confiabilidad de imagen en build/runtime:
+    - `next.config.ts` agrega `images.localPatterns` para `/api/image-proxy` (query string permitido).
+  - Observabilidad y verificación:
+    - logs estructurados por sección (`section/source/count/durationMs/degraded`).
+    - script `scripts/smoke-home-core-sections.mjs` + comando `npm run smoke:home:core`.
+  - Índices soporte:
+    - migración `20260224164500_home_core_resilience_indexes` (índice parcial feed home + compuestos en `products`, `price_history`, `experience_events`).
+- CA:
+  - Home SSR/ISR no publica simultáneamente bloques críticos vacíos cuando hay inventario.
+  - Novedades/Categorías/Foco/PriceDrop/Tendencia siempre muestran contenido real alterno o fallback editorial explícito (nunca rail en blanco).
+  - Build de `apps/web` exitoso y smoke crítico sin markers de vacío.
+- Estado: **done (2026-02-24)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

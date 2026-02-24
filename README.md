@@ -498,6 +498,28 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 ## Operativa de historias (resumen)
 Al abordar una historia: (0) pedir credenciales/definiciones faltantes, (1) levantar servicios locales necesarios (web/scraper/worker) y revisar logs, (2) push a la rama, (3) esperar build Vercel y verificar, (4) actualizar README, (5) marcar done en `USER_STORIES.md`, `BACKLOG.md`, `STATUS.md`.
 
+## Actualización 2026-02-24 (Home core nunca vacía)
+- Se implementó resiliencia crítica en home para evitar publicación de secciones vacías en ISR:
+  - Nuevos fetchers resilientes en `apps/web/src/lib/home-data.ts`: `getResilientNewArrivals`, `getResilientCategoryHighlights`, `getResilientFocusPicks`, `getResilientPriceDropPicks`, `getResilientDailyTrendingPicks`.
+  - Cadenas de fallback reales por sección (Novedades/Categorías/Foco/Price Drop/Tendencia diaria) y fallback local adicional para `daily_trending` cuando hay latencia extrema.
+- `HomeBelowFold` ahora:
+  - elimina fallback crítico a `[]` para módulos core,
+  - registra telemetría estructurada por sección (`section/source/count/durationMs/degraded`),
+  - activa guard de publicación `HOME_CORE_EMPTY` cuando hay inventario (`coverageStats.productCount > 0`) y alguna sección crítica queda en `0`.
+- Se optimizaron queries de home:
+  - `getNewArrivals` y `getTrendingPicks` usan rollups de producto (`minPriceCop`) en vez de subqueries correlacionadas por variante.
+  - `getCategoryHighlights` usa selección set-based con window functions.
+  - `getPriceDropPicks` reduce costo usando pool de candidatos por señal de producto + histórico acotado.
+  - `getDailyTrendingPicks` prioriza snapshot y agregación live de `experience_events` (7 días).
+- Confiabilidad de imágenes:
+  - `apps/web/next.config.ts` agrega `images.localPatterns` para `/api/image-proxy` (evita fallo de build por query string en Next Image).
+- UX degradación explícita:
+  - `ProductCarousel` muestra estado editorial cuando no hay productos, evitando rail visual en blanco.
+- Índices y observabilidad:
+  - Nueva migración `apps/web/prisma/migrations/20260224164500_home_core_resilience_indexes/migration.sql` (índice parcial feed home + compuestos para `products/price_history/experience_events`).
+  - `schema.prisma` actualizado con índices compuestos de soporte.
+  - Script de smoke `apps/web/scripts/smoke-home-core-sections.mjs` + `npm -C apps/web run smoke:home:core`.
+
 ## Próximos pasos sugeridos
 - MC-009–017 (F1): taxonomía, búsqueda+pgvector, observabilidad scraping v1, admin mínimo, anuncios básicos, 10–20 marcas, emails/plantillas, ISR/cache y gestión de secrets.
 - Integrar VSF UI components y conectores de catálogo.

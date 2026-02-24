@@ -34,6 +34,27 @@ export default function ProductCarousel({
     node.scrollBy({ left: amount * direction, behavior: "smooth" });
   };
 
+  if (products.length === 0) {
+    return (
+      <div className="rounded-[1.2rem] border border-[color:var(--oda-border)] bg-white p-8 sm:p-10">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">{subtitle ?? "Novedades"}</p>
+        <h3 className="mt-3 font-display text-3xl leading-none text-[color:var(--oda-ink)] sm:text-4xl">
+          Estamos actualizando este carrusel.
+        </h3>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
+          Mientras termina la rotacion de productos, puedes descubrir nuevas referencias desde el catalogo completo.
+        </p>
+        <Link
+          href={ctaHref ?? "/buscar"}
+          prefetch={false}
+          className="mt-6 inline-flex rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-cream)] transition hover:bg-[color:var(--oda-ink-soft)]"
+        >
+          {ctaLabel ?? "Explorar catalogo"}
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-7">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

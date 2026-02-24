@@ -196,6 +196,8 @@ model Product {
   @@index([externalId])
   @@index([stylePrimary])
   @@index([styleSecondary])
+  @@index([hasInStock, imageCoverUrl, updatedAt])
+  @@index([priceChangeDirection, priceChangeAt])
   @@map("products")
 }
 
@@ -364,6 +366,7 @@ model PriceHistory {
   capturedAt DateTime @default(now())
 
   @@index([variantId])
+  @@index([variantId, capturedAt])
   @@map("price_history")
 }
 
@@ -705,6 +708,7 @@ model ExperienceEvent {
   @@index([sessionId])
   @@index([type])
   @@index([createdAt])
+  @@index([type, createdAt, productId])
   @@map("experience_events")
 }
 

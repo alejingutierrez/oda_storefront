@@ -10,6 +10,7 @@
     "build": "prisma generate --schema prisma/schema.prisma && next build",
     "start": "NODE_ENV=production next start",
     "lint": "eslint",
+    "smoke:home:core": "node scripts/smoke-home-core-sections.mjs",
     "db:import:brands": "node scripts/import-brands.mjs",
     "db:seed:users": "node scripts/seed-users.mjs",
     "blob:audit:cost": "node scripts/blob-cost-audit.mjs",

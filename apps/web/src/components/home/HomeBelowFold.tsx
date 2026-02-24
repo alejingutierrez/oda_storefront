@@ -15,14 +15,14 @@ import {
   collectUniqueProducts,
   createHomeSelectionRegistry,
   getBrandLogos,
-  getCategoryHighlights,
   getColorCombos,
-  getDailyTrendingPicks,
-  getFocusPicks,
   getHomeCoverageStats,
   getMostFavoritedPicks,
-  getNewArrivals,
-  getPriceDropPicks,
+  getResilientCategoryHighlights,
+  getResilientDailyTrendingPicks,
+  getResilientFocusPicks,
+  getResilientNewArrivals,
+  getResilientPriceDropPicks,
   getStyleGroups,
   getTrendingPicks,
 } from "@/lib/home-data";
@@ -60,48 +60,37 @@ export default async function HomeBelowFold({
   const initialExcludeIds = Array.from(registry.usedIds);
 
   const [
-    categoryHighlights,
+    categoryHighlightsResult,
     colorCombos,
     brandLogos,
     coverageStats,
-    newArrivalsRaw,
-    focusRaw,
+    newArrivalsResult,
+    focusResult,
     styleGroupsRaw,
-    priceDropRaw,
-    dailyTrendingRaw,
+    priceDropResult,
+    dailyTrendingResult,
     storyCandidatesRaw,
     mostFavoritedRaw,
   ] = await Promise.all([
-    withTimeout(getCategoryHighlights(seed, 24, { preferBlob: true }), []),
+    getResilientCategoryHighlights(seed, { limit: 24, preferBlob: true }),
     withTimeout(getColorCombos(seed, 3), []),
     withTimeout(getBrandLogos(seed, 12), []),
     withTimeout(getHomeCoverageStats(), DEFAULT_COVERAGE_STATS),
-    withTimeout(getNewArrivals(seed, 18), []),
-    withTimeout(
-      getFocusPicks(seed, {
+    getResilientNewArrivals(seed, { limit: 18 }),
+    getResilientFocusPicks(seed, {
         limit: 24,
         subcategoryLimit: 12,
         excludeIds: initialExcludeIds,
       }),
-      [],
-    ),
     withTimeout(getStyleGroups(seed, 2), []),
-    withTimeout(
-      getPriceDropPicks(seed, {
-        days: 7,
-        minDropPercent: 5,
+    getResilientPriceDropPicks(seed, {
         limit: 12,
         excludeIds: initialExcludeIds,
       }),
-      [],
-    ),
-    withTimeout(
-      getDailyTrendingPicks(seed, {
+    getResilientDailyTrendingPicks(seed, {
         limit: 12,
         excludeIds: initialExcludeIds,
       }),
-      [],
-    ),
     withTimeout(getTrendingPicks(seed + 19, 24), []),
     withTimeout(
       getMostFavoritedPicks(seed, {
@@ -113,9 +102,11 @@ export default async function HomeBelowFold({
     ),
   ]);
 
-  const newArrivals = collectUniqueProducts(newArrivalsRaw, registry, 8);
+  const categoryHighlights = categoryHighlightsResult.items;
 
-  const focusProducts = collectUniqueProducts(focusRaw, registry, 24);
+  const newArrivals = collectUniqueProducts(newArrivalsResult.items, registry, 8);
+
+  const focusProducts = collectUniqueProducts(focusResult.items, registry, 24);
 
   const styleGroups = styleGroupsRaw
     .map((group) => ({
@@ -124,14 +115,90 @@ export default async function HomeBelowFold({
     }))
     .filter((group) => group.products.length > 0);
 
-  const priceDrop = collectUniqueProducts(priceDropRaw, registry, 12);
+  const priceDrop = collectUniqueProducts(priceDropResult.items, registry, 12);
 
-  const dailyTrending = collectUniqueProducts(dailyTrendingRaw, registry, 12);
+  let dailyTrending = collectUniqueProducts(dailyTrendingResult.items, registry, 12);
+  let dailyTrendingSource = dailyTrendingResult.source;
+  let dailyTrendingDegraded = dailyTrendingResult.degraded;
+  let dailyTrendingDurationMs = dailyTrendingResult.durationMs;
+
+  if (dailyTrending.length === 0) {
+    const localFallbackPool = [
+      ...mostFavoritedRaw,
+      ...focusResult.items,
+      ...newArrivalsResult.items,
+    ];
+    const localFallback = collectUniqueProducts(localFallbackPool, registry, 12).map((item) => ({
+      ...item,
+      clickCount: 0,
+      snapshotDate: null,
+    }));
+    if (localFallback.length > 0) {
+      dailyTrending = localFallback;
+      dailyTrendingSource = "home_local_pool";
+      dailyTrendingDegraded = true;
+      dailyTrendingDurationMs = dailyTrendingResult.durationMs;
+    }
+  }
 
   const storyProduct = collectUniqueProducts(storyCandidatesRaw, registry, 1)[0] ?? null;
 
   const favoritesExcludeIds = Array.from(registry.usedIds);
   const mostFavorited = collectUniqueProducts(mostFavoritedRaw, registry, 12);
+
+  const criticalSectionStats = [
+    {
+      section: "new_arrivals",
+      source: newArrivalsResult.source,
+      degraded: newArrivalsResult.degraded,
+      durationMs: newArrivalsResult.durationMs,
+      count: newArrivals.length,
+    },
+    {
+      section: "categories",
+      source: categoryHighlightsResult.source,
+      degraded: categoryHighlightsResult.degraded,
+      durationMs: categoryHighlightsResult.durationMs,
+      count: categoryHighlights.length,
+    },
+    {
+      section: "focus",
+      source: focusResult.source,
+      degraded: focusResult.degraded,
+      durationMs: focusResult.durationMs,
+      count: focusProducts.length,
+    },
+    {
+      section: "price_drop",
+      source: priceDropResult.source,
+      degraded: priceDropResult.degraded,
+      durationMs: priceDropResult.durationMs,
+      count: priceDrop.length,
+    },
+    {
+      section: "daily_trending",
+      source: dailyTrendingSource,
+      degraded: dailyTrendingDegraded,
+      durationMs: dailyTrendingDurationMs,
+      count: dailyTrending.length,
+    },
+  ];
+
+  for (const stat of criticalSectionStats) {
+    console.info("home.section", stat);
+  }
+
+  const emptyCriticalSections = criticalSectionStats.filter((stat) => stat.count === 0).map((stat) => stat.section);
+  if ((coverageStats?.productCount ?? 0) > 0 && emptyCriticalSections.length > 0) {
+    console.error("home.guard.core_empty", {
+      code: "HOME_CORE_EMPTY",
+      seed,
+      productCount: coverageStats?.productCount ?? 0,
+      emptySections: emptyCriticalSections,
+      criticalSectionStats,
+    });
+    throw new Error(`HOME_CORE_EMPTY:${emptyCriticalSections.join(",")}`);
+  }
 
   const storyImageSrc = proxiedImageUrl(storyProduct?.imageCoverUrl ?? null, {
     productId: storyProduct?.id ?? null,

@@ -46,13 +46,21 @@ export type {
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 8;
+const HOME_CACHE_VERSION = 9;
+const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 6;
 
 type HomePricingContext = {
   pricing: { trmUsdCop: number };
   displayUnitCop: number;
+};
+
+type HomeResilientSectionCandidate<T> = {
+  source: string;
+  fetch: () => Promise<T[]>;
+  minItems?: number;
+  timeoutMs?: number;
 };
 
 export function getRotationSeed(now = new Date()): number {
@@ -89,8 +97,47 @@ function sqlExcludeProductIds(ids: string[]) {
   return Prisma.sql`and p.id not in (${Prisma.join(ids)})`;
 }
 
+function sqlIsActiveCatalogProduct() {
+  return Prisma.sql`
+    p."imageCoverUrl" is not null
+    and p."hasInStock" = true
+    and b."isActive" = true
+    and (p.status is null or lower(p.status) <> 'archived')
+  `;
+}
+
+function sqlHomeCategoryCase() {
+  return Prisma.sql`
+    case
+      when p.category='tops' and p.subcategory='camisetas' then 'camisetas_y_tops'
+      when p.category='tops' and p.subcategory in ('blusas','camisas') then 'camisas_y_blusas'
+      when p.category='bottoms' and p.subcategory='jeans' then 'jeans_y_denim'
+      when p.category='bottoms' and p.subcategory='pantalones' then 'pantalones_no_denim'
+      when p.category='bottoms' and p.subcategory='faldas' then 'faldas'
+      when p.category='bottoms' and p.subcategory='shorts' then 'shorts_y_bermudas'
+      when p.category='outerwear' and p.subcategory='blazers' then 'blazers_y_sastreria'
+      when p.category='outerwear' and p.subcategory='buzos' then 'buzos_hoodies_y_sueteres'
+      when p.category='outerwear' and p.subcategory in ('chaquetas','abrigos') then 'chaquetas_y_abrigos'
+      when p.category='knitwear' then 'buzos_hoodies_y_sueteres'
+      when p.category in ('ropa_interior','ropa interior') then 'ropa_interior_basica'
+      when p.category='trajes_de_bano' then 'trajes_de_bano_y_playa'
+      when p.category='deportivo' then 'ropa_deportiva_y_performance'
+      when p.category='enterizos' then 'enterizos_y_overoles'
+      when p.category='accesorios' and p.subcategory='bolsos' then 'bolsos_y_marroquineria'
+      else p.category
+    end
+  `;
+}
+
 export type HomeSelectionRegistry = {
   usedIds: Set<string>;
+};
+
+export type HomeResilientSectionResult<T> = {
+  items: T[];
+  source: string;
+  degraded: boolean;
+  durationMs: number;
 };
 
 export function createHomeSelectionRegistry(initialIds: string[] = []): HomeSelectionRegistry {
@@ -128,6 +175,61 @@ async function getHomePricingContext(): Promise<HomePricingContext> {
   );
 
   return cached();
+}
+
+async function runWithTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(new Error(`HOME_SECTION_TIMEOUT:${label}`)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
+
+async function executeResilientSection<T>(
+  section: string,
+  candidates: HomeResilientSectionCandidate<T>[],
+  timeoutMs = HOME_SECTION_TIMEOUT_MS,
+): Promise<HomeResilientSectionResult<T>> {
+  const startedAt = Date.now();
+  let lastError: string | null = null;
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    const candidateTimeout = candidate.timeoutMs ?? timeoutMs;
+    try {
+      const items = await runWithTimeout(candidate.fetch(), candidateTimeout, `${section}:${candidate.source}`);
+      const minItems = candidate.minItems ?? 1;
+      if (items.length >= minItems || index === candidates.length - 1) {
+        return {
+          items,
+          source: candidate.source,
+          degraded: index > 0,
+          durationMs: Date.now() - startedAt,
+        };
+      }
+      lastError = `LOW_COUNT:${items.length}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  console.error("home.resilient_section.failed", {
+    section,
+    lastError,
+    durationMs: Date.now() - startedAt,
+  });
+
+  return {
+    items: [],
+    source: "empty",
+    degraded: true,
+    durationMs: Date.now() - startedAt,
+  };
 }
 
 export async function getMegaMenuData(): Promise<MegaMenuData> {
@@ -306,7 +408,6 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
   const cached = unstable_cache(
     async () => {
       const pricingContext = await getHomePricingContext();
-      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
 
       const rows = await prisma.$queryRaw<
         Array<ProductCard & { sourceCurrency: string | null; brandOverrideUsd: boolean }>
@@ -320,18 +421,17 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
             p.category,
             p.subcategory,
             p."sourceUrl",
-            (
-              select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
-              from variants v
-              where v."productId" = p.id
-            ) as "minPrice",
+            case
+              when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
+              else null
+            end as "minPrice",
             p.currency as "sourceCurrency",
             (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
             'COP' as currency
           from products p
           join brands b on b.id = p."brandId"
-          where p."imageCoverUrl" is not null
-          order by md5(concat(p.id::text, ${seed}::text))
+          where ${sqlIsActiveCatalogProduct()}
+          order by md5(concat(p.id::text, ${seed}::text, 'new'))
           limit ${limit}
         `
       );
@@ -358,7 +458,6 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
   const cached = unstable_cache(
     async () => {
       const pricingContext = await getHomePricingContext();
-      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
 
       const rows = await prisma.$queryRaw<
         Array<ProductCard & { sourceCurrency: string | null; brandOverrideUsd: boolean }>
@@ -372,17 +471,16 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
             p.category,
             p.subcategory,
             p."sourceUrl",
-            (
-              select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
-              from variants v
-              where v."productId" = p.id
-            ) as "minPrice",
+            case
+              when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
+              else null
+            end as "minPrice",
             p.currency as "sourceCurrency",
             (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
             'COP' as currency
           from products p
           join brands b on b.id = p."brandId"
-          where p."imageCoverUrl" is not null
+          where ${sqlIsActiveCatalogProduct()}
           order by md5(concat(p.id::text, ${seed}::text, 'picks'))
           limit ${limit}
         `
@@ -418,87 +516,124 @@ export async function getCategoryHighlights(
         Array<{ category: string; imageCoverUrl: string }>
       >(
         Prisma.sql`
-          with categories as (
+          with normalized as (
             select
-              case
-                when p.category='tops' and p.subcategory='camisetas' then 'camisetas_y_tops'
-                when p.category='tops' and p.subcategory in ('blusas','camisas') then 'camisas_y_blusas'
-                when p.category='bottoms' and p.subcategory='jeans' then 'jeans_y_denim'
-                when p.category='bottoms' and p.subcategory='pantalones' then 'pantalones_no_denim'
-                when p.category='bottoms' and p.subcategory='faldas' then 'faldas'
-                when p.category='bottoms' and p.subcategory='shorts' then 'shorts_y_bermudas'
-                when p.category='outerwear' and p.subcategory='blazers' then 'blazers_y_sastreria'
-                when p.category='outerwear' and p.subcategory='buzos' then 'buzos_hoodies_y_sueteres'
-                when p.category='outerwear' and p.subcategory in ('chaquetas','abrigos') then 'chaquetas_y_abrigos'
-                when p.category='knitwear' then 'buzos_hoodies_y_sueteres'
-                when p.category in ('ropa_interior','ropa interior') then 'ropa_interior_basica'
-                when p.category='trajes_de_bano' then 'trajes_de_bano_y_playa'
-                when p.category='deportivo' then 'ropa_deportiva_y_performance'
-                when p.category='enterizos' then 'enterizos_y_overoles'
-                when p.category='accesorios' and p.subcategory='bolsos' then 'bolsos_y_marroquineria'
-                else p.category
-              end as category,
-              count(*) as cnt
+              p.id,
+              p."imageCoverUrl",
+              ${sqlHomeCategoryCase()} as category
             from products p
-            where p.category is not null and p.category <> ''
-              and p."imageCoverUrl" is not null
-            group by 1
-            order by cnt desc
-            limit ${limit}
-          ), picked as (
+            join brands b on b.id = p."brandId"
+            where ${sqlIsActiveCatalogProduct()}
+              and p.category is not null
+              and p.category <> ''
+          ),
+          ranked as (
             select
-              c.category,
-              (
-                select p.id
-                from products p
-                where
-                  (
-                    case
-                      when p.category='tops' and p.subcategory='camisetas' then 'camisetas_y_tops'
-                      when p.category='tops' and p.subcategory in ('blusas','camisas') then 'camisas_y_blusas'
-                      when p.category='bottoms' and p.subcategory='jeans' then 'jeans_y_denim'
-                      when p.category='bottoms' and p.subcategory='pantalones' then 'pantalones_no_denim'
-                      when p.category='bottoms' and p.subcategory='faldas' then 'faldas'
-                      when p.category='bottoms' and p.subcategory='shorts' then 'shorts_y_bermudas'
-                      when p.category='outerwear' and p.subcategory='blazers' then 'blazers_y_sastreria'
-                      when p.category='outerwear' and p.subcategory='buzos' then 'buzos_hoodies_y_sueteres'
-                      when p.category='outerwear' and p.subcategory in ('chaquetas','abrigos') then 'chaquetas_y_abrigos'
-                      when p.category='knitwear' then 'buzos_hoodies_y_sueteres'
-                      when p.category in ('ropa_interior','ropa interior') then 'ropa_interior_basica'
-                      when p.category='trajes_de_bano' then 'trajes_de_bano_y_playa'
-                      when p.category='deportivo' then 'ropa_deportiva_y_performance'
-                      when p.category='enterizos' then 'enterizos_y_overoles'
-                      when p.category='accesorios' and p.subcategory='bolsos' then 'bolsos_y_marroquineria'
-                      else p.category
-                    end
-                  ) = c.category
-                  and p."imageCoverUrl" is not null
-                order by md5(concat(p.id::text, ${seed}::text, c.category))
-                limit 1
-              ) as product_id
-            from categories c
+              n.category,
+              n."imageCoverUrl",
+              count(*) over (partition by n.category) as category_count,
+              row_number() over (
+                partition by n.category
+                order by md5(concat(n.id::text, ${seed}::text, n.category::text))
+              ) as image_rank
+            from normalized n
+          ),
+          picked as (
+            select
+              r.category,
+              r."imageCoverUrl",
+              row_number() over (order by r.category_count desc, r.category asc) as category_rank
+            from ranked r
+            where r.image_rank = 1
+              and r.category is not null
+              and r.category <> ''
           )
-          select pk.category, p."imageCoverUrl"
-          from picked pk
-          join products p on p.id = pk.product_id
+          select
+            p.category,
+            p."imageCoverUrl"
+          from picked p
+          where p.category_rank <= ${limit}
+          order by p.category_rank asc
         `
       );
 
-      const mapped = rows.map((row) => ({
-        category: row.category,
-        label: labelize(row.category),
-        imageCoverUrl: row.imageCoverUrl,
-        href: buildCategoryHref("Unisex", row.category),
-      }));
-      if (!preferBlob) return mapped;
-      return [...mapped].sort((a, b) => {
-        const aBlob = a.imageCoverUrl.includes("blob.vercel-storage.com") ? 1 : 0;
-        const bBlob = b.imageCoverUrl.includes("blob.vercel-storage.com") ? 1 : 0;
-        return bBlob - aBlob;
-      });
+      return finalizeCategoryHighlights(rows, preferBlob);
     },
     [`home-v${HOME_CACHE_VERSION}-categories-${seed}-${limit}-${preferBlob ? "blob-first" : "default"}`],
     { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
+  );
+
+  return cached();
+}
+
+function finalizeCategoryHighlights(
+  rows: Array<{ category: string; imageCoverUrl: string }>,
+  preferBlob: boolean,
+): CategoryHighlight[] {
+  const mapped = rows.map((row) => ({
+    category: row.category,
+    label: labelize(row.category),
+    imageCoverUrl: row.imageCoverUrl,
+    href: buildCategoryHref("Unisex", row.category),
+  }));
+
+  if (!preferBlob) return mapped;
+
+  return [...mapped].sort((a, b) => {
+    const aBlob = a.imageCoverUrl.includes("blob.vercel-storage.com") ? 1 : 0;
+    const bBlob = b.imageCoverUrl.includes("blob.vercel-storage.com") ? 1 : 0;
+    return bBlob - aBlob;
+  });
+}
+
+async function getCategoryHighlightsFallback(
+  seed: number,
+  limit = 12,
+  options?: { preferBlob?: boolean },
+): Promise<CategoryHighlight[]> {
+  const preferBlob = options?.preferBlob === true;
+  const cached = unstable_cache(
+    async () => {
+      const rows = await prisma.$queryRaw<Array<{ category: string; imageCoverUrl: string }>>(
+        Prisma.sql`
+          with normalized as (
+            select
+              ${sqlHomeCategoryCase()} as category,
+              p."imageCoverUrl",
+              p."updatedAt"
+            from products p
+            join brands b on b.id = p."brandId"
+            where ${sqlIsActiveCatalogProduct()}
+              and p.category is not null
+              and p.category <> ''
+          ),
+          ranked as (
+            select
+              n.category,
+              n."imageCoverUrl",
+              count(*) over (partition by n.category) as category_count,
+              row_number() over (
+                partition by n.category
+                order by n."updatedAt" desc nulls last, n."imageCoverUrl" asc
+              ) as image_rank
+            from normalized n
+          )
+          select
+            r.category,
+            r."imageCoverUrl"
+          from ranked r
+          where r.image_rank = 1
+            and r.category is not null
+            and r.category <> ''
+          order by r.category_count desc, r.category asc
+          limit ${limit}
+        `,
+      );
+
+      return finalizeCategoryHighlights(rows, preferBlob);
+    },
+    [`home-v${HOME_CACHE_VERSION}-categories-fallback-${seed}-${limit}-${preferBlob ? "blob-first" : "default"}`],
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
   );
 
   return cached();
@@ -906,10 +1041,10 @@ export async function getPriceDropPicks(
   const days = options?.days ?? 7;
   const minDropPercent = options?.minDropPercent ?? 5;
   const excludeIds = options?.excludeIds ?? [];
+  const candidatePoolLimit = Math.max(limit * 12, 180);
   const cached = unstable_cache(
     async () => {
       const pricingContext = await getHomePricingContext();
-      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
       const rows = await prisma.$queryRaw<
         Array<
           HomeProductQueryRow & {
@@ -920,50 +1055,85 @@ export async function getPriceDropPicks(
         >
       >(
         Prisma.sql`
-          with product_prices as (
+          with candidates as (
             select
-              p.id as product_id,
-              min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as current_price,
-              max(ph.price)::numeric as previous_price
+              p.id,
+              p.name,
+              p."imageCoverUrl",
+              b.name as "brandName",
+              p.category,
+              p.subcategory,
+              p."sourceUrl",
+              p.currency as "sourceCurrency",
+              (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
+              p."minPriceCop" as current_price,
+              p."priceChangeAt"
             from products p
-            join variants v on v."productId" = p.id
             join brands b on b.id = p."brandId"
-            left join "price_history" ph on ph."variantId" = v.id and ph."capturedAt" >= (now() - make_interval(days => ${days}))
-            where p."imageCoverUrl" is not null
-              and p."hasInStock" = true
+            where ${sqlIsActiveCatalogProduct()}
               and p."priceChangeDirection" = 'down'
               and p."priceChangeAt" >= (now() - make_interval(days => ${days}))
               ${sqlExcludeProductIds(excludeIds)}
-            group by p.id
+            order by p."priceChangeAt" desc nulls last
+            limit ${candidatePoolLimit}
+          ),
+          variant_history as (
+            select
+              v."productId" as product_id,
+              max(case when ph.price > 0 and ph.price <= ${CATALOG_MAX_VALID_PRICE} then ph.price end)::numeric as previous_price
+            from variants v
+            join "price_history" ph on ph."variantId" = v.id
+            where v."productId" in (select c.id from candidates c)
+              and ph."capturedAt" >= (now() - make_interval(days => ${days}))
+            group by v."productId"
+          ),
+          ranked as (
+            select
+              c.id,
+              c.name,
+              c."imageCoverUrl",
+              c."brandName",
+              c.category,
+              c.subcategory,
+              c."sourceUrl",
+              case
+                when c.current_price > 0 and c.current_price <= ${CATALOG_MAX_VALID_PRICE} then c.current_price
+                else null
+              end as "minPrice",
+              c."sourceCurrency",
+              c."brandOverrideUsd",
+              vh.previous_price as "previousPrice",
+              case
+                when vh.previous_price is null or vh.previous_price <= 0 or c.current_price is null then null
+                else round(((vh.previous_price - c.current_price) / vh.previous_price) * 100.0, 2)
+              end as "dropPercent",
+              c."priceChangeAt" as "priceChangedAt"
+            from candidates c
+            left join variant_history vh on vh.product_id = c.id
           )
           select
-            p.id,
-            p.name,
-            p."imageCoverUrl",
-            b.name as "brandName",
-            p.category,
-            p.subcategory,
-            p."sourceUrl",
-            pp.current_price as "minPrice",
-            p.currency as "sourceCurrency",
-            (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
-            pp.previous_price as "previousPrice",
-            case
-              when pp.previous_price is null or pp.previous_price <= 0 or pp.current_price is null then null
-              else round(((pp.previous_price - pp.current_price) / pp.previous_price) * 100.0, 2)
-            end as "dropPercent",
-            p."priceChangeAt" as "priceChangedAt",
+            r.id,
+            r.name,
+            r."imageCoverUrl",
+            r."brandName",
+            r.category,
+            r.subcategory,
+            r."sourceUrl",
+            r."minPrice",
+            r."sourceCurrency",
+            r."brandOverrideUsd",
+            r."previousPrice",
+            r."dropPercent",
+            r."priceChangedAt",
             'COP' as currency
-          from product_prices pp
-          join products p on p.id = pp.product_id
-          join brands b on b.id = p."brandId"
-          where pp.current_price is not null
-            and pp.previous_price is not null
-            and pp.previous_price > pp.current_price
-            and ((pp.previous_price - pp.current_price) / nullif(pp.previous_price, 0)) * 100 >= ${minDropPercent}
+          from ranked r
+          where r."minPrice" is not null
+            and r."previousPrice" is not null
+            and r."previousPrice" > r."minPrice"
+            and r."dropPercent" >= ${minDropPercent}
           order by
-            ((pp.previous_price - pp.current_price) / nullif(pp.previous_price, 0)) desc,
-            md5(concat(p.id::text, ${seed}::text, 'price-drop'))
+            r."dropPercent" desc nulls last,
+            md5(concat(r.id::text, ${seed}::text, 'price-drop'))
           limit ${limit}
         `
       );
@@ -1128,7 +1298,6 @@ export async function getDailyTrendingPicks(
   const cached = unstable_cache(
     async () => {
       const pricingContext = await getHomePricingContext();
-      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
       let rows: Array<
         HomeProductQueryRow & {
           clickCount: number;
@@ -1157,11 +1326,10 @@ export async function getDailyTrendingPicks(
               p.category,
               p.subcategory,
               p."sourceUrl",
-              (
-                select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
-                from variants v
-                where v."productId" = p.id
-              ) as "minPrice",
+              case
+                when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
+                else null
+              end as "minPrice",
               p.currency as "sourceCurrency",
               (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
               htd."clickCount" as "clickCount",
@@ -1186,14 +1354,61 @@ export async function getDailyTrendingPicks(
       }
 
       if (rows.length === 0) {
-        const fallback = await getTrendingPicks(seed, limit);
-        return fallback
-          .filter((item) => !excludeIds.includes(item.id))
-          .map((item) => ({
-            ...item,
-            clickCount: 0,
-            snapshotDate: null,
-          }));
+        const liveRows = await prisma.$queryRaw<
+          Array<
+            HomeProductQueryRow & {
+              clickCount: number;
+              snapshotDate: Date | string | null;
+            }
+          >
+        >(
+          Prisma.sql`
+            with clicks as (
+              select
+                ee."productId" as product_id,
+                count(*)::int as click_count
+              from "experience_events" ee
+              join products p on p.id = ee."productId"
+              join brands b on b.id = p."brandId"
+              where ee.type = 'product_click'
+                and ee."productId" is not null
+                and ee."createdAt" >= (now() - make_interval(days => 7))
+                and ${sqlIsActiveCatalogProduct()}
+                ${sqlExcludeProductIds(excludeIds)}
+              group by ee."productId"
+            )
+            select
+              p.id,
+              p.name,
+              p."imageCoverUrl",
+              b.name as "brandName",
+              p.category,
+              p.subcategory,
+              p."sourceUrl",
+              case
+                when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
+                else null
+              end as "minPrice",
+              p.currency as "sourceCurrency",
+              (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
+              c.click_count as "clickCount",
+              null::timestamptz as "snapshotDate",
+              'COP' as currency
+            from clicks c
+            join products p on p.id = c.product_id
+            join brands b on b.id = p."brandId"
+            order by c.click_count desc, md5(concat(p.id::text, ${seed}::text, 'daily-live'))
+            limit ${limit}
+          `,
+        );
+
+        if (liveRows.length > 0) {
+          rows = liveRows;
+        }
+      }
+
+      if (rows.length === 0) {
+        return [];
       }
 
       const cards = mapHomeProductRows(rows, pricingContext);
@@ -1217,4 +1432,352 @@ export async function getDailyTrendingPicks(
     { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
   );
   return cached();
+}
+
+async function getPriceDropSignalFallback(
+  seed: number,
+  options?: {
+    limit?: number;
+    days?: number;
+    minDropPercent?: number;
+    excludeIds?: string[];
+  },
+): Promise<HomePriceDropCardData[]> {
+  const limit = options?.limit ?? 12;
+  const days = options?.days ?? 20;
+  const minDropPercent = options?.minDropPercent ?? 0;
+  const excludeIds = options?.excludeIds ?? [];
+
+  const pricingContext = await getHomePricingContext();
+  const rows = await prisma.$queryRaw<
+    Array<
+      HomeProductQueryRow & {
+        previousPrice: number | null;
+        dropPercent: number | null;
+        priceChangedAt: Date | string | null;
+      }
+    >
+  >(
+    Prisma.sql`
+      with candidates as (
+        select
+          p.id,
+          p.name,
+          p."imageCoverUrl",
+          b.name as "brandName",
+          p.category,
+          p.subcategory,
+          p."sourceUrl",
+          p.currency as "sourceCurrency",
+          (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
+          case
+            when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
+            else null
+          end as "minPrice",
+          case
+            when p."maxPriceCop" > p."minPriceCop" and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop"
+            else null
+          end as "previousPrice",
+          p."priceChangeAt" as "priceChangedAt"
+        from products p
+        join brands b on b.id = p."brandId"
+        where ${sqlIsActiveCatalogProduct()}
+          and p."priceChangeDirection" = 'down'
+          and p."priceChangeAt" >= (now() - make_interval(days => ${days}))
+          ${sqlExcludeProductIds(excludeIds)}
+      )
+      select
+        c.id,
+        c.name,
+        c."imageCoverUrl",
+        c."brandName",
+        c.category,
+        c.subcategory,
+        c."sourceUrl",
+        c."minPrice",
+        c."sourceCurrency",
+        c."brandOverrideUsd",
+        c."previousPrice",
+        case
+          when c."previousPrice" is null or c."previousPrice" <= 0 or c."minPrice" is null then null
+          else round(((c."previousPrice" - c."minPrice") / c."previousPrice") * 100.0, 2)
+        end as "dropPercent",
+        c."priceChangedAt",
+        'COP' as currency
+      from candidates c
+      where c."minPrice" is not null
+        and (
+          c."previousPrice" is null
+          or (
+            c."previousPrice" > c."minPrice"
+            and ((c."previousPrice" - c."minPrice") / nullif(c."previousPrice", 0)) * 100 >= ${minDropPercent}
+          )
+        )
+      order by c."priceChangedAt" desc nulls last, md5(concat(c.id::text, ${seed}::text, 'price-drop-signal'))
+      limit ${limit}
+    `,
+  );
+
+  const cards = mapHomeProductRows(rows, pricingContext);
+  const rowById = new Map(rows.map((row) => [row.id, row]));
+  return cards.map((card) => {
+    const row = rowById.get(card.id);
+    const previousPrice = row
+      ? toCopDisplayString({
+          value: row.previousPrice,
+          unitCop: pricingContext.displayUnitCop,
+          sourceCurrency: row.sourceCurrency,
+          brandOverrideUsd: row.brandOverrideUsd,
+        })
+      : null;
+    const priceChangedAt =
+      row?.priceChangedAt instanceof Date
+        ? row.priceChangedAt.toISOString()
+        : row?.priceChangedAt
+          ? new Date(row.priceChangedAt).toISOString()
+          : null;
+
+    return {
+      ...card,
+      previousPrice,
+      dropPercent: row?.dropPercent ? Number(row.dropPercent) : null,
+      priceChangedAt,
+    };
+  });
+}
+
+async function getFastEditorialPicks(
+  seed: number,
+  limit: number,
+  excludeIds: string[] = [],
+): Promise<ProductCard[]> {
+  const pricingContext = await getHomePricingContext();
+  const rows = await prisma.$queryRaw<HomeProductQueryRow[]>(
+    Prisma.sql`
+      select
+        p.id,
+        p.name,
+        p."imageCoverUrl",
+        b.name as "brandName",
+        p.category,
+        p.subcategory,
+        p."sourceUrl",
+        case
+          when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
+          else null
+        end as "minPrice",
+        p.currency as "sourceCurrency",
+        (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
+        'COP' as currency
+      from products p
+      join brands b on b.id = p."brandId"
+      where ${sqlIsActiveCatalogProduct()}
+        ${sqlExcludeProductIds(excludeIds)}
+      order by p."updatedAt" desc nulls last, md5(concat(p.id::text, ${seed}::text, 'fast-home-pool'))
+      limit ${limit}
+    `,
+  );
+
+  return mapHomeProductRows(rows, pricingContext);
+}
+
+export async function getResilientNewArrivals(
+  seed: number,
+  options?: {
+    limit?: number;
+  },
+): Promise<HomeResilientSectionResult<ProductCard>> {
+  const limit = options?.limit ?? 18;
+  return executeResilientSection("new_arrivals", [
+    {
+      source: "new_arrivals",
+      fetch: () => getNewArrivals(seed, limit),
+      minItems: Math.min(limit, 8),
+    },
+    {
+      source: "trending_picks",
+      fetch: () => getTrendingPicks(seed + 11, limit),
+      minItems: Math.min(limit, 8),
+    },
+    {
+      source: "most_favorited",
+      fetch: () =>
+        getMostFavoritedPicks(seed + 19, {
+          limit,
+          windowDays: 30,
+        }),
+      minItems: Math.min(limit, 8),
+    },
+  ]);
+}
+
+export async function getResilientCategoryHighlights(
+  seed: number,
+  options?: {
+    limit?: number;
+    preferBlob?: boolean;
+  },
+): Promise<HomeResilientSectionResult<CategoryHighlight>> {
+  const limit = options?.limit ?? 24;
+  const preferBlob = options?.preferBlob === true;
+  return executeResilientSection("category_highlights", [
+    {
+      source: "category_highlights",
+      fetch: () => getCategoryHighlights(seed, limit, { preferBlob }),
+      minItems: Math.min(limit, 12),
+    },
+    {
+      source: "category_highlights_fallback",
+      fetch: () => getCategoryHighlightsFallback(seed, Math.max(12, Math.floor(limit / 2)), { preferBlob }),
+      minItems: 8,
+    },
+  ]);
+}
+
+export async function getResilientFocusPicks(
+  seed: number,
+  options?: {
+    limit?: number;
+    subcategoryLimit?: number;
+    excludeIds?: string[];
+  },
+): Promise<HomeResilientSectionResult<ProductCard>> {
+  const limit = options?.limit ?? 24;
+  const subcategoryLimit = options?.subcategoryLimit ?? 12;
+  const excludeIds = options?.excludeIds ?? [];
+  return executeResilientSection("focus_picks", [
+    {
+      source: "focus_picks",
+      fetch: () =>
+        getFocusPicks(seed, {
+          limit,
+          subcategoryLimit,
+          excludeIds,
+        }),
+      minItems: Math.min(limit, 8),
+    },
+    {
+      source: "trending_picks",
+      fetch: async () => (await getTrendingPicks(seed + 23, Math.max(limit, 12))).filter((item) => !excludeIds.includes(item.id)),
+      minItems: Math.min(limit, 8),
+    },
+    {
+      source: "most_favorited",
+      fetch: () =>
+        getMostFavoritedPicks(seed + 31, {
+          limit: Math.max(limit, 12),
+          windowDays: 30,
+          excludeIds,
+        }),
+      minItems: 8,
+    },
+  ]);
+}
+
+export async function getResilientPriceDropPicks(
+  seed: number,
+  options?: {
+    limit?: number;
+    excludeIds?: string[];
+  },
+): Promise<HomeResilientSectionResult<HomePriceDropCardData>> {
+  const limit = options?.limit ?? 12;
+  const excludeIds = options?.excludeIds ?? [];
+  return executeResilientSection("price_drop", [
+    {
+      source: "price_drop_7d_5pct",
+      fetch: () =>
+        getPriceDropPicks(seed, {
+          limit,
+          days: 7,
+          minDropPercent: 5,
+          excludeIds,
+        }),
+      minItems: 1,
+    },
+    {
+      source: "price_drop_20d_5pct",
+      fetch: () =>
+        getPriceDropPicks(seed + 1, {
+          limit,
+          days: 20,
+          minDropPercent: 5,
+          excludeIds,
+        }),
+      minItems: 1,
+    },
+    {
+      source: "price_drop_20d_2pct",
+      fetch: () =>
+        getPriceDropPicks(seed + 2, {
+          limit,
+          days: 20,
+          minDropPercent: 2,
+          excludeIds,
+        }),
+      minItems: 1,
+    },
+    {
+      source: "price_drop_signal_recent",
+      fetch: () =>
+        getPriceDropSignalFallback(seed + 3, {
+          limit,
+          days: 20,
+          minDropPercent: 0,
+          excludeIds,
+        }),
+      minItems: 1,
+    },
+  ]);
+}
+
+export async function getResilientDailyTrendingPicks(
+  seed: number,
+  options?: {
+    limit?: number;
+    excludeIds?: string[];
+  },
+): Promise<HomeResilientSectionResult<HomeTrendingDailyCardData>> {
+  const limit = options?.limit ?? 12;
+  const excludeIds = options?.excludeIds ?? [];
+  return executeResilientSection("daily_trending", [
+    {
+      source: "daily_trending_snapshot_or_live",
+      fetch: () =>
+        getDailyTrendingPicks(seed, {
+          limit,
+          excludeIds,
+        }),
+      minItems: 1,
+      timeoutMs: 14_000,
+    },
+    {
+      source: "trending_picks",
+      fetch: async () => {
+        const fallback = await getTrendingPicks(seed + 43, limit);
+        return fallback
+          .filter((item) => !excludeIds.includes(item.id))
+          .map((item) => ({
+            ...item,
+            clickCount: 0,
+            snapshotDate: null,
+          }));
+      },
+      minItems: 1,
+      timeoutMs: 14_000,
+    },
+    {
+      source: "fast_editorial_pool",
+      fetch: async () => {
+        const fallback = await getFastEditorialPicks(seed + 47, limit, excludeIds);
+        return fallback.map((item) => ({
+          ...item,
+          clickCount: 0,
+          snapshotDate: null,
+        }));
+      },
+      minItems: 1,
+      timeoutMs: 10_000,
+    },
+  ]);
 }

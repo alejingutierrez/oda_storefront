@@ -4,6 +4,11 @@ const nextConfig: NextConfig = {
   staticPageGenerationTimeout: 300,
   images: {
     qualities: [56, 58, 70, 75],
+    localPatterns: [
+      {
+        pathname: "/api/image-proxy",
+      },
+    ],
     remotePatterns: [
       {
         protocol: "https",
