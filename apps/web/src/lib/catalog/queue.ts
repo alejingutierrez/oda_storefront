@@ -72,7 +72,7 @@ export const enqueueCatalogItems = async (items: Array<{ id: string }>) => {
 
   try {
     await withTimeout(queue.addBulk(jobs), "catalog.queue.addBulk");
-  } catch (error) {
+  } catch {
     const results = await withTimeout(
       Promise.allSettled(
         jobs.map((job) =>
@@ -91,5 +91,18 @@ export const enqueueCatalogItems = async (items: Array<{ id: string }>) => {
     if (rejected.length) {
       throw new Error(`Failed to enqueue ${rejected.length} catalog jobs`);
     }
+  }
+};
+
+export const removeCatalogJobByItemId = async (itemId: string) => {
+  if (!itemId) return false;
+  const queue = getCatalogQueue();
+  try {
+    const job = await queue.getJob(itemId);
+    if (!job) return false;
+    await job.remove();
+    return true;
+  } catch {
+    return false;
   }
 };

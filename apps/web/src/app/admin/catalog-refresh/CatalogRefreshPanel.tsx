@@ -128,10 +128,32 @@ type WorkerStatus = {
   ttlSeconds: number | null;
   backlog: number;
   active: number;
+  staleNoProgress?: boolean;
+  queueEmptyButDbRunnable?: boolean;
 };
 
 type QueueHealthState = {
   redisEnabled: boolean;
+  flags?: {
+    heartbeatMissing?: boolean;
+    activeHung?: boolean;
+    queueDriftDetected?: boolean;
+  };
+  activeHang?: {
+    catalog?: {
+      hungCount?: number;
+      hungThresholdMinutes?: number;
+    };
+    enrich?: {
+      hungCount?: number;
+      hungThresholdMinutes?: number;
+    };
+  };
+  drift?: {
+    waitingItemNotQueued?: number;
+    waitingRunNotProcessing?: number;
+    runsRunnableWithoutQueueLoad?: number;
+  };
   workerStatus?: {
     catalog?: WorkerStatus;
     enrich?: WorkerStatus;
@@ -184,8 +206,12 @@ const percent = (value: number, total: number) =>
 const alertLabel = (type: string) => {
   if (type === "stale_brand") return "stale brand";
   if (type === "stale_auto_recovering") return "auto recovering";
+  if (type === "stale_processing_no_progress") return "sin progreso";
   if (type === "stale_no_refs") return "sin refs";
   if (type === "catalog_stuck") return "catalog stuck";
+  if (type === "catalog_queue_drift") return "queue drift";
+  if (type === "catalog_worker_heartbeat_missing") return "heartbeat";
+  if (type === "catalog_processing_no_recent_progress") return "processing idle";
   return type.replace(/_/g, " ");
 };
 
@@ -302,6 +328,16 @@ export default function CatalogRefreshPanel() {
     [fetchState],
   );
 
+  const triggerReconcile = useCallback(async () => {
+    const res = await fetch("/api/admin/catalog-extractor/reconcile", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dryRun: false }),
+    });
+    if (!res.ok) throw new Error("No se pudo reconciliar la cola.");
+    await fetchState();
+  }, [fetchState]);
+
   const handleAlertAction = useCallback(
     async (alert: RefreshAlert) => {
       if (!alert.action?.type) return;
@@ -325,13 +361,33 @@ export default function CatalogRefreshPanel() {
           await fetchState();
           return;
         }
+        if (alert.action.type === "resume_catalog_strong" && alert.action.brandId) {
+          const res = await fetch("/api/admin/catalog-extractor/run", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              brandId: alert.action.brandId,
+              resume: true,
+              strongResume: true,
+              force: true,
+              drainOnRun: true,
+            }),
+          });
+          if (!res.ok) throw new Error("No se pudo ejecutar el resume fuerte.");
+          await fetchState();
+          return;
+        }
+        if (alert.action.type === "reconcile_catalog") {
+          await triggerReconcile();
+          return;
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error desconocido");
       } finally {
         setActionId(null);
       }
     },
-    [fetchState, triggerBrand],
+    [fetchState, triggerBrand, triggerReconcile],
   );
 
   useEffect(() => {
@@ -698,12 +754,35 @@ export default function CatalogRefreshPanel() {
             <p className="mt-2 text-xs text-slate-500">Redis no habilitado.</p>
           ) : (
             <div className="mt-3 space-y-2 text-xs text-slate-700">
+              {queueHealth?.flags ? (
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                  <p className="font-semibold text-slate-900">Guardrails</p>
+                  <p>
+                    heartbeatMissing: {queueHealth.flags.heartbeatMissing ? "si" : "no"} · activeHung:{" "}
+                    {queueHealth.flags.activeHung ? "si" : "no"} · drift:{" "}
+                    {queueHealth.flags.queueDriftDetected ? "si" : "no"}
+                  </p>
+                  {queueHealth.flags.queueDriftDetected ? (
+                    <button
+                      className="mt-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700"
+                      onClick={() => triggerReconcile().catch((err) => setError(err instanceof Error ? err.message : "Error desconocido"))}
+                      disabled={loading}
+                    >
+                      Reconciliar cola
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                 <p className="font-semibold text-slate-900">Catalog</p>
                 <p>
                   Online: {queueHealth?.workerStatus?.catalog?.online ? "si" : "no"} - backlog{" "}
                   {queueHealth?.workerStatus?.catalog?.backlog ?? 0} - active{" "}
                   {queueHealth?.workerStatus?.catalog?.active ?? 0}
+                </p>
+                <p>
+                  hung: {queueHealth?.activeHang?.catalog?.hungCount ?? 0} /{" "}
+                  {queueHealth?.activeHang?.catalog?.hungThresholdMinutes ?? 15}m
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -712,6 +791,10 @@ export default function CatalogRefreshPanel() {
                   Online: {queueHealth?.workerStatus?.enrich?.online ? "si" : "no"} - backlog{" "}
                   {queueHealth?.workerStatus?.enrich?.backlog ?? 0} - active{" "}
                   {queueHealth?.workerStatus?.enrich?.active ?? 0}
+                </p>
+                <p>
+                  hung: {queueHealth?.activeHang?.enrich?.hungCount ?? 0} /{" "}
+                  {queueHealth?.activeHang?.enrich?.hungThresholdMinutes ?? 15}m
                 </p>
               </div>
             </div>

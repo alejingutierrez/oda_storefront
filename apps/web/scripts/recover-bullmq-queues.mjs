@@ -53,17 +53,26 @@ const enrichmentMaxAttempts = Math.max(
   Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS || 5),
 );
 
-const catalogPerRun = Math.max(catalogEnqueueLimit, catalogWorkerConcurrency * 5);
-const enrichPerRun = Math.max(enrichmentEnqueueLimit, enrichmentWorkerConcurrency * 5);
+const readPositiveInt = (value, fallback) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+};
 
-const stuckMinutesCatalog = Math.max(
-  5,
-  Number(process.env.CATALOG_ITEM_STUCK_MINUTES || 30),
+const catalogTargetDepth = Math.max(
+  catalogEnqueueLimit,
+  readPositiveInt(process.env.CATALOG_QUEUE_TARGET_DEPTH, catalogWorkerConcurrency * 3),
 );
-const stuckMinutesEnrich = Math.max(
-  5,
-  Number(process.env.PRODUCT_ENRICHMENT_ITEM_STUCK_MINUTES || 30),
+const enrichTargetDepth = Math.max(
+  enrichmentEnqueueLimit,
+  readPositiveInt(
+    process.env.PRODUCT_ENRICHMENT_QUEUE_TARGET_DEPTH,
+    enrichmentWorkerConcurrency * 3,
+  ),
 );
+
+const catalogPerRun = catalogTargetDepth;
+const enrichPerRun = enrichTargetDepth;
 
 const connection = { url: redisUrl };
 
@@ -103,43 +112,19 @@ const resetDbStates = async (client) => {
     `
       UPDATE catalog_items
       SET status = 'pending', "startedAt" = NULL, "updatedAt" = NOW()
-      WHERE status = 'queued'
+      WHERE status IN ('queued', 'in_progress')
     `,
   );
-  result.catalog_queued_to_pending = catalogQueued.rowCount;
-
-  const catalogStuck = await client.query(
-    `
-      UPDATE catalog_items
-      SET status = 'pending', "startedAt" = NULL, "updatedAt" = NOW()
-      WHERE status = 'in_progress'
-        AND "startedAt" IS NOT NULL
-        AND "startedAt" < NOW() - ($1::text || ' minutes')::interval
-    `,
-    [String(stuckMinutesCatalog)],
-  );
-  result.catalog_stuck_to_pending = catalogStuck.rowCount;
+  result.catalog_recovered_to_pending = catalogQueued.rowCount;
 
   const enrichQueued = await client.query(
     `
       UPDATE product_enrichment_items
       SET status = 'pending', "startedAt" = NULL, "updatedAt" = NOW()
-      WHERE status = 'queued'
+      WHERE status IN ('queued', 'in_progress')
     `,
   );
-  result.enrich_queued_to_pending = enrichQueued.rowCount;
-
-  const enrichStuck = await client.query(
-    `
-      UPDATE product_enrichment_items
-      SET status = 'pending', "startedAt" = NULL, "updatedAt" = NOW()
-      WHERE status = 'in_progress'
-        AND "startedAt" IS NOT NULL
-        AND "startedAt" < NOW() - ($1::text || ' minutes')::interval
-    `,
-    [String(stuckMinutesEnrich)],
-  );
-  result.enrich_stuck_to_pending = enrichStuck.rowCount;
+  result.enrich_recovered_to_pending = enrichQueued.rowCount;
 
   return result;
 };
@@ -274,8 +259,8 @@ log(
       enrichmentQueueName,
       catalogPerRun,
       enrichPerRun,
-      stuckMinutesCatalog,
-      stuckMinutesEnrich,
+      catalogTargetDepth,
+      enrichTargetDepth,
     },
     null,
     2,

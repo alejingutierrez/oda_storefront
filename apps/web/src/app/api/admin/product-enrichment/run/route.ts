@@ -14,6 +14,8 @@ import {
   findActiveRun,
   listPendingItems,
   markItemsQueued,
+  resetQueuedItemsAll,
+  resetStuckItemsAll,
   resetQueuedItems,
   resetStuckItems,
   summarizeRun,
@@ -223,8 +225,14 @@ export async function POST(req: Request) {
 
       const effectiveQueuedStaleMs = resumeRequested ? 0 : queuedStaleMs;
       const effectiveStuckMs = resumeRequested ? Math.min(stuckMs, resumeStuckMs || 0) : stuckMs;
-      await resetQueuedItems(existing.id, effectiveQueuedStaleMs);
-      await resetStuckItems(existing.id, effectiveStuckMs);
+      if (resumeRequested) {
+        await Promise.all([resetQueuedItemsAll(existing.id), resetStuckItemsAll(existing.id)]);
+      } else {
+        await Promise.all([
+          resetQueuedItems(existing.id, effectiveQueuedStaleMs),
+          resetStuckItems(existing.id, effectiveStuckMs),
+        ]);
+      }
 
       const pendingItems = await listPendingItems(
         existing.id,

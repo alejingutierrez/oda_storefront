@@ -51,7 +51,16 @@ const parseTimeoutMs = (value, fallbackMs) => {
   return Math.max(10000, parsed);
 };
 
-const defaultFetchTimeoutMs = parseTimeoutMs(process.env.WORKER_FETCH_TIMEOUT_MS, null);
+const activeHungMinutes = Math.max(
+  5,
+  Number(process.env.WORKER_ACTIVE_HUNG_MINUTES || 15),
+);
+const activeWatchdogMs = Math.max(
+  60000,
+  Number(process.env.WORKER_ACTIVE_WATCHDOG_MS || activeHungMinutes * 60 * 1000),
+);
+
+const defaultFetchTimeoutMs = parseTimeoutMs(process.env.WORKER_FETCH_TIMEOUT_MS, 120000);
 const catalogFetchTimeoutMs = parseTimeoutMs(
   process.env.CATALOG_WORKER_FETCH_TIMEOUT_MS,
   defaultFetchTimeoutMs,
@@ -64,6 +73,18 @@ const plpSeoFetchTimeoutMs = parseTimeoutMs(
   process.env.PLP_SEO_WORKER_FETCH_TIMEOUT_MS,
   defaultFetchTimeoutMs,
 );
+
+const resolveRequestTimeoutMs = (value) => {
+  if (typeof value === 'number' && value > 0) {
+    return Math.max(10000, Math.min(value, activeWatchdogMs));
+  }
+  // Even if queue-specific timeout is disabled for debugging, keep watchdog finite.
+  return activeWatchdogMs;
+};
+
+const catalogRequestTimeoutMs = resolveRequestTimeoutMs(catalogFetchTimeoutMs);
+const enrichmentRequestTimeoutMs = resolveRequestTimeoutMs(enrichmentFetchTimeoutMs);
+const plpSeoRequestTimeoutMs = resolveRequestTimeoutMs(plpSeoFetchTimeoutMs);
 
 let isShuttingDown = false;
 let lastCatalogCompletedAtIso = null;
@@ -95,7 +116,14 @@ const writeHeartbeats = async () => {
   await Promise.all(ops);
 };
 
-writeHeartbeats().catch((err) => console.error('[worker] heartbeat failed', err));
+if (heartbeatEnabled) {
+  try {
+    await writeHeartbeats();
+  } catch (err) {
+    console.error('[worker] heartbeat bootstrap failed', err);
+    process.exit(1);
+  }
+}
 const heartbeatTimer = setInterval(() => {
   writeHeartbeats().catch((err) => console.error('[worker] heartbeat failed', err));
 }, heartbeatIntervalMs);
@@ -156,7 +184,7 @@ const catalogWorker = catalogEnabled
       async (job) => {
         const itemId = job.data?.itemId;
         if (!itemId) return;
-        await postAdminJson(catalogEndpoint, { itemId }, catalogFetchTimeoutMs);
+        await postAdminJson(catalogEndpoint, { itemId }, catalogRequestTimeoutMs);
       },
       { connection, concurrency: catalogConcurrency },
     )
@@ -191,7 +219,7 @@ const enrichmentWorker = enrichEnabled
       async (job) => {
         const itemId = job.data?.itemId;
         if (!itemId) return;
-        await postAdminJson(enrichmentEndpoint, { itemId }, enrichmentFetchTimeoutMs);
+        await postAdminJson(enrichmentEndpoint, { itemId }, enrichmentRequestTimeoutMs);
       },
       { connection, concurrency: enrichmentConcurrency },
     )
@@ -275,7 +303,7 @@ const plpSeoWorker = plpSeoEnabled
       async (job) => {
         const itemId = job.data?.itemId;
         if (!itemId) return;
-        await postAdminJson(plpSeoEndpoint, { itemId }, plpSeoFetchTimeoutMs);
+        await postAdminJson(plpSeoEndpoint, { itemId }, plpSeoRequestTimeoutMs);
       },
       { connection, concurrency: plpSeoConcurrency },
     )
@@ -302,6 +330,21 @@ const runAutonomousTick = async () => {
   try {
     const health = await getAdminJson(queueHealthEndpoint, autonomousProbeTimeoutMs);
     const workerStatus = (health?.workerStatus ?? {});
+    if (health?.flags?.heartbeatMissing) {
+      console.error(
+        `[worker-autonomy] heartbeat missing while backlog exists queueDrift=${health?.flags?.queueDriftDetected ? 'yes' : 'no'}`,
+      );
+      if (heartbeatEnabled) {
+        writeHeartbeats().catch((err) =>
+          console.error('[worker-autonomy] heartbeat repair failed', err),
+        );
+      }
+    }
+    if (health?.flags?.activeHung) {
+      console.warn(
+        `[worker-autonomy] active jobs hung detected catalog=${health?.activeHang?.catalog?.hungCount ?? 0} enrich=${health?.activeHang?.enrich?.hungCount ?? 0}`,
+      );
+    }
     const actions = [];
 
     if (catalogEnabled && catalogDrainEndpoint) {
@@ -408,5 +451,5 @@ process.on('uncaughtException', (err) => {
 });
 
 console.log(
-  `[worker] boot ok pid=${pid} host=${hostname} heartbeat=${heartbeatEnabled} ttl=${heartbeatTtlSeconds}s interval=${heartbeatIntervalMs}ms timeout_default=${defaultFetchTimeoutMs ?? 'none'} timeout_catalog=${catalogFetchTimeoutMs ?? 'none'} timeout_enrich=${enrichmentFetchTimeoutMs ?? 'none'} timeout_plp=${plpSeoFetchTimeoutMs ?? 'none'}`,
+  `[worker] boot ok pid=${pid} host=${hostname} heartbeat=${heartbeatEnabled} ttl=${heartbeatTtlSeconds}s interval=${heartbeatIntervalMs}ms timeout_default=${defaultFetchTimeoutMs ?? 'none'} timeout_catalog=${catalogFetchTimeoutMs ?? 'none'} timeout_enrich=${enrichmentFetchTimeoutMs ?? 'none'} timeout_plp=${plpSeoFetchTimeoutMs ?? 'none'} watchdog_active_ms=${activeWatchdogMs} request_timeout_catalog=${catalogRequestTimeoutMs} request_timeout_enrich=${enrichmentRequestTimeoutMs} request_timeout_plp=${plpSeoRequestTimeoutMs}`,
 );

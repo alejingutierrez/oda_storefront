@@ -9,8 +9,9 @@ import {
   isCatalogSoftError,
 } from "@/lib/catalog/constants";
 import { finalizeRefreshForRun } from "@/lib/catalog/refresh";
-import { enqueueCatalogItems } from "@/lib/catalog/queue";
-import { listPendingItems, listRunnableItems, markItemsQueued, resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
+import { removeCatalogJobByItemId } from "@/lib/catalog/queue";
+import { topUpCatalogRunQueue } from "@/lib/catalog/queue-control";
+import { listRunnableItems, resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
 import { tryAcquireLock } from "@/lib/redis";
 
 const REFILL_LOCK_TTL_MS = 5000;
@@ -38,11 +39,12 @@ const maybeRefillQueue = async (params: {
 
   await resetQueuedItems(params.runId, params.queuedStaleMs);
   await resetStuckItems(params.runId, params.stuckMs);
-  const pendingItems = await listPendingItems(params.runId, params.enqueueLimit);
-  if (!pendingItems.length) return { refilled: 0, skipped: false };
-  await markItemsQueued(pendingItems.map((candidate) => candidate.id));
-  await enqueueCatalogItems(pendingItems);
-  return { refilled: pendingItems.length, skipped: false };
+  const refill = await topUpCatalogRunQueue({
+    runId: params.runId,
+    enqueueLimit: params.enqueueLimit,
+    queueEnabled: true,
+  });
+  return { refilled: refill.enqueued, skipped: false };
 };
 
 const readBrandMetadata = (brand: { metadata?: unknown }) =>
@@ -192,7 +194,24 @@ export const processCatalogItemById = async (
   const canUseLlmPdp =
     process.env.CATALOG_PDP_LLM_ENABLED !== "false" &&
     (adapter.platform === "custom" || (brand.ecommercePlatform ?? "").toLowerCase() === "unknown");
-  const brandCurrencyOverride = getBrandCurrencyOverride(readBrandMetadata(brand));
+  const brandMetadata = readBrandMetadata(brand);
+  const brandCurrencyOverride = getBrandCurrencyOverride(brandMetadata);
+  const refreshMeta =
+    brandMetadata.catalog_refresh &&
+    typeof brandMetadata.catalog_refresh === "object" &&
+    !Array.isArray(brandMetadata.catalog_refresh)
+      ? (brandMetadata.catalog_refresh as Record<string, unknown>)
+      : null;
+  const refreshLastRunId =
+    refreshMeta && typeof refreshMeta.lastRunId === "string" ? refreshMeta.lastRunId : null;
+  const isRefreshRun = refreshLastRunId === run.id;
+  const requireBlobImagesGlobal =
+    (process.env.CATALOG_REQUIRE_BLOB_IMAGES ?? "true").trim().toLowerCase() !== "false";
+  const refreshRequireBlobDefault =
+    (process.env.CATALOG_REFRESH_REQUIRE_BLOB_IMAGES ?? "true").trim().toLowerCase() !==
+    "false";
+  const requireBlobImages =
+    requireBlobImagesGlobal || (isRefreshRun && refreshRequireBlobDefault);
   const pricingConfig = await getPricingConfig();
   const trmUsdCop = getUsdCopTrm(pricingConfig);
   const displayRoundingUnitCop = getDisplayRoundingUnitCop(pricingConfig);
@@ -208,6 +227,7 @@ export const processCatalogItemById = async (
       brandCurrencyOverride,
       trmUsdCop,
       displayRoundingUnitCop,
+      requireBlobImages,
       onStage: (stage) => {
         lastStage = stage;
       },
@@ -361,6 +381,9 @@ export const drainCatalogRun = async ({
       true,
     );
     if (!items.length) break;
+
+    // In drain mode (fallback path), remove stale queue jobs to avoid ghost replays.
+    await Promise.allSettled(items.map((item) => removeCatalogJobByItemId(item.id)));
 
     const results = await Promise.allSettled(
       items.map((item) =>

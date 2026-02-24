@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { discoverCatalogRefs } from "@/lib/catalog/discovery";
-import { enqueueCatalogItems, isCatalogQueueEnabled } from "@/lib/catalog/queue";
+import { isCatalogQueueEnabled } from "@/lib/catalog/queue";
+import { topUpCatalogRunQueue } from "@/lib/catalog/queue-control";
 import {
   createRunWithItems,
   findActiveRun,
-  listPendingItems,
-  markItemsQueued,
+  resetQueuedItemsAll,
+  resetStuckItemsAll,
   resetQueuedItems,
   resetStuckItems,
   summarizeRun,
@@ -27,6 +28,7 @@ export async function POST(req: Request) {
   const brandId = typeof body?.brandId === "string" ? body.brandId : null;
   const batchSize = Number(body?.batchSize ?? body?.limit ?? 1);
   const resumeRequested = Boolean(body?.resume);
+  const strongResumeRequested = Boolean(body?.strongResume ?? body?.resumeStrong);
   const forceRun = Boolean(body?.force);
   const requestedDrainBatch = Number(body?.drainBatch ?? body?.drainLimit ?? body?.drainSize);
   const requestedDrainConcurrency = Number(body?.drainConcurrency ?? body?.concurrency ?? body?.drainWorkers);
@@ -98,7 +100,13 @@ export async function POST(req: Request) {
     const existing = await findActiveRun(brandId);
     if (existing) {
       const shouldResumeSweep =
-        resumeRequested || existing.status === "paused" || existing.status === "stopped";
+        resumeRequested ||
+        strongResumeRequested ||
+        existing.status === "paused" ||
+        existing.status === "stopped";
+      let recoveredQueued = 0;
+      let recoveredInProgress = 0;
+      let reenqueued = 0;
       if (existing.status === "paused" || existing.status === "stopped" || shouldResumeSweep) {
         await prisma.catalogRun.update({
           where: { id: existing.id },
@@ -111,20 +119,32 @@ export async function POST(req: Request) {
           },
         });
       }
-      const effectiveQueuedStaleMs = shouldResumeSweep ? 0 : queuedStaleMs;
+      const recoverAll = shouldResumeSweep;
+      const effectiveQueuedStaleMs = recoverAll ? 0 : queuedStaleMs;
       const effectiveStuckMs = shouldResumeSweep
         ? Math.min(stuckMs, resumeStuckMs || 0)
         : stuckMs;
-      await resetQueuedItems(existing.id, effectiveQueuedStaleMs);
-      await resetStuckItems(existing.id, effectiveStuckMs);
-      const pendingItems = await listPendingItems(
-        existing.id,
-        Number.isFinite(batchSize) ? Math.max(batchSize, enqueueLimit) : enqueueLimit,
-      );
-      if (queueEnabled) {
-        await markItemsQueued(pendingItems.map((item) => item.id));
-        await enqueueCatalogItems(pendingItems);
+      if (recoverAll) {
+        const [queuedReset, inProgressReset] = await Promise.all([
+          resetQueuedItemsAll(existing.id),
+          resetStuckItemsAll(existing.id),
+        ]);
+        recoveredQueued = queuedReset.count;
+        recoveredInProgress = inProgressReset.count;
+      } else {
+        const [queuedReset, inProgressReset] = await Promise.all([
+          resetQueuedItems(existing.id, effectiveQueuedStaleMs),
+          resetStuckItems(existing.id, effectiveStuckMs),
+        ]);
+        recoveredQueued = queuedReset.count;
+        recoveredInProgress = inProgressReset.count;
       }
+      const refill = await topUpCatalogRunQueue({
+        runId: existing.id,
+        enqueueLimit: Number.isFinite(batchSize) ? Math.max(Math.floor(batchSize), enqueueLimit) : enqueueLimit,
+        queueEnabled,
+      });
+      reenqueued = refill.enqueued;
       if (drainOnRun) {
         await drainCatalogRun({
           runId: existing.id,
@@ -136,7 +156,13 @@ export async function POST(req: Request) {
         });
       }
       const summary = await summarizeRun(existing.id);
-      return NextResponse.json({ summary });
+      return NextResponse.json({
+        summary,
+        recoveredQueued,
+        recoveredInProgress,
+        reenqueued,
+        queueTargetDepth: refill.targetDepth,
+      });
     }
 
     const { refs, platformForRun } = await discoverCatalogRefs({
@@ -176,14 +202,11 @@ export async function POST(req: Request) {
       refs,
       status: "processing",
     });
-    const items = await listPendingItems(
-      run.id,
-      Number.isFinite(batchSize) ? Math.max(batchSize, enqueueLimit) : enqueueLimit,
-    );
-    if (queueEnabled) {
-      await markItemsQueued(items.map((item) => item.id));
-      await enqueueCatalogItems(items);
-    }
+    const refill = await topUpCatalogRunQueue({
+      runId: run.id,
+      enqueueLimit: Number.isFinite(batchSize) ? Math.max(Math.floor(batchSize), enqueueLimit) : enqueueLimit,
+      queueEnabled,
+    });
     if (drainOnRun) {
       await drainCatalogRun({
         runId: run.id,
@@ -195,7 +218,13 @@ export async function POST(req: Request) {
       });
     }
     const summary = await summarizeRun(run.id);
-    return NextResponse.json({ summary });
+    return NextResponse.json({
+      summary,
+      recoveredQueued: 0,
+      recoveredInProgress: 0,
+      reenqueued: refill.enqueued,
+      queueTargetDepth: refill.targetDepth,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "unknown_error" },

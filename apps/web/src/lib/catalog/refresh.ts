@@ -1,14 +1,13 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { discoverCatalogRefs } from "@/lib/catalog/discovery";
-import { enqueueCatalogItems, isCatalogQueueEnabled } from "@/lib/catalog/queue";
+import { isCatalogQueueEnabled } from "@/lib/catalog/queue";
+import { topUpCatalogRunQueue } from "@/lib/catalog/queue-control";
 import { CATALOG_MAX_ATTEMPTS } from "@/lib/catalog/constants";
 import {
   createRunWithItems,
-  listPendingItems,
-  markItemsQueued,
-  resetQueuedItems,
-  resetStuckItems,
+  resetQueuedItemsAll,
+  resetStuckItemsAll,
 } from "@/lib/catalog/run-store";
 import { drainCatalogRun } from "@/lib/catalog/processor";
 import { enqueueEnrichmentItems, isEnrichmentQueueEnabled } from "@/lib/product-enrichment/queue";
@@ -17,8 +16,8 @@ import {
   findActiveRun as findActiveEnrichmentRun,
   listPendingItems as listPendingEnrichmentItems,
   markItemsQueued as markEnrichmentItemsQueued,
-  resetQueuedItems as resetEnrichmentQueuedItems,
-  resetStuckItems as resetEnrichmentStuckItems,
+  resetQueuedItemsAll as resetEnrichmentQueuedItemsAll,
+  resetStuckItemsAll as resetEnrichmentStuckItemsAll,
 } from "@/lib/product-enrichment/run-store";
 import {
   productEnrichmentModel,
@@ -376,14 +375,14 @@ const dedupeRefs = (refs: Array<{ url: string }>) =>
   Array.from(new Map(refs.map((ref) => [ref.url, ref])).values());
 
 const requeueRunItems = async (runId: string, queueEnabled: boolean, enqueueLimit: number) => {
-  await resetQueuedItems(runId, 0);
-  await resetStuckItems(runId, 0);
-  const pending = await listPendingItems(runId, Math.max(10, enqueueLimit));
-  if (queueEnabled && pending.length) {
-    await markItemsQueued(pending.map((item) => item.id));
-    await enqueueCatalogItems(pending);
-  }
-  return pending.length;
+  await resetQueuedItemsAll(runId);
+  await resetStuckItemsAll(runId);
+  const refill = await topUpCatalogRunQueue({
+    runId,
+    enqueueLimit: Math.max(10, enqueueLimit),
+    queueEnabled,
+  });
+  return refill.enqueued;
 };
 
 const latestRunRefsForForce = async (brandId: string, limit: number) => {
@@ -1188,13 +1187,13 @@ const recoverCatalogRuns = async (config: ReturnType<typeof getRefreshConfig>) =
           updatedAt: new Date(),
         },
       });
-      await resetQueuedItems(run.id, 0);
-      await resetStuckItems(run.id, 0);
-      const pending = await listPendingItems(run.id, enqueueLimit);
-      if (queueEnabled) {
-        await markItemsQueued(pending.map((item) => item.id));
-        await enqueueCatalogItems(pending);
-      }
+      await resetQueuedItemsAll(run.id);
+      await resetStuckItemsAll(run.id);
+      await topUpCatalogRunQueue({
+        runId: run.id,
+        enqueueLimit,
+        queueEnabled,
+      });
     } catch (error) {
       console.warn("catalog.refresh.auto_recover_failed", run.id, error);
     }
@@ -1301,8 +1300,8 @@ const recoverEnrichmentRuns = async (config: ReturnType<typeof getRefreshConfig>
           updatedAt: new Date(),
         },
       });
-      await resetEnrichmentQueuedItems(run.id, 0);
-      await resetEnrichmentStuckItems(run.id, 0);
+      await resetEnrichmentQueuedItemsAll(run.id);
+      await resetEnrichmentStuckItemsAll(run.id);
       const pending = await listPendingEnrichmentItems(run.id, enqueueLimit);
       if (queueEnabled) {
         await markEnrichmentItemsQueued(pending.map((item) => item.id));
@@ -1759,17 +1758,17 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
 
     // Avoid dumping thousands of jobs into Redis at once. The worker refills the queue
     // as items are completed/failed (allowQueueRefill=true).
-    const pending = await listPendingItems(run.id, Math.max(10, enqueueLimit));
-    if (queueEnabled) {
-      await markItemsQueued(pending.map((item) => item.id));
-      await enqueueCatalogItems(pending);
-    }
+    const refill = await topUpCatalogRunQueue({
+      runId: run.id,
+      enqueueLimit: Math.max(10, enqueueLimit),
+      queueEnabled,
+    });
 
     if (config.drainOnRun) {
       await drainCatalogRun({
         runId: run.id,
-        batch: Math.min(pending.length, 50),
-        concurrency: Math.min(10, pending.length || 1),
+        batch: Math.min(Math.max(refill.enqueued, 1), 50),
+        concurrency: Math.min(10, Math.max(refill.enqueued, 1)),
         maxMs: 15000,
         queuedStaleMs: 0,
         stuckMs: 0,

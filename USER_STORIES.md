@@ -166,6 +166,26 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: ejecución segura (dry-run primero), guardrails operativos (>2% error corta apply), outputs auditables en disco y control por variables de entorno.
 - Estado: **done (2026-02-23)**.
 
+### MC-138 Antiatasco `/admin/catalog-refresh`: BullMQ endurecida + recuperación agresiva
+- Historia: Como operador de catálogo, quiero que los atascos (`stuck`/`overdue`) se recuperen de forma real y que la cola no vuelva a inflarse por desalineación DB↔Redis, para mantener avance continuo y alertas accionables.
+- Alcance:
+  - Run stores (`catalog` y `product-enrichment`) agregan helpers explícitos `resetQueuedItemsAll` / `resetStuckItemsAll` y los flujos de resume/force/recovery dejan de depender de `olderThanMs=0`.
+  - Top-up por profundidad real en catálogo: `currentLoad = queued + in_progress`, `gap = targetDepth - currentLoad`, con `CATALOG_QUEUE_TARGET_DEPTH` (fallback `max(enqueueLimit, workerConcurrency*3)`).
+  - Reconciliación DB↔Redis: nuevo `POST /api/admin/catalog-extractor/reconcile` para limpiar jobs huérfanos, normalizar drift (`pending/failed` con job waiting) y reenqueue controlado por run.
+  - `drain` de catálogo remueve job Redis por `itemId` antes de procesar en fallback para evitar jobs fantasma.
+  - `GET /api/admin/queue-health` agrega `flags` (`heartbeatMissing`, `activeHung`, `queueDriftDetected`) + detalle `activeHang` y `drift`.
+  - `GET /api/admin/catalog-refresh/state` agrega `diagnostics.queueDrift/heartbeat/progress` y alertas basadas en progreso real reciente (no solo `status=processing`).
+  - UI `/admin/catalog-refresh`: acciones `Reconciliar cola` y `Resume fuerte` desde alertas y bloque de guardrails.
+  - Worker hardening: timeout HTTP finito por default (`WORKER_FETCH_TIMEOUT_MS=120000`), fail-fast de heartbeat al boot y logging explícito ante heartbeat ausente/actives colgados.
+  - Timestamps: script de precheck `scripts/precheck-refresh-timestamp-offset.mjs` + migración guardada a `timestamptz` con guardrail (`20260224120000_catalog_refresh_timestamptz_guarded`) que aborta si no hay offset consistente.
+- CA:
+  - `resume/force` recupera items `queued/in_progress` de forma verificable (sin no-op por `0`).
+  - Cola catálogo se rellena por profundidad objetivo y no por lote fijo ilimitado.
+  - `queue-health` detecta y expone drift/heartbeat/hung para remediación operativa.
+  - Panel `/admin/catalog-refresh` permite ejecutar `reconcile` y `resume fuerte` sin salir del flujo.
+  - Build/lint pasan con las rutas y contratos nuevos.
+- Estado: **done (2026-02-24)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

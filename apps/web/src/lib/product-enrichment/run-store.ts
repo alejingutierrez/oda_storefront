@@ -142,12 +142,26 @@ export const resetQueuedItems = async (runId: string, olderThanMs: number) => {
   });
 };
 
+export const resetQueuedItemsAll = async (runId: string) => {
+  return prisma.productEnrichmentItem.updateMany({
+    where: { runId, status: "queued" },
+    data: { status: "pending", updatedAt: new Date() },
+  });
+};
+
 export const resetStuckItems = async (runId: string, olderThanMs: number) => {
   if (!Number.isFinite(olderThanMs) || olderThanMs <= 0) return { count: 0 };
   const cutoff = new Date(Date.now() - olderThanMs);
   return prisma.productEnrichmentItem.updateMany({
     where: { runId, status: "in_progress", startedAt: { lt: cutoff } },
-    data: { status: "pending", updatedAt: new Date() },
+    data: { status: "pending", startedAt: null, updatedAt: new Date() },
+  });
+};
+
+export const resetStuckItemsAll = async (runId: string) => {
+  return prisma.productEnrichmentItem.updateMany({
+    where: { runId, status: "in_progress" },
+    data: { status: "pending", startedAt: null, updatedAt: new Date() },
   });
 };
 

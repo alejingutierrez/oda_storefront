@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { readCatalogQueueDriftSummary } from "@/lib/catalog/queue-drift";
 import { getRefreshConfig, isBrandDueForRefresh } from "@/lib/catalog/refresh";
+import { readHeartbeat } from "@/lib/redis";
 
 export const runtime = "nodejs";
 
@@ -263,6 +265,11 @@ export async function GET(req: Request) {
   })();
 
   const avgRunSuccessRate = successWeighted ?? successMean ?? 0;
+  const progressWindowMinutes = Math.max(
+    5,
+    Number(process.env.CATALOG_PROGRESS_WINDOW_MINUTES ?? 20),
+  );
+  const progressCutoff = new Date(Date.now() - progressWindowMinutes * 60 * 1000);
 
   const overdueBrandIds = rowsWithOperationalStatus
     .filter((brand) => !brand.manualReview && brand.operationalOverdue)
@@ -277,6 +284,7 @@ export async function GET(req: Request) {
       completed: number;
       failed: number;
       pending: number;
+      completedRecent: number;
       progressPct: number;
       updatedAt: string;
     }
@@ -291,6 +299,7 @@ export async function GET(req: Request) {
         updatedAt: Date;
         totalItems: number | null;
         completed: number;
+        completedRecent: number;
         failed: number;
         pending: number;
       }>
@@ -311,6 +320,7 @@ export async function GET(req: Request) {
           SELECT
             ci."runId" AS "runId",
             COUNT(*) FILTER (WHERE ci.status = 'completed')::int AS completed,
+            COUNT(*) FILTER (WHERE ci.status = 'completed' AND ci."completedAt" >= ${progressCutoff})::int AS "completedRecent",
             COUNT(*) FILTER (WHERE ci.status = 'failed')::int AS failed,
             COUNT(*) FILTER (WHERE ci.status IN ('pending', 'queued', 'in_progress'))::int AS pending
           FROM "catalog_items" ci
@@ -324,6 +334,7 @@ export async function GET(req: Request) {
           l."updatedAt" AS "updatedAt",
           l."totalItems" AS "totalItems",
           COALESCE(c.completed, 0)::int AS completed,
+          COALESCE(c."completedRecent", 0)::int AS "completedRecent",
           COALESCE(c.failed, 0)::int AS failed,
           COALESCE(c.pending, 0)::int AS pending
         FROM latest l
@@ -340,6 +351,7 @@ export async function GET(req: Request) {
         status: row.status,
         total,
         completed: row.completed,
+        completedRecent: row.completedRecent,
         failed: row.failed,
         pending: row.pending,
         progressPct,
@@ -347,6 +359,51 @@ export async function GET(req: Request) {
       });
     });
   }
+
+  const [catalogHeartbeat, enrichHeartbeat, queueDrift, processingProgress] = await Promise.all([
+    readHeartbeat("workers:catalog:alive"),
+    readHeartbeat("workers:enrich:alive"),
+    readCatalogQueueDriftSummary({
+      sampleLimit: Math.max(
+        50,
+        Number(process.env.CATALOG_REFRESH_DRIFT_SAMPLE_LIMIT ?? 200),
+      ),
+    }),
+    prisma.$queryRaw<
+      Array<{
+        processingRuns: number;
+        processingRunsWithRecentProgress: number;
+        processingRunsWithoutRecentProgress: number;
+      }>
+    >(Prisma.sql`
+      WITH processing_runs AS (
+        SELECT cr.id
+        FROM "catalog_runs" cr
+        WHERE cr.status = 'processing'
+      ),
+      recent AS (
+        SELECT ci."runId", COUNT(*)::int AS "completedRecent"
+        FROM "catalog_items" ci
+        WHERE ci.status = 'completed'
+          AND ci."completedAt" IS NOT NULL
+          AND ci."completedAt" >= ${progressCutoff}
+        GROUP BY ci."runId"
+      )
+      SELECT
+        COUNT(*)::int AS "processingRuns",
+        COUNT(*) FILTER (WHERE COALESCE(recent."completedRecent", 0) > 0)::int AS "processingRunsWithRecentProgress",
+        COUNT(*) FILTER (WHERE COALESCE(recent."completedRecent", 0) = 0)::int AS "processingRunsWithoutRecentProgress"
+      FROM processing_runs pr
+      LEFT JOIN recent ON recent."runId" = pr.id
+    `),
+  ]);
+  const processingProgressRow = processingProgress[0] ?? {
+    processingRuns: 0,
+    processingRunsWithRecentProgress: 0,
+    processingRunsWithoutRecentProgress: 0,
+  };
+  const catalogBacklog = queueDrift.waiting + queueDrift.active + queueDrift.delayed;
+  const heartbeatMissing = catalogBacklog > 0 && !catalogHeartbeat.online;
 
   const alertLimit = 12;
   const alerts: Array<{
@@ -359,27 +416,65 @@ export async function GET(req: Request) {
     action?: { type: string; label: string; brandId?: string };
   }> = [];
 
+  if (queueDrift.driftDetected) {
+    alerts.push({
+      id: "catalog_queue_drift",
+      type: "catalog_queue_drift",
+      level: "danger",
+      title: "Drift detectado entre BullMQ y DB",
+      detail: `waiting(sample=${queueDrift.waitingSampleSize}): non_queued=${queueDrift.waitingItemNotQueued}, run_not_processing=${queueDrift.waitingRunNotProcessing}, missing_item=${queueDrift.waitingMissingItem}. runs_without_queue_load=${queueDrift.runsRunnableWithoutQueueLoad}.`,
+      action: { type: "reconcile_catalog", label: "Reconciliar cola" },
+    });
+  }
+  if (heartbeatMissing) {
+    alerts.push({
+      id: "catalog_worker_heartbeat_missing",
+      type: "catalog_worker_heartbeat_missing",
+      level: "danger",
+      title: "Heartbeat de worker catálogo ausente con backlog activo",
+      detail: `backlog=${catalogBacklog} · ttl=${catalogHeartbeat.ttlSeconds ?? "n/a"} · enrich_online=${enrichHeartbeat.online ? "si" : "no"}.`,
+      action: { type: "reconcile_catalog", label: "Reconciliar cola" },
+    });
+  }
+  if (processingProgressRow.processingRunsWithoutRecentProgress > 0) {
+    alerts.push({
+      id: "catalog_processing_no_recent_progress",
+      type: "catalog_processing_no_recent_progress",
+      level: queueDrift.driftDetected ? "danger" : "warning",
+      title: "Runs processing sin progreso reciente",
+      detail: `${processingProgressRow.processingRunsWithoutRecentProgress}/${processingProgressRow.processingRuns} sin completions en ${progressWindowMinutes} min.`,
+      action: { type: "reconcile_catalog", label: "Reconciliar cola" },
+    });
+  }
+
   const dueBrands = rowsWithOperationalStatus
     .filter((brand) => !brand.manualReview && brand.operationalOverdue)
     .slice(0, alertLimit);
   dueBrands.forEach((brand) => {
     const latestProgress = latestRunProgressByBrand.get(brand.id);
     const forceMode = brand.lastForceResult?.mode ?? null;
-    if (
-      latestProgress &&
-      ["processing", "paused", "blocked"].includes(latestProgress.status)
-    ) {
+    if (latestProgress && ["processing", "paused", "blocked"].includes(latestProgress.status)) {
+      const hasRecentProgress = latestProgress.completedRecent > 0;
+      if (latestProgress.status === "processing" && hasRecentProgress) {
+        alerts.push({
+          id: `stale_auto_recovering:${brand.id}`,
+          type: "stale_auto_recovering",
+          level: "info",
+          title: `Auto-recovery en curso: ${brand.name}`,
+          detail: `Run ${latestProgress.runId} · ${latestProgress.completed}/${latestProgress.total} (${latestProgress.progressPct}%) · completions recientes=${latestProgress.completedRecent}.`,
+          brandId: brand.id,
+        });
+        return;
+      }
+
       alerts.push({
-        id: `stale_auto_recovering:${brand.id}`,
-        type: "stale_auto_recovering",
-        level: "info",
-        title: `Auto-recovery en curso: ${brand.name}`,
-        detail: `Run ${latestProgress.runId} · ${latestProgress.completed}/${latestProgress.total} (${latestProgress.progressPct}%) · status ${latestProgress.status}.`,
+        id: `stale_processing_no_progress:${brand.id}`,
+        type: "stale_processing_no_progress",
+        level: queueDrift.driftDetected ? "danger" : "warning",
+        title: `Processing sin progreso real: ${brand.name}`,
+        detail: `Run ${latestProgress.runId} · status ${latestProgress.status} · ${latestProgress.completed}/${latestProgress.total} · completions recientes=${latestProgress.completedRecent}.`,
         brandId: brand.id,
-        action:
-          latestProgress.status === "paused" || latestProgress.status === "blocked"
-            ? { type: "resume_catalog", label: "Reanudar", brandId: brand.id }
-            : undefined,
+        action: { type: "resume_catalog_strong", label: "Resume fuerte", brandId: brand.id },
       });
       return;
     }
@@ -426,12 +521,12 @@ export async function GET(req: Request) {
     alerts.push({
       id: `catalog_stuck:${run.id}`,
       type: "catalog_stuck",
-      level: "danger",
+      level: run.status === "processing" && queueDrift.driftDetected ? "danger" : "warning",
       title: `Catálogo atascado: ${run.brand?.name ?? "Marca"}`,
       detail: `Status ${run.status} · Última actividad ${run.updatedAt.toISOString()}`,
       brandId: run.brandId,
       action: run.brandId
-        ? { type: "resume_catalog", label: "Reanudar", brandId: run.brandId }
+        ? { type: "resume_catalog_strong", label: "Resume fuerte", brandId: run.brandId }
         : undefined,
     });
   });
@@ -559,6 +654,28 @@ export async function GET(req: Request) {
       priceChanges: priceChanges?.count ?? 0,
       stockChanges: stockChanges?.count ?? 0,
       stockStatusChanges: stockStatusChanges?.count ?? 0,
+      queueDriftDetected: queueDrift.driftDetected,
+      heartbeatMissing,
+      processingRuns: processingProgressRow.processingRuns,
+      processingRunsWithRecentProgress: processingProgressRow.processingRunsWithRecentProgress,
+      processingRunsWithoutRecentProgress:
+        processingProgressRow.processingRunsWithoutRecentProgress,
+    },
+    diagnostics: {
+      queueDrift,
+      heartbeat: {
+        catalog: catalogHeartbeat,
+        enrich: enrichHeartbeat,
+        heartbeatMissing,
+      },
+      progress: {
+        windowMinutes: progressWindowMinutes,
+        processingRuns: processingProgressRow.processingRuns,
+        processingRunsWithRecentProgress:
+          processingProgressRow.processingRunsWithRecentProgress,
+        processingRunsWithoutRecentProgress:
+          processingProgressRow.processingRunsWithoutRecentProgress,
+      },
     },
     brands: rowsWithOperationalStatus,
     operationalMissingBrands,

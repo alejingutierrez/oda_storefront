@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Queue } from "bullmq";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { readCatalogQueueDriftSummary } from "@/lib/catalog/queue-drift";
 import { isRedisEnabled, readHeartbeat } from "@/lib/redis";
 
 export const runtime = "nodejs";
@@ -17,6 +18,14 @@ const workerNoProgressSeconds = Math.max(
   60,
   Number(process.env.WORKER_NO_PROGRESS_SECONDS ?? 300),
 );
+const activeHungMinutes = Math.max(
+  5,
+  Number(process.env.WORKER_ACTIVE_HUNG_MINUTES ?? 15),
+);
+const activeSampleLimit = Math.max(
+  10,
+  Number(process.env.WORKER_ACTIVE_SAMPLE_LIMIT ?? 200),
+);
 
 const readQueueCounts = async (name: string) => {
   const queue = new Queue(name, { connection });
@@ -29,6 +38,39 @@ const readQueueCounts = async (name: string) => {
       "completed",
       "paused",
     );
+  } finally {
+    await queue.close().catch(() => null);
+  }
+};
+
+const readActiveHang = async (name: string) => {
+  const queue = new Queue(name, { connection });
+  try {
+    const jobs = await queue.getJobs(["active"], 0, Math.max(0, activeSampleLimit - 1), true);
+    const now = Date.now();
+    const thresholdMs = activeHungMinutes * 60 * 1000;
+    let hungCount = 0;
+    let oldestActiveMs = 0;
+    let oldestProcessedOn: string | null = null;
+
+    for (const job of jobs) {
+      const processedOn = typeof job.processedOn === "number" ? job.processedOn : null;
+      if (!processedOn) continue;
+      const ageMs = Math.max(0, now - processedOn);
+      if (ageMs >= thresholdMs) hungCount += 1;
+      if (ageMs > oldestActiveMs) {
+        oldestActiveMs = ageMs;
+        oldestProcessedOn = new Date(processedOn).toISOString();
+      }
+    }
+
+    return {
+      sampleSize: jobs.length,
+      hungThresholdMinutes: activeHungMinutes,
+      hungCount,
+      oldestActiveMs,
+      oldestProcessedOn,
+    };
   } finally {
     await queue.close().catch(() => null);
   }
@@ -127,16 +169,24 @@ export async function GET(req: Request) {
         catalog: { online: false, ttlSeconds: null },
         enrich: { online: false, ttlSeconds: null },
       },
+      flags: {
+        heartbeatMissing: false,
+        activeHung: false,
+        queueDriftDetected: false,
+      },
       queues: null,
     });
   }
 
-  const [catalogAlive, enrichAlive, catalogCounts, enrichCounts, plpCounts, dbFlags] = await Promise.all([
+  const [catalogAlive, enrichAlive, catalogCounts, enrichCounts, plpCounts, catalogHang, enrichHang, drift, dbFlags] = await Promise.all([
     readHeartbeat("workers:catalog:alive"),
     readHeartbeat("workers:enrich:alive"),
     readQueueCounts(queueNames.catalog),
     readQueueCounts(queueNames.enrichment),
     readQueueCounts(queueNames.plpSeo),
+    readActiveHang(queueNames.catalog),
+    readActiveHang(queueNames.enrichment),
+    readCatalogQueueDriftSummary(),
     readDbRunnableFlags(),
   ]);
   const workerStatus = {
@@ -153,6 +203,12 @@ export async function GET(req: Request) {
       dbRunnable: dbFlags.enrichDbRunnable,
     }),
   };
+  const catalogBacklog = (catalogCounts.waiting ?? 0) + (catalogCounts.active ?? 0) + (catalogCounts.delayed ?? 0);
+  const enrichBacklog = (enrichCounts.waiting ?? 0) + (enrichCounts.active ?? 0) + (enrichCounts.delayed ?? 0);
+  const heartbeatMissing =
+    (catalogBacklog > 0 && !catalogAlive.online) || (enrichBacklog > 0 && !enrichAlive.online);
+  const activeHung = catalogHang.hungCount > 0 || enrichHang.hungCount > 0;
+  const queueDriftDetected = drift.driftDetected;
 
   return NextResponse.json({
     ok: true,
@@ -160,6 +216,16 @@ export async function GET(req: Request) {
     redisEnabled: true,
     queueNames,
     workerAlive: { catalog: catalogAlive, enrich: enrichAlive },
+    flags: {
+      heartbeatMissing,
+      activeHung,
+      queueDriftDetected,
+    },
+    activeHang: {
+      catalog: catalogHang,
+      enrich: enrichHang,
+    },
+    drift,
     workerStatus,
     queues: {
       catalog: catalogCounts,
