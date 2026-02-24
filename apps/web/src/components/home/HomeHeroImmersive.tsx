@@ -73,7 +73,7 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
   }, [activeSlide?.category, activeSlide?.subcategory]);
 
   return (
-    <section className="relative isolate min-h-[68svh] overflow-hidden border-b border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)] lg:min-h-[74svh]">
+    <section className="relative isolate min-h-[64svh] overflow-hidden border-b border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)] lg:min-h-[74svh]">
       <div className="home-parallax-media absolute inset-0">
         {slides.length > 0 ? (
           slides.map((slide, index) => {
@@ -107,9 +107,9 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
 
       <div className="absolute inset-0 bg-[linear-gradient(100deg,rgba(10,10,10,0.84)_8%,rgba(10,10,10,0.46)_50%,rgba(10,10,10,0.7)_100%)]" />
 
-      <div className="oda-container relative flex min-h-[68svh] flex-col justify-end gap-6 py-10 sm:min-h-[70svh] sm:py-12 lg:min-h-[74svh] lg:gap-7 lg:py-14">
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-end">
-          <div className="max-w-[58rem] space-y-5">
+      <div className="oda-container relative flex min-h-[64svh] flex-col justify-end gap-4 py-7 sm:min-h-[68svh] sm:gap-6 sm:py-10 lg:min-h-[74svh] lg:gap-7 lg:py-14">
+        <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-end">
+          <div className="max-w-[58rem] space-y-4 sm:space-y-5">
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-[11px] uppercase tracking-[0.28em] text-[color:var(--oda-gold)]">ODA editorial</p>
               <span className="rounded-full border border-white/30 bg-black/25 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/88">
@@ -117,12 +117,12 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
               </span>
             </div>
 
-            <h1 className="font-display text-[3.1rem] leading-[0.94] sm:text-[4.6rem] lg:text-[6.6rem]">
+            <h1 className="font-display text-[2.75rem] leading-[0.92] sm:text-[4.2rem] lg:text-[6.6rem]">
               Descubre moda colombiana
               <br className="hidden md:block" /> con criterio editorial.
             </h1>
 
-            <p className="max-w-2xl text-sm leading-relaxed text-white/82 sm:text-base">
+            <p className="max-w-xl text-[1.04rem] leading-snug text-white/82 sm:max-w-2xl sm:text-base sm:leading-relaxed">
               Curaduria viva con rotacion determinista cada 3 dias. Priorizamos producto real, navegacion rapida y
               composiciones visuales pensadas para descubrir mejor.
             </p>
@@ -146,18 +146,18 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 pb-2">
+        <div className="flex flex-wrap items-center gap-3 pb-1 sm:gap-4 sm:pb-2">
           <Link
             href="/buscar"
             prefetch={false}
-            className="rounded-full bg-[color:var(--oda-cream)] px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-white"
+            className="rounded-full bg-[color:var(--oda-cream)] px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-white sm:px-6 sm:py-3"
           >
             Explorar ahora
           </Link>
           <Link
             href="/unisex"
             prefetch={false}
-            className="rounded-full border border-white/55 px-6 py-3 text-[11px] uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/8"
+            className="rounded-full border border-white/55 px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/8 sm:px-6 sm:py-3"
           >
             Ver catalogo
           </Link>
@@ -185,7 +185,7 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
               ))}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="hidden items-center gap-2 sm:flex">
               <button
                 type="button"
                 onClick={() => setActiveIndex((current) => (current - 1 + slides.length) % slides.length)}
