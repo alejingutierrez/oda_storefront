@@ -1,55 +1,19 @@
-import Image from "next/image";
+import { Suspense } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
-import BrandMarquee from "@/components/home/BrandMarquee";
-import CategoryGallery from "@/components/home/CategoryGallery";
-import ColorSwatchPalette from "@/components/home/ColorSwatchPalette";
-import ConversionCoverageBlock from "@/components/home/ConversionCoverageBlock";
-import CuratedStickyEdit from "@/components/home/CuratedStickyEdit";
-import HomeTrendingGrid from "@/components/home/HomeTrendingGrid";
+import HomeBelowFold from "@/components/home/HomeBelowFold";
 import HomeHeroImmersive from "@/components/home/HomeHeroImmersive";
-import ProductCarousel from "@/components/home/ProductCarousel";
-import RevealOnScroll from "@/components/home/RevealOnScroll";
 import {
-  getBrandLogos,
-  getCategoryHighlights,
-  getColorCombos,
-  getHomeCoverageStats,
   getHeroProduct,
   getMegaMenuData,
-  getNewArrivals,
   getRotationSeed,
-  getStyleGroups,
-  getTrendingPicks,
 } from "@/lib/home-data";
 
 export const revalidate = 3600;
-// Avoid flaky SSG timeouts for `/` in Vercel builds; home data is still cached in `home-data` via `unstable_cache`.
-export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const seed = getRotationSeed();
-  const [
-    menu,
-    hero,
-    newArrivals,
-    categoryHighlights,
-    styleGroups,
-    colorCombos,
-    brandLogos,
-    trending,
-    coverageStats,
-  ] = await Promise.all([
-    getMegaMenuData(),
-    getHeroProduct(seed),
-    getNewArrivals(seed, 8),
-    getCategoryHighlights(seed, 8),
-    getStyleGroups(seed, 3),
-    getColorCombos(seed, 6),
-    getBrandLogos(seed, 24),
-    getTrendingPicks(seed, 8),
-    getHomeCoverageStats(),
-  ]);
+  const [menu, hero] = await Promise.all([getMegaMenuData(), getHeroProduct(seed)]);
 
   return (
     <main className="min-h-screen bg-[color:var(--oda-cream)]">
@@ -57,90 +21,16 @@ export default async function Home() {
 
       <HomeHeroImmersive hero={hero} />
 
-      <section className="oda-container py-16 sm:py-18">
-        <RevealOnScroll>
-          <ProductCarousel
-            title="Novedades que rotan cada 3 dias"
-            subtitle="Nuevo"
-            ctaHref="/novedades"
-            ctaLabel="Ver todo"
-            products={newArrivals}
-            ariaLabel="Carrusel de novedades"
-          />
-        </RevealOnScroll>
-      </section>
-
-      <section className="oda-container pb-18">
-        <RevealOnScroll>
-          <CategoryGallery categories={categoryHighlights} />
-        </RevealOnScroll>
-      </section>
-
-      <section className="oda-container pb-20">
-        <RevealOnScroll>
-          <CuratedStickyEdit styleGroups={styleGroups} />
-        </RevealOnScroll>
-      </section>
-
-      <section className="oda-container pb-20">
-        <RevealOnScroll>
-          <ColorSwatchPalette colorCombos={colorCombos} />
-        </RevealOnScroll>
-      </section>
-
-      <section className="oda-container pb-20">
-        <RevealOnScroll>
-          <BrandMarquee brands={brandLogos} />
-        </RevealOnScroll>
-      </section>
-
-      <section className="oda-container pb-22">
-        <RevealOnScroll>
-          <HomeTrendingGrid products={trending} />
-        </RevealOnScroll>
-      </section>
-
-      <section className="oda-container pb-22">
-        <RevealOnScroll>
-          <ConversionCoverageBlock stats={coverageStats} seed={seed} />
-        </RevealOnScroll>
-      </section>
-
-      <section className="border-y border-[color:var(--oda-border)] bg-white">
-        <div className="oda-container grid gap-8 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
-          <RevealOnScroll className="flex flex-col gap-4 lg:pr-8">
-            <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">ODA Story</p>
-            <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
-              Editorial colombiano, siempre actualizado.
-            </h2>
-            <p className="max-w-xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
-              Mantenemos la curaduria viva usando una semilla determinista de 3 dias y un pipeline continuo de
-              catalogo. Resultado: descubrimiento premium sin perder consistencia de data.
-            </p>
-            <Link
-              href="/unisex"
-              className="mt-2 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
-            >
-              Ver todo el catalogo
-            </Link>
-          </RevealOnScroll>
-
-          <RevealOnScroll>
-            <div className="relative aspect-[4/5] w-full overflow-hidden rounded-[1.45rem] bg-[color:var(--oda-stone)] shadow-[0_32px_90px_rgba(23,21,19,0.16)]">
-              {hero?.imageCoverUrl ? (
-                <Image
-                  src={hero.imageCoverUrl}
-                  alt={hero.name}
-                  fill
-                  sizes="(max-width: 1024px) 80vw, 42vw"
-                  className="object-cover"
-                  unoptimized
-                />
-              ) : null}
-            </div>
-          </RevealOnScroll>
-        </div>
-      </section>
+      <Suspense
+        fallback={
+          <div className="oda-container py-14 sm:py-18">
+            <div className="h-8 w-52 animate-pulse rounded-full bg-white" />
+            <div className="mt-4 h-[58svh] animate-pulse rounded-[1.2rem] bg-white" />
+          </div>
+        }
+      >
+        <HomeBelowFold seed={seed} hero={hero} />
+      </Suspense>
 
       <footer className="bg-[color:var(--oda-cream)]">
         <div className="oda-container grid gap-10 py-12 md:grid-cols-3">
@@ -150,15 +40,15 @@ export default async function Home() {
               Moda colombiana curada, catalogo vivo y experiencia editorial inmersiva.
             </p>
           </div>
-          <div className="flex flex-col gap-2 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-            <Link href="/novedades">Novedades</Link>
-            <Link href="/femenino">Femenino</Link>
-            <Link href="/masculino">Masculino</Link>
-            <Link href="/unisex">Unisex</Link>
-            <Link href="/infantil">Infantil</Link>
+          <div className="flex flex-col gap-2 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)]">
+            <Link href="/novedades" prefetch={false}>Novedades</Link>
+            <Link href="/femenino" prefetch={false}>Femenino</Link>
+            <Link href="/masculino" prefetch={false}>Masculino</Link>
+            <Link href="/unisex" prefetch={false}>Unisex</Link>
+            <Link href="/infantil" prefetch={false}>Infantil</Link>
           </div>
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">Newsletter</span>
+            <span className="text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)]">Newsletter</span>
             <div className="flex gap-2">
               <input
                 type="email"

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { HomeProductCardData } from "@/lib/home-types";
+import { proxiedImageUrl } from "@/lib/image-proxy";
 
 function formatPrice(amount: string | null, currency: string | null) {
   if (!amount || Number(amount) <= 0) {
@@ -28,18 +29,21 @@ export default function HomeProductCard({
   sizes?: string;
 }) {
   const href = product.sourceUrl ?? "#";
+  const imageSrc = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
+  const isProxyImage = Boolean(imageSrc?.startsWith("/api/image-proxy"));
 
   return (
-    <Link href={href} className={`group flex min-w-0 flex-col gap-3 ${className ?? ""}`}>
+    <Link href={href} prefetch={false} className={`group flex min-w-0 flex-col gap-3 ${className ?? ""}`}>
       <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[1.1rem] bg-[color:var(--oda-stone)]">
-        {product.imageCoverUrl ? (
+        {imageSrc ? (
           <Image
-            src={product.imageCoverUrl}
+            src={imageSrc}
             alt={product.name}
             fill
+            quality={58}
             sizes={sizes}
             className="object-cover transition duration-700 ease-out group-hover:scale-[1.04]"
-            unoptimized
+            unoptimized={isProxyImage}
           />
         ) : null}
       </div>

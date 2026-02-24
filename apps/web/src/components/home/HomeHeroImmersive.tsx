@@ -1,10 +1,7 @@
-"use client";
-
-import { useMemo, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import type { HomeProductCardData } from "@/lib/home-types";
+import { proxiedImageUrl } from "@/lib/image-proxy";
 
 function toLabel(value: string | null | undefined) {
   if (!value) return null;
@@ -32,51 +29,35 @@ function formatPrice(amount: string | null, currency: string | null) {
 }
 
 export default function HomeHeroImmersive({ hero }: { hero: HomeProductCardData | null }) {
-  const sectionRef = useRef<HTMLElement | null>(null);
-  const prefersReducedMotion = useReducedMotion();
-  const { scrollYProgress } = useScroll({
-    target: sectionRef,
-    offset: ["start start", "end start"],
-  });
-  const mediaY = useTransform(scrollYProgress, [0, 1], [0, 84]);
-  const mediaScale = useTransform(scrollYProgress, [0, 1], [1, 1.08]);
-  const contextualBadge = useMemo(() => {
-    const values = [toLabel(hero?.category), toLabel(hero?.subcategory)].filter(Boolean) as string[];
-    return values.length > 0 ? values.join(" · ") : "Edicion curada";
-  }, [hero?.category, hero?.subcategory]);
+  const values = [toLabel(hero?.category), toLabel(hero?.subcategory)].filter(Boolean) as string[];
+  const contextualBadge = values.length > 0 ? values.join(" · ") : "Edicion curada";
   const heroPrice = formatPrice(hero?.minPrice ?? null, hero?.currency ?? null);
   const showProductSupport = Boolean(hero?.name && hero?.brandName && hero?.sourceUrl && heroPrice);
+  const heroImageSrc = proxiedImageUrl(hero?.imageCoverUrl ?? null, { productId: hero?.id ?? null, kind: "cover" });
+  const isProxyHeroImage = Boolean(heroImageSrc?.startsWith("/api/image-proxy"));
 
   return (
     <section
-      ref={sectionRef}
       className="relative isolate min-h-[94svh] overflow-hidden border-b border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
     >
-      <motion.div
-        className="home-parallax-media absolute inset-0"
-        style={
-          prefersReducedMotion
-            ? undefined
-            : {
-                y: mediaY,
-                scale: mediaScale,
-              }
-        }
-      >
-        {hero?.imageCoverUrl ? (
+      <div className="home-parallax-media absolute inset-0">
+        {heroImageSrc ? (
           <Image
-            src={hero.imageCoverUrl}
-            alt={hero.name}
+            src={heroImageSrc}
+            alt={hero?.name ?? "Producto destacado"}
             fill
             priority
-            sizes="100vw"
+            fetchPriority="high"
+            decoding="sync"
+            quality={56}
+            sizes="(max-width: 640px) 90vw, 100vw"
             className="object-cover"
-            unoptimized
+            unoptimized={isProxyHeroImage}
           />
         ) : (
           <div className="h-full w-full bg-[radial-gradient(circle_at_28%_20%,rgba(217,195,160,0.46),transparent_55%),radial-gradient(circle_at_76%_8%,rgba(255,255,255,0.12),transparent_44%),linear-gradient(140deg,#151311,#1e1a16)]" />
         )}
-      </motion.div>
+      </div>
 
       <div className="absolute inset-0 bg-[linear-gradient(100deg,rgba(10,10,10,0.84)_10%,rgba(10,10,10,0.48)_48%,rgba(10,10,10,0.72)_100%)]" />
 
@@ -122,12 +103,14 @@ export default function HomeHeroImmersive({ hero }: { hero: HomeProductCardData 
         <div className="flex flex-wrap items-center gap-4 pb-2">
           <Link
             href="/buscar"
+            prefetch={false}
             className="rounded-full bg-[color:var(--oda-cream)] px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-white"
           >
             Explorar ahora
           </Link>
           <Link
             href="/unisex"
+            prefetch={false}
             className="rounded-full border border-white/55 px-6 py-3 text-[11px] uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/8"
           >
             Ver catalogo

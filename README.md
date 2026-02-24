@@ -324,6 +324,12 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Datos de home ampliados: `BrandLogo` incluye `productCount/categoryCount/heroImageUrl` y se agrega `HomeCoverageStats` + `getHomeCoverageStats()` en `src/lib/home-data.ts`.
   - Cobertura “activa”: agregados de home para marcas activas y productos no archivados (sin cambiar APIs públicas).
   - Degradación elegante: cada bloque nuevo tiene fallback visual cuando no hay data (incluye CTAs a `/catalogo` o `/buscar` donde aplica).
+- Home performance tuning (MC-141, 2026-02-24):
+  - Render de home dividido por fold: header+hero first paint y resto de secciones en `HomeBelowFold` con `Suspense` (streaming server-side).
+  - `HomeHeroImmersive` en server-first para reducir JS inicial y estabilizar LCP móvil.
+  - Carga inicial más corta en mobile: menos items visibles al inicio en `HomeTrendingGrid` y `CuratedStickyEdit` (con expansión on-demand).
+  - Se removió `RevealOnScroll` de la composición principal del home para evitar aparición tardía percibida como “pantalla en blanco”.
+  - `proxiedImageUrl` permite entrega directa para hosts soportados por Next (`blob.vercel-storage.com`, `cdn.shopify.com`, `*.myshopify.com`) y mantiene proxy como fallback.
 - Header + mega menu (actualización 2026-02-18):
   - Desktop: layout del header en grid (`auto | minmax(0,1fr) | auto`), input de búsqueda responsivo (`w-[clamp(12rem,18vw,20rem)]`) y panel de megamenu compartido a ancho completo del container.
   - Desktop (ajuste UX): menor densidad vertical en líneas del panel para una lectura más compacta.

@@ -221,6 +221,24 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Estado de corrida en DB y metadata de refresh quedan consistentes (`failed`/`completed`).
 - Estado: **done (2026-02-24)**.
 
+### MC-141 Optimización urgente Home (P0/P1): streaming, payload e interacción móvil
+- Historia: Como usuario de ODA, quiero que la home cargue sin pantallas en blanco y con mejor velocidad en mobile/desktop, para navegar y descubrir catálogo sin fricción.
+- Alcance:
+  - Home en `/` reorganizada con render above-the-fold (header + hero) y secciones below-the-fold en componente async con `Suspense` (`HomeBelowFold`) para reducir costo inicial.
+  - Hero migrado a render server-first (sin lógica client de scroll), manteniendo composición editorial y optimización de imagen LCP (`priority`, `fetchPriority`, `quality` ajustada).
+  - Reducción de carga inicial por sección: límites de items en carrusel/trending/curated, y `CuratedStickyEdit` con grupos iniciales reducidos en mobile + expansión on-demand.
+  - Remoción de wrappers de `RevealOnScroll` en la home para evitar aparición tardía y reducir trabajo JS en primer render.
+  - Optimización de delivery de imágenes: `proxiedImageUrl` deja pasar dominios soportados por Next (`blob.vercel-storage.com`, `cdn.shopify.com`, `*.myshopify.com`) para usar optimización nativa cuando aplica.
+  - Ajustes de `quality` y `sizes` en cards/galerías/home para bajar bytes transferidos sin romper layout.
+- CA:
+  - Home renderiza completa sin overflow horizontal en mobile/desktop.
+  - Sin errores de red en assets críticos durante carga y scroll inicial.
+  - Lighthouse local mobile >= 85 de Performance.
+  - Regresión funcional nula en Hero, Categorías, Curated, Marcas, Trending y bloque de conversión.
+- Datos: sin cambios de contratos API públicos; cambios internos en rendering, composición de secciones e imagen.
+- NF: priorizar CWV y estabilidad percibida en mobile sin alterar identidad visual global.
+- Estado: **done (2026-02-24)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

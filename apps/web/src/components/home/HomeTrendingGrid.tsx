@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { HomeProductCardData } from "@/lib/home-types";
+import { proxiedImageUrl } from "@/lib/image-proxy";
 
 function toLabel(value: string) {
   return value
@@ -38,6 +39,7 @@ function isExternalUrl(url: string) {
 }
 
 export default function HomeTrendingGrid({ products }: { products: HomeProductCardData[] }) {
+  const INITIAL_VISIBLE = 4;
   const categoryOptions = useMemo(() => {
     const counts = new Map<string, number>();
     for (const product of products) {
@@ -57,8 +59,10 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
   }, [products]);
 
   const [activeCategory, setActiveCategory] = useState<string>("todo");
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
   const filteredProducts =
     activeCategory === "todo" ? products : products.filter((product) => (product.category || "").trim() === activeCategory);
+  const visibleProducts = filteredProducts.slice(0, visibleCount);
 
   if (products.length === 0) {
     return (
@@ -72,6 +76,7 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
         </p>
         <Link
           href="/buscar"
+          prefetch={false}
           className="mt-6 inline-flex rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-cream)] transition hover:bg-[color:var(--oda-ink-soft)]"
         >
           Explorar catalogo
@@ -93,7 +98,10 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setActiveCategory("todo")}
+            onClick={() => {
+              setActiveCategory("todo");
+              setVisibleCount(INITIAL_VISIBLE);
+            }}
             className={`rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.2em] transition ${
               activeCategory === "todo"
                 ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
@@ -106,7 +114,10 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
             <button
               key={option.value}
               type="button"
-              onClick={() => setActiveCategory(option.value)}
+              onClick={() => {
+                setActiveCategory(option.value);
+                setVisibleCount(INITIAL_VISIBLE);
+              }}
               className={`rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.2em] transition ${
                 activeCategory === option.value
                   ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
@@ -127,9 +138,11 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-          {filteredProducts.map((product) => {
+          {visibleProducts.map((product) => {
             const href = getHref(product.sourceUrl);
             const external = isExternalUrl(href);
+            const imageSrc = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
+            const isProxyImage = Boolean(imageSrc?.startsWith("/api/image-proxy"));
             return (
               <a
                 key={product.id}
@@ -139,14 +152,15 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
                 className="group flex min-w-0 flex-col gap-3"
               >
                 <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[1.1rem] bg-[color:var(--oda-stone)]">
-                  {product.imageCoverUrl ? (
+                  {imageSrc ? (
                     <Image
-                      src={product.imageCoverUrl}
+                      src={imageSrc}
                       alt={product.name}
                       fill
+                      quality={58}
                       sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                       className="object-cover transition duration-700 ease-out group-hover:scale-[1.04]"
-                      unoptimized
+                      unoptimized={isProxyImage}
                     />
                   ) : null}
                 </div>
@@ -166,6 +180,16 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
           })}
         </div>
       )}
+
+      {filteredProducts.length > visibleCount ? (
+        <button
+          type="button"
+          onClick={() => setVisibleCount((count) => count + INITIAL_VISIBLE)}
+          className="self-start rounded-full border border-[color:var(--oda-border)] bg-white px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
+        >
+          Ver mas picks
+        </button>
+      ) : null}
     </div>
   );
 }
