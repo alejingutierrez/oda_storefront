@@ -4,6 +4,11 @@ import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { readCatalogQueueDriftSummary } from "@/lib/catalog/queue-drift";
 import { getRefreshConfig, isBrandDueForRefresh } from "@/lib/catalog/refresh";
+import {
+  computeOperational100Real,
+  deriveCatalogStatus,
+  hasStatusMismatch,
+} from "@/lib/catalog/refresh-status";
 import { readHeartbeat } from "@/lib/redis";
 
 export const runtime = "nodejs";
@@ -112,6 +117,9 @@ export async function GET(req: Request) {
     const refresh = (metadata.catalog_refresh ?? {}) as Record<string, unknown>;
     const schedulerDue = isBrandDueForRefresh(metadata, now, config);
     const latestRun = latestRunByBrand.get(brand.id);
+    const refreshStatus =
+      typeof refresh.lastStatus === "string" ? refresh.lastStatus : null;
+    const derivedStatus = deriveCatalogStatus(latestRun?.status ?? null, refreshStatus);
     return {
       id: brand.id,
       name: brand.name,
@@ -122,6 +130,8 @@ export async function GET(req: Request) {
       refresh,
       runStatus: latestRun?.status ?? null,
       runUpdatedAt: latestRun?.updatedAt ? latestRun.updatedAt.toISOString() : null,
+      catalogStatus: derivedStatus.catalogStatus,
+      statusDiagnostics: derivedStatus.diagnostics,
       schedulerDue,
       due: schedulerDue,
     };
@@ -182,6 +192,19 @@ export async function GET(req: Request) {
           : null,
     };
   });
+  const statusMismatchRows = rowsWithOperationalStatus
+    .filter((brand) =>
+      hasStatusMismatch(
+        brand.statusDiagnostics?.runStatus ?? null,
+        brand.statusDiagnostics?.refreshStatus ?? null,
+      ),
+    )
+    .map((brand) => ({
+      brandId: brand.id,
+      brandName: brand.name,
+      runStatus: brand.statusDiagnostics?.runStatus ?? null,
+      refreshStatus: brand.statusDiagnostics?.refreshStatus ?? null,
+    }));
 
   const autoEligibleBrands = rowsWithOperationalStatus.filter(isAutoEligible).length;
   const operationalFreshBrands = rowsWithOperationalStatus.filter(isOperationalFresh).length;
@@ -424,6 +447,16 @@ export async function GET(req: Request) {
   };
   const catalogBacklog = queueDrift.waiting + queueDrift.active + queueDrift.delayed;
   const heartbeatMissing = catalogBacklog > 0 && !catalogHeartbeat.online;
+  const activeHungDetected = queueDrift.activeHungDetected || queueDrift.activeZombieCount > 0;
+  const operational100RealSummary = computeOperational100Real({
+    freshBrands: operationalFreshBrands,
+    autoEligibleBrands,
+    heartbeatMissing,
+    queueDriftDetected: queueDrift.driftDetected,
+    activeHungDetected,
+    processingRunsWithoutRecentProgress:
+      processingProgressRow.processingRunsWithoutRecentProgress,
+  });
 
   const alertLimit = 12;
   type RefreshAlert = {
@@ -695,8 +728,17 @@ export async function GET(req: Request) {
       priceChanges: priceChanges?.count ?? 0,
       stockChanges: stockChanges?.count ?? 0,
       stockStatusChanges: stockStatusChanges?.count ?? 0,
+      operationalCoverageExact: operational100RealSummary.operationalCoverageExact,
+      operationalHealthOk: operational100RealSummary.operationalHealthOk,
+      operational100Real: operational100RealSummary.operational100Real,
+      operationalCoveragePctRaw: operational100RealSummary.operationalCoveragePctRaw,
+      operationalCoveragePctDisplay: operational100RealSummary.operationalCoveragePctDisplay,
+      realGapReasons: operational100RealSummary.realGapReasons,
+      statusMismatchCount: statusMismatchRows.length,
+      statusMismatchSample: statusMismatchRows.slice(0, 10),
       queueDriftDetected: queueDrift.driftDetected,
       heartbeatMissing,
+      activeHungDetected,
       processingRuns: processingProgressRow.processingRuns,
       processingRunsWithRecentProgress: processingProgressRow.processingRunsWithRecentProgress,
       processingRunsWithoutRecentProgress:

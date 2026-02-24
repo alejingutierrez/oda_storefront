@@ -239,6 +239,25 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: priorizar CWV y estabilidad percibida en mobile sin alterar identidad visual global.
 - Estado: **done (2026-02-24)**.
 
+### MC-142 `/admin/catalog-refresh`: estado único por marca + “100% real” verificable
+- Historia: Como operador de catálogo, quiero ver un solo estado confiable por marca y un indicador de `100%` que sea auditable, para evitar decisiones sobre señales ambiguas o redondeos engañosos.
+- Alcance:
+  - Nuevo util backend `src/lib/catalog/refresh-status.ts` con `deriveCatalogStatus(runStatus, refreshLastStatus)` y `computeOperational100Real(...)`.
+  - `GET /api/admin/catalog-refresh/state` agrega `brands[].catalogStatus`, `brands[].statusDiagnostics`, y en `summary`:
+    - `operationalCoverageExact`, `operationalHealthOk`, `operational100Real`.
+    - `operationalCoveragePctRaw`, `operationalCoveragePctDisplay` (sin falso 100 por redondeo).
+    - `realGapReasons`, `statusMismatchCount`, `statusMismatchSample`.
+  - UI `CatalogRefreshPanel` reemplaza columna dual `run/refresh` por `Status` único reconciliado, manteniendo detalle técnico en tooltip (`run`, `refresh`, `source`).
+  - Tarjeta nueva “Estado 100% real” con razones explícitas cuando falla.
+  - Script nuevo `apps/web/scripts/reconcile-catalog-refresh-status.mjs` (`--dry-run` default, `--apply`, `--days`, `--brandId`) para reconciliar metadata histórica (`lastStatus`, `lastFinishedAt`, `lastError` cuando aplica) y emitir reporte JSON en `reports/catalog_refresh_diagnostics/`.
+- CA:
+  - No se muestran dos estados principales por marca en la tabla.
+  - `533/534` se muestra como `<100` en display y nunca como `100%` por redondeo.
+  - `operational100Real` solo es `true` con cobertura exacta y salud operativa OK.
+  - Payload conserva `runStatus` y `refresh.lastStatus` para compatibilidad.
+  - Script de reconciliación genera reporte en dry-run y puede aplicar cambios idempotentes.
+- Estado: **done (2026-02-24)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

@@ -23,6 +23,19 @@ type RefreshSummary = {
   priceChanges: number;
   stockChanges: number;
   stockStatusChanges: number;
+  operationalCoverageExact?: boolean;
+  operationalHealthOk?: boolean;
+  operational100Real?: boolean;
+  operationalCoveragePctRaw?: number;
+  operationalCoveragePctDisplay?: number;
+  realGapReasons?: string[];
+  statusMismatchCount?: number;
+  statusMismatchSample?: Array<{
+    brandId: string;
+    brandName: string;
+    runStatus: string | null;
+    refreshStatus: string | null;
+  }>;
 };
 
 type RefreshMeta = {
@@ -59,6 +72,12 @@ type RefreshBrand = {
   refresh: RefreshMeta;
   runStatus?: string | null;
   runUpdatedAt?: string | null;
+  catalogStatus?: string;
+  statusDiagnostics?: {
+    runStatus: string | null;
+    refreshStatus: string | null;
+    source: "run" | "refresh" | "derived";
+  };
   due: boolean;
   schedulerDue?: boolean;
   operationalOverdue?: boolean;
@@ -216,8 +235,50 @@ const formatDate = (value?: string | null) => {
   return date.toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" });
 };
 
-const percent = (value: number, total: number) =>
+const percentRounded = (value: number, total: number) =>
   total > 0 ? `${Math.round((value / total) * 100)}%` : "0%";
+
+const toCoverageDisplayPercent = (fresh: number, total: number) => {
+  if (total <= 0) return 0;
+  if (fresh >= total) return 100;
+  const raw = (fresh / total) * 100;
+  const truncated = Math.floor(raw * 10) / 10;
+  return truncated >= 100 ? 99.9 : Number(truncated.toFixed(1));
+};
+
+const formatCoverageDisplayPercent = (value: number) =>
+  value >= 100 ? "100%" : `${value.toFixed(1)}%`;
+
+const realGapReasonLabel = (reason: string) => {
+  if (reason === "missing_brands") return "Faltan marcas";
+  if (reason === "heartbeat_missing") return "Heartbeat ausente";
+  if (reason === "queue_drift") return "Drift de cola";
+  if (reason === "active_hung") return "Jobs activos colgados";
+  if (reason === "processing_no_progress") return "Runs sin progreso reciente";
+  return reason.replace(/_/g, " ");
+};
+
+const catalogStatusLabel = (status: string | null | undefined) => {
+  const normalized = (status ?? "unknown").toLowerCase();
+  if (normalized === "processing") return "processing";
+  if (normalized === "failed") return "failed";
+  if (normalized === "completed") return "completed";
+  if (normalized === "paused") return "paused";
+  if (normalized === "blocked") return "blocked";
+  if (normalized === "stopped") return "stopped";
+  return normalized;
+};
+
+const catalogStatusBadgeClass = (status: string | null | undefined) => {
+  const normalized = (status ?? "unknown").toLowerCase();
+  if (normalized === "processing") return "bg-blue-100 text-blue-700";
+  if (normalized === "failed") return "bg-rose-100 text-rose-700";
+  if (normalized === "completed") return "bg-emerald-100 text-emerald-700";
+  if (normalized === "paused" || normalized === "blocked" || normalized === "stopped") {
+    return "bg-amber-100 text-amber-700";
+  }
+  return "bg-slate-100 text-slate-700";
+};
 
 const alertLabel = (type: string) => {
   if (type === "stale_brand") return "stale brand";
@@ -483,11 +544,14 @@ export default function CatalogRefreshPanel() {
   const oldestOperationalRefresh = state?.oldestOperationalRefresh ?? null;
 
   const operationalCoverage = useMemo(() => {
-    if (!summary) return { fresh: 0, total: 0, percent: 0 };
+    if (!summary) return { fresh: 0, total: 0, percent: 0, label: "0%" };
     const total = summary.autoEligibleBrands ?? summary.totalBrands;
     const fresh = summary.operationalFreshBrands ?? summary.freshBrands;
-    const value = total > 0 ? Math.round((fresh / total) * 100) : 0;
-    return { fresh, total, percent: value };
+    const value =
+      typeof summary.operationalCoveragePctDisplay === "number"
+        ? summary.operationalCoveragePctDisplay
+        : toCoverageDisplayPercent(fresh, total);
+    return { fresh, total, percent: value, label: formatCoverageDisplayPercent(value) };
   }, [summary]);
 
   const qualityCoverage = useMemo(() => {
@@ -497,6 +561,8 @@ export default function CatalogRefreshPanel() {
     const value = total > 0 ? Math.round((fresh / total) * 100) : 0;
     return { fresh, total, percent: value };
   }, [summary]);
+  const realGapReasons = summary?.realGapReasons ?? [];
+  const statusMismatchSample = summary?.statusMismatchSample ?? [];
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -600,7 +666,7 @@ export default function CatalogRefreshPanel() {
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <p className="text-xs uppercase text-slate-500">Cobertura automatica (operativa)</p>
           <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {percent(operationalCoverage.fresh, operationalCoverage.total)}
+            {operationalCoverage.label}
           </p>
           <p className="text-sm text-slate-600">
             {operationalCoverage.fresh} de {operationalCoverage.total} auto-elegibles
@@ -616,11 +682,51 @@ export default function CatalogRefreshPanel() {
             {summary?.staleBreakdown?.failed ?? 0} - sin estado{" "}
             {summary?.staleBreakdown?.no_status ?? 0}
           </p>
+          {summary?.operationalCoverageExact && !summary?.operationalHealthOk ? (
+            <p className="mt-1 text-xs text-amber-700">
+              Cobertura completa, salud operativa no OK.
+            </p>
+          ) : null}
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-xs uppercase text-slate-500">Estado 100% real</p>
+          <p
+            className={`mt-2 text-2xl font-semibold ${
+              summary?.operational100Real ? "text-emerald-700" : "text-rose-700"
+            }`}
+          >
+            {summary?.operational100Real ? "Sí" : "No"}
+          </p>
+          <p className="text-sm text-slate-600">
+            {summary?.operational100Real
+              ? "Cobertura exacta y salud operativa OK."
+              : summary?.operationalCoverageExact && !summary?.operationalHealthOk
+                ? "Cobertura completa, salud operativa no OK."
+                : "Cobertura/operación con brecha."}
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            Razones:{" "}
+            {realGapReasons.length
+              ? realGapReasons.map((reason) => realGapReasonLabel(reason)).join(" - ")
+              : "ninguna"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Mismatch run/refresh: {summary?.statusMismatchCount ?? 0}
+          </p>
+          {statusMismatchSample.length ? (
+            <p className="mt-1 truncate text-[11px] text-slate-500">
+              Ejemplos:{" "}
+              {statusMismatchSample
+                .slice(0, 2)
+                .map((item) => item.brandName)
+                .join(" - ")}
+            </p>
+          ) : null}
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <p className="text-xs uppercase text-slate-500">Calidad de refresh</p>
           <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {percent(qualityCoverage.fresh, qualityCoverage.total)}
+            {percentRounded(qualityCoverage.fresh, qualityCoverage.total)}
           </p>
           <p className="text-sm text-slate-600">
             {qualityCoverage.fresh} de {qualityCoverage.total} con run exitoso
@@ -850,7 +956,7 @@ export default function CatalogRefreshPanel() {
               <th className="px-3">Plataforma</th>
               <th className="px-3">Productos</th>
               <th className="px-3">Ultimo refresh</th>
-              <th className="px-3">Status run/refresh</th>
+              <th className="px-3">Status</th>
               <th className="px-3">Exito</th>
               <th className="px-3">Fallos</th>
               <th className="px-3">Nuevos</th>
@@ -869,6 +975,13 @@ export default function CatalogRefreshPanel() {
           <tbody>
             {brands.map((brand) => {
               const refresh = brand.refresh ?? {};
+              const catalogStatus = brand.catalogStatus ?? "unknown";
+              const runStatus = brand.statusDiagnostics?.runStatus ?? brand.runStatus ?? null;
+              const refreshStatus =
+                brand.statusDiagnostics?.refreshStatus ??
+                (typeof refresh.lastStatus === "string" ? refresh.lastStatus : null);
+              const statusSource = brand.statusDiagnostics?.source ?? "derived";
+              const statusTooltip = `run=${runStatus ?? "-"}, refresh=${refreshStatus ?? "-"}, source=${statusSource}`;
               return (
                 <tr key={brand.id} className="rounded-xl bg-white shadow-sm">
                   <td className="px-3 py-3 font-semibold text-slate-900">
@@ -889,8 +1002,21 @@ export default function CatalogRefreshPanel() {
                   <td className="px-3 py-3 text-slate-600">
                     {formatDate(refresh.lastFinishedAt ?? refresh.lastCompletedAt)}
                   </td>
-                  <td className="px-3 py-3 text-slate-600" title={refresh.lastError ?? ""}>
-                    {brand.runStatus ?? "-"} / {refresh.lastStatus ?? "-"}
+                  <td
+                    className="px-3 py-3 text-slate-600"
+                    title={
+                      refresh.lastError
+                        ? `${statusTooltip} | error=${refresh.lastError}`
+                        : statusTooltip
+                    }
+                  >
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${catalogStatusBadgeClass(
+                        catalogStatus,
+                      )}`}
+                    >
+                      {catalogStatusLabel(catalogStatus)}
+                    </span>
                   </td>
                   <td className="px-3 py-3 text-slate-600">
                     {typeof refresh.lastRunSuccessRate === "number"
