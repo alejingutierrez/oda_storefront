@@ -173,6 +173,7 @@ export async function GET(req: Request) {
         heartbeatMissing: false,
         activeHung: false,
         queueDriftDetected: false,
+        aggressiveRecoveryRequired: false,
       },
       queues: null,
     });
@@ -186,7 +187,13 @@ export async function GET(req: Request) {
     readQueueCounts(queueNames.plpSeo),
     readActiveHang(queueNames.catalog),
     readActiveHang(queueNames.enrichment),
-    readCatalogQueueDriftSummary(),
+    readCatalogQueueDriftSummary({
+      sampleLimit: Math.max(
+        100,
+        Number(process.env.CATALOG_QUEUE_DRIFT_SAMPLE_LIMIT ?? 500),
+      ),
+      activeHungMinutes,
+    }),
     readDbRunnableFlags(),
   ]);
   const workerStatus = {
@@ -207,8 +214,21 @@ export async function GET(req: Request) {
   const enrichBacklog = (enrichCounts.waiting ?? 0) + (enrichCounts.active ?? 0) + (enrichCounts.delayed ?? 0);
   const heartbeatMissing =
     (catalogBacklog > 0 && !catalogAlive.online) || (enrichBacklog > 0 && !enrichAlive.online);
-  const activeHung = catalogHang.hungCount > 0 || enrichHang.hungCount > 0;
+  const activeHung =
+    catalogHang.hungCount > 0 ||
+    enrichHang.hungCount > 0 ||
+    drift.activeHungDetected ||
+    drift.activeZombieCount > 0;
   const queueDriftDetected = drift.driftDetected;
+  const aggressiveRecoveryRequired = drift.aggressiveRequired;
+  const aggressiveRecoveryReason = drift.aggressiveReason;
+  const zombieByDbState = {
+    completed: drift.activeZombieByReason.item_completed ?? 0,
+    failed_terminal: drift.activeZombieByReason.item_terminal_failed ?? 0,
+    run_not_processing: drift.activeZombieByReason.run_not_processing ?? 0,
+    item_not_in_progress: drift.activeZombieByReason.item_not_in_progress ?? 0,
+    missing_item: drift.activeZombieByReason.missing_item ?? 0,
+  };
 
   return NextResponse.json({
     ok: true,
@@ -220,9 +240,18 @@ export async function GET(req: Request) {
       heartbeatMissing,
       activeHung,
       queueDriftDetected,
+      aggressiveRecoveryRequired,
     },
     activeHang: {
-      catalog: catalogHang,
+      catalog: {
+        ...catalogHang,
+        zombieCount: drift.activeZombieCount,
+        zombieByReason: drift.activeZombieByReason,
+        zombieByDbState,
+        driftHungCount: drift.activeHungCount,
+        aggressiveRecoveryRequired,
+        aggressiveRecoveryReason,
+      },
       enrich: enrichHang,
     },
     drift,

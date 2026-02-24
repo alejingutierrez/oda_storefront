@@ -24,6 +24,10 @@ const reconcileMaxRunsDefault = Math.max(
   1,
   Number(process.env.CATALOG_RECONCILE_MAX_RUNS ?? 50),
 );
+const reconcileActiveHungMinutesDefault = Math.max(
+  5,
+  Number(process.env.CATALOG_RECONCILE_ACTIVE_HUNG_MINUTES ?? 15),
+);
 
 type CatalogItemLite = {
   id: string;
@@ -54,6 +58,11 @@ const readWaitingJobs = async (queue: Queue, limit: number) => {
 const readDelayedJobs = async (queue: Queue, limit: number) => {
   if (limit <= 0) return [];
   return queue.getJobs(["delayed"], 0, Math.max(0, limit - 1), true);
+};
+
+const readActiveJobs = async (queue: Queue, limit: number) => {
+  if (limit <= 0) return [];
+  return queue.getJobs(["active"], 0, Math.max(0, limit - 1), true);
 };
 
 const loadCatalogItemsByIds = async (itemIds: string[]) => {
@@ -139,8 +148,24 @@ export type CatalogQueueDriftSummary = {
   waitingMissingItem: number;
   waitingItemNotQueued: number;
   waitingRunNotProcessing: number;
+  activeSampleSize: number;
+  activeSampleFilteredOut: number;
+  activeMissingItem: number;
+  activeRunNotProcessing: number;
+  activeItemNotInProgress: number;
+  activeItemTerminalFailed: number;
+  activeItemCompleted: number;
+  activeHungThresholdMinutes: number;
+  activeHungCount: number;
+  activeOldestActiveMs: number;
+  activeOldestProcessedOn: string | null;
+  activeZombieCount: number;
+  activeZombieByReason: Record<string, number>;
+  activeHungDetected: boolean;
   runsRunnableWithoutQueueLoad: number;
   runsRunnableWithoutQueueLoadSample: Array<{ runId: string; brandId: string }>;
+  aggressiveRequired: boolean;
+  aggressiveReason: string | null;
   driftDetected: boolean;
 };
 
@@ -148,6 +173,7 @@ export const readCatalogQueueDriftSummary = async (params: {
   sampleLimit?: number;
   brandId?: string | null;
   runId?: string | null;
+  activeHungMinutes?: number;
 } = {}): Promise<CatalogQueueDriftSummary> => {
   if (!isRedisEnabled()) {
     return {
@@ -160,16 +186,40 @@ export const readCatalogQueueDriftSummary = async (params: {
       waitingMissingItem: 0,
       waitingItemNotQueued: 0,
       waitingRunNotProcessing: 0,
+      activeSampleSize: 0,
+      activeSampleFilteredOut: 0,
+      activeMissingItem: 0,
+      activeRunNotProcessing: 0,
+      activeItemNotInProgress: 0,
+      activeItemTerminalFailed: 0,
+      activeItemCompleted: 0,
+      activeHungThresholdMinutes: reconcileActiveHungMinutesDefault,
+      activeHungCount: 0,
+      activeOldestActiveMs: 0,
+      activeOldestProcessedOn: null,
+      activeZombieCount: 0,
+      activeZombieByReason: {},
+      activeHungDetected: false,
       runsRunnableWithoutQueueLoad: 0,
       runsRunnableWithoutQueueLoadSample: [],
+      aggressiveRequired: false,
+      aggressiveReason: null,
       driftDetected: false,
     };
   }
   const sampleLimit = Math.max(10, params.sampleLimit ?? driftSampleLimitDefault);
+  const activeHungMinutes = Math.max(
+    5,
+    params.activeHungMinutes ?? reconcileActiveHungMinutesDefault,
+  );
+  const activeHungThresholdMs = activeHungMinutes * 60 * 1000;
   const queue = getQueue();
   try {
     const counts = await queue.getJobCounts("waiting", "active", "delayed");
-    const waitingJobs = await readWaitingJobs(queue, sampleLimit);
+    const [waitingJobs, activeJobs] = await Promise.all([
+      readWaitingJobs(queue, sampleLimit),
+      readActiveJobs(queue, sampleLimit),
+    ]);
     const waitingIds = Array.from(
       new Set(
         waitingJobs
@@ -177,12 +227,33 @@ export const readCatalogQueueDriftSummary = async (params: {
           .filter((value): value is string => Boolean(value)),
       ),
     );
-    const itemsById = await loadCatalogItemsByIds(waitingIds);
+    const activeIds = Array.from(
+      new Set(
+        activeJobs
+          .map((job) => (typeof job.data?.itemId === "string" ? job.data.itemId : null))
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    const itemsById = await loadCatalogItemsByIds(Array.from(new Set([...waitingIds, ...activeIds])));
 
     let waitingSampleFilteredOut = 0;
     let waitingMissingItem = 0;
     let waitingItemNotQueued = 0;
     let waitingRunNotProcessing = 0;
+    let activeSampleFilteredOut = 0;
+    let activeMissingItem = 0;
+    let activeRunNotProcessing = 0;
+    let activeItemNotInProgress = 0;
+    let activeItemTerminalFailed = 0;
+    let activeItemCompleted = 0;
+    let activeHungCount = 0;
+    let activeOldestActiveMs = 0;
+    let activeOldestProcessedOn: string | null = null;
+    const activeZombieByReason: Record<string, number> = {};
+
+    const pushActiveZombieReason = (reason: string) => {
+      activeZombieByReason[reason] = (activeZombieByReason[reason] ?? 0) + 1;
+    };
 
     waitingJobs.forEach((job) => {
       const itemId = typeof job.data?.itemId === "string" ? job.data.itemId : null;
@@ -200,15 +271,70 @@ export const readCatalogQueueDriftSummary = async (params: {
       if (item.run.status !== "processing") waitingRunNotProcessing += 1;
     });
 
+    const now = Date.now();
+    activeJobs.forEach((job) => {
+      const itemId = typeof job.data?.itemId === "string" ? job.data.itemId : null;
+      if (!itemId) return;
+      const item = itemsById.get(itemId);
+      const processedOn = typeof job.processedOn === "number" ? job.processedOn : null;
+      if (processedOn) {
+        const ageMs = Math.max(0, now - processedOn);
+        if (ageMs >= activeHungThresholdMs) activeHungCount += 1;
+        if (ageMs > activeOldestActiveMs) {
+          activeOldestActiveMs = ageMs;
+          activeOldestProcessedOn = new Date(processedOn).toISOString();
+        }
+      }
+      if (!item) {
+        activeMissingItem += 1;
+        pushActiveZombieReason("missing_item");
+        return;
+      }
+      if (!matchesFilter(item, { brandId: params.brandId, runId: params.runId })) {
+        activeSampleFilteredOut += 1;
+        return;
+      }
+      if (item.run.status !== "processing") {
+        activeRunNotProcessing += 1;
+        pushActiveZombieReason("run_not_processing");
+        return;
+      }
+      if (item.status === "completed") {
+        activeItemCompleted += 1;
+        pushActiveZombieReason("item_completed");
+        return;
+      }
+      if (item.status === "failed" && item.attempts >= CATALOG_MAX_ATTEMPTS) {
+        activeItemTerminalFailed += 1;
+        pushActiveZombieReason("item_terminal_failed");
+        return;
+      }
+      if (item.status !== "in_progress") {
+        activeItemNotInProgress += 1;
+        pushActiveZombieReason("item_not_in_progress");
+      }
+    });
+
     const runsWithoutQueue = await readRunsRunnableWithoutQueueLoad({
       brandId: params.brandId,
       runId: params.runId,
     });
 
+    const activeZombieCount = Object.values(activeZombieByReason).reduce(
+      (acc, value) => acc + value,
+      0,
+    );
+    const activeHungDetected = activeHungCount > 0;
+    let aggressiveReason: string | null = null;
+    if (activeHungDetected && activeZombieCount > 0) aggressiveReason = "active_hung_and_zombies_detected";
+    else if (activeHungDetected) aggressiveReason = "active_hung_detected";
+    else if (activeZombieCount > 0) aggressiveReason = "active_zombies_detected";
+
     const driftDetected =
       waitingMissingItem > 0 ||
       waitingItemNotQueued > 0 ||
       waitingRunNotProcessing > 0 ||
+      activeZombieCount > 0 ||
       runsWithoutQueue.count > 0;
 
     return {
@@ -221,8 +347,24 @@ export const readCatalogQueueDriftSummary = async (params: {
       waitingMissingItem,
       waitingItemNotQueued,
       waitingRunNotProcessing,
+      activeSampleSize: activeJobs.length,
+      activeSampleFilteredOut,
+      activeMissingItem,
+      activeRunNotProcessing,
+      activeItemNotInProgress,
+      activeItemTerminalFailed,
+      activeItemCompleted,
+      activeHungThresholdMinutes: activeHungMinutes,
+      activeHungCount,
+      activeOldestActiveMs,
+      activeOldestProcessedOn,
+      activeZombieCount,
+      activeZombieByReason,
+      activeHungDetected,
       runsRunnableWithoutQueueLoad: runsWithoutQueue.count,
       runsRunnableWithoutQueueLoadSample: runsWithoutQueue.sample,
+      aggressiveRequired: Boolean(aggressiveReason),
+      aggressiveReason,
       driftDetected,
     };
   } finally {
@@ -236,6 +378,9 @@ type ReconcileParams = {
   dryRun?: boolean;
   jobScanLimit?: number;
   reenqueueLimit?: number;
+  activeHungMinutes?: number;
+  scanUntilMatchLimit?: number;
+  includeActiveAnalysis?: boolean;
 };
 
 export type CatalogQueueReconcileResult = {
@@ -249,6 +394,10 @@ export type CatalogQueueReconcileResult = {
   queuedWithoutJobResetToPending: number;
   runsReconciled: number;
   reenqueued: number;
+  activeHungDetected: boolean;
+  activeZombieCount: number;
+  aggressiveRequired: boolean;
+  aggressiveReason: string | null;
   driftBefore: CatalogQueueDriftSummary | null;
   driftAfter: CatalogQueueDriftSummary | null;
 };
@@ -268,6 +417,10 @@ export const reconcileCatalogQueue = async (
       queuedWithoutJobResetToPending: 0,
       runsReconciled: 0,
       reenqueued: 0,
+      activeHungDetected: false,
+      activeZombieCount: 0,
+      aggressiveRequired: false,
+      aggressiveReason: "redis_disabled",
       driftBefore: null,
       driftAfter: null,
     };
@@ -275,73 +428,120 @@ export const reconcileCatalogQueue = async (
 
   const dryRun = params.dryRun ?? false;
   const jobScanLimit = Math.max(50, params.jobScanLimit ?? reconcileJobScanLimitDefault);
+  const scanUntilMatchLimit = Math.max(
+    50,
+    params.scanUntilMatchLimit ?? params.jobScanLimit ?? reconcileJobScanLimitDefault,
+  );
+  const activeHungMinutes = Math.max(
+    5,
+    params.activeHungMinutes ?? reconcileActiveHungMinutesDefault,
+  );
+  const includeActiveAnalysis = params.includeActiveAnalysis ?? true;
   const reenqueueLimit = Math.max(10, params.reenqueueLimit ?? reconcileReenqueueLimitDefault);
   const driftBefore = await readCatalogQueueDriftSummary({
     sampleLimit: Math.min(jobScanLimit, driftSampleLimitDefault),
     brandId: params.brandId,
     runId: params.runId,
+    activeHungMinutes,
   });
 
   const queue = getQueue();
   try {
-    const [waitingJobs, delayedJobs] = await Promise.all([
+    const [waitingJobs, delayedJobs, activeJobs] = await Promise.all([
       readWaitingJobs(queue, jobScanLimit),
       readDelayedJobs(queue, jobScanLimit),
+      includeActiveAnalysis ? readActiveJobs(queue, scanUntilMatchLimit) : Promise.resolve([]),
     ]);
-    const jobs = [...waitingJobs, ...delayedJobs];
-    const scannedJobs = jobs.length;
+    const jobsByState: Array<{ state: "waiting" | "delayed" | "active"; job: Awaited<ReturnType<typeof readWaitingJobs>>[number] }> = [
+      ...waitingJobs.map((job) => ({ state: "waiting" as const, job })),
+      ...delayedJobs.map((job) => ({ state: "delayed" as const, job })),
+      ...activeJobs.map((job) => ({ state: "active" as const, job })),
+    ];
+    const scannedJobs = jobsByState.length;
     const itemIds = Array.from(
       new Set(
-        jobs
-          .map((job) => (typeof job.data?.itemId === "string" ? job.data.itemId : null))
+        jobsByState
+          .map(({ job }) => (typeof job.data?.itemId === "string" ? job.data.itemId : null))
           .filter((value): value is string => Boolean(value)),
       ),
     );
     const itemsById = await loadCatalogItemsByIds(itemIds);
 
     const removedByReason: Record<string, number> = {};
-    const jobsToRemove: Array<{ jobId: string }> = [];
+    const jobsToRemove: Array<{ jobId: string; state: "waiting" | "delayed" | "active" }> = [];
     const itemsToNormalizeQueued: string[] = [];
+    const activeHungThresholdMs = activeHungMinutes * 60 * 1000;
+    const now = Date.now();
 
     const pushReason = (reason: string) => {
       removedByReason[reason] = (removedByReason[reason] ?? 0) + 1;
     };
 
-    jobs.forEach((job) => {
+    jobsByState.forEach(({ state, job }) => {
       const itemId = typeof job.data?.itemId === "string" ? job.data.itemId : null;
       const jobId = job.id ? String(job.id) : itemId;
       if (!itemId || !jobId) {
         if (params.runId || params.brandId) return;
-        pushReason("missing_item_id");
-        jobsToRemove.push({ jobId: jobId ?? "" });
+        const reason = state === "active" ? "active_missing_item_id" : "missing_item_id";
+        pushReason(reason);
+        jobsToRemove.push({ jobId: jobId ?? "", state });
         return;
       }
       const item = itemsById.get(itemId);
       if (!item) {
         if (params.runId || params.brandId) return;
-        pushReason("missing_item");
-        jobsToRemove.push({ jobId });
+        const reason = state === "active" ? "active_missing_item" : "missing_item";
+        pushReason(reason);
+        jobsToRemove.push({ jobId, state });
         return;
       }
       if (!matchesFilter(item, { brandId: params.brandId, runId: params.runId })) return;
+      if (state === "active") {
+        const processedOn = typeof job.processedOn === "number" ? job.processedOn : null;
+        if (item.run.status !== "processing") {
+          pushReason("active_run_not_processing");
+          jobsToRemove.push({ jobId, state });
+          return;
+        }
+        if (item.status === "completed") {
+          pushReason("active_item_completed");
+          jobsToRemove.push({ jobId, state });
+          return;
+        }
+        if (item.status === "failed" && item.attempts >= CATALOG_MAX_ATTEMPTS) {
+          pushReason("active_item_terminal_failed");
+          jobsToRemove.push({ jobId, state });
+          return;
+        }
+        if (item.status !== "in_progress") {
+          pushReason("active_item_not_in_progress");
+          jobsToRemove.push({ jobId, state });
+          return;
+        }
+        if (processedOn && Math.max(0, now - processedOn) >= activeHungThresholdMs) {
+          pushReason("active_hung");
+          jobsToRemove.push({ jobId, state });
+        }
+        return;
+      }
       if (item.run.status !== "processing") {
         pushReason("run_not_processing");
-        jobsToRemove.push({ jobId });
+        jobsToRemove.push({ jobId, state });
         return;
       }
       if (item.status === "completed") {
         pushReason("item_completed");
-        jobsToRemove.push({ jobId });
+        jobsToRemove.push({ jobId, state });
         return;
       }
       if (item.status === "failed" && item.attempts >= CATALOG_MAX_ATTEMPTS) {
         pushReason("item_terminal_failed");
-        jobsToRemove.push({ jobId });
+        jobsToRemove.push({ jobId, state });
         return;
       }
       if (item.status === "in_progress") {
         pushReason("item_in_progress");
-        jobsToRemove.push({ jobId });
+        jobsToRemove.push({ jobId, state });
         return;
       }
       if (item.status === "pending" || item.status === "failed") {
@@ -350,6 +550,7 @@ export const reconcileCatalogQueue = async (
     });
 
     let removedJobs = 0;
+    let activeRemovalBlocked = 0;
     if (!dryRun && jobsToRemove.length) {
       for (const target of jobsToRemove) {
         if (!target.jobId) continue;
@@ -359,6 +560,7 @@ export const reconcileCatalogQueue = async (
           await job.remove();
           removedJobs += 1;
         } catch {
+          if (target.state === "active") activeRemovalBlocked += 1;
           // ignore remove races
         }
       }
@@ -440,7 +642,15 @@ export const reconcileCatalogQueue = async (
       sampleLimit: Math.min(jobScanLimit, driftSampleLimitDefault),
       brandId: params.brandId,
       runId: params.runId,
+      activeHungMinutes,
     });
+
+    const activeZombieCount = driftBefore.activeZombieCount;
+    const activeHungDetected = driftBefore.activeHungDetected;
+    let aggressiveReason: string | null = null;
+    if (activeRemovalBlocked > 0) aggressiveReason = "active_jobs_remove_blocked";
+    else if (driftBefore.aggressiveRequired) aggressiveReason = driftBefore.aggressiveReason;
+    const aggressiveRequired = Boolean(aggressiveReason);
 
     return {
       queueName: catalogQueueName,
@@ -453,6 +663,10 @@ export const reconcileCatalogQueue = async (
       queuedWithoutJobResetToPending,
       runsReconciled: runIds.length,
       reenqueued,
+      activeHungDetected,
+      activeZombieCount,
+      aggressiveRequired,
+      aggressiveReason,
       driftBefore,
       driftAfter,
     };

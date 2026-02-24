@@ -25,6 +25,12 @@ export async function POST(req: Request) {
   const dryRun = boolFromValue(body.dryRun);
   const jobScanLimit = Number(body.jobScanLimit ?? body.sampleLimit);
   const reenqueueLimit = Number(body.reenqueueLimit ?? body.limit);
+  const activeHungMinutes = Number(body.activeHungMinutes ?? body.hungMinutes);
+  const scanUntilMatchLimit = Number(body.scanUntilMatchLimit ?? body.activeScanLimit);
+  const includeActiveAnalysis =
+    body.includeActiveAnalysis === undefined
+      ? undefined
+      : boolFromValue(body.includeActiveAnalysis);
 
   try {
     const result = await reconcileCatalogQueue({
@@ -33,6 +39,9 @@ export async function POST(req: Request) {
       dryRun,
       jobScanLimit: Number.isFinite(jobScanLimit) ? jobScanLimit : undefined,
       reenqueueLimit: Number.isFinite(reenqueueLimit) ? reenqueueLimit : undefined,
+      activeHungMinutes: Number.isFinite(activeHungMinutes) ? activeHungMinutes : undefined,
+      scanUntilMatchLimit: Number.isFinite(scanUntilMatchLimit) ? scanUntilMatchLimit : undefined,
+      includeActiveAnalysis,
     });
     return NextResponse.json(result);
   } catch (error) {
