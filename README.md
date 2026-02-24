@@ -335,6 +335,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - `proxiedImageUrl` permite entrega directa para hosts soportados por Next (`blob.vercel-storage.com`, `cdn.shopify.com`, `*.myshopify.com`) y mantiene proxy como fallback.
 - Home Fase 2 (MC-143, 2026-02-24):
   - Hero V3 rotativo con 4 slides reales (`getHeroSlides`), altura reducida (`74svh` desktop, `68svh` mobile), autoplay + controles manuales, respetando `prefers-reduced-motion`.
+  - Ajuste posterior de UX mobile: primer fold mas compacto en hero (`min-h 64svh` real en mobile con menor densidad vertical) y controles `Anterior/Siguiente` visibles desde `sm` para evitar overflow del fold en pantallas pequenas.
   - Categorías clave migradas a carrusel editorial uniforme (`24` categorías por rotación): desktop en 2 filas y mobile en 1 fila, con navegación por drag/flechas/teclado.
   - Módulo de foco ampliado (`24` productos, hasta `12` subcategorías) con carga móvil incremental (`ver más`) y tracking de click por superficie.
   - Conversión mejorada con preview de beneficios y CTA no interactivo (`Próximamente`), seguida por tres módulos nuevos: `HomePriceDropRail`, `HomeFavoritesRail` y `HomeDailyTrendingRail`.
