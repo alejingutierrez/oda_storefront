@@ -38,6 +38,43 @@ const readForceResult = (value: unknown) =>
       })
     : null;
 
+type ArchiveCandidateState = {
+  reason: "404_real" | "no_products_validated";
+  confidence: number;
+  firstDetectedAt: string | null;
+  lastValidatedAt: string | null;
+  nextCheckAt: string | null;
+  evidenceSummary: Record<string, unknown> | null;
+};
+
+const readArchiveCandidate = (metadata: Record<string, unknown>): ArchiveCandidateState | null => {
+  const lifecycle = readMetadata(metadata.catalog_lifecycle);
+  const entry = readMetadata(lifecycle.archiveCandidate);
+  const reasonRaw = typeof entry.reason === "string" ? entry.reason : null;
+  const reason =
+    reasonRaw === "404_real" || reasonRaw === "no_products_validated"
+      ? reasonRaw
+      : null;
+  if (!reason) return null;
+  const confidenceRaw = Number(entry.confidence);
+  const confidence = Number.isFinite(confidenceRaw)
+    ? Math.max(0, Math.min(1, confidenceRaw))
+    : 0;
+  return {
+    reason,
+    confidence,
+    firstDetectedAt: parseDate(entry.firstDetectedAt)?.toISOString() ?? null,
+    lastValidatedAt: parseDate(entry.lastValidatedAt)?.toISOString() ?? null,
+    nextCheckAt: parseDate(entry.nextCheckAt)?.toISOString() ?? null,
+    evidenceSummary:
+      entry.evidenceSummary &&
+      typeof entry.evidenceSummary === "object" &&
+      !Array.isArray(entry.evidenceSummary)
+        ? (entry.evidenceSummary as Record<string, unknown>)
+        : null,
+  };
+};
+
 export async function GET(req: Request) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
@@ -111,10 +148,78 @@ export async function GET(req: Request) {
   const latestRunByBrand = new Map(
     latestRunRows.map((row) => [row.brandId, { status: row.runStatus, updatedAt: row.runUpdatedAt }]),
   );
+  const archiveWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  let archivedBrandsTotalRow: Array<{ count: number }> = [{ count: 0 }];
+  let archivedLast24hRow: Array<{ count: number }> = [{ count: 0 }];
+  let archiveByReasonRows: Array<{ reason: string; count: number }> = [];
+  let recentArchiveEvents: Array<{
+    id: string;
+    brandId: string;
+    brandName: string;
+    reason: string;
+    createdAt: Date;
+  }> = [];
+  try {
+    [
+      archivedBrandsTotalRow,
+      archivedLast24hRow,
+      archiveByReasonRows,
+      recentArchiveEvents,
+    ] = await Promise.all([
+      prisma.$queryRaw<Array<{ count: number }>>(
+        Prisma.sql`
+          SELECT COUNT(*)::int AS count
+          FROM "brands" b
+          WHERE b."isActive" = false
+            AND COALESCE((b."metadata"->'catalog_lifecycle'->>'status'), '') = 'archived'
+        `,
+      ),
+      prisma.$queryRaw<Array<{ count: number }>>(
+        Prisma.sql`
+          SELECT COUNT(*)::int AS count
+          FROM "brand_archive_events" bae
+          WHERE bae."createdAt" >= ${archiveWindowStart}
+        `,
+      ),
+      prisma.$queryRaw<Array<{ reason: string; count: number }>>(
+        Prisma.sql`
+          SELECT bae.reason, COUNT(*)::int AS count
+          FROM "brand_archive_events" bae
+          GROUP BY bae.reason
+        `,
+      ),
+      prisma.$queryRaw<
+        Array<{
+          id: string;
+          brandId: string;
+          brandName: string;
+          reason: string;
+          createdAt: Date;
+        }>
+      >(
+        Prisma.sql`
+          SELECT
+            bae.id,
+            bae."brandId" AS "brandId",
+            b.name AS "brandName",
+            bae.reason,
+            bae."createdAt" AS "createdAt"
+          FROM "brand_archive_events" bae
+          INNER JOIN "brands" b ON b.id = bae."brandId"
+          WHERE bae."createdAt" >= ${archiveWindowStart}
+          ORDER BY bae."createdAt" DESC
+          LIMIT 200
+        `,
+      ),
+    ]);
+  } catch (error) {
+    console.warn("catalog_refresh.state.archive_metrics_unavailable", error);
+  }
 
   const brandRows = brands.map((brand) => {
     const metadata = readMetadata(brand.metadata);
     const refresh = (metadata.catalog_refresh ?? {}) as Record<string, unknown>;
+    const archiveCandidate = readArchiveCandidate(metadata);
     const schedulerDue = isBrandDueForRefresh(metadata, now, config);
     const latestRun = latestRunByBrand.get(brand.id);
     const refreshStatus =
@@ -134,6 +239,7 @@ export async function GET(req: Request) {
       statusDiagnostics: derivedStatus.diagnostics,
       schedulerDue,
       due: schedulerDue,
+      archiveCandidate,
     };
   });
 
@@ -708,6 +814,45 @@ export async function GET(req: Request) {
     (alert) => !dedupedCriticalAlerts.some((critical) => critical.id === alert.id),
   );
   const alerts = [...dedupedCriticalAlerts, ...dedupedNonCritical].slice(0, alertLimit);
+  const archiveByReason = {
+    "404_real": 0,
+    "no_products_validated": 0,
+  };
+  archiveByReasonRows.forEach((row) => {
+    if (row.reason === "404_real") archiveByReason["404_real"] = row.count;
+    if (row.reason === "no_products_validated") archiveByReason["no_products_validated"] = row.count;
+  });
+  const archiveCandidates = rowsWithOperationalStatus
+    .filter((brand) => Boolean(brand.archiveCandidate))
+    .map((brand) => ({
+      brandId: brand.id,
+      brandName: brand.name,
+      reason: brand.archiveCandidate?.reason ?? "404_real",
+      confidence: brand.archiveCandidate?.confidence ?? 0,
+      evidence: brand.archiveCandidate?.evidenceSummary ?? {},
+      firstDetectedAt: brand.archiveCandidate?.firstDetectedAt ?? null,
+      lastValidatedAt: brand.archiveCandidate?.lastValidatedAt ?? null,
+      nextCheckAt: brand.archiveCandidate?.nextCheckAt ?? null,
+    }))
+    .sort((a, b) => b.confidence - a.confidence);
+  const archiveAlerts = recentArchiveEvents.map((event) => ({
+    id: `archive:${event.id}`,
+    type:
+      event.reason === "404_real"
+        ? "brand_archived_404_real"
+        : "brand_archived_no_products_validated",
+    level: "danger" as const,
+    title:
+      event.reason === "404_real"
+        ? `Marca archivada por 404 real: ${event.brandName}`
+        : `Marca archivada por no_products validado: ${event.brandName}`,
+    detail: `Motivo ${event.reason} · archivada ${event.createdAt.toISOString()}.`,
+    brandId: event.brandId,
+    reason: event.reason,
+    archivedAt: event.createdAt.toISOString(),
+  }));
+  const archivedBrandsTotal = archivedBrandsTotalRow[0]?.count ?? 0;
+  const archivedLast24h = archivedLast24hRow[0]?.count ?? 0;
 
   return NextResponse.json({
     config,
@@ -743,6 +888,10 @@ export async function GET(req: Request) {
       processingRunsWithRecentProgress: processingProgressRow.processingRunsWithRecentProgress,
       processingRunsWithoutRecentProgress:
         processingProgressRow.processingRunsWithoutRecentProgress,
+      archivedBrandsTotal,
+      archivedLast24h,
+      archiveCandidatesCount: archiveCandidates.length,
+      archiveByReason,
     },
     diagnostics: {
       queueDrift,
@@ -770,6 +919,8 @@ export async function GET(req: Request) {
           neverRefreshed: oldestOperationalCandidate.lastOperationalAt === null,
         }
       : null,
+    archiveAlerts,
+    archiveCandidates,
     criticalOperationalAlerts: dedupedCriticalAlerts,
     alerts,
   });

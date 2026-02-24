@@ -308,6 +308,35 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Build de `apps/web` exitoso y smoke crítico sin markers de vacío.
 - Estado: **done (2026-02-24)**.
 
+### MC-145 V5 antiatasco + archivo automático seguro en `/admin/catalog-refresh`
+- Historia: Como operador de catálogo, quiero distinguir automáticamente entre marcas recuperables y marcas definitivamente no publicables (404 real / no_products validado), para cerrar atascos sin churn y mantener front/refresher consistentes.
+- Alcance:
+  - Nuevo motor `archive-policy` con evaluación canónica de candidatos:
+    - `404_real`: volumen mínimo, `completed=0`, ratio 404 alto + recheck HTTP de muestra + root healthy.
+    - `no_products_validated`: señal no-products + discovery multi-fuente en `0` + probes sanos + doble validación separada por >=24h.
+  - Nuevo endpoint admin `POST /api/admin/catalog-refresh/archive-candidates` (`dryRun/apply`, `scope`, `reasons`, `limit`) con evidencia por marca.
+  - Aplicación de archivo transaccional (`applyBrandArchive`):
+    - `brands.isActive=false`, `manualReview=true`, snapshot en `metadata.catalog_lifecycle`.
+    - cierre de runs catálogo/enrichment y normalización de items runnable a terminal.
+    - limpieza de jobs BullMQ por `itemId`.
+    - `products.status='archived'` (sin hard delete).
+  - Auditoría DB nueva: tabla `brand_archive_events` (`reason`, `evidenceJson`, `policyVersion`, `createdBy`, `createdAt`).
+  - Guardrail extractor: `POST /api/admin/catalog-extractor/run` devuelve `409 brand_inactive` para marcas archivadas.
+  - Ocultamiento real en front/user:
+    - `/marca/[slug]` solo resuelve `isActive=true` (marca archivada -> `notFound`).
+    - favoritos/listas GET excluyen productos de marcas inactivas y devuelven `hiddenArchivedCount`.
+    - favoritos/listas POST bloquean alta con `409 product_brand_archived`.
+  - Panel `/admin/catalog-refresh`:
+    - `state` agrega `archiveAlerts`, `archiveCandidates` y KPIs (`archivedBrandsTotal`, `archivedLast24h`, `archiveCandidatesCount`, `archiveByReason`).
+    - UI agrega bloques de “Marcas archivadas recientemente” y “Candidatas a archivo”, con acciones `Dry-run` y `Aplicar`.
+  - Cron refresh integra evaluación automática configurable (`CATALOG_REFRESH_ARCHIVE_AUTOMATION_*`).
+- CA:
+  - Marcas archivadas desaparecen del refresher y de superficies públicas de marca/favoritos/listas.
+  - Cada archivo queda auditado en `brand_archive_events` con evidencia verificable.
+  - Panel muestra alertas/candidatas de archivo con evidencia resumida y acciones operativas.
+  - Runs manuales sobre marcas inactivas no se ejecutan (`409 brand_inactive`).
+- Estado: **done (2026-02-24)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

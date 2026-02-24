@@ -56,9 +56,26 @@ model Brand {
   scrapeJobs            BrandScrapeJob[]
   catalogRuns           CatalogRun[]
   productEnrichmentRuns ProductEnrichmentRun[]
+  archiveEvents         BrandArchiveEvent[]
 
   @@index([name])
   @@map("brands")
+}
+
+model BrandArchiveEvent {
+  id          String   @id @default(uuid())
+  brandId     String
+  brand       Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  reason      String
+  evidenceJson Json?
+  policyVersion String
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  @@index([brandId])
+  @@index([reason])
+  @@index([createdAt])
+  @@map("brand_archive_events")
 }
 
 model CatalogRun {

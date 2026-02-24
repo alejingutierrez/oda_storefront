@@ -26,6 +26,7 @@ import {
   productEnrichmentProvider,
   productEnrichmentSchemaVersion,
 } from "@/lib/product-enrichment/openai";
+import { evaluateArchiveCandidates } from "@/lib/catalog/archive-policy";
 
 type CatalogRefreshMeta = {
   lastStartedAt?: string;
@@ -1781,6 +1782,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   const results: CatalogRefreshBatchResult[] = [];
   let manualReviewAutoClear: Awaited<ReturnType<typeof autoClearManualReviewByEvidence>> | null = null;
   let autoRemediation: CatalogRefreshForceResult[] = [];
+  let archiveAutomation: Awaited<ReturnType<typeof evaluateArchiveCandidates>> | null = null;
 
   const queueEnabled = isCatalogQueueEnabled();
 
@@ -1829,6 +1831,28 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     });
   }
 
+  const archiveAutomationEnabled =
+    (process.env.CATALOG_REFRESH_ARCHIVE_AUTOMATION_ENABLED ?? "true")
+      .trim()
+      .toLowerCase() === "true";
+  const archiveAutomationDryRun =
+    (process.env.CATALOG_REFRESH_ARCHIVE_AUTOMATION_DRY_RUN ?? "false")
+      .trim()
+      .toLowerCase() === "true";
+  const archiveAutomationLimit = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_ARCHIVE_AUTOMATION_LIMIT ?? 10),
+  );
+  if (!options?.brandId && archiveAutomationEnabled) {
+    archiveAutomation = await evaluateArchiveCandidates({
+      dryRun: archiveAutomationDryRun,
+      scope: "all",
+      reasons: ["404_real", "no_products_validated"],
+      limit: archiveAutomationLimit,
+      createdBy: "catalog_refresh_cron",
+    });
+  }
+
   const candidates = options?.brandId
     ? brands.filter((brand) => brand.id === options.brandId)
     : brands.filter((brand) => {
@@ -1853,6 +1877,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       results,
       autoRemediation,
       manualReviewAutoClear,
+      archiveAutomation,
     };
   }
 
@@ -2009,5 +2034,6 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     results,
     autoRemediation,
     manualReviewAutoClear,
+    archiveAutomation,
   };
 };

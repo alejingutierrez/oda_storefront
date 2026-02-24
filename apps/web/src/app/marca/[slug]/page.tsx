@@ -34,8 +34,8 @@ function isIndexableCatalog(params: URLSearchParams) {
 async function resolveBrandBySlug(slug: string) {
   const key = String(slug || "").trim();
   if (!key) return null;
-  return prisma.brand.findUnique({
-    where: { slug: key },
+  return prisma.brand.findFirst({
+    where: { slug: key, isActive: true },
     select: { id: true, slug: true, name: true, description: true },
   });
 }

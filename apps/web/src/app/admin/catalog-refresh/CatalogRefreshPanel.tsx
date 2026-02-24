@@ -36,6 +36,13 @@ type RefreshSummary = {
     runStatus: string | null;
     refreshStatus: string | null;
   }>;
+  archivedBrandsTotal?: number;
+  archivedLast24h?: number;
+  archiveCandidatesCount?: number;
+  archiveByReason?: {
+    "404_real"?: number;
+    "no_products_validated"?: number;
+  };
 };
 
 type RefreshMeta = {
@@ -90,6 +97,14 @@ type RefreshBrand = {
     reason?: string | null;
     status?: string | null;
   } | null;
+  archiveCandidate?: {
+    reason: "404_real" | "no_products_validated";
+    confidence: number;
+    firstDetectedAt: string | null;
+    lastValidatedAt: string | null;
+    nextCheckAt: string | null;
+    evidenceSummary?: Record<string, unknown> | null;
+  } | null;
 };
 
 type RefreshAlert = {
@@ -100,6 +115,28 @@ type RefreshAlert = {
   detail?: string;
   brandId?: string;
   action?: { type: string; label: string; brandId?: string };
+};
+
+type ArchiveAlert = {
+  id: string;
+  type: string;
+  level: "danger";
+  title: string;
+  detail?: string;
+  brandId?: string;
+  reason: "404_real" | "no_products_validated";
+  archivedAt: string;
+};
+
+type ArchiveCandidate = {
+  brandId: string;
+  brandName: string;
+  reason: "404_real" | "no_products_validated";
+  confidence: number;
+  evidence?: Record<string, unknown>;
+  firstDetectedAt?: string | null;
+  lastValidatedAt?: string | null;
+  nextCheckAt?: string | null;
 };
 
 type OperationalMissingBrand = {
@@ -141,6 +178,8 @@ type RefreshState = {
   windowStart: string;
   alerts: RefreshAlert[];
   criticalOperationalAlerts?: RefreshAlert[];
+  archiveAlerts?: ArchiveAlert[];
+  archiveCandidates?: ArchiveCandidate[];
   operationalMissingBrands?: OperationalMissingBrand[];
   oldestOperationalRefresh?: OldestOperationalRefresh | null;
 };
@@ -289,8 +328,13 @@ const alertLabel = (type: string) => {
   if (type === "catalog_queue_drift") return "queue drift";
   if (type === "catalog_worker_heartbeat_missing") return "heartbeat";
   if (type === "catalog_processing_no_recent_progress") return "processing idle";
+  if (type === "brand_archived_404_real") return "archivado 404";
+  if (type === "brand_archived_no_products_validated") return "archivado no_products";
   return type.replace(/_/g, " ");
 };
+
+const archiveReasonLabel = (reason: "404_real" | "no_products_validated") =>
+  reason === "404_real" ? "404 real" : "no products validado";
 
 export default function CatalogRefreshPanel() {
   const [state, setState] = useState<RefreshState | null>(null);
@@ -300,6 +344,8 @@ export default function CatalogRefreshPanel() {
   const [actionId, setActionId] = useState<string | null>(null);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [forcingBrands, setForcingBrands] = useState<Record<string, boolean>>({});
+  const [archiveActionMode, setArchiveActionMode] = useState<"dry-run" | "apply" | null>(null);
+  const [archiveMessage, setArchiveMessage] = useState<string | null>(null);
   const [forceMessages, setForceMessages] = useState<
     Record<string, { level: "info" | "warning" | "danger"; message: string; at: number }>
   >({});
@@ -414,6 +460,43 @@ export default function CatalogRefreshPanel() {
     if (!res.ok) throw new Error("No se pudo reconciliar la cola.");
     await fetchState();
   }, [fetchState]);
+
+  const triggerArchiveCandidates = useCallback(
+    async (apply: boolean) => {
+      setArchiveActionMode(apply ? "apply" : "dry-run");
+      try {
+        const res = await fetch("/api/admin/catalog-refresh/archive-candidates", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            dryRun: !apply,
+            scope: "all",
+            reasons: ["404_real", "no_products_validated"],
+            limit: 50,
+          }),
+        });
+        if (!res.ok) throw new Error("No se pudo evaluar candidatos a archivo.");
+        const payload = (await res.json()) as {
+          evaluated: number;
+          qualified: number;
+          archived: number;
+          skipped: number;
+          dryRun: boolean;
+        };
+        setArchiveMessage(
+          payload.dryRun
+            ? `Dry-run: evaluadas ${payload.evaluated}, calificadas ${payload.qualified}, omitidas ${payload.skipped}.`
+            : `Apply: evaluadas ${payload.evaluated}, archivadas ${payload.archived}, calificadas ${payload.qualified}.`,
+        );
+        await fetchState();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error desconocido");
+      } finally {
+        setArchiveActionMode(null);
+      }
+    },
+    [fetchState],
+  );
 
   const handleAlertAction = useCallback(
     async (alert: RefreshAlert) => {
@@ -542,6 +625,8 @@ export default function CatalogRefreshPanel() {
   }, [state?.alerts, state?.criticalOperationalAlerts]);
   const operationalMissingBrands = state?.operationalMissingBrands ?? [];
   const oldestOperationalRefresh = state?.oldestOperationalRefresh ?? null;
+  const archiveAlerts = state?.archiveAlerts ?? [];
+  const archiveCandidates = state?.archiveCandidates ?? [];
 
   const operationalCoverage = useMemo(() => {
     if (!summary) return { fresh: 0, total: 0, percent: 0, label: "0%" };
@@ -771,6 +856,19 @@ export default function CatalogRefreshPanel() {
           <p className="text-xs uppercase text-slate-500">Estado stock</p>
           <p className="mt-2 text-2xl font-semibold text-slate-900">{summary?.stockStatusChanges ?? 0}</p>
         </div>
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+          <p className="text-xs uppercase text-rose-700">Archivo automatico</p>
+          <p className="mt-2 text-2xl font-semibold text-rose-800">
+            {summary?.archivedBrandsTotal ?? 0}
+          </p>
+          <p className="text-sm text-rose-700">
+            Archivadas total · {summary?.archivedLast24h ?? 0} en 24h
+          </p>
+          <p className="mt-1 text-xs text-rose-700">
+            404 real: {summary?.archiveByReason?.["404_real"] ?? 0} · no_products:{" "}
+            {summary?.archiveByReason?.["no_products_validated"] ?? 0}
+          </p>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-4 xl:grid-cols-3">
@@ -948,6 +1046,89 @@ export default function CatalogRefreshPanel() {
         </div>
       </div>
 
+      <div className="mt-6 grid gap-4 xl:grid-cols-2">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs uppercase text-rose-700">Marcas archivadas recientemente</p>
+            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
+              {archiveAlerts.length}
+            </span>
+          </div>
+          {archiveAlerts.length ? (
+            <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+              {archiveAlerts.map((alert) => (
+                <div key={alert.id} className="rounded-xl border border-rose-200 bg-white px-3 py-2">
+                  <p className="text-sm font-semibold text-rose-800">{alert.title}</p>
+                  <p className="mt-1 text-xs text-rose-700">
+                    {alert.detail ?? `Motivo ${archiveReasonLabel(alert.reason)}`}
+                  </p>
+                  <p className="mt-1 text-[11px] text-rose-600">
+                    Archivada: {formatDate(alert.archivedAt)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-rose-700">Sin archivos en las últimas 24h.</p>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs uppercase text-slate-500">Candidatas a archivo</p>
+            <div className="flex items-center gap-2">
+              <button
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+                onClick={() => triggerArchiveCandidates(false)}
+                disabled={archiveActionMode !== null}
+              >
+                {archiveActionMode === "dry-run" ? "Evaluando..." : "Dry-run"}
+              </button>
+              <button
+                className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
+                onClick={() => triggerArchiveCandidates(true)}
+                disabled={archiveActionMode !== null}
+              >
+                {archiveActionMode === "apply" ? "Aplicando..." : "Aplicar"}
+              </button>
+            </div>
+          </div>
+          {archiveMessage ? (
+            <p className="mt-2 text-xs text-slate-600">{archiveMessage}</p>
+          ) : null}
+          {archiveCandidates.length ? (
+            <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+              {archiveCandidates.map((candidate) => (
+                <div
+                  key={`${candidate.brandId}:${candidate.reason}`}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-sm font-semibold text-slate-900">
+                      {candidate.brandName}
+                    </p>
+                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                      {archiveReasonLabel(candidate.reason)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Confianza {(candidate.confidence * 100).toFixed(0)}% · validado{" "}
+                    {formatDate(candidate.lastValidatedAt ?? null)}
+                  </p>
+                  {candidate.nextCheckAt ? (
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Próxima validación: {formatDate(candidate.nextCheckAt)}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500">Sin candidatas registradas.</p>
+          )}
+        </div>
+      </div>
+
       <div className="mt-6 overflow-x-auto">
         <table className="min-w-full border-separate border-spacing-y-2 text-sm">
           <thead>
@@ -994,6 +1175,11 @@ export default function CatalogRefreshPanel() {
                     {brand.operationalOverdue ? (
                       <span className="ml-2 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
                         overdue
+                      </span>
+                    ) : null}
+                    {brand.archiveCandidate ? (
+                      <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
+                        candidata archivo
                       </span>
                     ) : null}
                   </td>

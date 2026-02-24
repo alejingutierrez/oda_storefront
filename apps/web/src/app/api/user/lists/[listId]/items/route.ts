@@ -38,9 +38,11 @@ export async function GET(
   const pricingConfig = await getPricingConfig();
   const trmUsdCop = getUsdCopTrm(pricingConfig);
   const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+  const visibleItems = items.filter((item) => item.product.brand?.isActive !== false);
+  const hiddenArchivedCount = Math.max(0, items.length - visibleItems.length);
 
   return NextResponse.json({
-    items: items.map((item) => ({
+    items: visibleItems.map((item) => ({
       id: item.id,
       position: item.position,
       createdAt: item.createdAt,
@@ -81,6 +83,7 @@ export async function GET(
           }
         : null,
     })),
+    hiddenArchivedCount,
   });
 }
 
@@ -110,6 +113,20 @@ export async function POST(
 
   if (!body.productId) {
     return NextResponse.json({ error: "productId_required" }, { status: 400 });
+  }
+
+  const product = await prisma.product.findUnique({
+    where: { id: body.productId },
+    select: {
+      id: true,
+      brand: { select: { isActive: true } },
+    },
+  });
+  if (!product) {
+    return NextResponse.json({ error: "product_not_found" }, { status: 404 });
+  }
+  if (product.brand?.isActive === false) {
+    return NextResponse.json({ error: "product_brand_archived" }, { status: 409 });
   }
 
   const existing = await prisma.userListItem.findFirst({

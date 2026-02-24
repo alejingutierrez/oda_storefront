@@ -85,6 +85,9 @@ export async function POST(req: Request) {
     if (!brand || !brand.siteUrl) {
       return NextResponse.json({ error: "brand_not_found" }, { status: 404 });
     }
+    if (!brand.isActive) {
+      return NextResponse.json({ error: "brand_inactive" }, { status: 409 });
+    }
     const metadata =
       brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
         ? (brand.metadata as Record<string, unknown>)

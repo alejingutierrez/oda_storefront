@@ -102,3 +102,16 @@ export const clearEnrichmentQueue = async () => {
     return { cleared: false as const, reason: message };
   }
 };
+
+export const removeEnrichmentJobByItemId = async (itemId: string) => {
+  if (!itemId) return false;
+  const queue = getEnrichmentQueue();
+  try {
+    const job = await queue.getJob(itemId);
+    if (!job) return false;
+    await job.remove();
+    return true;
+  } catch {
+    return false;
+  }
+};

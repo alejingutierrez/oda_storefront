@@ -26,9 +26,13 @@ export async function GET(req: Request) {
   const pricingConfig = await getPricingConfig();
   const trmUsdCop = getUsdCopTrm(pricingConfig);
   const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
+  const visibleFavorites = favorites.filter(
+    (favorite) => favorite.product.brand?.isActive !== false,
+  );
+  const hiddenArchivedCount = Math.max(0, favorites.length - visibleFavorites.length);
 
   return NextResponse.json({
-    favorites: favorites.map((favorite) => ({
+    favorites: visibleFavorites.map((favorite) => ({
       id: favorite.id,
       createdAt: favorite.createdAt,
       product: {
@@ -70,6 +74,7 @@ export async function GET(req: Request) {
           }
         : null,
     })),
+    hiddenArchivedCount,
   });
 }
 
@@ -82,6 +87,20 @@ export async function POST(req: Request) {
   const body = (await req.json()) as { productId: string; variantId?: string | null };
   if (!body.productId) {
     return NextResponse.json({ error: "productId_required" }, { status: 400 });
+  }
+
+  const product = await prisma.product.findUnique({
+    where: { id: body.productId },
+    select: {
+      id: true,
+      brand: { select: { isActive: true } },
+    },
+  });
+  if (!product) {
+    return NextResponse.json({ error: "product_not_found" }, { status: 404 });
+  }
+  if (product.brand?.isActive === false) {
+    return NextResponse.json({ error: "product_brand_archived" }, { status: 409 });
   }
 
   const existing = await prisma.userFavorite.findFirst({
