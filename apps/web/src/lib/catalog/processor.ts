@@ -196,22 +196,6 @@ export const processCatalogItemById = async (
     (adapter.platform === "custom" || (brand.ecommercePlatform ?? "").toLowerCase() === "unknown");
   const brandMetadata = readBrandMetadata(brand);
   const brandCurrencyOverride = getBrandCurrencyOverride(brandMetadata);
-  const refreshMeta =
-    brandMetadata.catalog_refresh &&
-    typeof brandMetadata.catalog_refresh === "object" &&
-    !Array.isArray(brandMetadata.catalog_refresh)
-      ? (brandMetadata.catalog_refresh as Record<string, unknown>)
-      : null;
-  const refreshLastRunId =
-    refreshMeta && typeof refreshMeta.lastRunId === "string" ? refreshMeta.lastRunId : null;
-  const isRefreshRun = refreshLastRunId === run.id;
-  const requireBlobImagesGlobal =
-    (process.env.CATALOG_REQUIRE_BLOB_IMAGES ?? "true").trim().toLowerCase() !== "false";
-  const refreshRequireBlobDefault =
-    (process.env.CATALOG_REFRESH_REQUIRE_BLOB_IMAGES ?? "true").trim().toLowerCase() !==
-    "false";
-  const requireBlobImages =
-    requireBlobImagesGlobal || (isRefreshRun && refreshRequireBlobDefault);
   const pricingConfig = await getPricingConfig();
   const trmUsdCop = getUsdCopTrm(pricingConfig);
   const displayRoundingUnitCop = getDisplayRoundingUnitCop(pricingConfig);
@@ -227,7 +211,6 @@ export const processCatalogItemById = async (
       brandCurrencyOverride,
       trmUsdCop,
       displayRoundingUnitCop,
-      requireBlobImages,
       onStage: (stage) => {
         lastStage = stage;
       },
