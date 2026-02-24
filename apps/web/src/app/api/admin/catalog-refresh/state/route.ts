@@ -20,6 +20,17 @@ const parseDate = (value: unknown) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const readForceResult = (value: unknown) =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as {
+        at?: string;
+        mode?: string;
+        runId?: string | null;
+        reason?: string | null;
+        status?: string | null;
+      })
+    : null;
+
 export async function GET(req: Request) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
@@ -125,10 +136,28 @@ export async function GET(req: Request) {
 
   const rowsWithOperationalStatus = brandRows.map((brand) => {
     const operationalAt = getOperationalTimestamp(brand);
+    const lastForceAttemptAt = parseDate(brand.refresh?.lastForceAttemptAt);
+    const lastForceResult = readForceResult(brand.refresh?.lastForceResult);
     return {
       ...brand,
       lastOperationalAt: operationalAt ? operationalAt.toISOString() : null,
       operationalOverdue: isOperationalOverdue(brand),
+      lastForceAttemptAt: lastForceAttemptAt ? lastForceAttemptAt.toISOString() : null,
+      lastForceResult:
+        lastForceResult && typeof lastForceResult.mode === "string"
+          ? {
+              at:
+                typeof lastForceResult.at === "string" && parseDate(lastForceResult.at)
+                  ? new Date(lastForceResult.at).toISOString()
+                  : null,
+              mode: lastForceResult.mode,
+              runId: typeof lastForceResult.runId === "string" ? lastForceResult.runId : null,
+              reason:
+                typeof lastForceResult.reason === "string" ? lastForceResult.reason : null,
+              status:
+                typeof lastForceResult.status === "string" ? lastForceResult.status : null,
+            }
+          : null,
     };
   });
 
@@ -235,6 +264,90 @@ export async function GET(req: Request) {
 
   const avgRunSuccessRate = successWeighted ?? successMean ?? 0;
 
+  const overdueBrandIds = rowsWithOperationalStatus
+    .filter((brand) => !brand.manualReview && brand.operationalOverdue)
+    .map((brand) => brand.id);
+
+  const latestRunProgressByBrand = new Map<
+    string,
+    {
+      runId: string;
+      status: string;
+      total: number;
+      completed: number;
+      failed: number;
+      pending: number;
+      progressPct: number;
+      updatedAt: string;
+    }
+  >();
+
+  if (overdueBrandIds.length) {
+    const latestRunRows = await prisma.$queryRaw<
+      Array<{
+        brandId: string;
+        runId: string;
+        status: string;
+        updatedAt: Date;
+        totalItems: number | null;
+        completed: number;
+        failed: number;
+        pending: number;
+      }>
+    >(
+      Prisma.sql`
+        WITH latest AS (
+          SELECT DISTINCT ON (cr."brandId")
+            cr."brandId" AS "brandId",
+            cr.id AS "runId",
+            cr.status,
+            cr."updatedAt" AS "updatedAt",
+            cr."totalItems"::int AS "totalItems"
+          FROM "catalog_runs" cr
+          WHERE cr."brandId" IN (${Prisma.join(overdueBrandIds)})
+          ORDER BY cr."brandId", cr."updatedAt" DESC
+        ),
+        counts AS (
+          SELECT
+            ci."runId" AS "runId",
+            COUNT(*) FILTER (WHERE ci.status = 'completed')::int AS completed,
+            COUNT(*) FILTER (WHERE ci.status = 'failed')::int AS failed,
+            COUNT(*) FILTER (WHERE ci.status IN ('pending', 'queued', 'in_progress'))::int AS pending
+          FROM "catalog_items" ci
+          WHERE ci."runId" IN (SELECT "runId" FROM latest)
+          GROUP BY ci."runId"
+        )
+        SELECT
+          l."brandId" AS "brandId",
+          l."runId" AS "runId",
+          l.status,
+          l."updatedAt" AS "updatedAt",
+          l."totalItems" AS "totalItems",
+          COALESCE(c.completed, 0)::int AS completed,
+          COALESCE(c.failed, 0)::int AS failed,
+          COALESCE(c.pending, 0)::int AS pending
+        FROM latest l
+        LEFT JOIN counts c ON c."runId" = l."runId"
+      `,
+    );
+
+    latestRunRows.forEach((row) => {
+      const totalFromCounts = Math.max(0, row.completed + row.failed + row.pending);
+      const total = row.totalItems && row.totalItems > 0 ? row.totalItems : totalFromCounts;
+      const progressPct = total > 0 ? Math.round(((row.completed + row.failed) / total) * 100) : 0;
+      latestRunProgressByBrand.set(row.brandId, {
+        runId: row.runId,
+        status: row.status,
+        total,
+        completed: row.completed,
+        failed: row.failed,
+        pending: row.pending,
+        progressPct,
+        updatedAt: row.updatedAt.toISOString(),
+      });
+    });
+  }
+
   const alertLimit = 12;
   const alerts: Array<{
     id: string;
@@ -250,6 +363,40 @@ export async function GET(req: Request) {
     .filter((brand) => !brand.manualReview && brand.operationalOverdue)
     .slice(0, alertLimit);
   dueBrands.forEach((brand) => {
+    const latestProgress = latestRunProgressByBrand.get(brand.id);
+    const forceMode = brand.lastForceResult?.mode ?? null;
+    if (
+      latestProgress &&
+      ["processing", "paused", "blocked"].includes(latestProgress.status)
+    ) {
+      alerts.push({
+        id: `stale_auto_recovering:${brand.id}`,
+        type: "stale_auto_recovering",
+        level: "info",
+        title: `Auto-recovery en curso: ${brand.name}`,
+        detail: `Run ${latestProgress.runId} · ${latestProgress.completed}/${latestProgress.total} (${latestProgress.progressPct}%) · status ${latestProgress.status}.`,
+        brandId: brand.id,
+        action:
+          latestProgress.status === "paused" || latestProgress.status === "blocked"
+            ? { type: "resume_catalog", label: "Reanudar", brandId: brand.id }
+            : undefined,
+      });
+      return;
+    }
+
+    if (forceMode === "no_refs") {
+      alerts.push({
+        id: `stale_no_refs:${brand.id}`,
+        type: "stale_no_refs",
+        level: "warning",
+        title: `Sin refs para auto-recovery: ${brand.name}`,
+        detail: `Último intento: ${brand.lastForceAttemptAt ?? "sin registro"} · motivo ${brand.lastForceResult?.reason ?? "no_refs"}.`,
+        brandId: brand.id,
+        action: { type: "force_refresh", label: "Forzar refresh", brandId: brand.id },
+      });
+      return;
+    }
+
     alerts.push({
       id: `stale:${brand.id}`,
       type: "stale_brand",
@@ -360,12 +507,16 @@ export async function GET(req: Request) {
       const daysStale = operationalAt
         ? Math.max(0, Math.floor((now.getTime() - operationalAt.getTime()) / (24 * 60 * 60 * 1000)))
         : null;
+      const runProgress = latestRunProgressByBrand.get(brand.id) ?? null;
       return {
         id: brand.id,
         name: brand.name,
         lastOperationalAt: operationalAt ? operationalAt.toISOString() : null,
         lastStatus: typeof brand.refresh?.lastStatus === "string" ? brand.refresh.lastStatus : null,
         daysStale,
+        runProgress,
+        lastForceResult: brand.lastForceResult ?? null,
+        lastForceAttemptAt: brand.lastForceAttemptAt ?? null,
       };
     })
     .sort((a, b) => {

@@ -95,10 +95,12 @@ export const wooCommerceAdapter: CatalogAdapter = {
     if (!baseUrl) return [];
     const origin = safeOrigin(baseUrl);
     const perPage = 50;
+    const maxPagesRaw = Number(process.env.CATALOG_WOO_DISCOVERY_MAX_PAGES ?? 20);
+    const maxPages = Number.isFinite(maxPagesRaw) ? Math.max(1, Math.floor(maxPagesRaw)) : 20;
     const refs: ProductRef[] = [];
     let page = 1;
 
-    while (refs.length < limit) {
+    while (refs.length < limit && page <= maxPages) {
       const url = new URL("/wp-json/wc/store/v1/products", origin);
       url.searchParams.set("per_page", String(perPage));
       url.searchParams.set("page", String(page));

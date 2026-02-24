@@ -39,6 +39,14 @@ type RefreshMeta = {
   lastPriceChanges?: number | null;
   lastStockChanges?: number | null;
   lastStockStatusChanges?: number | null;
+  lastForceAttemptAt?: string | null;
+  lastForceResult?: {
+    at?: string | null;
+    mode?: string | null;
+    runId?: string | null;
+    reason?: string | null;
+    status?: string | null;
+  } | null;
 };
 
 type RefreshBrand = {
@@ -53,6 +61,14 @@ type RefreshBrand = {
   schedulerDue?: boolean;
   operationalOverdue?: boolean;
   lastOperationalAt?: string | null;
+  lastForceAttemptAt?: string | null;
+  lastForceResult?: {
+    at?: string | null;
+    mode?: string | null;
+    runId?: string | null;
+    reason?: string | null;
+    status?: string | null;
+  } | null;
 };
 
 type RefreshAlert = {
@@ -71,6 +87,24 @@ type OperationalMissingBrand = {
   lastOperationalAt: string | null;
   lastStatus: string | null;
   daysStale: number | null;
+  runProgress?: {
+    runId: string;
+    status: string;
+    total: number;
+    completed: number;
+    failed: number;
+    pending: number;
+    progressPct: number;
+    updatedAt: string;
+  } | null;
+  lastForceResult?: {
+    at?: string | null;
+    mode?: string | null;
+    runId?: string | null;
+    reason?: string | null;
+    status?: string | null;
+  } | null;
+  lastForceAttemptAt?: string | null;
 };
 
 type OldestOperationalRefresh = {
@@ -117,6 +151,25 @@ type QueueHealthState = {
 };
 
 const POLL_MS = 15000;
+const QUICK_POLL_MS = 5000;
+const QUICK_POLL_WINDOW_MS = 2 * 60 * 1000;
+
+type ForceResponse = {
+  ok: boolean;
+  accepted: boolean;
+  brandId: string;
+  runId: string | null;
+  mode:
+    | "resumed_existing_run"
+    | "created_from_last_run_refs"
+    | "created_from_product_refs"
+    | "created_from_discovery_fallback"
+    | "already_active_run"
+    | "no_refs";
+  message?: string;
+  reason?: string | null;
+  pollUrl?: string;
+};
 
 const formatDate = (value?: string | null) => {
   if (!value) return "-";
@@ -130,6 +183,8 @@ const percent = (value: number, total: number) =>
 
 const alertLabel = (type: string) => {
   if (type === "stale_brand") return "stale brand";
+  if (type === "stale_auto_recovering") return "auto recovering";
+  if (type === "stale_no_refs") return "sin refs";
   if (type === "catalog_stuck") return "catalog stuck";
   return type.replace(/_/g, " ");
 };
@@ -141,6 +196,12 @@ export default function CatalogRefreshPanel() {
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [forcingBrands, setForcingBrands] = useState<Record<string, boolean>>({});
+  const [forceMessages, setForceMessages] = useState<
+    Record<string, { level: "info" | "warning" | "danger"; message: string; at: number }>
+  >({});
+  const [runProgressFloor, setRunProgressFloor] = useState<Record<string, number>>({});
+  const [quickPollUntil, setQuickPollUntil] = useState<Record<string, number>>({});
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alertsRef = useRef<HTMLDivElement | null>(null);
 
@@ -195,12 +256,47 @@ export default function CatalogRefreshPanel() {
 
   const triggerBrand = useCallback(
     async (brandId: string) => {
+      setForcingBrands((prev) => ({ ...prev, [brandId]: true }));
       try {
-        const res = await fetch(`/api/admin/catalog-refresh/cron?brandId=${brandId}&force=true`);
+        const res = await fetch("/api/admin/catalog-refresh/force", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ brandId, force: true }),
+        });
         if (!res.ok) throw new Error("No se pudo iniciar el refresh de la marca.");
+        const payload = (await res.json()) as ForceResponse;
+        if (payload.mode === "no_refs") {
+          setForceMessages((prev) => ({
+            ...prev,
+            [brandId]: {
+              level: "warning",
+              message: payload.message ?? "Sin refs para iniciar el refresh.",
+              at: Date.now(),
+            },
+          }));
+        } else {
+          setForceMessages((prev) => ({
+            ...prev,
+            [brandId]: {
+              level: "info",
+              message: payload.message ?? "Refresh forzado en ejecución.",
+              at: Date.now(),
+            },
+          }));
+          setQuickPollUntil((prev) => ({
+            ...prev,
+            [brandId]: Date.now() + QUICK_POLL_WINDOW_MS,
+          }));
+        }
         await fetchState();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error desconocido");
+      } finally {
+        setForcingBrands((prev) => {
+          const next = { ...prev };
+          delete next[brandId];
+          return next;
+        });
       }
     },
     [fetchState],
@@ -244,11 +340,18 @@ export default function CatalogRefreshPanel() {
 
   useEffect(() => {
     if (pollRef.current) clearTimeout(pollRef.current);
-    pollRef.current = setTimeout(fetchState, POLL_MS);
+    const nowTs = Date.now();
+    const activeQuickPollEntries = Object.entries(quickPollUntil).filter(([, expiresAt]) => expiresAt > nowTs);
+    if (activeQuickPollEntries.length !== Object.keys(quickPollUntil).length) {
+      const compact = Object.fromEntries(activeQuickPollEntries);
+      setQuickPollUntil(compact);
+    }
+    const pollMs = activeQuickPollEntries.length ? QUICK_POLL_MS : POLL_MS;
+    pollRef.current = setTimeout(fetchState, pollMs);
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
-  }, [fetchState, state, queueHealth]);
+  }, [fetchState, state, queueHealth, quickPollUntil]);
 
   useEffect(() => {
     if (!alertsOpen) return;
@@ -271,6 +374,26 @@ export default function CatalogRefreshPanel() {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [alertsOpen]);
+
+  useEffect(() => {
+    const missing = state?.operationalMissingBrands ?? [];
+    if (!missing.length) return;
+    setRunProgressFloor((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const brand of missing) {
+        const progress = brand.runProgress;
+        if (!progress?.runId) continue;
+        const current = Math.max(0, Math.min(100, progress.progressPct));
+        const floor = next[progress.runId] ?? 0;
+        if (current > floor) {
+          next[progress.runId] = current;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [state?.operationalMissingBrands]);
 
   const summary = state?.summary;
   const brands = state?.brands ?? [];
@@ -471,26 +594,79 @@ export default function CatalogRefreshPanel() {
           </p>
           {operationalMissingBrands.length ? (
             <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
-              {operationalMissingBrands.map((brand) => (
-                <div
-                  key={brand.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{brand.name}</p>
-                    <p className="text-xs text-slate-600">
-                      Ultimo: {formatDate(brand.lastOperationalAt)} - status {brand.lastStatus ?? "-"}
-                    </p>
-                  </div>
-                  <button
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
-                    onClick={() => triggerBrand(brand.id)}
-                    disabled={loading}
+              {operationalMissingBrands.map((brand) => {
+                const progress = brand.runProgress;
+                const progressPct = progress?.runId
+                  ? runProgressFloor[progress.runId] ??
+                    Math.max(0, Math.min(100, progress.progressPct))
+                  : 0;
+                return (
+                  <div
+                    key={brand.id}
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
                   >
-                    Forzar
-                  </button>
-                </div>
-              ))}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{brand.name}</p>
+                        <p className="text-xs text-slate-600">
+                          Ultimo: {formatDate(brand.lastOperationalAt)} - status {brand.lastStatus ?? "-"}
+                        </p>
+                      </div>
+                      <button
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+                        onClick={() => triggerBrand(brand.id)}
+                        disabled={Boolean(forcingBrands[brand.id])}
+                      >
+                        {forcingBrands[brand.id] ? "Forzando..." : "Forzar"}
+                      </button>
+                    </div>
+                    <div className="mt-2">
+                      {brand.runProgress ? (
+                        <>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                            <div
+                              className="h-1.5 rounded-full bg-slate-900 transition-all"
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-600">
+                            {brand.runProgress.status === "completed"
+                              ? "Completado"
+                              : `Procesando ${progressPct}%`}{" "}
+                            · {brand.runProgress.completed}/{brand.runProgress.total} · fallos{" "}
+                            {brand.runProgress.failed}
+                          </p>
+                        </>
+                      ) : forcingBrands[brand.id] ? (
+                        <>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                            <div className="h-1.5 w-1/3 animate-pulse rounded-full bg-slate-500" />
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-600">Iniciando...</p>
+                        </>
+                      ) : null}
+                      {forceMessages[brand.id] ? (
+                        <p
+                          className={`mt-1 text-[11px] ${
+                            forceMessages[brand.id]?.level === "warning"
+                              ? "text-amber-700"
+                              : forceMessages[brand.id]?.level === "danger"
+                                ? "text-rose-700"
+                                : "text-slate-600"
+                          }`}
+                        >
+                          {forceMessages[brand.id]?.message}
+                        </p>
+                      ) : null}
+                      {!forceMessages[brand.id] && brand.lastForceResult?.mode === "no_refs" ? (
+                        <p className="mt-1 text-[11px] text-amber-700">
+                          Sin refs para auto-recovery (último intento {formatDate(brand.lastForceAttemptAt)}).
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="mt-2 text-xs text-slate-500">Cobertura operativa en 100%.</p>

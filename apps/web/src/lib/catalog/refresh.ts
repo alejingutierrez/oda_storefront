@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { discoverCatalogRefs } from "@/lib/catalog/discovery";
 import { enqueueCatalogItems, isCatalogQueueEnabled } from "@/lib/catalog/queue";
+import { CATALOG_MAX_ATTEMPTS } from "@/lib/catalog/constants";
 import {
   createRunWithItems,
   listPendingItems,
@@ -56,6 +57,16 @@ type CatalogRefreshMeta = {
   lastNewFromSitemap?: number;
   lastNewFromAdapter?: number;
   lastError?: string | null;
+  lastForceAttemptAt?: string;
+  lastForceResult?: {
+    at?: string;
+    mode?: string;
+    runId?: string | null;
+    reason?: string | null;
+    status?: string | null;
+  } | null;
+  manualReviewAutoClearedAt?: string | null;
+  manualReviewAutoClearEvidence?: Record<string, unknown> | null;
 };
 
 const readMetadata = (metadata: unknown) =>
@@ -163,6 +174,34 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
   );
   const enrichAutoStart =
     (process.env.CATALOG_REFRESH_ENRICH_AUTO_START ?? "").trim().toLowerCase() === "true";
+  const forceDiscoveryLimit = Math.max(
+    10,
+    Number(process.env.CATALOG_REFRESH_FORCE_DISCOVERY_LIMIT ?? 400),
+  );
+  const forceDiscoveryBudgetMs = Math.max(
+    2000,
+    Number(process.env.CATALOG_REFRESH_FORCE_DISCOVERY_BUDGET_MS ?? 10000),
+  );
+  const autoRemediateMaxBrands = Math.max(
+    0,
+    Number(process.env.CATALOG_REFRESH_AUTO_REMEDIATE_MAX_BRANDS ?? 4),
+  );
+  const autoRemediateCooldownHours = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_AUTO_REMEDIATE_COOLDOWN_HOURS ?? 12),
+  );
+  const manualReviewAutoClearEnabled =
+    (process.env.CATALOG_MANUAL_REVIEW_AUTOCLEAR_ENABLED ?? "true")
+      .trim()
+      .toLowerCase() === "true";
+  const manualReviewAutoClearMinCompletedRuns = Math.max(
+    1,
+    Number(process.env.CATALOG_MANUAL_REVIEW_AUTOCLEAR_MIN_COMPLETED_RUNS ?? 2),
+  );
+  const manualReviewAutoClearWindowDays = Math.max(
+    1,
+    Number(process.env.CATALOG_MANUAL_REVIEW_AUTOCLEAR_WINDOW_DAYS ?? 21),
+  );
   return {
     intervalDays,
     jitterHours,
@@ -184,6 +223,13 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     enrichLookbackDays,
     enrichMaxProducts,
     enrichAutoStart,
+    forceDiscoveryLimit,
+    forceDiscoveryBudgetMs,
+    autoRemediateMaxBrands,
+    autoRemediateCooldownHours,
+    manualReviewAutoClearEnabled,
+    manualReviewAutoClearMinCompletedRuns,
+    manualReviewAutoClearWindowDays,
   };
 };
 
@@ -256,6 +302,627 @@ export const markRefreshStarted = async (
     where: { id: brandId },
     data: { metadata: nextMetadata as Prisma.InputJsonValue },
   });
+};
+
+export type CatalogRefreshForceMode =
+  | "resumed_existing_run"
+  | "created_from_last_run_refs"
+  | "created_from_product_refs"
+  | "created_from_discovery_fallback"
+  | "already_active_run"
+  | "no_refs";
+
+export type CatalogRefreshForceResult = {
+  brandId: string;
+  runId: string | null;
+  mode: CatalogRefreshForceMode;
+  message: string;
+  reason: string | null;
+};
+
+const toInputJsonValue = (value: unknown) =>
+  JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+
+const saveForceResult = async (
+  brandId: string,
+  params: { mode: CatalogRefreshForceMode; runId?: string | null; reason?: string | null },
+) => {
+  const brand = await prisma.brand.findUnique({
+    where: { id: brandId },
+    select: { metadata: true },
+  });
+  if (!brand) return;
+  const metadata = readMetadata(brand.metadata);
+  const nowIso = new Date().toISOString();
+  const nextMetadata = withRefreshMeta(metadata, {
+    lastForceAttemptAt: nowIso,
+    lastForceResult: {
+      at: nowIso,
+      mode: params.mode,
+      runId: params.runId ?? null,
+      reason: params.reason ?? null,
+      status: params.mode === "no_refs" ? "skipped" : "accepted",
+    },
+  });
+  await prisma.brand.update({
+    where: { id: brandId },
+    data: { metadata: toInputJsonValue(nextMetadata) },
+  });
+};
+
+const saveForceAttempt = async (brandId: string) => {
+  const brand = await prisma.brand.findUnique({
+    where: { id: brandId },
+    select: { metadata: true },
+  });
+  if (!brand) return;
+  const metadata = readMetadata(brand.metadata);
+  const nextMetadata = withRefreshMeta(metadata, {
+    lastForceAttemptAt: new Date().toISOString(),
+  });
+  await prisma.brand.update({
+    where: { id: brandId },
+    data: { metadata: toInputJsonValue(nextMetadata) },
+  });
+};
+
+const readString = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const dedupeRefs = (refs: Array<{ url: string }>) =>
+  Array.from(new Map(refs.map((ref) => [ref.url, ref])).values());
+
+const requeueRunItems = async (runId: string, queueEnabled: boolean, enqueueLimit: number) => {
+  await resetQueuedItems(runId, 0);
+  await resetStuckItems(runId, 0);
+  const pending = await listPendingItems(runId, Math.max(10, enqueueLimit));
+  if (queueEnabled && pending.length) {
+    await markItemsQueued(pending.map((item) => item.id));
+    await enqueueCatalogItems(pending);
+  }
+  return pending.length;
+};
+
+const latestRunRefsForForce = async (brandId: string, limit: number) => {
+  const rows = await prisma.$queryRaw<{ runId: string; url: string }[]>(
+    Prisma.sql`
+      WITH latest AS (
+        SELECT cr.id
+        FROM "catalog_runs" cr
+        WHERE cr."brandId" = ${brandId}
+        ORDER BY cr."updatedAt" DESC
+        LIMIT 1
+      )
+      SELECT l.id AS "runId", ci.url
+      FROM latest l
+      INNER JOIN "catalog_items" ci ON ci."runId" = l.id
+      GROUP BY l.id, ci.url
+      ORDER BY ci.url ASC
+      LIMIT ${limit}
+    `,
+  );
+  const runId = rows[0]?.runId ?? null;
+  const refs = rows
+    .map((row) => readString(row.url))
+    .filter((url): url is string => Boolean(url))
+    .map((url) => ({ url }));
+  return { runId, refs: dedupeRefs(refs) };
+};
+
+const productRefsForForce = async (params: {
+  brandId: string;
+  siteUrl: string;
+  platform: string | null;
+  limit: number;
+}) => {
+  const origin = new URL(params.siteUrl).origin;
+  const rows = await prisma.product.findMany({
+    where: {
+      brandId: params.brandId,
+      OR: [{ sourceUrl: { not: null } }, { externalId: { not: null } }],
+    },
+    select: { sourceUrl: true, externalId: true, updatedAt: true },
+    orderBy: { updatedAt: "desc" },
+    take: params.limit,
+  });
+  const refs = rows
+    .map((row) => {
+      const sourceUrl = readString(row.sourceUrl);
+      if (sourceUrl) return { url: sourceUrl };
+      if ((params.platform ?? "").toLowerCase() !== "woocommerce") return null;
+      const externalId = readString(row.externalId);
+      if (!externalId) return null;
+      return { url: new URL(`/wp-json/wc/store/v1/products/${externalId}`, origin).toString() };
+    })
+    .filter((ref): ref is { url: string } => Boolean(ref));
+  return dedupeRefs(refs);
+};
+
+const createForcedRunFromRefs = async (params: {
+  brandId: string;
+  platform: string | null;
+  refs: Array<{ url: string }>;
+  queueEnabled: boolean;
+  enqueueLimit: number;
+}) => {
+  const refs = dedupeRefs(params.refs).filter((ref) => Boolean(readString(ref.url)));
+  if (!refs.length) return null;
+  const run = await createRunWithItems({
+    brandId: params.brandId,
+    platform: params.platform,
+    refs,
+    status: "processing",
+  });
+  await markRefreshStarted(params.brandId, run.id);
+  await requeueRunItems(run.id, params.queueEnabled, params.enqueueLimit);
+  return run.id;
+};
+
+export const startForcedRefreshForBrand = async (params: {
+  brandId: string;
+  force?: boolean;
+  source?: "manual" | "auto_remediate";
+}) => {
+  const force = params.force ?? true;
+  const config = getRefreshConfig();
+  const enqueueLimit = Math.max(
+    1,
+    Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50),
+  );
+  const queueEnabled = isCatalogQueueEnabled();
+  const refsLimit = Math.max(
+    config.forceDiscoveryLimit,
+    Number(process.env.CATALOG_REFRESH_DISCOVERY_LIMIT ?? 5000),
+  );
+
+  const brand = await prisma.brand.findUnique({
+    where: { id: params.brandId },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      siteUrl: true,
+      ecommercePlatform: true,
+      manualReview: true,
+      isActive: true,
+      metadata: true,
+    },
+  });
+  if (!brand || !brand.siteUrl || !brand.isActive) {
+    throw new Error("brand_not_found");
+  }
+  if (brand.manualReview && !force) {
+    throw new Error("brand_manual_review");
+  }
+
+  await saveForceAttempt(brand.id);
+
+  const existingRun = await prisma.catalogRun.findFirst({
+    where: { brandId: brand.id, status: { in: ["processing", "paused", "blocked", "stopped"] } },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  if (existingRun) {
+    const runnable = await prisma.catalogItem.findFirst({
+      where: {
+        runId: existingRun.id,
+        status: { in: ["pending", "queued", "in_progress", "failed"] },
+        attempts: { lt: CATALOG_MAX_ATTEMPTS },
+      },
+      select: { id: true },
+    });
+
+    if (runnable) {
+      const wasProcessing = existingRun.status === "processing";
+      if (!wasProcessing) {
+        await prisma.catalogRun.update({
+          where: { id: existingRun.id },
+          data: {
+            status: "processing",
+            blockReason: null,
+            lastError: null,
+            consecutiveErrors: 0,
+            updatedAt: new Date(),
+          },
+        });
+      }
+      await markRefreshStarted(brand.id, existingRun.id);
+      await requeueRunItems(existingRun.id, queueEnabled, enqueueLimit);
+      const mode: CatalogRefreshForceMode = wasProcessing ? "already_active_run" : "resumed_existing_run";
+      await saveForceResult(brand.id, {
+        mode,
+        runId: existingRun.id,
+        reason: wasProcessing ? "active_run" : "resumed_run",
+      });
+      return {
+        brandId: brand.id,
+        runId: existingRun.id,
+        mode,
+        reason: wasProcessing ? "active_run" : "resumed_run",
+        message:
+          mode === "already_active_run"
+            ? "La marca ya tenía un run activo. Se reencolaron items pendientes."
+            : "Se reanudó una corrida existente para la marca.",
+      } satisfies CatalogRefreshForceResult;
+    }
+
+    if (existingRun.status === "processing") {
+      await saveForceResult(brand.id, {
+        mode: "already_active_run",
+        runId: existingRun.id,
+        reason: "active_run_no_runnable_items",
+      });
+      return {
+        brandId: brand.id,
+        runId: existingRun.id,
+        mode: "already_active_run",
+        reason: "active_run_no_runnable_items",
+        message: "La marca ya tenía un run activo sin items pendientes reintentables.",
+      } satisfies CatalogRefreshForceResult;
+    }
+  }
+
+  const latestRunRefs = await latestRunRefsForForce(brand.id, refsLimit);
+  if (latestRunRefs.refs.length) {
+    const runId = await createForcedRunFromRefs({
+      brandId: brand.id,
+      platform: brand.ecommercePlatform,
+      refs: latestRunRefs.refs,
+      queueEnabled,
+      enqueueLimit,
+    });
+    if (runId) {
+      await saveForceResult(brand.id, {
+        mode: "created_from_last_run_refs",
+        runId,
+        reason: latestRunRefs.runId ? `latest_run:${latestRunRefs.runId}` : "latest_run_refs",
+      });
+      return {
+        brandId: brand.id,
+        runId,
+        mode: "created_from_last_run_refs",
+        reason: latestRunRefs.runId ? `latest_run:${latestRunRefs.runId}` : "latest_run_refs",
+        message: "Se creó una corrida nueva usando URLs del último run.",
+      } satisfies CatalogRefreshForceResult;
+    }
+  }
+
+  const productRefs = await productRefsForForce({
+    brandId: brand.id,
+    siteUrl: brand.siteUrl,
+    platform: brand.ecommercePlatform,
+    limit: refsLimit,
+  });
+  if (productRefs.length) {
+    const runId = await createForcedRunFromRefs({
+      brandId: brand.id,
+      platform: brand.ecommercePlatform,
+      refs: productRefs,
+      queueEnabled,
+      enqueueLimit,
+    });
+    if (runId) {
+      await saveForceResult(brand.id, {
+        mode: "created_from_product_refs",
+        runId,
+        reason: "product_source_urls",
+      });
+      return {
+        brandId: brand.id,
+        runId,
+        mode: "created_from_product_refs",
+        reason: "product_source_urls",
+        message: "Se creó una corrida nueva usando source URLs de productos existentes.",
+      } satisfies CatalogRefreshForceResult;
+    }
+  }
+
+  const discovery = await discoverCatalogRefs({
+    brand: {
+      id: brand.id,
+      name: brand.name,
+      slug: brand.slug,
+      siteUrl: brand.siteUrl,
+      ecommercePlatform: brand.ecommercePlatform,
+    },
+    limit: config.forceDiscoveryLimit,
+    forceSitemap: false,
+    combineSitemapAndAdapter: true,
+    sitemapBudgetMs: config.forceDiscoveryBudgetMs,
+  });
+
+  if (discovery.refs.length) {
+    const runId = await createForcedRunFromRefs({
+      brandId: brand.id,
+      platform: discovery.platformForRun ?? brand.ecommercePlatform,
+      refs: discovery.refs.map((ref) => ({ url: ref.url })),
+      queueEnabled,
+      enqueueLimit,
+    });
+    if (runId) {
+      await saveForceResult(brand.id, {
+        mode: "created_from_discovery_fallback",
+        runId,
+        reason: "discovery_fallback",
+      });
+      return {
+        brandId: brand.id,
+        runId,
+        mode: "created_from_discovery_fallback",
+        reason: "discovery_fallback",
+        message: "Se creó una corrida nueva desde discovery acotado.",
+      } satisfies CatalogRefreshForceResult;
+    }
+  }
+
+  await saveForceResult(brand.id, {
+    mode: "no_refs",
+    reason: "no_refs",
+  });
+  return {
+    brandId: brand.id,
+    runId: null,
+    mode: "no_refs",
+    reason: "no_refs",
+    message: "No se encontraron referencias para iniciar el refresh.",
+  } satisfies CatalogRefreshForceResult;
+};
+
+const hasBlockingManualReason = (metadata: Record<string, unknown>) => {
+  const blockedReasons = new Set([
+    "manual_review_no_products",
+    "manual_review_vtex_no_products",
+    "unreachable",
+    "parked_domain",
+  ]);
+
+  const reviewReason =
+    readMetadata(metadata.catalog_extract_review).reason ??
+    readMetadata(metadata.catalog_extract_finished).reason;
+  if (typeof reviewReason === "string" && blockedReasons.has(reviewReason)) {
+    return reviewReason;
+  }
+
+  const techRisks = readMetadata(metadata.tech_profile).risks;
+  if (Array.isArray(techRisks)) {
+    for (const risk of techRisks) {
+      if (typeof risk === "string" && blockedReasons.has(risk)) {
+        return risk;
+      }
+    }
+  }
+
+  return null;
+};
+
+export const autoClearManualReviewByEvidence = async (options?: {
+  apply?: boolean;
+  limit?: number;
+  now?: Date;
+}) => {
+  const config = getRefreshConfig();
+  const apply = options?.apply ?? true;
+  const now = options?.now ?? new Date();
+  const nowIso = now.toISOString();
+  const windowStart = new Date(
+    now.getTime() - config.manualReviewAutoClearWindowDays * 24 * 60 * 60 * 1000,
+  );
+
+  const report = {
+    enabled: config.manualReviewAutoClearEnabled,
+    evaluatedBrands: 0,
+    eligibleBrands: 0,
+    autoClearedBrands: 0,
+    skippedBlockedReason: 0,
+    skippedInsufficientRuns: 0,
+    minCompletedRuns: config.manualReviewAutoClearMinCompletedRuns,
+    windowDays: config.manualReviewAutoClearWindowDays,
+    candidates: [] as Array<{
+      brandId: string;
+      brandName: string;
+      eligibleRuns: number;
+      blockedReason: string | null;
+      applied: boolean;
+    }>,
+  };
+
+  if (!config.manualReviewAutoClearEnabled) return report;
+
+  const brands = await prisma.brand.findMany({
+    where: {
+      isActive: true,
+      siteUrl: { not: null },
+      manualReview: true,
+    },
+    select: { id: true, name: true, metadata: true },
+    orderBy: { name: "asc" },
+    ...(options?.limit ? { take: options.limit } : {}),
+  });
+
+  if (!brands.length) return report;
+  report.evaluatedBrands = brands.length;
+
+  const brandIds = brands.map((brand) => brand.id);
+  const runStats = await prisma.$queryRaw<
+    Array<{
+      brandId: string;
+      runId: string;
+      updatedAt: Date;
+      totalItems: number;
+      failedItems: number;
+      pendingItems: number;
+    }>
+  >(
+    Prisma.sql`
+      SELECT
+        cr."brandId" AS "brandId",
+        cr.id AS "runId",
+        cr."updatedAt" AS "updatedAt",
+        COALESCE(NULLIF(cr."totalItems", 0), COUNT(ci.*))::int AS "totalItems",
+        COUNT(*) FILTER (WHERE ci.status = 'failed')::int AS "failedItems",
+        COUNT(*) FILTER (WHERE ci.status IN ('pending', 'queued', 'in_progress'))::int AS "pendingItems"
+      FROM "catalog_runs" cr
+      LEFT JOIN "catalog_items" ci ON ci."runId" = cr.id
+      WHERE cr.status = 'completed'
+        AND cr."updatedAt" >= ${windowStart}
+        AND cr."brandId" IN (${Prisma.join(brandIds)})
+      GROUP BY cr.id
+      ORDER BY cr."updatedAt" DESC
+    `,
+  );
+
+  const statsByBrand = new Map<string, typeof runStats>();
+  runStats.forEach((row) => {
+    const list = statsByBrand.get(row.brandId) ?? [];
+    list.push(row);
+    statsByBrand.set(row.brandId, list);
+  });
+
+  for (const brand of brands) {
+    const metadata = readMetadata(brand.metadata);
+    const blockedReason = hasBlockingManualReason(metadata);
+    if (blockedReason) {
+      report.skippedBlockedReason += 1;
+      report.candidates.push({
+        brandId: brand.id,
+        brandName: brand.name,
+        eligibleRuns: 0,
+        blockedReason,
+        applied: false,
+      });
+      continue;
+    }
+
+    const rows = statsByBrand.get(brand.id) ?? [];
+    const eligibleRuns = rows.filter((row) => {
+      if (row.pendingItems > 0) return false;
+      if (row.failedItems > 5) return false;
+      const totalItems = row.totalItems > 0 ? row.totalItems : 0;
+      const failedRate = totalItems > 0 ? row.failedItems / totalItems : 0;
+      return failedRate <= 0.05;
+    });
+
+    if (eligibleRuns.length < config.manualReviewAutoClearMinCompletedRuns) {
+      report.skippedInsufficientRuns += 1;
+      report.candidates.push({
+        brandId: brand.id,
+        brandName: brand.name,
+        eligibleRuns: eligibleRuns.length,
+        blockedReason: null,
+        applied: false,
+      });
+      continue;
+    }
+
+    report.eligibleBrands += 1;
+    const evidence = {
+      source: "catalog_refresh",
+      autoClearedAt: nowIso,
+      eligibleRuns: eligibleRuns.length,
+      minCompletedRuns: config.manualReviewAutoClearMinCompletedRuns,
+      windowDays: config.manualReviewAutoClearWindowDays,
+      runIds: eligibleRuns
+        .slice(0, 10)
+        .map((row) => row.runId),
+    };
+
+    if (apply) {
+      const nextMetadata = withRefreshMeta(metadata, {
+        manualReviewAutoClearedAt: nowIso,
+        manualReviewAutoClearEvidence: evidence,
+      });
+      await prisma.brand.update({
+        where: { id: brand.id },
+        data: {
+          manualReview: false,
+          metadata: toInputJsonValue(nextMetadata),
+        },
+      });
+      report.autoClearedBrands += 1;
+    }
+
+    report.candidates.push({
+      brandId: brand.id,
+      brandName: brand.name,
+      eligibleRuns: eligibleRuns.length,
+      blockedReason: null,
+      applied: apply,
+    });
+  }
+
+  return report;
+};
+
+const autoRemediateOperationalStaleBrands = async (params: {
+  brands: Array<{
+    id: string;
+    name: string;
+    siteUrl: string | null;
+    manualReview: boolean;
+    metadata: unknown;
+  }>;
+  now: Date;
+  config: ReturnType<typeof getRefreshConfig>;
+}) => {
+  const { brands, now, config } = params;
+  if (config.autoRemediateMaxBrands <= 0) return [];
+
+  const staleWindowStart = new Date(now.getTime() - config.intervalDays * 24 * 60 * 60 * 1000);
+  const cooldownMs = config.autoRemediateCooldownHours * 60 * 60 * 1000;
+  const candidates = brands
+    .filter((brand) => !brand.manualReview && Boolean(brand.siteUrl))
+    .map((brand) => {
+      const metadata = readMetadata(brand.metadata);
+      const refresh = readRefreshMeta(metadata);
+      const lastOperationalAt = parseDate(refresh.lastFinishedAt) ?? parseDate(refresh.lastCompletedAt);
+      const lastForceAttemptAt = parseDate(refresh.lastForceAttemptAt);
+      return {
+        brandId: brand.id,
+        lastOperationalAt,
+        lastForceAttemptAt,
+      };
+    })
+    .filter((brand) => !brand.lastOperationalAt || brand.lastOperationalAt < staleWindowStart)
+    .filter(
+      (brand) =>
+        !brand.lastForceAttemptAt || now.getTime() - brand.lastForceAttemptAt.getTime() >= cooldownMs,
+    )
+    .sort((a, b) => {
+      if (!a.lastOperationalAt && !b.lastOperationalAt) return a.brandId.localeCompare(b.brandId);
+      if (!a.lastOperationalAt) return -1;
+      if (!b.lastOperationalAt) return 1;
+      return a.lastOperationalAt.getTime() - b.lastOperationalAt.getTime();
+    })
+    .slice(0, config.autoRemediateMaxBrands);
+
+  const results: CatalogRefreshForceResult[] = [];
+  for (const candidate of candidates) {
+    try {
+      const result = await startForcedRefreshForBrand({
+        brandId: candidate.brandId,
+        force: true,
+        source: "auto_remediate",
+      });
+      results.push(result);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      await saveForceResult(candidate.brandId, {
+        mode: "already_active_run",
+        reason: `auto_remediate_error:${reason.slice(0, 120)}`,
+      });
+      results.push({
+        brandId: candidate.brandId,
+        runId: null,
+        mode: "already_active_run",
+        reason,
+        message: `Auto-remediación fallida: ${reason}`,
+      });
+    }
+  }
+  return results;
 };
 
 export const markRefreshCompleted = async (params: {
@@ -931,6 +1598,8 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   const startedAt = Date.now();
   const now = new Date();
   const results: CatalogRefreshBatchResult[] = [];
+  let manualReviewAutoClear: Awaited<ReturnType<typeof autoClearManualReviewByEvidence>> | null = null;
+  let autoRemediation: CatalogRefreshForceResult[] = [];
 
   const queueEnabled = isCatalogQueueEnabled();
 
@@ -942,6 +1611,12 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   }
   await recoverEnrichmentRuns(config);
   await reconcileStaleRefreshStates();
+  if (!options?.brandId) {
+    manualReviewAutoClear = await autoClearManualReviewByEvidence({
+      apply: true,
+      now,
+    });
+  }
 
   const brands = await prisma.brand.findMany({
     where: {
@@ -958,6 +1633,20 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       ecommercePlatform: true,
     },
   });
+
+  if (!options?.brandId && !options?.force) {
+    autoRemediation = await autoRemediateOperationalStaleBrands({
+      brands: brands.map((brand) => ({
+        id: brand.id,
+        name: brand.name,
+        siteUrl: brand.siteUrl,
+        manualReview: brand.manualReview,
+        metadata: brand.metadata,
+      })),
+      now,
+      config,
+    });
+  }
 
   const candidates = options?.brandId
     ? brands.filter((brand) => brand.id === options.brandId)
@@ -981,6 +1670,8 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       selected: 0,
       brandConcurrency: 0,
       results,
+      autoRemediation,
+      manualReviewAutoClear,
     };
   }
 
@@ -1128,5 +1819,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     selected: selected.length,
     brandConcurrency,
     results,
+    autoRemediation,
+    manualReviewAutoClear,
   };
 };

@@ -3,10 +3,17 @@ import { inferCatalogPlatform } from "@/lib/catalog/platform-detect";
 import { discoverFromSitemap, isLikelyProductUrl, normalizeUrl, safeOrigin } from "@/lib/catalog/utils";
 import type { AdapterContext, ProductRef } from "@/lib/catalog/types";
 
-const discoverRefsFromSitemap = async (siteUrl: string, limit: number) => {
+const discoverRefsFromSitemap = async (
+  siteUrl: string,
+  limit: number,
+  sitemapBudgetMs?: number,
+) => {
   const normalized = normalizeUrl(siteUrl);
   if (!normalized) return [];
-  const urls = await discoverFromSitemap(normalized, limit, { productAware: true });
+  const urls = await discoverFromSitemap(normalized, limit, {
+    productAware: true,
+    budgetMs: sitemapBudgetMs,
+  });
   if (!urls.length) return [];
   const origin = safeOrigin(normalized);
   const filtered = urls.filter((url) => {
@@ -26,11 +33,13 @@ export const discoverCatalogRefs = async ({
   limit,
   forceSitemap,
   combineSitemapAndAdapter,
+  sitemapBudgetMs,
 }: {
   brand: { id: string; name: string; slug: string; siteUrl: string; ecommercePlatform: string | null };
   limit: number;
   forceSitemap?: boolean;
   combineSitemapAndAdapter?: boolean;
+  sitemapBudgetMs?: number;
 }) => {
   let platformForRun = brand.ecommercePlatform ?? null;
   let inferredPlatform: { platform: string; confidence: number } | null = null;
@@ -90,7 +99,11 @@ export const discoverCatalogRefs = async ({
   let sitemapRefs: ProductRef[] = [];
   if (trySitemap) {
     try {
-      sitemapRefs = await discoverRefsFromSitemap(brand.siteUrl, sitemapLimit);
+      sitemapRefs = await discoverRefsFromSitemap(
+        brand.siteUrl,
+        sitemapLimit,
+        sitemapBudgetMs,
+      );
     } catch (error) {
       console.warn("catalog: sitemap discovery failed", {
         siteUrl: brand.siteUrl,
