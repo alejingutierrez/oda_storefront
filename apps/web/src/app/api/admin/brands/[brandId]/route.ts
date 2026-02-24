@@ -5,11 +5,13 @@ import { normalizeSiteUrl } from "@/lib/brand-site";
 import { validateAdminRequest } from "@/lib/auth";
 import { getCatalogQueue, isCatalogQueueEnabled } from "@/lib/catalog/queue";
 import { getEnrichmentQueue, isEnrichmentQueueEnabled } from "@/lib/product-enrichment/queue";
+import { buildEffectiveVariantPriceCopExpr } from "@/lib/catalog-query";
 import {
   getBrandCurrencyOverride,
   getDisplayRoundingUnitCop,
+  getFxRatesToCop,
   getPricingConfig,
-  getUsdCopTrm,
+  getSupportedCurrencies,
 } from "@/lib/pricing";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
 import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
@@ -84,7 +86,6 @@ type RouteParams = {
 type ProductStatsRow = {
   productCount: number;
   avgPrice: Prisma.Decimal | number | string | null;
-  avgPriceCurrency: string | null;
 };
 
 type ProductPreviewRow = {
@@ -106,6 +107,11 @@ const toNumber = (value: Prisma.Decimal | number | string | null | undefined) =>
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+type QueueWithRemovals = {
+  removeJobs?: (jobIds: string[]) => Promise<void>;
+  remove?: (jobId: string) => Promise<unknown>;
+};
+
 export async function GET(req: NextRequest, { params }: RouteParams) {
   const admin = await validateAdminRequest(req);
   if (!admin) {
@@ -123,19 +129,13 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   }
 
   const pricingConfig = await getPricingConfig();
-  const trmUsdCop = getUsdCopTrm(pricingConfig);
+  const pricing = {
+    fxRatesToCop: getFxRatesToCop(pricingConfig),
+    supportedCurrencies: getSupportedCurrencies(pricingConfig),
+  };
   const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
   const brandOverride = getBrandCurrencyOverride(brand.metadata);
-  const forceUsd = brandOverride === "USD";
-  const priceCopExpr = Prisma.sql`
-    (
-      case
-        when ${forceUsd} then (v.price * ${trmUsdCop})
-        when upper(coalesce(v.currency,'')) = 'USD' then (v.price * ${trmUsdCop})
-        else v.price
-      end
-    )
-  `;
+  const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
 
   const lastJob = await prisma.brandScrapeJob.findFirst({
     where: { brandId },
@@ -149,13 +149,13 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         MIN(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)::numeric AS min_price
       FROM "products" p
       JOIN "variants" v ON v."productId" = p.id
+      JOIN "brands" b ON b.id = p."brandId"
       WHERE p."brandId" = ${brandId}
       GROUP BY p.id
     )
     SELECT
       (SELECT COUNT(*)::int FROM "products" p WHERE p."brandId" = ${brandId}) AS "productCount",
-      (SELECT AVG(min_price) FROM product_min) AS "avgPrice",
-      (case when ${forceUsd} then 'USD' else 'COP' end) AS "avgPriceCurrency"
+      (SELECT AVG(min_price) FROM product_min) AS "avgPrice"
   `);
 
   const previewRows = await prisma.$queryRaw<ProductPreviewRow[]>(Prisma.sql`
@@ -167,6 +167,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         p.currency AS currency
       FROM "variants" v
       JOIN "products" p ON p.id = v."productId"
+      JOIN "brands" b ON b.id = p."brandId"
       WHERE p."brandId" = ${brandId}
       GROUP BY v."productId", p.currency
     )
@@ -193,8 +194,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     avgPrice: (() => {
       const value = toNumber(statsRow?.avgPrice);
       const applyMarketingRounding = shouldApplyMarketingRounding({
-        brandOverride: forceUsd,
-        sourceCurrency: statsRow?.avgPriceCurrency ?? null,
+        brandOverride,
+        sourceCurrency: null,
       });
       return toDisplayedCop({
         effectiveCop: value,
@@ -216,7 +217,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     minPrice: (() => {
       const value = toNumber(row.minPrice);
       const applyMarketingRounding = shouldApplyMarketingRounding({
-        brandOverride: forceUsd,
+        brandOverride,
         sourceCurrency: row.currency,
       });
       return toDisplayedCop({
@@ -228,7 +229,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     maxPrice: (() => {
       const value = toNumber(row.maxPrice);
       const applyMarketingRounding = shouldApplyMarketingRounding({
-        brandOverride: forceUsd,
+        brandOverride,
         sourceCurrency: row.currency,
       });
       return toDisplayedCop({
@@ -396,14 +397,15 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     select: { id: true },
   });
 
-  const removeQueueJobs = async (queue: any, ids: string[]) => {
+  const removeQueueJobs = async (queue: QueueWithRemovals | null | undefined, ids: string[]) => {
     if (!ids.length) return;
-    const removeJobs = queue?.removeJobs as ((jobIds: string[]) => Promise<void>) | undefined;
+    const removeJobs = queue?.removeJobs;
+    const removeJob = queue?.remove;
     try {
       if (removeJobs) {
         await removeJobs.call(queue, ids);
-      } else if (queue?.remove) {
-        await Promise.allSettled(ids.map((id) => queue.remove(id)));
+      } else if (removeJob) {
+        await Promise.allSettled(ids.map((id) => removeJob(id)));
       }
     } catch (error) {
       console.warn("brands.delete.queue_remove_failed", error);

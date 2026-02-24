@@ -19,8 +19,9 @@ import {
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
 import {
   getDisplayRoundingUnitCop,
+  getFxRatesToCop,
   getPricingConfig,
-  getUsdCopTrm,
+  getSupportedCurrencies,
 } from "@/lib/pricing";
 import {
   getDynamicPriceStepCop,
@@ -324,7 +325,10 @@ async function getPricingContext() {
   const config = await getPricingConfig();
   return {
     config,
-    pricing: { trmUsdCop: getUsdCopTrm(config) } satisfies PricingSqlContext,
+    pricing: {
+      fxRatesToCop: getFxRatesToCop(config),
+      supportedCurrencies: getSupportedCurrencies(config),
+    } satisfies PricingSqlContext,
     roundingUnitCop: getDisplayRoundingUnitCop(config),
   };
 }

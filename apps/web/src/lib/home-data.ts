@@ -25,7 +25,12 @@ import {
 } from "@/lib/navigation";
 import { buildEffectiveVariantPriceCopExpr } from "@/lib/catalog-query";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
-import { getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm } from "@/lib/pricing";
+import {
+  getDisplayRoundingUnitCop,
+  getFxRatesToCop,
+  getPricingConfig,
+  getSupportedCurrencies,
+} from "@/lib/pricing";
 import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
 
 export type {
@@ -52,7 +57,10 @@ const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 6;
 
 type HomePricingContext = {
-  pricing: { trmUsdCop: number };
+  pricing: {
+    fxRatesToCop: Record<string, number>;
+    supportedCurrencies: string[];
+  };
   displayUnitCop: number;
 };
 
@@ -166,7 +174,10 @@ async function getHomePricingContext(): Promise<HomePricingContext> {
     async () => {
       const pricingConfig = await getPricingConfig();
       return {
-        pricing: { trmUsdCop: getUsdCopTrm(pricingConfig) },
+        pricing: {
+          fxRatesToCop: getFxRatesToCop(pricingConfig),
+          supportedCurrencies: getSupportedCurrencies(pricingConfig),
+        },
         displayUnitCop: getDisplayRoundingUnitCop(pricingConfig),
       };
     },

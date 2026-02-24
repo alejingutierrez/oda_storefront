@@ -4,7 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
 import { buildEffectiveVariantPriceCopExpr } from "@/lib/catalog-query";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
-import { getBrandCurrencyOverride, getDisplayRoundingUnitCop, getPricingConfig, getUsdCopTrm } from "@/lib/pricing";
+import {
+  getBrandCurrencyOverride,
+  getDisplayRoundingUnitCop,
+  getFxRatesToCop,
+  getPricingConfig,
+  getSupportedCurrencies,
+} from "@/lib/pricing";
 import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
 
 export const runtime = "nodejs";
@@ -24,7 +30,10 @@ export async function GET(req: Request) {
   }
 
   const pricingConfig = await getPricingConfig();
-  const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
+  const pricing = {
+    fxRatesToCop: getFxRatesToCop(pricingConfig),
+    supportedCurrencies: getSupportedCurrencies(pricingConfig),
+  };
   const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
   const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
 

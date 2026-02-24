@@ -5,8 +5,8 @@ import { logExperienceEvent } from "@/lib/experience";
 import {
   getBrandCurrencyOverride,
   getDisplayRoundingUnitCop,
+  getFxRatesToCop,
   getPricingConfig,
-  getUsdCopTrm,
   toCopEffective,
 } from "@/lib/pricing";
 import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   });
 
   const pricingConfig = await getPricingConfig();
-  const trmUsdCop = getUsdCopTrm(pricingConfig);
+  const fxRatesToCop = getFxRatesToCop(pricingConfig);
   const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
   const visibleFavorites = favorites.filter(
     (favorite) => favorite.product.brand?.isActive !== false,
@@ -55,7 +55,7 @@ export async function GET(req: Request) {
                 price: Number.isFinite(priceRaw) ? priceRaw : null,
                 currency: favorite.variant!.currency,
                 brandOverride,
-                trmUsdCop,
+                fxRatesToCop,
               });
               const applyMarketingRounding = shouldApplyMarketingRounding({
                 brandOverride,

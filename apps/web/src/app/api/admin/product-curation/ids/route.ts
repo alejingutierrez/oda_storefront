@@ -7,7 +7,7 @@ import {
   parseCatalogFiltersFromSearchParams,
   parseCatalogSortFromSearchParams,
 } from "@/lib/catalog-filters";
-import { getPricingConfig, getUsdCopTrm } from "@/lib/pricing";
+import { getFxRatesToCop, getPricingConfig, getSupportedCurrencies } from "@/lib/pricing";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -27,7 +27,10 @@ export async function GET(req: Request) {
   }
 
   const pricingConfig = await getPricingConfig();
-  const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
+  const pricing = {
+    fxRatesToCop: getFxRatesToCop(pricingConfig),
+    supportedCurrencies: getSupportedCurrencies(pricingConfig),
+  };
 
   const url = new URL(req.url);
   const params = url.searchParams;

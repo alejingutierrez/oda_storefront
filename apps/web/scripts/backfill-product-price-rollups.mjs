@@ -13,6 +13,7 @@ const envLocalPath = path.join(rootDir, ".env.local");
 
 const DEFAULT_TRM_USD_COP = 4200;
 const DEFAULT_MAX_VALID_PRICE = 100_000_000;
+const DEFAULT_SUPPORTED_CURRENCIES = ["COP", "USD", "EUR", "ARS"];
 
 function readEnvValueFromFile(filePath, key) {
   if (!fs.existsSync(filePath)) return "";
@@ -42,18 +43,98 @@ function parsePositiveNumber(raw, fallback) {
   return value;
 }
 
-function resolveTrmFromConfig(valueJson, fallback) {
-  let parsed = valueJson;
-  if (typeof parsed === "string") {
+function parseJson(value) {
+  if (!value) return null;
+  if (typeof value === "string") {
     try {
-      parsed = JSON.parse(parsed);
+      return JSON.parse(value);
     } catch {
-      parsed = null;
+      return null;
     }
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return fallback;
-  const trm = Number(parsed.usd_cop_trm);
-  return Number.isFinite(trm) && trm > 0 ? trm : fallback;
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  return null;
+}
+
+function normalizeCurrencyCode(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(normalized)) return null;
+  return normalized;
+}
+
+function resolvePricingConfig(valueJson, fallbackUsdTrm) {
+  const parsed = parseJson(valueJson);
+  const usdRoot = Number(parsed?.usd_cop_trm);
+  const fallbackUsd =
+    Number.isFinite(usdRoot) && usdRoot > 0
+      ? usdRoot
+      : fallbackUsdTrm;
+
+  const fxRatesToCop = {};
+  const fxObj =
+    parsed?.fx_rates_to_cop && typeof parsed.fx_rates_to_cop === "object" && !Array.isArray(parsed.fx_rates_to_cop)
+      ? parsed.fx_rates_to_cop
+      : null;
+  if (fxObj) {
+    for (const [rawCode, rawRate] of Object.entries(fxObj)) {
+      const code = normalizeCurrencyCode(rawCode);
+      const rate = Number(rawRate);
+      if (!code) continue;
+      if (!Number.isFinite(rate) || rate <= 0) continue;
+      fxRatesToCop[code] = rate;
+    }
+  }
+  if (!Number.isFinite(fxRatesToCop.USD) || fxRatesToCop.USD <= 0) {
+    fxRatesToCop.USD = fallbackUsd;
+  }
+
+  const supportedRaw = Array.isArray(parsed?.supported_currencies)
+    ? parsed.supported_currencies
+    : DEFAULT_SUPPORTED_CURRENCIES;
+  const supportedCurrencies = Array.from(
+    new Set(
+      supportedRaw
+        .map((value) => normalizeCurrencyCode(value))
+        .filter(Boolean),
+    ),
+  );
+  supportedCurrencies.push("COP");
+  supportedCurrencies.push("USD");
+  Object.keys(fxRatesToCop).forEach((code) => supportedCurrencies.push(code));
+
+  return {
+    fxRatesToCop,
+    supportedCurrencies: Array.from(new Set(supportedCurrencies)),
+  };
+}
+
+function buildEffectivePriceExpr({
+  priceExpr,
+  currencyExpr,
+  brandOverrideExpr,
+  fxRatesToCop,
+  supportedCurrencies,
+}) {
+  const supported = new Set(
+    (supportedCurrencies ?? [])
+      .map((value) => normalizeCurrencyCode(value))
+      .filter(Boolean),
+  );
+  supported.add("COP");
+  supported.add("USD");
+  const rates = Object.entries(fxRatesToCop ?? {})
+    .map(([rawCode, rawRate]) => ({ code: normalizeCurrencyCode(rawCode), rate: Number(rawRate) }))
+    .filter((entry) => entry.code && entry.code !== "COP" && supported.has(entry.code) && Number.isFinite(entry.rate) && entry.rate > 0);
+
+  const caseForCurrency = (expr) => {
+    const rateWhens = rates
+      .map((entry) => `when ${expr} = '${entry.code}' then (${priceExpr} * ${entry.rate})`)
+      .join(" ");
+    return `(case when ${expr} = 'COP' then ${priceExpr} ${rateWhens} else null end)`;
+  };
+
+  return `(case when ${brandOverrideExpr} <> '' then ${caseForCurrency(brandOverrideExpr)} else ${caseForCurrency(currencyExpr)} end)`;
 }
 
 async function main() {
@@ -82,13 +163,21 @@ async function main() {
       ["pricing_config"],
     );
 
-    const trmUsdCop = resolveTrmFromConfig(pricingRow.rows[0]?.valueJson ?? null, trmFallback);
+    const pricing = resolvePricingConfig(pricingRow.rows[0]?.valueJson ?? null, trmFallback);
+    const effectivePriceExpr = buildEffectivePriceExpr({
+      priceExpr: "v.price",
+      currencyExpr: "upper(coalesce(v.currency, ''))",
+      brandOverrideExpr: "upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', ''))",
+      fxRatesToCop: pricing.fxRatesToCop,
+      supportedCurrencies: pricing.supportedCurrencies,
+    });
 
     console.log(
       JSON.stringify(
         {
           step: "backfill-product-price-rollups:start",
-          trmUsdCop,
+          fxRatesToCop: pricing.fxRatesToCop,
+          supportedCurrencies: pricing.supportedCurrencies,
           maxValidPrice,
         },
         null,
@@ -104,13 +193,7 @@ async function main() {
           select
             p.id as product_id,
             ((coalesce(v.stock, 0) > 0) or coalesce(v."stockStatus" in ('in_stock','preorder'), false)) as in_stock,
-            (
-              case
-                when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD' then (v.price * $1::numeric)
-                when upper(coalesce(v.currency, '')) = 'USD' then (v.price * $1::numeric)
-                else v.price
-              end
-            ) as effective_price
+            ${effectivePriceExpr} as effective_price
           from products p
           join brands b on b.id = p."brandId"
           left join variants v on v."productId" = p.id
@@ -119,8 +202,8 @@ async function main() {
           select
             product_id,
             bool_or(in_stock) as has_in_stock,
-            min(case when in_stock and effective_price > 0 and effective_price <= $2::numeric then effective_price end) as min_price,
-            max(case when in_stock and effective_price > 0 and effective_price <= $2::numeric then effective_price end) as max_price
+            min(case when in_stock and effective_price > 0 and effective_price <= $1::numeric then effective_price end) as min_price,
+            max(case when in_stock and effective_price > 0 and effective_price <= $1::numeric then effective_price end) as max_price
           from variant_prices
           group by product_id
         )
@@ -133,7 +216,7 @@ async function main() {
         from rollups r
         where r.product_id = p.id
       `,
-      [trmUsdCop, maxValidPrice],
+      [maxValidPrice],
     );
 
     const elapsedMs = Math.max(0, Math.round(performance.now() - startedAt));

@@ -173,6 +173,8 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - No permite editar `description` ni campos SEO. Preserva `products.metadata.enrichment` y registra trazabilidad en `products.metadata.enrichment_human`.
 - Panel `/admin/pricing` (precios/TRM):
   - Editar TRM USD→COP y reglas de auto-clasificación de marcas USD (umbral % + `COP <` sospechoso + incluir variantes ya en USD).
+  - Configuración multi-moneda a COP (`fx_rates_to_cop` + `supported_currencies`) con soporte inicial `COP/USD/EUR/ARS`.
+  - `usd_cop_trm` se mantiene por compatibilidad y se sincroniza con `fx_rates_to_cop.USD` en API/config.
   - Botón para correr el auto-marcado bajo demanda (además del cron diario).
   - Tabla de marcas con override USD (promover a manual o limpiar override).
 - Panel `/admin/taxonomy` (taxonomía):

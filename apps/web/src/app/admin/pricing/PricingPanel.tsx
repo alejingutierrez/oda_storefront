@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 
 type PricingConfig = {
   usd_cop_trm: number;
+  fx_rates_to_cop: Record<string, number>;
+  supported_currencies: string[];
   display_rounding: { unit_cop: number; mode: "nearest" };
   auto_usd_brand: {
     enabled: boolean;
@@ -72,6 +74,12 @@ function toNumber(value: string, fallback: number) {
   return parsed;
 }
 
+function toOptionalPositiveNumber(value: string): number | null {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
 function formatPct(value: number) {
   if (!Number.isFinite(value)) return "—";
   return `${value.toFixed(2)}%`;
@@ -89,6 +97,9 @@ export default function PricingPanel() {
   const [lastRun, setLastRun] = useState<AutoUsdRunSummary | null>(null);
 
   const [draftTrm, setDraftTrm] = useState("");
+  const [draftFxUsd, setDraftFxUsd] = useState("");
+  const [draftFxEur, setDraftFxEur] = useState("");
+  const [draftFxArs, setDraftFxArs] = useState("");
   const [draftEnabled, setDraftEnabled] = useState(true);
   const [draftThresholdPct, setDraftThresholdPct] = useState("");
   const [draftCopLt, setDraftCopLt] = useState("");
@@ -127,6 +138,9 @@ export default function PricingPanel() {
       setDryRun(dryJson as AutoUsdDryRun);
 
       setDraftTrm(String(nextConfig.usd_cop_trm ?? ""));
+      setDraftFxUsd(String(nextConfig.fx_rates_to_cop?.USD ?? nextConfig.usd_cop_trm ?? ""));
+      setDraftFxEur(String(nextConfig.fx_rates_to_cop?.EUR ?? ""));
+      setDraftFxArs(String(nextConfig.fx_rates_to_cop?.ARS ?? ""));
       setDraftEnabled(Boolean(nextConfig.auto_usd_brand?.enabled));
       setDraftThresholdPct(String(nextConfig.auto_usd_brand?.threshold_pct ?? ""));
       setDraftCopLt(String(nextConfig.auto_usd_brand?.cop_price_lt ?? ""));
@@ -147,7 +161,21 @@ export default function PricingPanel() {
       setError(null);
       try {
         const next = {
-          usd_cop_trm: toInt(draftTrm, config?.usd_cop_trm ?? 4200),
+          usd_cop_trm: toNumber(
+            draftFxUsd || draftTrm,
+            config?.fx_rates_to_cop?.USD ?? config?.usd_cop_trm ?? 4200,
+          ),
+          fx_rates_to_cop: (() => {
+            const rates = { ...(config?.fx_rates_to_cop ?? {}) };
+            const usd = toOptionalPositiveNumber(draftFxUsd || draftTrm);
+            const eur = toOptionalPositiveNumber(draftFxEur);
+            const ars = toOptionalPositiveNumber(draftFxArs);
+            if (usd !== null) rates.USD = usd;
+            if (eur !== null) rates.EUR = eur;
+            if (ars !== null) rates.ARS = ars;
+            return rates;
+          })(),
+          supported_currencies: ["COP", "USD", "EUR", "ARS"],
           auto_usd_brand: {
             enabled: Boolean(draftEnabled),
             threshold_pct: toNumber(draftThresholdPct, config?.auto_usd_brand?.threshold_pct ?? 75),
@@ -173,7 +201,19 @@ export default function PricingPanel() {
         setError(err instanceof Error ? err.message : String(err));
       }
     });
-  }, [config, draftCopLt, draftEnabled, draftIncludeUsd, draftThresholdPct, draftTrm, refresh, startTransition]);
+  }, [
+    config,
+    draftCopLt,
+    draftEnabled,
+    draftFxArs,
+    draftFxEur,
+    draftFxUsd,
+    draftIncludeUsd,
+    draftThresholdPct,
+    draftTrm,
+    refresh,
+    startTransition,
+  ]);
 
   const runAutoMark = useCallback(() => {
     startTransition(async () => {
@@ -272,14 +312,17 @@ export default function PricingPanel() {
             <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
               TRM USD→COP
             </span>
-            <input
-              value={draftTrm}
-              onChange={(e) => setDraftTrm(e.target.value)}
-              inputMode="numeric"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2"
-              placeholder="4200"
-            />
-          </label>
+              <input
+                value={draftTrm}
+                onChange={(e) => {
+                  setDraftTrm(e.target.value);
+                  setDraftFxUsd(e.target.value);
+                }}
+                inputMode="numeric"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2"
+                placeholder="4200"
+              />
+            </label>
 
           <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
             <input
@@ -327,6 +370,48 @@ export default function PricingPanel() {
             <span className="font-semibold text-slate-800">
               Incluir variantes ya marcadas en USD dentro de la muestra
             </span>
+              </label>
+            </div>
+
+        <div className="mt-6 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:grid-cols-3">
+          <div className="lg:col-span-3">
+            <h3 className="text-sm font-semibold text-slate-900">Conversion multi-moneda a COP</h3>
+            <p className="mt-1 text-xs text-slate-600">
+              Define tasas para monedas de origen. USD se mantiene sincronizada con TRM.
+            </p>
+          </div>
+          <label className="grid gap-2 text-sm">
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">USD→COP</span>
+            <input
+              value={draftFxUsd}
+              onChange={(e) => {
+                setDraftFxUsd(e.target.value);
+                setDraftTrm(e.target.value);
+              }}
+              inputMode="decimal"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2"
+              placeholder="4200"
+            />
+          </label>
+          <label className="grid gap-2 text-sm">
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">EUR→COP</span>
+            <input
+              value={draftFxEur}
+              onChange={(e) => setDraftFxEur(e.target.value)}
+              inputMode="decimal"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2"
+              placeholder="(configurar)"
+            />
+          </label>
+          <label className="grid gap-2 text-sm">
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">ARS→COP</span>
+            <input
+              value={draftFxArs}
+              onChange={(e) => setDraftFxArs(e.target.value)}
+              inputMode="decimal"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2"
+              placeholder="(configurar)"
+            />
           </label>
         </div>
 

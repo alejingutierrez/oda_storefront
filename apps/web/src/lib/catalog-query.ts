@@ -29,8 +29,58 @@ export type CatalogFilters = {
 };
 
 export type PricingSqlContext = {
-  trmUsdCop: number;
+  fxRatesToCop: Record<string, number>;
+  supportedCurrencies: string[];
 };
+
+const DEFAULT_TRM_USD_COP = 4200;
+
+function normalizeCurrencyCode(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(normalized)) return null;
+  return normalized;
+}
+
+function getSqlRateEntries(pricing: PricingSqlContext): Array<{ currency: string; rate: number }> {
+  const supported = new Set(
+    (pricing.supportedCurrencies ?? [])
+      .map((value) => normalizeCurrencyCode(value))
+      .filter((value): value is string => Boolean(value)),
+  );
+  supported.add("COP");
+  supported.add("USD");
+
+  const entries: Array<{ currency: string; rate: number }> = [];
+  for (const [rawCurrency, rawRate] of Object.entries(pricing.fxRatesToCop ?? {})) {
+    const currency = normalizeCurrencyCode(rawCurrency);
+    const rate = typeof rawRate === "number" ? rawRate : Number(rawRate);
+    if (!currency || currency === "COP") continue;
+    if (!supported.has(currency)) continue;
+    if (!Number.isFinite(rate) || rate <= 0) continue;
+    entries.push({ currency, rate });
+  }
+
+  if (!entries.some((entry) => entry.currency === "USD")) {
+    entries.push({ currency: "USD", rate: DEFAULT_TRM_USD_COP });
+  }
+  return entries;
+}
+
+function buildCurrencyCaseExpr(currencyExpr: Prisma.Sql, rateEntries: Array<{ currency: string; rate: number }>) {
+  const rateClauses = rateEntries.map((entry) =>
+    Prisma.sql`when ${currencyExpr} = ${entry.currency} then (v.price * ${entry.rate})`,
+  );
+  return Prisma.sql`
+    (
+      case
+        when ${currencyExpr} = ${"COP"} then v.price
+        ${rateClauses.length ? Prisma.join(rateClauses, " ") : Prisma.empty}
+        else null
+      end
+    )
+  `;
+}
 
 const genderSqlMap: Record<GenderKey, Prisma.Sql> = {
   Femenino: Prisma.sql`lower(coalesce(p.gender,'')) in ('femenino','mujer')`,
@@ -44,16 +94,19 @@ function buildTextArray(values: string[]): Prisma.Sql {
 }
 
 export function buildEffectiveVariantPriceCopExpr(pricing: PricingSqlContext): Prisma.Sql {
-  const trm = Number.isFinite(pricing.trmUsdCop) && pricing.trmUsdCop > 0 ? pricing.trmUsdCop : 4200;
+  const rateEntries = getSqlRateEntries(pricing);
+  const brandOverrideCurrencyExpr = Prisma.sql`upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', ''))`;
+  const variantCurrencyExpr = Prisma.sql`upper(coalesce(v.currency, ''))`;
+  const overridePriceExpr = buildCurrencyCaseExpr(brandOverrideCurrencyExpr, rateEntries);
+  const variantPriceExpr = buildCurrencyCaseExpr(variantCurrencyExpr, rateEntries);
   // NOTE: This expression assumes the calling query has:
   // - `brands b` joined in the outer scope (to read `b.metadata` for brand overrides)
   // - `variants v` as the variant alias in the current scope.
   return Prisma.sql`
     (
       case
-        when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD' then (v.price * ${trm})
-        when upper(coalesce(v.currency, '')) = 'USD' then (v.price * ${trm})
-        else v.price
+        when ${brandOverrideCurrencyExpr} <> '' then ${overridePriceExpr}
+        else ${variantPriceExpr}
       end
     )
   `;

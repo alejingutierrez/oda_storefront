@@ -4,8 +4,8 @@ import { validateAdminRequest } from "@/lib/auth";
 import {
   getBrandCurrencyOverride,
   getDisplayRoundingUnitCop,
+  getFxRatesToCop,
   getPricingConfig,
-  getUsdCopTrm,
   toCopEffective,
 } from "@/lib/pricing";
 import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
@@ -24,7 +24,7 @@ export async function GET(req: Request, context: { params: Promise<{ productId: 
   }
 
   const pricingConfig = await getPricingConfig();
-  const trmUsdCop = getUsdCopTrm(pricingConfig);
+  const fxRatesToCop = getFxRatesToCop(pricingConfig);
   const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
 
   const product = await prisma.product.findUnique({
@@ -49,7 +49,7 @@ export async function GET(req: Request, context: { params: Promise<{ productId: 
         price: Number.isFinite(storedPrice) ? storedPrice : null,
         currency: storedCurrency,
         brandOverride,
-        trmUsdCop,
+        fxRatesToCop,
       });
       const applyMarketingRounding = shouldApplyMarketingRounding({
         brandOverride,

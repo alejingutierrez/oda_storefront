@@ -166,6 +166,22 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: ejecución segura (dry-run primero), guardrails operativos (>2% error corta apply), outputs auditables en disco y control por variables de entorno.
 - Estado: **done (2026-02-23)**.
 
+### MC-146 Corrección sostenible de precios “en dólares” en Home (multi-moneda + identidad robusta)
+- Historia: Como operador de catálogo/home, quiero que cualquier precio se convierta correctamente a COP (incluyendo EUR/ARS), que el Home no muestre outliers por moneda mal interpretada y que el upsert no mezcle productos por colisiones de `externalId`.
+- Alcance:
+  - `pricing_config` extendido con `fx_rates_to_cop` y `supported_currencies` (compatibilidad con `usd_cop_trm` sincronizado a `fx_rates_to_cop.USD`).
+  - `toCopEffective` y SQL de pricing (`buildEffectiveVariantPriceCopExpr`) migrados a conversión multi-moneda por `CASE` dinámico (`COP` directo, moneda con tasa configurada => conversión, sin tasa => `null`).
+  - API/UI admin de pricing ampliadas para edición de tasas (USD/EUR/ARS inicial) con validación de códigos ISO uppercase y tasas > 0.
+  - Upsert de catálogo endurecido por identidad: match primario `brandId + sourceUrl canónica`; fallback `brandId + externalId` solo si el candidato es único.
+  - Adapter `tiendanube` dedicado: forzado de canónica ES/CO cuando llega `/fr|/us` y selección del JSON-LD de producto principal por match de URL (evitando recomendados/quickshop).
+  - Scripts `backfill-product-price-rollups.mjs` y `backfill-product-price-change-signals.mjs` actualizados a lógica multi-moneda.
+- CA:
+  - Home/PLP/APIs no tratan automáticamente monedas no-COP como COP.
+  - Si falta tasa de una moneda soportada no-COP, su precio efectivo se invalida (`null`) hasta configuración.
+  - No hay mezclas nuevas de productos por `externalId` ambiguo en extracción.
+  - Admin pricing guarda tasas multi-moneda sin romper TRM/USD histórica.
+- Estado: **done (2026-02-24)**.
+
 ### MC-138 Antiatasco `/admin/catalog-refresh`: BullMQ endurecida + recuperación agresiva
 - Historia: Como operador de catálogo, quiero que los atascos (`stuck`/`overdue`) se recuperen de forma real y que la cola no vuelva a inflarse por desalineación DB↔Redis, para mantener avance continuo y alertas accionables.
 - Alcance:

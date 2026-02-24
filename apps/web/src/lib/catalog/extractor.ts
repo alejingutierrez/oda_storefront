@@ -28,8 +28,8 @@ import { sanitizeCatalogPrice } from "@/lib/catalog-price";
 import {
   getBrandCurrencyOverride,
   getDisplayRoundingUnitCop,
+  getFxRatesToCop,
   getPricingConfig,
-  getUsdCopTrm,
   toCopEffective,
 } from "@/lib/pricing";
 import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
@@ -41,6 +41,8 @@ import {
 const toNumber = (value: unknown) => sanitizeCatalogPrice(parsePriceValue(value));
 const BLOB_HOST_FRAGMENT = "blob.vercel-storage.com";
 const ALLOW_EXTERNAL_MEDIA_WRITE = (process.env.ALLOW_EXTERNAL_MEDIA_WRITE ?? "").trim().toLowerCase() === "true";
+const TRACKING_QUERY_PARAM_PREFIXES = ["utm_"];
+const TRACKING_QUERY_PARAMS = new Set(["fbclid", "gclid", "mc_cid", "mc_eid", "srsltid"]);
 
 const isBlobStorageUrl = (value: unknown) =>
   typeof value === "string" && value.includes(BLOB_HOST_FRAGMENT);
@@ -55,6 +57,30 @@ const normalizeImageList = (value: unknown): string[] => {
         .filter(Boolean),
     ),
   );
+};
+
+const canonicalizeSourceUrl = (value: string | null | undefined) => {
+  const normalized = normalizeUrl(value ?? "");
+  if (!normalized) return null;
+  try {
+    const url = new URL(normalized);
+    url.hash = "";
+    for (const key of Array.from(url.searchParams.keys())) {
+      const lower = key.toLowerCase();
+      if (TRACKING_QUERY_PARAM_PREFIXES.some((prefix) => lower.startsWith(prefix)) || TRACKING_QUERY_PARAMS.has(lower)) {
+        url.searchParams.delete(key);
+      }
+    }
+    // Product identity should not vary by query params (`?variant=...`, tracking, etc.).
+    url.search = "";
+    if (url.pathname.length > 1) {
+      url.pathname = url.pathname.replace(/\/+$/, "");
+      if (!url.pathname) url.pathname = "/";
+    }
+    return url.toString();
+  } catch {
+    return normalized;
+  }
 };
 
 const canonicalizeMediaGuardrailError = (message: string, refUrl: string) => {
@@ -72,20 +98,34 @@ const canonicalizeMediaGuardrailError = (message: string, refUrl: string) => {
 const readExistingBlobImages = async (params: {
   brandId: string;
   externalId: string | null;
-  sourceUrl: string | null;
+  sourceUrlCanonical: string | null;
 }) => {
-  const conditions = [] as Array<{ externalId?: string; sourceUrl?: string }>;
-  if (params.externalId) conditions.push({ externalId: params.externalId });
-  if (params.sourceUrl) conditions.push({ sourceUrl: params.sourceUrl });
-  if (!conditions.length) return [];
+  let existing = params.sourceUrlCanonical
+    ? await prisma.product.findFirst({
+        where: { brandId: params.brandId, sourceUrl: params.sourceUrlCanonical },
+        select: {
+          imageCoverUrl: true,
+          variants: { select: { images: true } },
+        },
+      })
+    : null;
 
-  const existing = await prisma.product.findFirst({
-    where: { brandId: params.brandId, OR: conditions },
-    select: {
-      imageCoverUrl: true,
-      variants: { select: { images: true } },
-    },
-  });
+  if (!existing && params.externalId) {
+    const candidates = await prisma.product.findMany({
+      where: { brandId: params.brandId, externalId: params.externalId },
+      select: {
+        id: true,
+        imageCoverUrl: true,
+        variants: { select: { images: true } },
+      },
+      take: 2,
+      orderBy: { updatedAt: "desc" },
+    });
+    if (candidates.length === 1) {
+      existing = candidates[0];
+    }
+  }
+
   if (!existing) return [];
 
   const cover =
@@ -441,7 +481,7 @@ export const processCatalogRef = async ({
   ref,
   canUseLlmPdp,
   brandCurrencyOverride,
-  trmUsdCop,
+  fxRatesToCop,
   displayRoundingUnitCop,
   requireBlobImages,
   onStage,
@@ -451,8 +491,8 @@ export const processCatalogRef = async ({
   ctx: AdapterContext;
   ref: { url: string };
   canUseLlmPdp: boolean;
-  brandCurrencyOverride?: "USD" | null;
-  trmUsdCop: number;
+  brandCurrencyOverride?: string | null;
+  fxRatesToCop: Record<string, number>;
   displayRoundingUnitCop: number;
   requireBlobImages?: boolean;
   onStage?: (stage: string) => void;
@@ -509,6 +549,14 @@ export const processCatalogRef = async ({
 
   onStage?.("normalize_images");
   raw.externalId = toStringOrNull(raw.externalId);
+  const sourceUrlRaw = toStringOrNull(raw.sourceUrl) ?? ref.url;
+  const sourceUrlCanonical = canonicalizeSourceUrl(sourceUrlRaw) ?? sourceUrlRaw;
+  raw.sourceUrl = sourceUrlCanonical;
+  raw.metadata = {
+    ...(raw.metadata ?? {}),
+    extraction_url_raw: sourceUrlRaw,
+    extraction_url_canonical: sourceUrlCanonical,
+  };
   raw.variants = raw.variants.map((variant) => ({
     ...variant,
     id: toStringOrNull(variant.id),
@@ -594,7 +642,7 @@ export const processCatalogRef = async ({
       const existingBlobImages = await readExistingBlobImages({
         brandId: brand.id,
         externalId: raw.externalId,
-        sourceUrl: raw.sourceUrl ?? ref.url,
+        sourceUrlCanonical,
       });
       if (existingBlobImages.length) {
         fallbackImages = existingBlobImages;
@@ -722,7 +770,7 @@ export const processCatalogRef = async ({
             price: variantPayload.price ?? null,
             currency: variantPayload.currency ?? null,
             brandOverride: brandCurrencyOverride ?? null,
-            trmUsdCop,
+            fxRatesToCop,
           }),
         );
         if (effectivePriceCop !== null) {
@@ -778,23 +826,42 @@ const upsertProduct = async (
   raw: RawProduct,
   normalized: NormalizedProduct,
   imageCoverUrl: string | null,
-  brandCurrencyOverride: "USD" | null,
+  brandCurrencyOverride: string | null,
 ) => {
-  const conditions = [] as Array<{ externalId?: string; sourceUrl?: string }>;
-  if (raw.externalId) conditions.push({ externalId: raw.externalId });
-  if (raw.sourceUrl) conditions.push({ sourceUrl: raw.sourceUrl });
+  const sourceUrlRaw = toStringOrNull(raw.sourceUrl);
+  const sourceUrlCanonical = canonicalizeSourceUrl(sourceUrlRaw);
+  const sourceUrlForIdentity = sourceUrlCanonical ?? sourceUrlRaw;
+  const externalId = toStringOrNull(raw.externalId);
+  const includeEnrichment = {
+    enrichmentItems: { where: { status: "completed" }, select: { id: true } },
+  };
 
-  const existing = conditions.length
+  let existing = sourceUrlForIdentity
     ? await prisma.product.findFirst({
-        where: {
-          brandId,
-          OR: conditions,
-        },
-        include: {
-          enrichmentItems: { where: { status: "completed" }, select: { id: true } },
-        },
+        where: { brandId, sourceUrl: sourceUrlForIdentity },
+        include: includeEnrichment,
       })
     : null;
+  let identityMatchedBy: "source_url" | "external_id_unique" | null = existing ? "source_url" : null;
+
+  if (!existing && externalId) {
+    const externalIdCandidates = await prisma.product.findMany({
+      where: { brandId, externalId },
+      include: includeEnrichment,
+      orderBy: { updatedAt: "desc" },
+      take: 2,
+    });
+    if (externalIdCandidates.length === 1) {
+      existing = externalIdCandidates[0];
+      identityMatchedBy = "external_id_unique";
+    } else if (externalIdCandidates.length > 1) {
+      console.warn("catalog.upsert_product.external_id_ambiguous", {
+        brandId,
+        externalId,
+        sourceUrlCanonical: sourceUrlForIdentity,
+      });
+    }
+  }
 
   const samplePrice = toNumber(raw.variants?.[0]?.price ?? normalized?.variants?.[0]?.price ?? null);
   const currencyValue =
@@ -825,8 +892,11 @@ const upsertProduct = async (
     platform: rawMetadata.platform ?? existingMetadata.platform ?? null,
     llm: rawMetadata.llm ?? existingMetadata.llm ?? null,
     extraction: {
-      source_url: raw.sourceUrl,
-      external_id: raw.externalId,
+      source_url: sourceUrlForIdentity,
+      source_url_raw: sourceUrlRaw,
+      source_url_canonical: sourceUrlCanonical,
+      identity_matched_by: identityMatchedBy,
+      external_id: externalId,
       scraped_at: new Date().toISOString(),
       source_images: raw.images ?? [],
     },
@@ -860,7 +930,7 @@ const upsertProduct = async (
   const preserveEnrichment = hasCompletedEnrichment;
   const data = {
     brandId,
-    externalId: raw.externalId ?? null,
+    externalId: externalId ?? null,
     name: normalized.name ?? raw.title ?? existing?.name ?? "Sin nombre",
     description: chooseString(existing?.description, normalized.description ?? raw.description ?? null, preserveEnrichment),
     category: chooseString(existing?.category, normalized.category ?? null, preserveEnrichment),
@@ -875,13 +945,13 @@ const upsertProduct = async (
     origin: chooseString(existing?.origin, normalized.origin ?? null, preserveEnrichment),
     status: chooseString(existing?.status, normalized.status ?? null, false),
     currency: currencyValue ?? null,
-    sourceUrl: raw.sourceUrl ?? null,
+    sourceUrl: sourceUrlForIdentity ?? null,
     imageCoverUrl: preferBlobCoverUrl(existing?.imageCoverUrl ?? null, imageCoverUrl),
     metadata: mergedMetadata as Prisma.InputJsonValue,
   };
   const nextCover = data.imageCoverUrl;
   if (!existing && nextCover && !isBlobStorageUrl(nextCover) && !ALLOW_EXTERNAL_MEDIA_WRITE) {
-    throw new Error(`external_media_blocked_product_create:${raw.sourceUrl ?? raw.externalId ?? "unknown"}`);
+    throw new Error(`external_media_blocked_product_create:${sourceUrlForIdentity ?? externalId ?? "unknown"}`);
   }
 
   if (existing) {
@@ -1017,7 +1087,7 @@ export const extractCatalogForBrand = async (
   const metadata = getBrandMetadata(brand);
   const brandCurrencyOverride = getBrandCurrencyOverride(metadata);
   const pricingConfig = await getPricingConfig();
-  const trmUsdCop = getUsdCopTrm(pricingConfig);
+  const fxRatesToCop = getFxRatesToCop(pricingConfig);
   const displayRoundingUnitCop = getDisplayRoundingUnitCop(pricingConfig);
   const existingState = readCatalogRunState(metadata);
   const storedInference =
@@ -1306,7 +1376,7 @@ export const extractCatalogForBrand = async (
         ref,
         canUseLlmPdp,
         brandCurrencyOverride,
-        trmUsdCop,
+        fxRatesToCop,
         displayRoundingUnitCop,
         requireBlobImages: CATALOG_REQUIRE_BLOB_IMAGES,
         onStage: (stage) => {

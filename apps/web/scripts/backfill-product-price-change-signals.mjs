@@ -14,6 +14,7 @@ const envLocalPath = path.join(rootDir, ".env.local");
 const DEFAULT_TRM_USD_COP = 4200;
 const DEFAULT_MAX_VALID_PRICE = 100_000_000;
 const DEFAULT_DISPLAY_UNIT_COP = 10_000;
+const DEFAULT_SUPPORTED_CURRENCIES = ["COP", "USD", "EUR", "ARS"];
 
 function readEnvValueFromFile(filePath, key) {
   if (!fs.existsSync(filePath)) return "";
@@ -56,14 +57,84 @@ function parseJson(value) {
   return null;
 }
 
+function normalizeCurrencyCode(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(normalized)) return null;
+  return normalized;
+}
+
 function resolvePricingConfig(valueJson, fallbackTrm, fallbackUnit) {
   const parsed = parseJson(valueJson);
-  const trm = Number(parsed?.usd_cop_trm);
+  const trmRoot = Number(parsed?.usd_cop_trm);
   const unit = Number(parsed?.display_rounding?.unit_cop);
+  const fallbackUsd = Number.isFinite(trmRoot) && trmRoot > 0 ? trmRoot : fallbackTrm;
+
+  const fxRatesToCop = {};
+  const fxObj =
+    parsed?.fx_rates_to_cop && typeof parsed.fx_rates_to_cop === "object" && !Array.isArray(parsed.fx_rates_to_cop)
+      ? parsed.fx_rates_to_cop
+      : null;
+  if (fxObj) {
+    for (const [rawCode, rawRate] of Object.entries(fxObj)) {
+      const code = normalizeCurrencyCode(rawCode);
+      const rate = Number(rawRate);
+      if (!code) continue;
+      if (!Number.isFinite(rate) || rate <= 0) continue;
+      fxRatesToCop[code] = rate;
+    }
+  }
+  if (!Number.isFinite(fxRatesToCop.USD) || fxRatesToCop.USD <= 0) {
+    fxRatesToCop.USD = fallbackUsd;
+  }
+
+  const supportedRaw = Array.isArray(parsed?.supported_currencies)
+    ? parsed.supported_currencies
+    : DEFAULT_SUPPORTED_CURRENCIES;
+  const supportedCurrencies = Array.from(
+    new Set(
+      supportedRaw
+        .map((value) => normalizeCurrencyCode(value))
+        .filter(Boolean),
+    ),
+  );
+  supportedCurrencies.push("COP");
+  supportedCurrencies.push("USD");
+  Object.keys(fxRatesToCop).forEach((code) => supportedCurrencies.push(code));
+
   return {
-    trmUsdCop: Number.isFinite(trm) && trm > 0 ? trm : fallbackTrm,
+    fxRatesToCop,
+    supportedCurrencies: Array.from(new Set(supportedCurrencies)),
     displayUnitCop: Number.isFinite(unit) && unit > 0 ? unit : fallbackUnit,
   };
+}
+
+function buildEffectivePriceExpr({
+  priceExpr,
+  currencyExpr,
+  brandOverrideExpr,
+  fxRatesToCop,
+  supportedCurrencies,
+}) {
+  const supported = new Set(
+    (supportedCurrencies ?? [])
+      .map((value) => normalizeCurrencyCode(value))
+      .filter(Boolean),
+  );
+  supported.add("COP");
+  supported.add("USD");
+  const rates = Object.entries(fxRatesToCop ?? {})
+    .map(([rawCode, rawRate]) => ({ code: normalizeCurrencyCode(rawCode), rate: Number(rawRate) }))
+    .filter((entry) => entry.code && entry.code !== "COP" && supported.has(entry.code) && Number.isFinite(entry.rate) && entry.rate > 0);
+
+  const caseForCurrency = (expr) => {
+    const rateWhens = rates
+      .map((entry) => `when ${expr} = '${entry.code}' then (${priceExpr} * ${entry.rate})`)
+      .join(" ");
+    return `(case when ${expr} = 'COP' then ${priceExpr} ${rateWhens} else null end)`;
+  };
+
+  return `(case when ${brandOverrideExpr} <> '' then ${caseForCurrency(brandOverrideExpr)} else ${caseForCurrency(currencyExpr)} end)`;
 }
 
 async function main() {
@@ -97,12 +168,27 @@ async function main() {
       ["pricing_config"],
     );
     const pricing = resolvePricingConfig(pricingRow.rows[0]?.valueJson ?? null, trmFallback, displayUnitFallback);
+    const effectivePriceVariantExpr = buildEffectivePriceExpr({
+      priceExpr: "v.price",
+      currencyExpr: "upper(coalesce(v.currency, ''))",
+      brandOverrideExpr: "upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', ''))",
+      fxRatesToCop: pricing.fxRatesToCop,
+      supportedCurrencies: pricing.supportedCurrencies,
+    });
+    const effectivePriceHistoryExpr = buildEffectivePriceExpr({
+      priceExpr: "ph.price",
+      currencyExpr: "upper(coalesce(ph.currency, ''))",
+      brandOverrideExpr: "upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', ''))",
+      fxRatesToCop: pricing.fxRatesToCop,
+      supportedCurrencies: pricing.supportedCurrencies,
+    });
 
     console.log(
       JSON.stringify(
         {
           step: "backfill-product-price-change-signals:start",
-          trmUsdCop: pricing.trmUsdCop,
+          fxRatesToCop: pricing.fxRatesToCop,
+          supportedCurrencies: pricing.supportedCurrencies,
           displayUnitCop: pricing.displayUnitCop,
           maxValidPrice,
         },
@@ -119,43 +205,19 @@ async function main() {
           select
             p.id as product_id,
             v.id as variant_id,
-            (
-              case
-                when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD' then (v.price * $1::numeric)
-                when upper(coalesce(v.currency, '')) = 'USD' then (v.price * $1::numeric)
-                else v.price
-              end
-            ) as effective_price_cop,
+            ${effectivePriceVariantExpr} as effective_price_cop,
             row_number() over (
               partition by p.id
               order by
-                (
-                  case
-                    when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD' then (v.price * $1::numeric)
-                    when upper(coalesce(v.currency, '')) = 'USD' then (v.price * $1::numeric)
-                    else v.price
-                  end
-                ) asc,
+                ${effectivePriceVariantExpr} asc,
                 v.id asc
             ) as rn
           from products p
           join brands b on b.id = p."brandId"
           join variants v on v."productId" = p.id
           where (coalesce(v.stock, 0) > 0 or coalesce(v."stockStatus" in ('in_stock', 'preorder'), false))
-            and (
-              case
-                when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD' then (v.price * $1::numeric)
-                when upper(coalesce(v.currency, '')) = 'USD' then (v.price * $1::numeric)
-                else v.price
-              end
-            ) > 0
-            and (
-              case
-                when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD' then (v.price * $1::numeric)
-                when upper(coalesce(v.currency, '')) = 'USD' then (v.price * $1::numeric)
-                else v.price
-              end
-            ) <= $2::numeric
+            and ${effectivePriceVariantExpr} > 0
+            and ${effectivePriceVariantExpr} <= $1::numeric
         ),
         base_variant as (
           select product_id, variant_id
@@ -166,13 +228,7 @@ async function main() {
           select
             bv.product_id,
             ph."capturedAt" as captured_at,
-            (
-              case
-                when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD' then (ph.price * $1::numeric)
-                when upper(coalesce(ph.currency, '')) = 'USD' then (ph.price * $1::numeric)
-                else ph.price
-              end
-            ) as effective_price_cop,
+            ${effectivePriceHistoryExpr} as effective_price_cop,
             row_number() over (
               partition by bv.product_id
               order by ph."capturedAt" desc, ph.id desc
@@ -190,7 +246,7 @@ async function main() {
               case
                 when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD'
                   or upper(coalesce(p.currency, '')) = 'USD'
-                then round(current.effective_price_cop / $3::numeric) * $3::numeric
+                then round(current.effective_price_cop / $2::numeric) * $2::numeric
                 else round(current.effective_price_cop)
               end
             ) as current_display,
@@ -198,7 +254,7 @@ async function main() {
               case
                 when upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD'
                   or upper(coalesce(p.currency, '')) = 'USD'
-                then round(previous.effective_price_cop / $3::numeric) * $3::numeric
+                then round(previous.effective_price_cop / $2::numeric) * $2::numeric
                 else round(previous.effective_price_cop)
               end
             ) as previous_display
@@ -241,7 +297,7 @@ async function main() {
           )
         returning p.id, p."priceChangeDirection" as direction
       `,
-      [pricing.trmUsdCop, maxValidPrice, pricing.displayUnitCop],
+      [maxValidPrice, pricing.displayUnitCop],
     );
 
     const upCount = updated.rows.filter((row) => row.direction === "up").length;

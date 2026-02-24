@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import {
   getBrandCurrencyOverride,
   getDisplayRoundingUnitCop,
+  getFxRatesToCop,
   getPricingConfig,
-  getUsdCopTrm,
   toCopEffective,
 } from "@/lib/pricing";
 import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
@@ -48,7 +48,7 @@ function isVariantAvailable(variant: { stock: number | null; stockStatus: string
 
 export async function getCompareProductDetails(ids: string[]): Promise<CompareProductDetails[]> {
   const pricingConfig = await getPricingConfig();
-  const trmUsdCop = getUsdCopTrm(pricingConfig);
+  const fxRatesToCop = getFxRatesToCop(pricingConfig);
   const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
 
   const orderedUnique = Array.from(
@@ -103,7 +103,7 @@ export async function getCompareProductDetails(ids: string[]): Promise<ComparePr
         price: priceRaw,
         currency: variant.currency ?? row.currency ?? null,
         brandOverride,
-        trmUsdCop,
+        fxRatesToCop,
       });
       if (typeof priceCop === "number" && Number.isFinite(priceCop) && priceCop > 0) {
         minCop = minCop === null ? priceCop : Math.min(minCop, priceCop);
