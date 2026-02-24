@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { discoverCatalogRefs } from "@/lib/catalog/discovery";
+import type { ProductRef } from "@/lib/catalog/types";
 import { isCatalogQueueEnabled } from "@/lib/catalog/queue";
 import { topUpCatalogRunQueue } from "@/lib/catalog/queue-control";
 import { CATALOG_MAX_ATTEMPTS } from "@/lib/catalog/constants";
@@ -96,6 +97,80 @@ const parseDate = (value?: string | null) => {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isRetryableCatalogFailedRef = (lastError: string | null | undefined) => {
+  const normalized = (lastError ?? "").toLowerCase();
+  if (!normalized) return true;
+
+  const transientTokens = [
+    "this operation was aborted",
+    "timeout",
+    "fetch failed",
+    "econn",
+    "enotfound",
+    "eai_again",
+    "socket hang up",
+    "status=500",
+    "status=502",
+    "status=503",
+    "status=504",
+    " 429 ",
+    "quota",
+    "rate limit",
+    "too many requests",
+  ];
+  if (transientTokens.some((token) => normalized.includes(token))) return true;
+
+  const terminalTokens = [
+    "manual_review_",
+    "llm_pdp_false",
+    "external_media_url_blocked",
+    "external_media_blocked_product_create",
+    "external_media_blocked_variant_create",
+    "blob_required_no_blob_images",
+    "manual_review_no_products",
+    "manual_review_vtex_no_products",
+    "no hay imágenes disponibles tras upload",
+    "no hay imagenes disponibles tras upload",
+    "no se pudo obtener html (404)",
+    "status=404",
+    "not_found",
+    "no se pudo obtener producto",
+  ];
+  if (terminalTokens.some((token) => normalized.includes(token))) return false;
+
+  return true;
+};
+
+const isPlatformRefCompatible = (url: string, platform: string | null | undefined) => {
+  const normalizedPlatform = (platform ?? "").trim().toLowerCase();
+  if (!normalizedPlatform) return true;
+
+  let pathname = "";
+  try {
+    pathname = new URL(url).pathname.toLowerCase();
+  } catch {
+    return false;
+  }
+
+  if (normalizedPlatform === "shopify") {
+    return pathname.includes("/products/");
+  }
+  if (normalizedPlatform === "woocommerce") {
+    return pathname.includes("/product/") || pathname.includes("/producto/");
+  }
+  if (normalizedPlatform === "vtex") {
+    return pathname.endsWith("/p") || pathname.includes("/p/");
+  }
+  return true;
+};
+
+const sanitizeRefsForPlatform = (refs: ProductRef[], platform: string | null | undefined) => {
+  if (!refs.length) return refs;
+  const normalizedPlatform = (platform ?? "").trim().toLowerCase();
+  if (!normalizedPlatform) return refs;
+  return refs.filter((ref) => isPlatformRefCompatible(ref.url, normalizedPlatform));
 };
 
 type RefreshConfigOverrides = {
@@ -201,6 +276,26 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     1,
     Number(process.env.CATALOG_MANUAL_REVIEW_AUTOCLEAR_WINDOW_DAYS ?? 21),
   );
+  const manualReviewAutoClearRelaxedEnabled =
+    (process.env.CATALOG_MANUAL_REVIEW_AUTOCLEAR_RELAXED_ENABLED ?? "true")
+      .trim()
+      .toLowerCase() === "true";
+  const manualReviewAutoClearRelaxedMinCompletedRuns = Math.max(
+    1,
+    Number(process.env.CATALOG_MANUAL_REVIEW_AUTOCLEAR_RELAXED_MIN_COMPLETED_RUNS ?? 1),
+  );
+  const manualReviewAutoClearRelaxedWindowDays = Math.max(
+    1,
+    Number(process.env.CATALOG_MANUAL_REVIEW_AUTOCLEAR_RELAXED_WINDOW_DAYS ?? 45),
+  );
+  const manualReviewAutoClearRelaxedMaxFailedRateRaw = Number(
+    process.env.CATALOG_MANUAL_REVIEW_AUTOCLEAR_RELAXED_MAX_FAILED_RATE ?? 0.10,
+  );
+  const manualReviewAutoClearRelaxedMaxFailedRate = Number.isFinite(
+    manualReviewAutoClearRelaxedMaxFailedRateRaw,
+  )
+    ? Math.max(0, Math.min(1, manualReviewAutoClearRelaxedMaxFailedRateRaw))
+    : 0.10;
   return {
     intervalDays,
     jitterHours,
@@ -229,6 +324,10 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     manualReviewAutoClearEnabled,
     manualReviewAutoClearMinCompletedRuns,
     manualReviewAutoClearWindowDays,
+    manualReviewAutoClearRelaxedEnabled,
+    manualReviewAutoClearRelaxedMinCompletedRuns,
+    manualReviewAutoClearRelaxedWindowDays,
+    manualReviewAutoClearRelaxedMaxFailedRate,
   };
 };
 
@@ -447,7 +546,10 @@ const createForcedRunFromRefs = async (params: {
   queueEnabled: boolean;
   enqueueLimit: number;
 }) => {
-  const refs = dedupeRefs(params.refs).filter((ref) => Boolean(readString(ref.url)));
+  const refs = sanitizeRefsForPlatform(
+    dedupeRefs(params.refs).filter((ref) => Boolean(readString(ref.url))),
+    params.platform,
+  );
   if (!refs.length) return null;
   const run = await createRunWithItems({
     brandId: params.brandId,
@@ -706,23 +808,42 @@ export const autoClearManualReviewByEvidence = async (options?: {
   const apply = options?.apply ?? true;
   const now = options?.now ?? new Date();
   const nowIso = now.toISOString();
-  const windowStart = new Date(
+  const strictWindowStart = new Date(
     now.getTime() - config.manualReviewAutoClearWindowDays * 24 * 60 * 60 * 1000,
   );
+  const relaxedWindowStart = new Date(
+    now.getTime() - config.manualReviewAutoClearRelaxedWindowDays * 24 * 60 * 60 * 1000,
+  );
+  const runQueryWindowStart =
+    config.manualReviewAutoClearRelaxedEnabled &&
+    relaxedWindowStart.getTime() < strictWindowStart.getTime()
+      ? relaxedWindowStart
+      : strictWindowStart;
 
   const report = {
     enabled: config.manualReviewAutoClearEnabled,
+    relaxedEnabled: config.manualReviewAutoClearRelaxedEnabled,
     evaluatedBrands: 0,
     eligibleBrands: 0,
+    strictEligibleBrands: 0,
+    relaxedEligibleBrands: 0,
     autoClearedBrands: 0,
+    autoClearedStrict: 0,
+    autoClearedRelaxed: 0,
     skippedBlockedReason: 0,
     skippedInsufficientRuns: 0,
     minCompletedRuns: config.manualReviewAutoClearMinCompletedRuns,
     windowDays: config.manualReviewAutoClearWindowDays,
+    relaxedMinCompletedRuns: config.manualReviewAutoClearRelaxedMinCompletedRuns,
+    relaxedWindowDays: config.manualReviewAutoClearRelaxedWindowDays,
+    relaxedMaxFailedRate: config.manualReviewAutoClearRelaxedMaxFailedRate,
     candidates: [] as Array<{
       brandId: string;
       brandName: string;
       eligibleRuns: number;
+      strictEligibleRuns: number;
+      relaxedEligibleRuns: number;
+      mode: "strict" | "relaxed" | null;
       blockedReason: string | null;
       applied: boolean;
     }>,
@@ -766,7 +887,7 @@ export const autoClearManualReviewByEvidence = async (options?: {
       FROM "catalog_runs" cr
       LEFT JOIN "catalog_items" ci ON ci."runId" = cr.id
       WHERE cr.status = 'completed'
-        AND cr."updatedAt" >= ${windowStart}
+        AND cr."updatedAt" >= ${runQueryWindowStart}
         AND cr."brandId" IN (${Prisma.join(brandIds)})
       GROUP BY cr.id
       ORDER BY cr."updatedAt" DESC
@@ -789,6 +910,9 @@ export const autoClearManualReviewByEvidence = async (options?: {
         brandId: brand.id,
         brandName: brand.name,
         eligibleRuns: 0,
+        strictEligibleRuns: 0,
+        relaxedEligibleRuns: 0,
+        mode: null,
         blockedReason,
         applied: false,
       });
@@ -796,20 +920,52 @@ export const autoClearManualReviewByEvidence = async (options?: {
     }
 
     const rows = statsByBrand.get(brand.id) ?? [];
-    const eligibleRuns = rows.filter((row) => {
+    const strictEligibleRuns = rows.filter((row) => {
+      if (row.updatedAt < strictWindowStart) return false;
       if (row.pendingItems > 0) return false;
       if (row.failedItems > 5) return false;
       const totalItems = row.totalItems > 0 ? row.totalItems : 0;
       const failedRate = totalItems > 0 ? row.failedItems / totalItems : 0;
       return failedRate <= 0.05;
     });
+    const relaxedEligibleRuns =
+      config.manualReviewAutoClearRelaxedEnabled
+        ? rows.filter((row) => {
+            if (row.updatedAt < relaxedWindowStart) return false;
+            if (row.pendingItems > 0) return false;
+            const totalItems = row.totalItems > 0 ? row.totalItems : 0;
+            const failedRate = totalItems > 0 ? row.failedItems / totalItems : 0;
+            return failedRate <= config.manualReviewAutoClearRelaxedMaxFailedRate;
+          })
+        : [];
 
-    if (eligibleRuns.length < config.manualReviewAutoClearMinCompletedRuns) {
+    const strictEligible =
+      strictEligibleRuns.length >= config.manualReviewAutoClearMinCompletedRuns;
+    const relaxedEligible =
+      !strictEligible &&
+      config.manualReviewAutoClearRelaxedEnabled &&
+      relaxedEligibleRuns.length >= config.manualReviewAutoClearRelaxedMinCompletedRuns;
+    const selectedMode: "strict" | "relaxed" | null = strictEligible
+      ? "strict"
+      : relaxedEligible
+        ? "relaxed"
+        : null;
+    const selectedRuns =
+      selectedMode === "strict"
+        ? strictEligibleRuns
+        : selectedMode === "relaxed"
+          ? relaxedEligibleRuns
+          : [];
+
+    if (!selectedMode) {
       report.skippedInsufficientRuns += 1;
       report.candidates.push({
         brandId: brand.id,
         brandName: brand.name,
-        eligibleRuns: eligibleRuns.length,
+        eligibleRuns: 0,
+        strictEligibleRuns: strictEligibleRuns.length,
+        relaxedEligibleRuns: relaxedEligibleRuns.length,
+        mode: null,
         blockedReason: null,
         applied: false,
       });
@@ -817,13 +973,24 @@ export const autoClearManualReviewByEvidence = async (options?: {
     }
 
     report.eligibleBrands += 1;
+    if (selectedMode === "strict") report.strictEligibleBrands += 1;
+    if (selectedMode === "relaxed") report.relaxedEligibleBrands += 1;
     const evidence = {
       source: "catalog_refresh",
       autoClearedAt: nowIso,
-      eligibleRuns: eligibleRuns.length,
-      minCompletedRuns: config.manualReviewAutoClearMinCompletedRuns,
-      windowDays: config.manualReviewAutoClearWindowDays,
-      runIds: eligibleRuns
+      mode: selectedMode,
+      eligibleRuns: selectedRuns.length,
+      minCompletedRuns:
+        selectedMode === "strict"
+          ? config.manualReviewAutoClearMinCompletedRuns
+          : config.manualReviewAutoClearRelaxedMinCompletedRuns,
+      windowDays:
+        selectedMode === "strict"
+          ? config.manualReviewAutoClearWindowDays
+          : config.manualReviewAutoClearRelaxedWindowDays,
+      maxFailedRate:
+        selectedMode === "strict" ? 0.05 : config.manualReviewAutoClearRelaxedMaxFailedRate,
+      runIds: selectedRuns
         .slice(0, 10)
         .map((row) => row.runId),
     };
@@ -841,12 +1008,17 @@ export const autoClearManualReviewByEvidence = async (options?: {
         },
       });
       report.autoClearedBrands += 1;
+      if (selectedMode === "strict") report.autoClearedStrict += 1;
+      if (selectedMode === "relaxed") report.autoClearedRelaxed += 1;
     }
 
     report.candidates.push({
       brandId: brand.id,
       brandName: brand.name,
-      eligibleRuns: eligibleRuns.length,
+      eligibleRuns: selectedRuns.length,
+      strictEligibleRuns: strictEligibleRuns.length,
+      relaxedEligibleRuns: relaxedEligibleRuns.length,
+      mode: selectedMode,
       blockedReason: null,
       applied: apply,
     });
@@ -1556,6 +1728,16 @@ export const finalizeRefreshForRun = async (params: {
       enrichmentError = error instanceof Error ? error.message : String(error);
     }
   }
+  const finalizedAt = new Date();
+  await prisma.catalogRun.update({
+    where: { id: params.runId },
+    data: {
+      status,
+      finishedAt: finalizedAt,
+      lastError: enrichmentError ?? lastError ?? null,
+      updatedAt: finalizedAt,
+    },
+  });
   await markRefreshCompleted({
     brandId: params.brandId,
     runId: params.runId,
@@ -1716,31 +1898,38 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       new Map([...(sitemapRefs ?? []), ...(adapterRefs ?? [])].map((ref) => [ref.url, ref])).values(),
     );
 
-    const failedRows = await prisma.$queryRaw<{ url: string }[]>(
+    const failedRows = await prisma.$queryRaw<{ url: string; lastError: string | null }[]>(
       Prisma.sql`
-        SELECT DISTINCT ci.url
+        SELECT DISTINCT ON (ci.url)
+          ci.url,
+          ci."lastError"
         FROM "catalog_items" ci
         INNER JOIN "catalog_runs" cr ON cr.id = ci."runId"
         WHERE cr."brandId" = ${brand.id}
           AND ci.status = 'failed'
           AND ci."updatedAt" >= ${lookbackStart}
+        ORDER BY ci.url ASC, ci."updatedAt" DESC
         LIMIT ${config.failedUrlLimit}
       `,
     );
-    const failedRefs = failedRows.map((row) => ({ url: row.url }));
+    const failedRefs = failedRows
+      .filter((row) => isRetryableCatalogFailedRef(row.lastError))
+      .map((row) => ({ url: row.url }));
     const mergedRefs = refs.length ? refs.concat(failedRefs) : failedRefs;
-    const deduped = Array.from(
-      new Map(mergedRefs.map((ref) => [ref.url, ref])).values(),
+    const deduped = Array.from(new Map(mergedRefs.map((ref) => [ref.url, ref])).values());
+    const sanitizedRefs = sanitizeRefsForPlatform(
+      deduped,
+      platformForRun ?? brand.ecommercePlatform,
     );
 
-    if (!deduped.length) {
+    if (!sanitizedRefs.length) {
       return { brandId: brand.id, status: "skipped", reason: "no_refs" };
     }
 
     const run = await createRunWithItems({
       brandId: brand.id,
       platform: platformForRun ?? brand.ecommercePlatform,
-      refs: deduped,
+      refs: sanitizedRefs,
       status: "processing",
     });
 

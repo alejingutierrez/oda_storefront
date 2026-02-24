@@ -11,9 +11,12 @@ const normalizePrice = (value: unknown) => {
 const extractHandle = (url: string) => {
   try {
     const { pathname } = new URL(url);
-    const parts = pathname.split("/products/");
+    const normalizedPath = pathname.replace(/\/+$/, "");
+    const parts = normalizedPath.split("/products/");
     if (parts.length < 2) return null;
-    return parts[1].split("/")[0] || null;
+    const candidate = parts[1].split("/")[0] || null;
+    if (!candidate) return null;
+    return decodeURIComponent(candidate.replace(/\.js$/i, "").trim()) || null;
   } catch {
     return null;
   }
@@ -24,14 +27,25 @@ export const shopifyAdapter: CatalogAdapter = {
   discoverProducts: async (ctx: AdapterContext, limit = 200) => {
     const baseUrl = normalizeUrl(ctx.brand.siteUrl);
     if (!baseUrl) return [];
+    const origin = safeOrigin(baseUrl);
     const urls = await discoverFromSitemap(baseUrl, limit * 3, { productAware: true });
-    const filtered = urls.filter((url) => url.includes("/products/"));
-    return filtered.slice(0, limit).map((url) => ({ url }));
+    const canonical = Array.from(
+      new Set(
+        urls
+          .map((url) => extractHandle(url))
+          .filter((handle): handle is string => Boolean(handle))
+          .map((handle) => new URL(`/products/${handle}`, origin).toString()),
+      ),
+    );
+    return canonical.slice(0, limit).map((url) => ({ url }));
   },
   fetchProduct: async (ctx: AdapterContext, ref: ProductRef) => {
     const baseUrl = normalizeUrl(ctx.brand.siteUrl);
     if (!baseUrl) return null;
-    const handle = ref.handle ?? extractHandle(ref.url);
+    const handle =
+      (typeof ref.handle === "string" && ref.handle.trim()
+        ? decodeURIComponent(ref.handle.trim().replace(/\.js$/i, ""))
+        : null) ?? extractHandle(ref.url);
     if (!handle) return null;
     const origin = safeOrigin(baseUrl);
     const productUrl = new URL(`/products/${handle}.js`, origin).toString();
