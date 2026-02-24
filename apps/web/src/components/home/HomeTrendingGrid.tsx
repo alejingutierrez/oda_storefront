@@ -1,10 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { HomeProductCardData } from "@/lib/home-types";
+import { logExperienceEvent } from "@/lib/experience-events";
 import { proxiedImageUrl } from "@/lib/image-proxy";
+
+const MOBILE_INITIAL_VISIBLE = 8;
+const DESKTOP_INITIAL_VISIBLE = 12;
+const LOAD_STEP = 8;
+const MAX_FILTERS = 12;
 
 function toLabel(value: string) {
   return value
@@ -39,18 +45,32 @@ function isExternalUrl(url: string) {
 }
 
 export default function HomeTrendingGrid({ products }: { products: HomeProductCardData[] }) {
-  const INITIAL_VISIBLE = 4;
-  const categoryOptions = useMemo(() => {
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<string>("todo");
+  const [visibleCount, setVisibleCount] = useState(MOBILE_INITIAL_VISIBLE);
+
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 768px)");
+    const sync = () => {
+      setIsDesktop(query.matches);
+      setVisibleCount(query.matches ? DESKTOP_INITIAL_VISIBLE : MOBILE_INITIAL_VISIBLE);
+    };
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  const filterOptions = useMemo(() => {
     const counts = new Map<string, number>();
     for (const product of products) {
-      const category = (product.category || "").trim();
-      if (!category) continue;
-      counts.set(category, (counts.get(category) ?? 0) + 1);
+      const raw = (product.subcategory || product.category || "").trim();
+      if (!raw) continue;
+      counts.set(raw, (counts.get(raw) ?? 0) + 1);
     }
 
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
+      .slice(0, MAX_FILTERS)
       .map(([value, count]) => ({
         value,
         label: toLabel(value),
@@ -58,16 +78,17 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
       }));
   }, [products]);
 
-  const [activeCategory, setActiveCategory] = useState<string>("todo");
-  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
   const filteredProducts =
-    activeCategory === "todo" ? products : products.filter((product) => (product.category || "").trim() === activeCategory);
+    activeFilter === "todo"
+      ? products
+      : products.filter((product) => (product.subcategory || product.category || "").trim() === activeFilter);
+
   const visibleProducts = filteredProducts.slice(0, visibleCount);
 
   if (products.length === 0) {
     return (
       <div className="rounded-[1.2rem] border border-[color:var(--oda-border)] bg-white p-8 sm:p-10">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Trending</p>
+        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Foco</p>
         <h3 className="mt-3 font-display text-3xl leading-none text-[color:var(--oda-ink)] sm:text-4xl">
           Aun no hay picks activos.
         </h3>
@@ -89,42 +110,48 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
     <div className="flex flex-col gap-7">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="flex flex-col gap-2">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Trending</p>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Foco</p>
           <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
             Productos en foco
           </h2>
+          <p className="max-w-2xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
+            24 productos curados y hasta 12 subcategorias por ventana para ampliar descubrimiento sin ruido.
+          </p>
         </div>
+      </div>
 
-        <div className="flex flex-wrap gap-2">
+      <div className="home-hide-scroll overflow-x-auto">
+        <div className="flex w-max items-center gap-2 pb-1 pr-6">
           <button
             type="button"
             onClick={() => {
-              setActiveCategory("todo");
-              setVisibleCount(INITIAL_VISIBLE);
+              setActiveFilter("todo");
+              setVisibleCount(isDesktop ? DESKTOP_INITIAL_VISIBLE : MOBILE_INITIAL_VISIBLE);
             }}
             className={`rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.2em] transition ${
-              activeCategory === "todo"
+              activeFilter === "todo"
                 ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
                 : "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink-soft)] hover:border-[color:var(--oda-ink-soft)]"
             }`}
           >
-            Todo
+            Todo ({products.length})
           </button>
-          {categoryOptions.map((option) => (
+
+          {filterOptions.map((option) => (
             <button
               key={option.value}
               type="button"
               onClick={() => {
-                setActiveCategory(option.value);
-                setVisibleCount(INITIAL_VISIBLE);
+                setActiveFilter(option.value);
+                setVisibleCount(isDesktop ? DESKTOP_INITIAL_VISIBLE : MOBILE_INITIAL_VISIBLE);
               }}
               className={`rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.2em] transition ${
-                activeCategory === option.value
+                activeFilter === option.value
                   ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
                   : "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink-soft)] hover:border-[color:var(--oda-ink-soft)]"
               }`}
             >
-              {option.label}
+              {option.label} ({option.count})
             </button>
           ))}
         </div>
@@ -133,7 +160,7 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
       {filteredProducts.length === 0 ? (
         <div className="rounded-[1.1rem] border border-[color:var(--oda-border)] bg-white p-6">
           <p className="text-sm text-[color:var(--oda-ink-soft)]">
-            No encontramos productos para este filtro. Prueba con otra categoria.
+            No encontramos productos para este filtro. Prueba con otra subcategoria.
           </p>
         </div>
       ) : (
@@ -142,13 +169,22 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
             const href = getHref(product.sourceUrl);
             const external = isExternalUrl(href);
             const imageSrc = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
-            const isProxyImage = Boolean(imageSrc?.startsWith("/api/image-proxy"));
             return (
               <a
                 key={product.id}
                 href={href}
                 target={external ? "_blank" : undefined}
                 rel={external ? "noreferrer" : undefined}
+                onClick={() => {
+                  logExperienceEvent({
+                    type: "product_click",
+                    productId: product.id,
+                    path: typeof window !== "undefined" ? window.location.pathname : "/",
+                    properties: {
+                      surface: "home_focus_v2",
+                    },
+                  });
+                }}
                 className="group flex min-w-0 flex-col gap-3"
               >
                 <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[1.1rem] bg-[color:var(--oda-stone)]">
@@ -160,7 +196,6 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
                       quality={58}
                       sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                       className="object-cover transition duration-700 ease-out group-hover:scale-[1.04]"
-                      unoptimized={isProxyImage}
                     />
                   ) : null}
                 </div>
@@ -184,7 +219,7 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
       {filteredProducts.length > visibleCount ? (
         <button
           type="button"
-          onClick={() => setVisibleCount((count) => count + INITIAL_VISIBLE)}
+          onClick={() => setVisibleCount((count) => count + LOAD_STEP)}
           className="self-start rounded-full border border-[color:var(--oda-border)] bg-white px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
         >
           Ver mas picks

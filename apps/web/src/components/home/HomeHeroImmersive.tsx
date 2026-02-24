@@ -1,7 +1,12 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import type { HomeProductCardData } from "@/lib/home-types";
+import type { HomeHeroSlide } from "@/lib/home-types";
 import { proxiedImageUrl } from "@/lib/image-proxy";
+
+const AUTOPLAY_MS = 6200;
 
 function toLabel(value: string | null | undefined) {
   if (!value) return null;
@@ -28,42 +33,83 @@ function formatPrice(amount: string | null, currency: string | null) {
   }
 }
 
-export default function HomeHeroImmersive({ hero }: { hero: HomeProductCardData | null }) {
-  const values = [toLabel(hero?.category), toLabel(hero?.subcategory)].filter(Boolean) as string[];
-  const contextualBadge = values.length > 0 ? values.join(" · ") : "Edicion curada";
-  const heroPrice = formatPrice(hero?.minPrice ?? null, hero?.currency ?? null);
-  const showProductSupport = Boolean(hero?.name && hero?.brandName && hero?.sourceUrl && heroPrice);
-  const heroImageSrc = proxiedImageUrl(hero?.imageCoverUrl ?? null, { productId: hero?.id ?? null, kind: "cover" });
-  const isProxyHeroImage = Boolean(heroImageSrc?.startsWith("/api/image-proxy"));
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReduced(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  return reduced;
+}
+
+export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    if (prefersReducedMotion || slides.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setActiveIndex((current) => (current + 1) % slides.length);
+    }, AUTOPLAY_MS);
+    return () => window.clearInterval(timer);
+  }, [prefersReducedMotion, slides.length]);
+
+  const safeActiveIndex = slides.length > 0 ? activeIndex % slides.length : 0;
+  const activeSlide = slides[safeActiveIndex] ?? null;
+  const heroPrice = formatPrice(activeSlide?.minPrice ?? null, activeSlide?.currency ?? null);
+  const showProductSupport = Boolean(
+    activeSlide?.name && activeSlide?.brandName && activeSlide?.sourceUrl && heroPrice,
+  );
+
+  const contextualBadge = useMemo(() => {
+    const values = [toLabel(activeSlide?.category), toLabel(activeSlide?.subcategory)].filter(Boolean) as string[];
+    return values.length > 0 ? values.join(" · ") : "Edicion curada";
+  }, [activeSlide?.category, activeSlide?.subcategory]);
 
   return (
-    <section
-      className="relative isolate min-h-[94svh] overflow-hidden border-b border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
-    >
+    <section className="relative isolate min-h-[68svh] overflow-hidden border-b border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)] lg:min-h-[74svh]">
       <div className="home-parallax-media absolute inset-0">
-        {heroImageSrc ? (
-          <Image
-            src={heroImageSrc}
-            alt={hero?.name ?? "Producto destacado"}
-            fill
-            priority
-            fetchPriority="high"
-            decoding="sync"
-            quality={56}
-            sizes="(max-width: 640px) 90vw, 100vw"
-            className="object-cover"
-            unoptimized={isProxyHeroImage}
-          />
+        {slides.length > 0 ? (
+          slides.map((slide, index) => {
+            const imageSrc = proxiedImageUrl(slide.imageCoverUrl, { productId: slide.id, kind: "cover" });
+            if (!imageSrc) return null;
+            return (
+              <div
+                key={slide.id}
+                className={`absolute inset-0 transition-opacity duration-700 ease-out motion-reduce:transition-none ${
+                  safeActiveIndex === index ? "opacity-100" : "opacity-0"
+                }`}
+                aria-hidden={safeActiveIndex !== index}
+              >
+                <Image
+                  src={imageSrc}
+                  alt={slide.name}
+                  fill
+                  priority={index === 0}
+                  fetchPriority={index === 0 ? "high" : "auto"}
+                  quality={58}
+                  sizes="100vw"
+                  className="object-cover"
+                />
+              </div>
+            );
+          })
         ) : (
           <div className="h-full w-full bg-[radial-gradient(circle_at_28%_20%,rgba(217,195,160,0.46),transparent_55%),radial-gradient(circle_at_76%_8%,rgba(255,255,255,0.12),transparent_44%),linear-gradient(140deg,#151311,#1e1a16)]" />
         )}
       </div>
 
-      <div className="absolute inset-0 bg-[linear-gradient(100deg,rgba(10,10,10,0.84)_10%,rgba(10,10,10,0.48)_48%,rgba(10,10,10,0.72)_100%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(100deg,rgba(10,10,10,0.84)_8%,rgba(10,10,10,0.46)_50%,rgba(10,10,10,0.7)_100%)]" />
 
-      <div className="oda-container relative flex min-h-[94svh] flex-col justify-end gap-8 py-14 sm:py-16 lg:py-20">
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-end">
-          <div className="max-w-[58rem] space-y-6">
+      <div className="oda-container relative flex min-h-[68svh] flex-col justify-end gap-6 py-10 sm:min-h-[70svh] sm:py-12 lg:min-h-[74svh] lg:gap-7 lg:py-14">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-end">
+          <div className="max-w-[58rem] space-y-5">
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-[11px] uppercase tracking-[0.28em] text-[color:var(--oda-gold)]">ODA editorial</p>
               <span className="rounded-full border border-white/30 bg-black/25 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/88">
@@ -71,7 +117,7 @@ export default function HomeHeroImmersive({ hero }: { hero: HomeProductCardData 
               </span>
             </div>
 
-            <h1 className="font-display text-5xl leading-[0.94] sm:text-7xl lg:text-[7.2rem]">
+            <h1 className="font-display text-[3.1rem] leading-[0.94] sm:text-[4.6rem] lg:text-[6.6rem]">
               Descubre moda colombiana
               <br className="hidden md:block" /> con criterio editorial.
             </h1>
@@ -85,11 +131,11 @@ export default function HomeHeroImmersive({ hero }: { hero: HomeProductCardData 
           {showProductSupport ? (
             <div className="hidden rounded-[1.15rem] border border-white/20 bg-white/10 p-5 backdrop-blur-sm lg:flex lg:flex-col lg:gap-3">
               <p className="text-[10px] uppercase tracking-[0.24em] text-white/76">Pieza destacada</p>
-              <p className="line-clamp-2 text-lg leading-tight text-white">{hero?.name}</p>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-gold)]">{hero?.brandName}</p>
+              <p className="line-clamp-2 text-lg leading-tight text-white">{activeSlide?.name}</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-gold)]">{activeSlide?.brandName}</p>
               <p className="text-sm text-white/88">{heroPrice}</p>
               <a
-                href={hero?.sourceUrl ?? "#"}
+                href={activeSlide?.sourceUrl ?? "#"}
                 target="_blank"
                 rel="noreferrer"
                 className="mt-1 inline-flex w-fit rounded-full border border-white/45 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-white transition hover:bg-white/10"
@@ -121,6 +167,44 @@ export default function HomeHeroImmersive({ hero }: { hero: HomeProductCardData 
             Rotacion semilla 3 dias
           </div>
         </div>
+
+        {slides.length > 1 ? (
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              {slides.map((slide, index) => (
+                <button
+                  key={slide.id}
+                  type="button"
+                  onClick={() => setActiveIndex(index)}
+                  aria-label={`Ir al slide ${index + 1}`}
+                  aria-current={safeActiveIndex === index}
+                  className={`h-2.5 rounded-full transition ${
+                    safeActiveIndex === index ? "w-8 bg-white" : "w-2.5 bg-white/45 hover:bg-white/70"
+                  }`}
+                />
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveIndex((current) => (current - 1 + slides.length) % slides.length)}
+                className="rounded-full border border-white/35 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-white transition hover:bg-white/10"
+                aria-label="Slide anterior"
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveIndex((current) => (current + 1) % slides.length)}
+                className="rounded-full border border-white/35 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-white transition hover:bg-white/10"
+                aria-label="Siguiente slide"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );

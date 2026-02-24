@@ -13,6 +13,7 @@ import Link from "next/link";
 import type { CatalogProduct } from "@/lib/catalog-data";
 import FavoriteToggle from "@/components/FavoriteToggle";
 import { useCompare } from "@/components/CompareProvider";
+import { logExperienceEvent } from "@/lib/experience-events";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 
 const IMAGE_BLUR_DATA_URL =
@@ -253,6 +254,7 @@ export default function CatalogProductCard({
     extrasLoadedRef.current = extrasLoaded;
   }, [extrasLoaded]);
   const extrasLoadingRef = useRef(false);
+  const extrasLoadPromiseRef = useRef<Promise<string[]> | null>(null);
 
   const [canHover, setCanHover] = useState(false);
   const canHoverRef = useRef(false);
@@ -488,45 +490,81 @@ export default function CatalogProductCard({
     return true;
   }
 
-  async function ensureExtrasLoaded() {
-    if (extrasLoadedRef.current) return;
-    if (extrasLoadingRef.current) return;
+  function maybeRecoverFromNoImagesBlock(merged: string[]) {
+    if (merged.length <= 1) return;
+    if (carouselRunStateRef.current !== "blocked") return;
+    if (carouselBlockReasonRef.current !== "no-images") return;
+
+    evaluateMobilePlaybackRef.current();
+
+    const desktopWasRequested =
+      desktopTriggerRef.current !== "none" ||
+      carouselModeRef.current === "desktop" ||
+      startModeRef.current === "desktop";
+    if (!desktopWasRequested) return;
+    if (playingRef.current || startTimeoutRef.current) return;
+    if (prefersReducedMotionRef.current) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+
+    scheduleCarouselStart("desktop", CAROUSEL_CONFIG.desktopArmDelayMs, {
+      desktopTrigger: "programmatic",
+    });
+  }
+
+  async function ensureExtrasLoaded(): Promise<string[]> {
+    if (extrasLoadedRef.current) {
+      return imagesRef.current;
+    }
+    if (extrasLoadPromiseRef.current) {
+      return extrasLoadPromiseRef.current;
+    }
+
     extrasLoadingRef.current = true;
 
-    try {
-      const res = await fetch(
-        `/api/catalog/product-images?productId=${encodeURIComponent(productIdRef.current)}`,
-        {
-          cache: "force-cache",
-        },
-      );
-      if (!res.ok) return;
-      const payload = (await res.json()) as { images?: string[] };
-      const nextImages = Array.isArray(payload.images) ? payload.images : [];
-      const proxied = nextImages.map((url) =>
-        proxiedImageUrl(url, { productId: productIdRef.current, kind: "gallery" }),
-      );
+    const loadPromise = (async (): Promise<string[]> => {
+      try {
+        const res = await fetch(
+          `/api/catalog/product-images?productId=${encodeURIComponent(productIdRef.current)}`,
+          {
+            cache: "force-cache",
+          },
+        );
+        if (!res.ok) return imagesRef.current;
 
-      setImages((prev) => {
-        const merged = uniqStrings([...prev, ...proxied]);
+        const payload = (await res.json()) as { images?: string[] };
+        const nextImages = Array.isArray(payload.images) ? payload.images : [];
+        const proxied = nextImages.map((url) =>
+          proxiedImageUrl(url, { productId: productIdRef.current, kind: "gallery" }),
+        );
+        const merged = uniqStrings([...imagesRef.current, ...proxied]);
         imagesRef.current = merged;
+        if (mountedRef.current) {
+          setImages(merged);
+        }
+
         for (const url of merged) {
           if (url) {
             void preloadImage(url);
           }
         }
-        return merged;
-      });
 
-      extrasLoadedRef.current = true;
-      if (mountedRef.current) {
-        setExtrasLoaded(true);
+        extrasLoadedRef.current = true;
+        if (mountedRef.current) {
+          setExtrasLoaded(true);
+        }
+
+        maybeRecoverFromNoImagesBlock(merged);
+        return merged;
+      } catch {
+        return imagesRef.current;
+      } finally {
+        extrasLoadingRef.current = false;
+        extrasLoadPromiseRef.current = null;
       }
-    } catch {
-      // ignore
-    } finally {
-      extrasLoadingRef.current = false;
-    }
+    })();
+
+    extrasLoadPromiseRef.current = loadPromise;
+    return loadPromise;
   }
 
   async function findNextReadyIndex(
@@ -635,9 +673,7 @@ export default function CatalogProductCard({
       return;
     }
 
-    await ensureExtrasLoaded();
-
-    const list = imagesRef.current;
+    const list = await ensureExtrasLoaded();
     if (list.length <= 1) {
       setCarouselRunStateSafe("blocked");
       setCarouselBlockReasonSafe("no-images");
@@ -842,6 +878,7 @@ export default function CatalogProductCard({
     setExtrasLoaded(false);
     extrasLoadedRef.current = false;
     extrasLoadingRef.current = false;
+    extrasLoadPromiseRef.current = null;
 
     setLayerAUrl(coverUrl ?? null);
     setLayerBUrl(null);
@@ -1189,6 +1226,16 @@ export default function CatalogProductCard({
         ref={viewRef}
         target={openInNewTab ? "_blank" : undefined}
         rel={openInNewTab ? "noreferrer noopener" : undefined}
+        onClick={() => {
+          logExperienceEvent({
+            type: "product_click",
+            productId: product.id,
+            path: typeof window !== "undefined" ? window.location.pathname : "/",
+            properties: {
+              surface: "catalog_product_card",
+            },
+          });
+        }}
         className={[
           "relative block w-full overflow-hidden bg-[color:var(--oda-stone)]",
           aspectClass,

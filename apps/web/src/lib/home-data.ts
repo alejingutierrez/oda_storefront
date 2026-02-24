@@ -9,6 +9,9 @@ import type {
   CategoryHighlight,
   ColorCombo,
   HomeCoverageStats,
+  HomeHeroSlide,
+  HomePriceDropCardData,
+  HomeTrendingDailyCardData,
   MegaMenuData,
   MenuCategory,
   ProductCard,
@@ -30,6 +33,9 @@ export type {
   CategoryHighlight,
   ColorCombo,
   HomeCoverageStats,
+  HomeHeroSlide,
+  HomePriceDropCardData,
+  HomeTrendingDailyCardData,
   HomeProductCardData,
   MegaMenuData,
   MenuCategory,
@@ -40,8 +46,14 @@ export type {
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 6;
+const HOME_CACHE_VERSION = 8;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
+const HOME_STYLE_PRODUCTS_LIMIT = 6;
+
+type HomePricingContext = {
+  pricing: { trmUsdCop: number };
+  displayUnitCop: number;
+};
 
 export function getRotationSeed(now = new Date()): number {
   return Math.floor(now.getTime() / THREE_DAYS_MS);
@@ -70,6 +82,52 @@ function toCopDisplayString(input: {
     unitCop: input.unitCop,
   });
   return displayed ? String(displayed) : null;
+}
+
+function sqlExcludeProductIds(ids: string[]) {
+  if (!ids.length) return Prisma.empty;
+  return Prisma.sql`and p.id not in (${Prisma.join(ids)})`;
+}
+
+export type HomeSelectionRegistry = {
+  usedIds: Set<string>;
+};
+
+export function createHomeSelectionRegistry(initialIds: string[] = []): HomeSelectionRegistry {
+  return {
+    usedIds: new Set(initialIds.filter(Boolean)),
+  };
+}
+
+export function collectUniqueProducts<T extends { id: string }>(
+  products: T[],
+  registry: HomeSelectionRegistry,
+  limit = products.length,
+): T[] {
+  const next: T[] = [];
+  for (const product of products) {
+    if (!product?.id || registry.usedIds.has(product.id)) continue;
+    registry.usedIds.add(product.id);
+    next.push(product);
+    if (next.length >= limit) break;
+  }
+  return next;
+}
+
+async function getHomePricingContext(): Promise<HomePricingContext> {
+  const cached = unstable_cache(
+    async () => {
+      const pricingConfig = await getPricingConfig();
+      return {
+        pricing: { trmUsdCop: getUsdCopTrm(pricingConfig) },
+        displayUnitCop: getDisplayRoundingUnitCop(pricingConfig),
+      };
+    },
+    [`home-v${HOME_CACHE_VERSION}-pricing`],
+    { revalidate: HOME_REVALIDATE_SECONDS }
+  );
+
+  return cached();
 }
 
 export async function getMegaMenuData(): Promise<MegaMenuData> {
@@ -194,10 +252,8 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
 export async function getHeroProduct(seed: number): Promise<ProductCard | null> {
   const cached = unstable_cache(
     async () => {
-      const pricingConfig = await getPricingConfig();
-      const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
-      const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
-      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+      const pricingContext = await getHomePricingContext();
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
       const rows = await prisma.$queryRaw<
         Array<ProductCard & { sourceCurrency: string | null; brandOverrideUsd: boolean }>
       >(
@@ -232,7 +288,7 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
         ...baseRow,
         minPrice: toCopDisplayString({
           value: row.minPrice,
-          unitCop: displayUnitCop,
+          unitCop: pricingContext.displayUnitCop,
           sourceCurrency,
           brandOverrideUsd,
         }),
@@ -249,10 +305,8 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
 export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCard[]> {
   const cached = unstable_cache(
     async () => {
-      const pricingConfig = await getPricingConfig();
-      const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
-      const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
-      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+      const pricingContext = await getHomePricingContext();
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
 
       const rows = await prisma.$queryRaw<
         Array<ProductCard & { sourceCurrency: string | null; brandOverrideUsd: boolean }>
@@ -286,7 +340,7 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
         ...row,
         minPrice: toCopDisplayString({
           value: row.minPrice,
-          unitCop: displayUnitCop,
+          unitCop: pricingContext.displayUnitCop,
           sourceCurrency,
           brandOverrideUsd,
         }),
@@ -303,10 +357,8 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
 export async function getTrendingPicks(seed: number, limit = 8): Promise<ProductCard[]> {
   const cached = unstable_cache(
     async () => {
-      const pricingConfig = await getPricingConfig();
-      const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
-      const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
-      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+      const pricingContext = await getHomePricingContext();
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
 
       const rows = await prisma.$queryRaw<
         Array<ProductCard & { sourceCurrency: string | null; brandOverrideUsd: boolean }>
@@ -340,7 +392,7 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
         ...row,
         minPrice: toCopDisplayString({
           value: row.minPrice,
-          unitCop: displayUnitCop,
+          unitCop: pricingContext.displayUnitCop,
           sourceCurrency,
           brandOverrideUsd,
         }),
@@ -356,8 +408,10 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
 
 export async function getCategoryHighlights(
   seed: number,
-  limit = 8
+  limit = 8,
+  options?: { preferBlob?: boolean },
 ): Promise<CategoryHighlight[]> {
+  const preferBlob = options?.preferBlob === true;
   const cached = unstable_cache(
     async () => {
       const rows = await prisma.$queryRaw<
@@ -430,14 +484,20 @@ export async function getCategoryHighlights(
         `
       );
 
-      return rows.map((row) => ({
+      const mapped = rows.map((row) => ({
         category: row.category,
         label: labelize(row.category),
         imageCoverUrl: row.imageCoverUrl,
         href: buildCategoryHref("Unisex", row.category),
       }));
+      if (!preferBlob) return mapped;
+      return [...mapped].sort((a, b) => {
+        const aBlob = a.imageCoverUrl.includes("blob.vercel-storage.com") ? 1 : 0;
+        const bBlob = b.imageCoverUrl.includes("blob.vercel-storage.com") ? 1 : 0;
+        return bBlob - aBlob;
+      });
     },
-    [`home-v${HOME_CACHE_VERSION}-categories-${seed}-${limit}`],
+    [`home-v${HOME_CACHE_VERSION}-categories-${seed}-${limit}-${preferBlob ? "blob-first" : "default"}`],
     { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
@@ -447,32 +507,39 @@ export async function getCategoryHighlights(
 export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGroup[]> {
   const cached = unstable_cache(
     async () => {
-      const pricingConfig = await getPricingConfig();
-      const pricing = { trmUsdCop: getUsdCopTrm(pricingConfig) };
-      const displayUnitCop = getDisplayRoundingUnitCop(pricingConfig);
-      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+      const pricingContext = await getHomePricingContext();
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
 
-      const styles = await prisma.$queryRaw<
-        Array<{ stylePrimary: string; cnt: bigint }>
+      const rows = await prisma.$queryRaw<
+        Array<
+          ProductCard & {
+            styleKey: string;
+            styleOrder: number;
+            rowRank: number;
+            sourceCurrency: string | null;
+            brandOverrideUsd: boolean;
+          }
+        >
       >(
         Prisma.sql`
-          select "stylePrimary" as "stylePrimary", count(*) as cnt
-          from products
-          where "stylePrimary" is not null and "stylePrimary" <> ''
-          group by 1
-          order by cnt desc
-          limit ${limit}
-        `
-      );
-
-      const groups: StyleGroup[] = [];
-      for (const style of styles) {
-        const styleKey = style.stylePrimary;
-        const rows = await prisma.$queryRaw<
-          Array<ProductCard & { sourceCurrency: string | null; brandOverrideUsd: boolean }>
-        >(
-          Prisma.sql`
+          with style_counts as (
+            select p."stylePrimary" as style_key, count(*)::int as cnt
+            from products p
+            where p."stylePrimary" is not null and p."stylePrimary" <> ''
+            group by 1
+          ),
+          top_styles as (
             select
+              sc.style_key,
+              row_number() over (order by sc.cnt desc, sc.style_key asc) as style_order
+            from style_counts sc
+            order by sc.cnt desc, sc.style_key asc
+            limit ${limit}
+          ),
+          ranked as (
+            select
+              ts.style_key as "styleKey",
+              ts.style_order as "styleOrder",
               p.id,
               p.name,
               p."imageCoverUrl",
@@ -487,33 +554,78 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
               ) as "minPrice",
               p.currency as "sourceCurrency",
               (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
-              'COP' as currency
-            from products p
+              row_number() over (
+                partition by ts.style_key
+                order by md5(concat(p.id::text, ${seed}::text, ts.style_key::text))
+              ) as "rowRank"
+            from top_styles ts
+            join products p on p."stylePrimary" = ts.style_key and p."imageCoverUrl" is not null
             join brands b on b.id = p."brandId"
-            where p."stylePrimary" = ${styleKey} and p."imageCoverUrl" is not null
-            order by md5(concat(p.id::text, ${seed}::text, ${styleKey}::text))
-            limit 6
-          `
-        );
-        const products = rows.map(({ sourceCurrency, brandOverrideUsd, ...row }) => ({
-          ...row,
+          )
+          select
+            "styleKey",
+            "styleOrder",
+            "rowRank",
+            id,
+            name,
+            "imageCoverUrl",
+            "brandName",
+            category,
+            subcategory,
+            "sourceUrl",
+            "minPrice",
+            "sourceCurrency",
+            "brandOverrideUsd",
+            'COP' as currency
+          from ranked
+          where "rowRank" <= ${HOME_STYLE_PRODUCTS_LIMIT}
+          order by "styleOrder" asc, "rowRank" asc
+        `
+      );
+
+      const grouped = new Map<
+        string,
+        {
+          styleOrder: number;
+          products: ProductCard[];
+        }
+      >();
+
+      for (const row of rows) {
+        const styleKey = row.styleKey;
+        const styleOrder = Number(row.styleOrder);
+        const product: ProductCard = {
+          id: row.id,
+          name: row.name,
+          imageCoverUrl: row.imageCoverUrl,
+          brandName: row.brandName,
+          category: row.category,
+          subcategory: row.subcategory,
+          sourceUrl: row.sourceUrl,
           minPrice: toCopDisplayString({
             value: row.minPrice,
-            unitCop: displayUnitCop,
-            sourceCurrency,
-            brandOverrideUsd,
+            unitCop: pricingContext.displayUnitCop,
+            sourceCurrency: row.sourceCurrency,
+            brandOverrideUsd: row.brandOverrideUsd,
           }),
           currency: "COP",
-        }));
+        };
 
-        groups.push({
-          styleKey,
-          label: labelize(styleKey),
-          products,
-        });
+        const bucket = grouped.get(styleKey);
+        if (!bucket) {
+          grouped.set(styleKey, { styleOrder: Number.isFinite(styleOrder) ? styleOrder : 0, products: [product] });
+        } else {
+          bucket.products.push(product);
+        }
       }
 
-      return groups;
+      return Array.from(grouped.entries())
+        .sort((a, b) => a[1].styleOrder - b[1].styleOrder)
+        .map(([styleKey, value]) => ({
+          styleKey,
+          label: labelize(styleKey),
+          products: value.products,
+        }));
     },
     [`home-v${HOME_CACHE_VERSION}-styles-${seed}-${limit}`],
     { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
@@ -702,5 +814,407 @@ export async function getHomeCoverageStats(): Promise<HomeCoverageStats | null> 
     { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
+  return cached();
+}
+
+type HomeProductQueryRow = ProductCard & {
+  sourceCurrency: string | null;
+  brandOverrideUsd: boolean;
+};
+
+function mapHomeProductRows(
+  rows: HomeProductQueryRow[],
+  pricingContext: HomePricingContext,
+): ProductCard[] {
+  return rows.map(({ sourceCurrency, brandOverrideUsd, ...row }) => ({
+    ...row,
+    minPrice: toCopDisplayString({
+      value: row.minPrice,
+      unitCop: pricingContext.displayUnitCop,
+      sourceCurrency,
+      brandOverrideUsd,
+    }),
+    currency: "COP",
+  }));
+}
+
+export async function getHeroSlides(
+  seed: number,
+  count = 4,
+  excludeIds: string[] = [],
+): Promise<HomeHeroSlide[]> {
+  const pool = await getNewArrivals(seed, Math.max(36, count * 10));
+  const registry = createHomeSelectionRegistry(excludeIds);
+  return collectUniqueProducts(pool, registry, count).map((item, index) => ({
+    ...item,
+    slideOrder: index + 1,
+  }));
+}
+
+export async function getFocusPicks(
+  seed: number,
+  options?: {
+    limit?: number;
+    subcategoryLimit?: number;
+    excludeIds?: string[];
+  },
+): Promise<ProductCard[]> {
+  const limit = options?.limit ?? 24;
+  const subcategoryLimit = options?.subcategoryLimit ?? 12;
+  const excludeIds = options?.excludeIds ?? [];
+  const pool = await getTrendingPicks(seed, Math.max(limit * 5, 120));
+  const filtered = pool.filter((item) => !excludeIds.includes(item.id));
+  const bucketed = new Map<string, ProductCard[]>();
+  for (const item of filtered) {
+    const key = (item.subcategory || item.category || "otros").trim();
+    if (!bucketed.has(key)) bucketed.set(key, []);
+    bucketed.get(key)!.push(item);
+  }
+  const selectedBuckets = Array.from(bucketed.entries())
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, subcategoryLimit);
+  const registry = createHomeSelectionRegistry(excludeIds);
+  const picks: ProductCard[] = [];
+  let cursor = 0;
+  while (picks.length < limit) {
+    let addedInRound = false;
+    for (const [, items] of selectedBuckets) {
+      const candidate = items[cursor];
+      if (!candidate) continue;
+      if (registry.usedIds.has(candidate.id)) continue;
+      registry.usedIds.add(candidate.id);
+      picks.push(candidate);
+      addedInRound = true;
+      if (picks.length >= limit) break;
+    }
+    if (!addedInRound) break;
+    cursor += 1;
+  }
+  return picks;
+}
+
+export async function getPriceDropPicks(
+  seed: number,
+  options?: {
+    limit?: number;
+    days?: number;
+    minDropPercent?: number;
+    excludeIds?: string[];
+  },
+): Promise<HomePriceDropCardData[]> {
+  const limit = options?.limit ?? 12;
+  const days = options?.days ?? 7;
+  const minDropPercent = options?.minDropPercent ?? 5;
+  const excludeIds = options?.excludeIds ?? [];
+  const cached = unstable_cache(
+    async () => {
+      const pricingContext = await getHomePricingContext();
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
+      const rows = await prisma.$queryRaw<
+        Array<
+          HomeProductQueryRow & {
+            previousPrice: number | null;
+            dropPercent: number | null;
+            priceChangedAt: Date | string | null;
+          }
+        >
+      >(
+        Prisma.sql`
+          with product_prices as (
+            select
+              p.id as product_id,
+              min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as current_price,
+              max(ph.price)::numeric as previous_price
+            from products p
+            join variants v on v."productId" = p.id
+            join brands b on b.id = p."brandId"
+            left join "price_history" ph on ph."variantId" = v.id and ph."capturedAt" >= (now() - make_interval(days => ${days}))
+            where p."imageCoverUrl" is not null
+              and p."hasInStock" = true
+              and p."priceChangeDirection" = 'down'
+              and p."priceChangeAt" >= (now() - make_interval(days => ${days}))
+              ${sqlExcludeProductIds(excludeIds)}
+            group by p.id
+          )
+          select
+            p.id,
+            p.name,
+            p."imageCoverUrl",
+            b.name as "brandName",
+            p.category,
+            p.subcategory,
+            p."sourceUrl",
+            pp.current_price as "minPrice",
+            p.currency as "sourceCurrency",
+            (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
+            pp.previous_price as "previousPrice",
+            case
+              when pp.previous_price is null or pp.previous_price <= 0 or pp.current_price is null then null
+              else round(((pp.previous_price - pp.current_price) / pp.previous_price) * 100.0, 2)
+            end as "dropPercent",
+            p."priceChangeAt" as "priceChangedAt",
+            'COP' as currency
+          from product_prices pp
+          join products p on p.id = pp.product_id
+          join brands b on b.id = p."brandId"
+          where pp.current_price is not null
+            and pp.previous_price is not null
+            and pp.previous_price > pp.current_price
+            and ((pp.previous_price - pp.current_price) / nullif(pp.previous_price, 0)) * 100 >= ${minDropPercent}
+          order by
+            ((pp.previous_price - pp.current_price) / nullif(pp.previous_price, 0)) desc,
+            md5(concat(p.id::text, ${seed}::text, 'price-drop'))
+          limit ${limit}
+        `
+      );
+      const cards = mapHomeProductRows(rows, pricingContext);
+      const rowById = new Map(rows.map((row) => [row.id, row]));
+      return cards.map((card) => {
+        const row = rowById.get(card.id);
+        const previousPrice = row
+          ? toCopDisplayString({
+              value: row.previousPrice,
+              unitCop: pricingContext.displayUnitCop,
+              sourceCurrency: row.sourceCurrency,
+              brandOverrideUsd: row.brandOverrideUsd,
+            })
+          : null;
+        const priceChangedAt =
+          row?.priceChangedAt instanceof Date
+            ? row.priceChangedAt.toISOString()
+            : row?.priceChangedAt
+              ? new Date(row.priceChangedAt).toISOString()
+              : null;
+        return {
+          ...card,
+          previousPrice,
+          dropPercent: row?.dropPercent ? Number(row.dropPercent) : null,
+          priceChangedAt,
+        };
+      });
+    },
+    [`home-v${HOME_CACHE_VERSION}-price-drop-${seed}-${limit}-${days}-${minDropPercent}-${excludeIds.join(",")}`],
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
+  );
+  return cached();
+}
+
+export async function getMostFavoritedPicks(
+  seed: number,
+  options?: {
+    limit?: number;
+    windowDays?: number;
+    excludeIds?: string[];
+  },
+): Promise<ProductCard[]> {
+  const limit = options?.limit ?? 12;
+  const windowDays = options?.windowDays ?? 30;
+  const excludeIds = options?.excludeIds ?? [];
+  const cached = unstable_cache(
+    async () => {
+      const pricingContext = await getHomePricingContext();
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
+      const rows = await prisma.$queryRaw<HomeProductQueryRow[]>(
+        Prisma.sql`
+          with favorites_rank as (
+            select
+              uf."productId" as product_id,
+              count(*)::int as favorite_count
+            from "user_favorites" uf
+            where uf."createdAt" >= (now() - make_interval(days => ${windowDays}))
+            group by uf."productId"
+          )
+          select
+            p.id,
+            p.name,
+            p."imageCoverUrl",
+            b.name as "brandName",
+            p.category,
+            p.subcategory,
+            p."sourceUrl",
+            (
+              select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
+              from variants v
+              where v."productId" = p.id
+            ) as "minPrice",
+            p.currency as "sourceCurrency",
+            (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
+            'COP' as currency
+          from favorites_rank fr
+          join products p on p.id = fr.product_id
+          join brands b on b.id = p."brandId"
+          where p."imageCoverUrl" is not null
+            and p."hasInStock" = true
+            ${sqlExcludeProductIds(excludeIds)}
+          order by fr.favorite_count desc, md5(concat(p.id::text, ${seed}::text, 'favorites'))
+          limit ${limit}
+        `
+      );
+      return mapHomeProductRows(rows, pricingContext);
+    },
+    [`home-v${HOME_CACHE_VERSION}-most-favorites-${seed}-${limit}-${windowDays}-${excludeIds.join(",")}`],
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
+  );
+  return cached();
+}
+
+export async function getUserFavoritePicks(
+  userId: string,
+  options?: {
+    limit?: number;
+    excludeIds?: string[];
+  },
+): Promise<ProductCard[]> {
+  const limit = options?.limit ?? 12;
+  const excludeIds = options?.excludeIds ?? [];
+  const cached = unstable_cache(
+    async () => {
+      const pricingContext = await getHomePricingContext();
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
+      const rows = await prisma.$queryRaw<HomeProductQueryRow[]>(
+        Prisma.sql`
+          with ranked as (
+            select
+              uf."productId",
+              row_number() over (partition by uf."productId" order by uf."createdAt" desc) as rn,
+              max(uf."createdAt") over (partition by uf."productId") as latest
+            from "user_favorites" uf
+            where uf."userId" = ${userId}
+          )
+          select
+            p.id,
+            p.name,
+            p."imageCoverUrl",
+            b.name as "brandName",
+            p.category,
+            p.subcategory,
+            p."sourceUrl",
+            (
+              select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
+              from variants v
+              where v."productId" = p.id
+            ) as "minPrice",
+            p.currency as "sourceCurrency",
+            (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
+            'COP' as currency
+          from ranked r
+          join products p on p.id = r."productId"
+          join brands b on b.id = p."brandId"
+          where r.rn = 1
+            and p."imageCoverUrl" is not null
+            and p."hasInStock" = true
+            ${sqlExcludeProductIds(excludeIds)}
+          order by r.latest desc
+          limit ${limit}
+        `
+      );
+      return mapHomeProductRows(rows, pricingContext);
+    },
+    [`home-v${HOME_CACHE_VERSION}-user-favorites-${userId}-${limit}-${excludeIds.join(",")}`],
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
+  );
+  return cached();
+}
+
+export async function getDailyTrendingPicks(
+  seed: number,
+  options?: {
+    limit?: number;
+    excludeIds?: string[];
+  },
+): Promise<HomeTrendingDailyCardData[]> {
+  const limit = options?.limit ?? 12;
+  const excludeIds = options?.excludeIds ?? [];
+  const cached = unstable_cache(
+    async () => {
+      const pricingContext = await getHomePricingContext();
+      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
+      let rows: Array<
+        HomeProductQueryRow & {
+          clickCount: number;
+          snapshotDate: Date | string | null;
+        }
+      > = [];
+      try {
+        rows = await prisma.$queryRaw<
+          Array<
+            HomeProductQueryRow & {
+              clickCount: number;
+              snapshotDate: Date | string | null;
+            }
+          >
+        >(
+          Prisma.sql`
+            with latest as (
+              select max(htd."snapshotDate") as snapshot_date
+              from "home_trending_daily" htd
+            )
+            select
+              p.id,
+              p.name,
+              p."imageCoverUrl",
+              b.name as "brandName",
+              p.category,
+              p.subcategory,
+              p."sourceUrl",
+              (
+                select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
+                from variants v
+                where v."productId" = p.id
+              ) as "minPrice",
+              p.currency as "sourceCurrency",
+              (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
+              htd."clickCount" as "clickCount",
+              htd."snapshotDate" as "snapshotDate",
+              'COP' as currency
+            from latest l
+            join "home_trending_daily" htd on htd."snapshotDate" = l.snapshot_date
+            join products p on p.id = htd."productId"
+            join brands b on b.id = p."brandId"
+            where p."imageCoverUrl" is not null
+              and p."hasInStock" = true
+              ${sqlExcludeProductIds(excludeIds)}
+            order by htd.rank asc, htd."clickCount" desc
+            limit ${limit}
+          `
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+        if (!message.includes("home_trending_daily") || !message.includes("does not exist")) {
+          throw error;
+        }
+      }
+
+      if (rows.length === 0) {
+        const fallback = await getTrendingPicks(seed, limit);
+        return fallback
+          .filter((item) => !excludeIds.includes(item.id))
+          .map((item) => ({
+            ...item,
+            clickCount: 0,
+            snapshotDate: null,
+          }));
+      }
+
+      const cards = mapHomeProductRows(rows, pricingContext);
+      const rowById = new Map(rows.map((row) => [row.id, row]));
+      return cards.map((card) => {
+        const row = rowById.get(card.id);
+        const snapshotDate =
+          row?.snapshotDate instanceof Date
+            ? row.snapshotDate.toISOString()
+            : row?.snapshotDate
+              ? new Date(row.snapshotDate).toISOString()
+              : null;
+        return {
+          ...card,
+          clickCount: Number(row?.clickCount ?? 0),
+          snapshotDate,
+        };
+      });
+    },
+    [`home-v${HOME_CACHE_VERSION}-daily-trending-${seed}-${limit}-${excludeIds.join(",")}`],
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
+  );
   return cached();
 }

@@ -10,7 +10,6 @@ import { optimizeBeforeBlob, summarizeImageOptimization } from "./_image-optimiz
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Este repo guarda `.env` en la raiz; los scripts viven en `apps/web/scripts`.
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 const connectionString =
@@ -31,52 +30,19 @@ if (!blobToken) {
   process.exit(1);
 }
 
-const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_SOURCE_IMAGE_BYTES = Math.max(
   MAX_IMAGE_BYTES,
-  Number(process.env.IMAGE_BACKFILL_MAX_SOURCE_IMAGE_BYTES ?? 32 * 1024 * 1024),
+  Number(process.env.BRAND_LOGO_BACKFILL_MAX_SOURCE_IMAGE_BYTES ?? 24 * 1024 * 1024),
 );
-const DEFAULT_TIMEOUT_MS = 12000;
+const DEFAULT_TIMEOUT_MS = 10000;
 const BLOB_CACHE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
-const ENABLE_LIST_FALLBACK =
-  (process.env.BLOB_ENABLE_LIST_FALLBACK ?? process.env.IMAGE_BACKFILL_LIST_FALLBACK ?? "")
-    .trim()
-    .toLowerCase() === "true";
 
-const LIMIT = Math.max(0, Number(process.env.BACKFILL_LIMIT ?? process.env.IMAGE_BACKFILL_LIMIT ?? 500));
-const CONCURRENCY = Math.max(1, Number(process.env.BACKFILL_CONCURRENCY ?? process.env.IMAGE_BACKFILL_CONCURRENCY ?? 6));
-const MAX_ITEMS_PER_HOUR = Math.max(
-  0,
-  Number(process.env.BACKFILL_MAX_ITEMS_PER_HOUR ?? process.env.IMAGE_BACKFILL_MAX_ITEMS_PER_HOUR ?? 4000),
-);
-const ONLY_ENRICHED = process.env.IMAGE_BACKFILL_ONLY_ENRICHED !== "false";
-const BRAND_SLUG = (process.env.BACKFILL_BRAND_SLUG ?? process.env.IMAGE_BACKFILL_BRAND_SLUG ?? "").trim() || null;
-const DRY_RUN = process.env.DRY_RUN === "true";
-const LOG_EVERY = Math.max(10, Number(process.env.IMAGE_BACKFILL_LOG_EVERY ?? 50));
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const MIN_INTERVAL_MS = MAX_ITEMS_PER_HOUR > 0 ? Math.ceil((60 * 60 * 1000) / MAX_ITEMS_PER_HOUR) : 0;
-let nextRateSlotAt = 0;
-let rateQueue = Promise.resolve();
-
-const waitForRateLimit = async () => {
-  if (MIN_INTERVAL_MS <= 0) return;
-  let release = () => {};
-  const previous = rateQueue;
-  rateQueue = new Promise((resolve) => {
-    release = resolve;
-  });
-  await previous;
-  try {
-    const now = Date.now();
-    if (nextRateSlotAt > now) {
-      await sleep(nextRateSlotAt - now);
-    }
-    nextRateSlotAt = Date.now() + MIN_INTERVAL_MS;
-  } finally {
-    release();
-  }
-};
+const LIMIT = Math.max(0, Number(process.env.BRAND_LOGO_BACKFILL_LIMIT ?? 400));
+const CONCURRENCY = Math.max(1, Number(process.env.BRAND_LOGO_BACKFILL_CONCURRENCY ?? 6));
+const DRY_RUN = process.env.BRAND_LOGO_BACKFILL_DRY_RUN === "true" || process.env.DRY_RUN === "true";
+const LOG_EVERY = Math.max(20, Number(process.env.BRAND_LOGO_BACKFILL_LOG_EVERY ?? 50));
+const ENABLE_LIST_FALLBACK = (process.env.BLOB_ENABLE_LIST_FALLBACK ?? "").trim().toLowerCase() === "true";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
 const isIpv4Hostname = (hostname) => /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
@@ -95,7 +61,7 @@ const isPrivateIpv4 = (hostname) => {
 const normalizeSourceUrl = (raw) => {
   if (!raw) return null;
   const trimmed = String(raw).trim();
-  if (!trimmed || trimmed.length > 2048) return null;
+  if (!trimmed || trimmed.length > 8192) return null;
   if (trimmed.startsWith("data:")) return null;
   const withProtocol = trimmed.startsWith("//") ? `https:${trimmed}` : trimmed;
   const normalized = /^https?:\/\//i.test(withProtocol)
@@ -122,6 +88,7 @@ const getOrigin = (value) => {
 
 const extensionFromContentType = (contentType) => {
   if (!contentType) return null;
+  if (contentType.includes("svg")) return ".svg";
   if (contentType.includes("avif")) return ".avif";
   if (contentType.includes("webp")) return ".webp";
   if (contentType.includes("png")) return ".png";
@@ -167,7 +134,7 @@ const resolveExistingBlobByHead = async (pathname, token) => {
   } catch (error) {
     if (isBlobNotFound(error)) return null;
     const message = error instanceof Error ? error.message : String(error);
-    console.warn("image-cover.backfill.head.failed", pathname, message);
+    console.warn("brand-logo.backfill.head.failed", pathname, message);
     return null;
   }
 };
@@ -180,7 +147,7 @@ const resolveExistingBlobByListFallback = async (prefix, token) => {
     return match?.url ?? null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn("image-cover.backfill.list.fallback.failed", prefix, message);
+    console.warn("brand-logo.backfill.list.fallback.failed", prefix, message);
     return null;
   }
 };
@@ -209,8 +176,8 @@ const cacheToBlob = async (sourceUrl, token) => {
   }
 
   const defaultHeaders = {
-    "user-agent": "ODA-ImageBackfill/1.0",
-    accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    "user-agent": "ODA-BrandLogoBackfill/1.0",
+    accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
   };
 
   let res = await fetchWithTimeout(sourceUrl, DEFAULT_TIMEOUT_MS, defaultHeaders);
@@ -239,14 +206,6 @@ const cacheToBlob = async (sourceUrl, token) => {
   if (optimized.buffer.length > MAX_IMAGE_BYTES) throw new Error(`too_large:${optimized.buffer.length}`);
   const ext = optimized.extension || getExtension(sourceUrl, optimized.contentType ?? contentType);
   const pathname = `${baseKey}${ext}`;
-  if (pathname !== defaultPath) {
-    const hitByTypedHead = await resolveExistingBlobByHead(pathname, token);
-    if (hitByTypedHead) {
-      const entry = { url: hitByTypedHead, optimization: null };
-      resolvedCache.set(sourceUrl, entry);
-      return entry;
-    }
-  }
 
   const blob = await put(pathname, optimized.buffer, {
     access: "public",
@@ -265,47 +224,22 @@ const main = async () => {
   const client = new pg.Client({ connectionString });
   await client.connect();
 
-  const where = [
-    `p."imageCoverUrl" is not null`,
-    `p."imageCoverUrl" not like '%blob.vercel-storage.com%'`,
-  ];
-  const values = [];
-  if (ONLY_ENRICHED) where.push(`(p."metadata" -> 'enrichment') is not null`);
-  if (BRAND_SLUG) {
-    values.push(BRAND_SLUG);
-    where.push(`b.slug = $${values.length}`);
-  }
-
   const limitSql = LIMIT > 0 ? `limit ${LIMIT}` : "";
-
   const sql = `
     select
-      p.id,
-      p."imageCoverUrl" as url
-    from products p
-    join brands b on b.id = p."brandId"
-    where ${where.join(" and ")}
-    order by p."createdAt" desc
+      b.id,
+      b.slug,
+      b."logoUrl" as "logoUrl"
+    from brands b
+    where b."logoUrl" is not null
+      and b."logoUrl" not like '%blob.vercel-storage.com%'
+    order by b."updatedAt" desc
     ${limitSql}
   `;
 
-  const res = await client.query(sql, values);
+  const res = await client.query(sql);
   const rows = Array.isArray(res.rows) ? res.rows : [];
-  console.log(
-    JSON.stringify(
-      {
-        totalCandidates: rows.length,
-        onlyEnriched: ONLY_ENRICHED,
-        brand: BRAND_SLUG,
-        limit: LIMIT,
-        concurrency: CONCURRENCY,
-        maxItemsPerHour: MAX_ITEMS_PER_HOUR,
-        dryRun: DRY_RUN,
-      },
-      null,
-      2,
-    ),
-  );
+  console.log(JSON.stringify({ totalCandidates: rows.length, limit: LIMIT, concurrency: CONCURRENCY, dryRun: DRY_RUN }, null, 2));
 
   let cursor = 0;
   let processed = 0;
@@ -319,78 +253,42 @@ const main = async () => {
       const index = cursor;
       cursor += 1;
       const row = rows[index];
-      processed += 1;
+      if (!row) continue;
 
-      const sourceUrl = normalizeSourceUrl(row.url);
+      processed += 1;
+      const sourceUrl = normalizeSourceUrl(row.logoUrl);
       if (!sourceUrl) {
         skipped += 1;
-      } else {
-        try {
-          await waitForRateLimit();
-          const blobAsset = await cacheToBlob(sourceUrl, blobToken);
-          if (blobAsset.optimization) {
-            optimizationSamples.push(blobAsset.optimization);
-          }
-          if (!DRY_RUN) {
-            const optimizationSummary = blobAsset.optimization
-              ? summarizeImageOptimization([blobAsset.optimization])
-              : null;
-            if (optimizationSummary && optimizationSummary.count > 0) {
-              await client.query(
-                `
-                  update products
-                  set "imageCoverUrl"=$1,
-                      "updatedAt"=now(),
-                      metadata=jsonb_set(
-                        coalesce(metadata, '{}'::jsonb),
-                        '{image_optimization}',
-                        $3::jsonb,
-                        true
-                      )
-                  where id=$2
-                `,
-                [
-                  blobAsset.url,
-                  row.id,
-                  JSON.stringify({
-                    ...optimizationSummary,
-                    context: "backfill_cover",
-                    updatedAt: new Date().toISOString(),
-                  }),
-                ],
-              );
-            } else {
-              await client.query(
-                `update products set "imageCoverUrl"=$1, "updatedAt"=now() where id=$2`,
-                [blobAsset.url, row.id],
-              );
-            }
-          }
-          updated += 1;
-        } catch (err) {
-          failed += 1;
-          const message = err instanceof Error ? err.message : String(err);
-          console.warn("image-cover.backfill.failed", row.id, sourceUrl ?? row.url, message);
-        }
+        continue;
       }
 
-      if (processed % LOG_EVERY === 0 || processed === rows.length) {
-        console.log(
-          JSON.stringify(
-            { processed, total: rows.length, updated, skipped, failed, pct: Math.round((processed / rows.length) * 100) },
-            null,
-            2,
-          ),
-        );
+      try {
+        const blobAsset = await cacheToBlob(sourceUrl, blobToken);
+        if (blobAsset.optimization) optimizationSamples.push(blobAsset.optimization);
+        if (row.logoUrl === blobAsset.url) {
+          skipped += 1;
+          continue;
+        }
+
+        if (!DRY_RUN) {
+          await client.query(`update brands set "logoUrl" = $1 where id = $2`, [blobAsset.url, row.id]);
+        }
+        updated += 1;
+      } catch (error) {
+        failed += 1;
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn("brand-logo.backfill.failed", { brandId: row.id, slug: row.slug, message });
+      }
+
+      if (processed % LOG_EVERY === 0) {
+        console.log(JSON.stringify({ processed, updated, skipped, failed }, null, 2));
       }
     }
   };
 
-  const workers = Array.from({ length: Math.min(CONCURRENCY, rows.length) }, () => worker());
-  await Promise.all(workers);
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, rows.length || 1) }, () => worker()));
 
-  await client.end();
-  const optimizationSummary = summarizeImageOptimization(optimizationSamples);
+  const summary = summarizeImageOptimization(optimizationSamples);
   console.log(
     JSON.stringify(
       {
@@ -399,15 +297,18 @@ const main = async () => {
         updated,
         skipped,
         failed,
-        optimization: optimizationSummary,
+        dryRun: DRY_RUN,
+        optimization: summary,
       },
       null,
       2,
     ),
   );
+
+  await client.end();
 };
 
-main().catch((err) => {
-  console.error("Backfill error", err);
+main().catch((error) => {
+  console.error("brand-logo.backfill.unhandled", error);
   process.exit(1);
 });

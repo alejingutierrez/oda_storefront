@@ -186,6 +186,7 @@ model Product {
   assets                Asset[]
   events                Event[]
   experienceEvents      ExperienceEvent[]
+  homeTrendingDaily     HomeTrendingDaily[]
   favorites             UserFavorite[]
   listItems             UserListItem[]
   enrichmentItems       ProductEnrichmentItem[]
@@ -705,6 +706,25 @@ model ExperienceEvent {
   @@index([type])
   @@index([createdAt])
   @@map("experience_events")
+}
+
+model HomeTrendingDaily {
+  id                String   @id @default(uuid())
+  snapshotDate      DateTime
+  productId         String
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  clickCount        Int      @default(0)
+  rank              Int
+  sourceWindowStart DateTime?
+  sourceWindowEnd   DateTime?
+  metadata          Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([snapshotDate, productId])
+  @@index([snapshotDate, rank])
+  @@index([productId, snapshotDate])
+  @@map("home_trending_daily")
 }
 
 model UserIdentity {

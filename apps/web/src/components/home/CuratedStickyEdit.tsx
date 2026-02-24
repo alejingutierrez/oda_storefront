@@ -159,6 +159,7 @@ export default function CuratedStickyEdit({ styleGroups }: { styleGroups: StyleG
                   <HomeProductCard
                     key={`${group.styleKey}-${product.id}`}
                     product={product}
+                    surface="home_curated_edit"
                     sizes="(max-width: 640px) 70vw, (max-width: 1024px) 44vw, 24vw"
                   />
                 ))}

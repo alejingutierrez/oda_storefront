@@ -1,18 +1,33 @@
 import crypto from "node:crypto";
-import { list, put } from "@vercel/blob";
+import { head, list, put } from "@vercel/blob";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  optimizeBeforeBlob,
+  summarizeImageOptimization,
+  type ImageOptimizationStats,
+} from "@/lib/media/optimize-before-blob";
 
 export const runtime = "nodejs";
 
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+const MAX_SOURCE_IMAGE_BYTES = Math.max(
+  MAX_IMAGE_BYTES,
+  Number(process.env.IMAGE_PROXY_MAX_SOURCE_IMAGE_BYTES ?? 32 * 1024 * 1024),
+);
 const DEFAULT_TIMEOUT_MS = 12000;
 const BLOB_CACHE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 const CACHE_CONTROL = "public, s-maxage=300, stale-while-revalidate=86400";
+const ENABLE_LIST_FALLBACK = process.env.IMAGE_PROXY_LIST_FALLBACK === "true";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
 const blobToken = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN || "";
-const resolvedCache = new Map<string, string>();
+const ALLOW_EXTERNAL_MEDIA_WRITE = (process.env.ALLOW_EXTERNAL_MEDIA_WRITE ?? "").trim().toLowerCase() === "true";
+type BlobCacheEntry = {
+  url: string;
+  optimization: ImageOptimizationStats | null;
+};
+const resolvedCache = new Map<string, BlobCacheEntry>();
 
 const isIpv4Hostname = (hostname: string) => /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
 
@@ -71,14 +86,17 @@ const getOrigin = (value: string) => {
   }
 };
 
-const getExtension = (url: string, contentType?: string | null) => {
-  if (contentType) {
-    if (contentType.includes("avif")) return ".avif";
-    if (contentType.includes("webp")) return ".webp";
-    if (contentType.includes("png")) return ".png";
-    if (contentType.includes("gif")) return ".gif";
-    if (contentType.includes("jpeg") || contentType.includes("jpg")) return ".jpg";
-  }
+const extensionFromContentType = (contentType?: string | null) => {
+  if (!contentType) return null;
+  if (contentType.includes("avif")) return ".avif";
+  if (contentType.includes("webp")) return ".webp";
+  if (contentType.includes("png")) return ".png";
+  if (contentType.includes("gif")) return ".gif";
+  if (contentType.includes("jpeg") || contentType.includes("jpg")) return ".jpg";
+  return null;
+};
+
+const extensionFromUrl = (url: string) => {
   try {
     const pathname = new URL(url).pathname;
     const extMatch = pathname.match(/\.([a-z0-9]{2,5})$/i);
@@ -88,6 +106,42 @@ const getExtension = (url: string, contentType?: string | null) => {
     return `.${ext}`;
   } catch {
     return ".jpg";
+  }
+};
+
+const getExtension = (url: string, contentType?: string | null) => {
+  const typeExt = extensionFromContentType(contentType);
+  if (typeExt) return typeExt;
+  return extensionFromUrl(url);
+};
+
+const isBlobNotFound = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes("does not exist");
+};
+
+const resolveExistingBlobByHead = async (pathname: string, token: string) => {
+  try {
+    const meta = await head(pathname, { token });
+    return meta.url ?? null;
+  } catch (error) {
+    if (isBlobNotFound(error)) return null;
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("image-proxy.head.failed", pathname, message);
+    return null;
+  }
+};
+
+const resolveExistingBlobByListFallback = async (prefix: string, token: string) => {
+  if (!ENABLE_LIST_FALLBACK) return null;
+  try {
+    const res = await list({ prefix, limit: 3, token });
+    const match = res.blobs.find((blob) => blob.pathname.startsWith(prefix));
+    return match?.url ?? null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("image-proxy.list.fallback.failed", prefix, message);
+    return null;
   }
 };
 
@@ -101,29 +155,26 @@ const fetchWithTimeout = async (url: string, timeoutMs: number, headers?: Record
   }
 };
 
-const resolveExistingBlob = async (prefix: string, token: string) => {
-  try {
-    const res = await list({ prefix, limit: 3, token });
-    const match = res.blobs.find((blob) => blob.pathname.startsWith(prefix));
-    return match?.url ?? null;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn("image-proxy.list.failed", prefix, message);
-    return null;
-  }
-};
-
-const cacheToBlob = async (sourceUrl: string, token: string) => {
+const cacheToBlob = async (sourceUrl: string, token: string): Promise<BlobCacheEntry> => {
   const cached = resolvedCache.get(sourceUrl);
   if (cached) return cached;
 
   const hash = crypto.createHash("sha256").update(sourceUrl).digest("hex").slice(0, 40);
   const baseKey = `image-proxy/${hash}`;
+  const defaultPath = `${baseKey}${extensionFromUrl(sourceUrl)}`;
 
-  const existing = await resolveExistingBlob(baseKey, token);
-  if (existing) {
-    resolvedCache.set(sourceUrl, existing);
-    return existing;
+  const hitByHead = await resolveExistingBlobByHead(defaultPath, token);
+  if (hitByHead) {
+    const entry = { url: hitByHead, optimization: null };
+    resolvedCache.set(sourceUrl, entry);
+    return entry;
+  }
+
+  const hitByListFallback = await resolveExistingBlobByListFallback(baseKey, token);
+  if (hitByListFallback) {
+    const entry = { url: hitByListFallback, optimization: null };
+    resolvedCache.set(sourceUrl, entry);
+    return entry;
   }
 
   const defaultHeaders = {
@@ -151,31 +202,71 @@ const cacheToBlob = async (sourceUrl: string, token: string) => {
 
   const arrayBuffer = await res.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  if (buffer.length > MAX_IMAGE_BYTES) {
+  if (buffer.length > MAX_SOURCE_IMAGE_BYTES) {
     throw new Error(`too_large:${buffer.length}`);
   }
 
   const contentType = res.headers.get("content-type");
-  const ext = getExtension(sourceUrl, contentType);
-  const pathname = `${baseKey}${ext}`;
+  const optimized = await optimizeBeforeBlob({
+    buffer,
+    sourceUrl,
+    contentType,
+    context: "image-proxy",
+  });
+  if (optimized.buffer.length > MAX_IMAGE_BYTES) {
+    throw new Error(`too_large:${optimized.buffer.length}`);
+  }
 
-  const blob = await put(pathname, buffer, {
+  const ext = optimized.extension || getExtension(sourceUrl, optimized.contentType ?? contentType);
+  const pathname = `${baseKey}${ext}`;
+  if (pathname !== defaultPath) {
+    const hitByTypedHead = await resolveExistingBlobByHead(pathname, token);
+    if (hitByTypedHead) {
+      const entry = { url: hitByTypedHead, optimization: null };
+      resolvedCache.set(sourceUrl, entry);
+      return entry;
+    }
+  }
+
+  const blob = await put(pathname, optimized.buffer, {
     access: "public",
     addRandomSuffix: false,
     cacheControlMaxAge: BLOB_CACHE_MAX_AGE_SECONDS,
-    contentType: contentType ?? undefined,
+    contentType: optimized.contentType ?? contentType ?? undefined,
     token,
   });
-  resolvedCache.set(sourceUrl, blob.url);
-  return blob.url;
+  const entry = { url: blob.url, optimization: optimized.stats };
+  resolvedCache.set(sourceUrl, entry);
+  return entry;
 };
 
-const maybePersistCover = async (productId: string | null, kind: string | null, blobUrl: string) => {
+const maybePersistCover = async (productId: string | null, kind: string | null, blob: BlobCacheEntry) => {
   if (!productId || kind !== "cover") return;
   try {
+    const data: Record<string, unknown> = { imageCoverUrl: blob.url };
+    if (blob.optimization) {
+      const product = await prisma.product.findUnique({ where: { id: productId }, select: { metadata: true } });
+      const existingMetadata =
+        product?.metadata && typeof product.metadata === "object" && !Array.isArray(product.metadata)
+          ? (product.metadata as Record<string, unknown>)
+          : {};
+      const summary = summarizeImageOptimization([blob.optimization]);
+      const nextMetadata: Record<string, unknown> = {
+        ...existingMetadata,
+        image_optimization: {
+          ...summary,
+          context: "image_proxy_cover",
+          updatedAt: new Date().toISOString(),
+        },
+      };
+      if (ALLOW_EXTERNAL_MEDIA_WRITE) {
+        nextMetadata.allow_external_media_write = true;
+      }
+      data.metadata = nextMetadata;
+    }
     await prisma.product.update({
       where: { id: productId },
-      data: { imageCoverUrl: blobUrl },
+      data,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -183,14 +274,27 @@ const maybePersistCover = async (productId: string | null, kind: string | null, 
   }
 };
 
+const svgPlaceholder = (label = "ODA") =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640" role="img" aria-label="${label}"><rect width="640" height="640" fill="#efedeb"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#7f7466" font-family="Arial, sans-serif" font-size="38" letter-spacing="6">${label}</text></svg>`;
+
+const placeholderResponse = (label: string, reason: string) =>
+  new NextResponse(svgPlaceholder(label), {
+    status: 200,
+    headers: {
+      "content-type": "image/svg+xml; charset=utf-8",
+      "cache-control": CACHE_CONTROL,
+      "x-oda-image-proxy": reason,
+    },
+  });
+
 export async function GET(req: NextRequest) {
+  const kind = req.nextUrl.searchParams.get("kind");
   const sourceUrl = normalizeSourceUrl(req.nextUrl.searchParams.get("url"));
   if (!sourceUrl) {
-    return NextResponse.json({ error: "invalid_url" }, { status: 400 });
+    return placeholderResponse(kind === "logo" ? "LOGO" : "ODA", "invalid-url");
   }
 
   const productId = req.nextUrl.searchParams.get("productId");
-  const kind = req.nextUrl.searchParams.get("kind");
 
   if (!blobToken) {
     const fallback = NextResponse.redirect(sourceUrl, 307);
@@ -202,13 +306,16 @@ export async function GET(req: NextRequest) {
   let targetUrl = sourceUrl;
   let cacheStatus = "miss";
   try {
-    const blobUrl = await cacheToBlob(sourceUrl, blobToken);
-    targetUrl = blobUrl;
+    const blobAsset = await cacheToBlob(sourceUrl, blobToken);
+    targetUrl = blobAsset.url;
     cacheStatus = "blob";
-    await maybePersistCover(productId, kind, blobUrl);
+    await maybePersistCover(productId, kind, blobAsset);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn("image-proxy.cache.failed", sourceUrl, message);
+    if (kind === "logo") {
+      return placeholderResponse("LOGO", "logo-fallback");
+    }
   }
 
   const response = NextResponse.redirect(targetUrl, 307);

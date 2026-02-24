@@ -1,6 +1,9 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import type { HomeProductCardData } from "@/lib/home-types";
+import { logExperienceEvent } from "@/lib/experience-events";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 
 function formatPrice(amount: string | null, currency: string | null) {
@@ -23,17 +26,34 @@ export default function HomeProductCard({
   product,
   className,
   sizes = "(max-width: 640px) 68vw, (max-width: 1024px) 40vw, 24vw",
+  surface = "home_product_card",
 }: {
   product: HomeProductCardData;
   className?: string;
   sizes?: string;
+  surface?: string;
 }) {
   const href = product.sourceUrl ?? "#";
   const imageSrc = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
-  const isProxyImage = Boolean(imageSrc?.startsWith("/api/image-proxy"));
 
   return (
-    <Link href={href} prefetch={false} className={`group flex min-w-0 flex-col gap-3 ${className ?? ""}`}>
+    <Link
+      href={href}
+      prefetch={false}
+      target={product.sourceUrl ? "_blank" : undefined}
+      rel={product.sourceUrl ? "noreferrer" : undefined}
+      onClick={() => {
+        logExperienceEvent({
+          type: "product_click",
+          productId: product.id,
+          path: typeof window !== "undefined" ? window.location.pathname : "/",
+          properties: {
+            surface,
+          },
+        });
+      }}
+      className={`group flex min-w-0 flex-col gap-3 ${className ?? ""}`}
+    >
       <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[1.1rem] bg-[color:var(--oda-stone)]">
         {imageSrc ? (
           <Image
@@ -43,7 +63,6 @@ export default function HomeProductCard({
             quality={58}
             sizes={sizes}
             className="object-cover transition duration-700 ease-out group-hover:scale-[1.04]"
-            unoptimized={isProxyImage}
           />
         ) : null}
       </div>

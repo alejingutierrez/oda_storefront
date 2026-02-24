@@ -5,42 +5,138 @@ import CategoryGallery from "@/components/home/CategoryGallery";
 import ColorSwatchPalette from "@/components/home/ColorSwatchPalette";
 import ConversionCoverageBlock from "@/components/home/ConversionCoverageBlock";
 import CuratedStickyEdit from "@/components/home/CuratedStickyEdit";
+import HomeDailyTrendingRail from "@/components/home/HomeDailyTrendingRail";
+import HomeFavoritesRail from "@/components/home/HomeFavoritesRail";
+import HomePriceDropRail from "@/components/home/HomePriceDropRail";
 import HomeTrendingGrid from "@/components/home/HomeTrendingGrid";
 import ProductCarousel from "@/components/home/ProductCarousel";
-import type { HomeProductCardData } from "@/lib/home-types";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 import {
+  collectUniqueProducts,
+  createHomeSelectionRegistry,
   getBrandLogos,
   getCategoryHighlights,
   getColorCombos,
+  getDailyTrendingPicks,
+  getFocusPicks,
   getHomeCoverageStats,
+  getMostFavoritedPicks,
   getNewArrivals,
+  getPriceDropPicks,
   getStyleGroups,
   getTrendingPicks,
 } from "@/lib/home-data";
+import type { HomeCoverageStats } from "@/lib/home-types";
 
 const FOLD_SECTION_CLASS = "[content-visibility:auto] [contain-intrinsic-size:960px]";
+const HOME_FETCH_TIMEOUT_MS = 24_000;
+
+function withTimeout<T>(promise: Promise<T>, fallback: T, timeoutMs = HOME_FETCH_TIMEOUT_MS): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve(fallback), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  });
+}
+
+const DEFAULT_COVERAGE_STATS: HomeCoverageStats = {
+  productCount: 0,
+  brandCount: 0,
+  categoryCount: 0,
+  lastUpdatedAt: null,
+};
 
 export default async function HomeBelowFold({
   seed,
-  hero,
+  heroIds,
 }: {
   seed: number;
-  hero: HomeProductCardData | null;
+  heroIds: string[];
 }) {
-  const [newArrivals, categoryHighlights, styleGroups, colorCombos, brandLogos, trending, coverageStats] =
-    await Promise.all([
-      getNewArrivals(seed, 6),
-      getCategoryHighlights(seed, 8),
-      getStyleGroups(seed, 2),
-      getColorCombos(seed, 3),
-      getBrandLogos(seed, 12),
-      getTrendingPicks(seed, 8),
-      getHomeCoverageStats(),
-    ]);
+  const registry = createHomeSelectionRegistry(heroIds);
+  const initialExcludeIds = Array.from(registry.usedIds);
 
-  const storyImageSrc = proxiedImageUrl(hero?.imageCoverUrl ?? null, { productId: hero?.id ?? null, kind: "cover" });
-  const isProxyStoryImage = Boolean(storyImageSrc?.startsWith("/api/image-proxy"));
+  const [
+    categoryHighlights,
+    colorCombos,
+    brandLogos,
+    coverageStats,
+    newArrivalsRaw,
+    focusRaw,
+    styleGroupsRaw,
+    priceDropRaw,
+    dailyTrendingRaw,
+    storyCandidatesRaw,
+    mostFavoritedRaw,
+  ] = await Promise.all([
+    withTimeout(getCategoryHighlights(seed, 24, { preferBlob: true }), []),
+    withTimeout(getColorCombos(seed, 3), []),
+    withTimeout(getBrandLogos(seed, 12), []),
+    withTimeout(getHomeCoverageStats(), DEFAULT_COVERAGE_STATS),
+    withTimeout(getNewArrivals(seed, 18), []),
+    withTimeout(
+      getFocusPicks(seed, {
+        limit: 24,
+        subcategoryLimit: 12,
+        excludeIds: initialExcludeIds,
+      }),
+      [],
+    ),
+    withTimeout(getStyleGroups(seed, 2), []),
+    withTimeout(
+      getPriceDropPicks(seed, {
+        days: 7,
+        minDropPercent: 5,
+        limit: 12,
+        excludeIds: initialExcludeIds,
+      }),
+      [],
+    ),
+    withTimeout(
+      getDailyTrendingPicks(seed, {
+        limit: 12,
+        excludeIds: initialExcludeIds,
+      }),
+      [],
+    ),
+    withTimeout(getTrendingPicks(seed + 19, 24), []),
+    withTimeout(
+      getMostFavoritedPicks(seed, {
+        windowDays: 30,
+        limit: 12,
+        excludeIds: initialExcludeIds,
+      }),
+      [],
+    ),
+  ]);
+
+  const newArrivals = collectUniqueProducts(newArrivalsRaw, registry, 8);
+
+  const focusProducts = collectUniqueProducts(focusRaw, registry, 24);
+
+  const styleGroups = styleGroupsRaw
+    .map((group) => ({
+      ...group,
+      products: collectUniqueProducts(group.products, registry, group.products.length),
+    }))
+    .filter((group) => group.products.length > 0);
+
+  const priceDrop = collectUniqueProducts(priceDropRaw, registry, 12);
+
+  const dailyTrending = collectUniqueProducts(dailyTrendingRaw, registry, 12);
+
+  const storyProduct = collectUniqueProducts(storyCandidatesRaw, registry, 1)[0] ?? null;
+
+  const favoritesExcludeIds = Array.from(registry.usedIds);
+  const mostFavorited = collectUniqueProducts(mostFavoritedRaw, registry, 12);
+
+  const storyImageSrc = proxiedImageUrl(storyProduct?.imageCoverUrl ?? null, {
+    productId: storyProduct?.id ?? null,
+    kind: "cover",
+  });
 
   return (
     <>
@@ -52,6 +148,7 @@ export default async function HomeBelowFold({
           ctaLabel="Ver todo"
           products={newArrivals}
           ariaLabel="Carrusel de novedades"
+          surface="home_new_arrivals"
         />
       </section>
 
@@ -72,11 +169,23 @@ export default async function HomeBelowFold({
       </section>
 
       <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <HomeTrendingGrid products={trending} />
+        <HomeTrendingGrid products={focusProducts} />
       </section>
 
       <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
         <ConversionCoverageBlock stats={coverageStats} seed={seed} />
+      </section>
+
+      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
+        <HomePriceDropRail products={priceDrop} />
+      </section>
+
+      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
+        <HomeFavoritesRail initialProducts={mostFavorited} excludeIds={favoritesExcludeIds} />
+      </section>
+
+      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
+        <HomeDailyTrendingRail products={dailyTrending} />
       </section>
 
       <section className={`border-y border-[color:var(--oda-border)] bg-white ${FOLD_SECTION_CLASS}`}>
@@ -104,12 +213,11 @@ export default async function HomeBelowFold({
               {storyImageSrc ? (
                 <Image
                   src={storyImageSrc}
-                  alt={hero?.name ?? "Producto curado"}
+                  alt={storyProduct?.name ?? "Producto curado"}
                   fill
                   quality={58}
                   sizes="(max-width: 1024px) 80vw, 42vw"
                   className="object-cover"
-                  unoptimized={isProxyStoryImage}
                 />
               ) : null}
             </div>

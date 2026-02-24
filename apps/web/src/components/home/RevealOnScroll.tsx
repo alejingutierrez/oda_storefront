@@ -6,8 +6,8 @@ import { motion, useReducedMotion } from "framer-motion";
 export default function RevealOnScroll({
   children,
   delay = 0,
-  y = 28,
-  amount = 0.01,
+  y = 10,
+  amount = 0,
   once = true,
   className,
 }: {
@@ -27,7 +27,7 @@ export default function RevealOnScroll({
   return (
     <motion.div
       className={className}
-      initial={{ opacity: 0, y }}
+      initial={{ opacity: 0.92, y }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once, amount }}
       transition={{ duration: 0.72, delay, ease: [0.22, 1, 0.36, 1] }}

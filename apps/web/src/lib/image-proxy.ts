@@ -18,14 +18,31 @@ const canUseDirectImageUrl = (value: string) => {
   }
 };
 
+const sanitizeRawUrl = (value: string) => value.replace(/[\u0000-\u001F\u007F]/g, "").trim();
+
+const normalizeExternalUrl = (value: string) => {
+  if (!value) return null;
+  const sanitized = sanitizeRawUrl(value);
+  if (!sanitized) return null;
+  if (/^(data|javascript|vbscript):/i.test(sanitized)) return null;
+  const withProtocol = isHttpUrl(sanitized) ? sanitized : `https://${sanitized.replace(/^\/+/, "")}`;
+  try {
+    const parsed = new URL(withProtocol);
+    if (!/^https?:$/i.test(parsed.protocol)) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
 export const proxiedImageUrl = (
   sourceUrl: string | null | undefined,
-  options?: { productId?: string | null; kind?: "cover" | "gallery" | null },
+  options?: { productId?: string | null; kind?: "cover" | "gallery" | "logo" | null },
 ) => {
   if (!sourceUrl) return null;
-  const trimmed = sourceUrl.trim();
+  const trimmed = sanitizeRawUrl(sourceUrl);
   if (!trimmed) return null;
-  if (trimmed.startsWith("data:") || trimmed.startsWith("/api/image-proxy")) {
+  if (trimmed.startsWith("/api/image-proxy")) {
     return trimmed;
   }
   if (isRelativePath(trimmed)) {
@@ -35,12 +52,19 @@ export const proxiedImageUrl = (
     return trimmed;
   }
 
-  const normalized = isHttpUrl(trimmed) ? trimmed : `https://${trimmed.replace(/^\/+/, "")}`;
-  if (canUseDirectImageUrl(normalized)) {
+  const normalized = normalizeExternalUrl(trimmed);
+  if (!normalized) return null;
+
+  const kind = options?.kind ?? null;
+  const shouldForceProxyForLogo = kind === "logo";
+  const shouldForceProxyByLength = normalized.length > 1024;
+
+  if (!shouldForceProxyForLogo && !shouldForceProxyByLength && canUseDirectImageUrl(normalized)) {
     return normalized;
   }
+
   const params = new URLSearchParams({ url: normalized });
   if (options?.productId) params.set("productId", options.productId);
-  if (options?.kind) params.set("kind", options.kind);
+  if (kind) params.set("kind", kind);
   return `/api/image-proxy?${params.toString()}`;
 };

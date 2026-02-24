@@ -38,6 +38,21 @@ export type HomeProductCardData = {
 
 export type ProductCard = HomeProductCardData;
 
+export type HomeHeroSlide = HomeProductCardData & {
+  slideOrder: number;
+};
+
+export type HomePriceDropCardData = HomeProductCardData & {
+  previousPrice: string | null;
+  dropPercent: number | null;
+  priceChangedAt: string | null;
+};
+
+export type HomeTrendingDailyCardData = HomeProductCardData & {
+  clickCount: number;
+  snapshotDate: string | null;
+};
+
 export type CategoryHighlight = {
   category: string;
   label: string;

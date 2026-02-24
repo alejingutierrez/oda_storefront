@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { usePathname } from "next/navigation";
-import { useSession } from "@descope/nextjs-sdk/client";
 import { isAuthFlowPathname } from "@/lib/auth-return";
 
 const SESSION_KEY = "oda_session_id";
@@ -34,7 +33,6 @@ const getUtmPayload = (params: URLSearchParams) => {
 };
 
 export default function ExperienceTracker() {
-  useSession();
   const pathname = usePathname();
   const lastPathRef = useRef<string | null>(null);
   const sessionId = useMemo(() => getSessionId(), []);
@@ -58,20 +56,42 @@ export default function ExperienceTracker() {
         ? getUtmPayload(new URLSearchParams(window.location.search))
         : undefined;
 
-    fetch("/api/experience/events", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        type: "page_view",
-        path,
-        referrer: typeof document !== "undefined" ? document.referrer : undefined,
-        utm,
-        sessionId,
-      }),
-      keepalive: true,
-    }).catch((error) => {
-      console.error("Failed to log experience event", error);
-    });
+    const payload = {
+      type: "page_view",
+      path,
+      referrer: typeof document !== "undefined" ? document.referrer : undefined,
+      utm,
+      sessionId,
+    };
+
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+
+    const send = () => {
+      fetch("/api/experience/events", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch(() => {
+        // No bloqueamos UX por fallas de telemetria.
+      });
+    };
+
+    const withIdle = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number })
+      .requestIdleCallback;
+    if (typeof withIdle === "function") {
+      idleId = withIdle(send, { timeout: 1400 });
+    } else {
+      timeoutId = window.setTimeout(send, 700);
+    }
+
+    return () => {
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      if (idleId !== null && "cancelIdleCallback" in window) {
+        (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(idleId);
+      }
+    };
   }, [pathname, sessionId]);
 
   return null;

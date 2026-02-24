@@ -1,23 +1,17 @@
-import path from "node:path";
 import { put } from "@vercel/blob";
 import { hashBuffer } from "@/lib/catalog/utils";
+import { optimizeBeforeBlob } from "@/lib/media/optimize-before-blob";
+import type { ImageOptimizationStats } from "@/lib/media/optimize-before-blob";
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+const MAX_SOURCE_IMAGE_BYTES = Math.max(
+  MAX_IMAGE_BYTES,
+  Number(process.env.BLOB_UPLOAD_MAX_SOURCE_IMAGE_BYTES ?? 32 * 1024 * 1024),
+);
 const DEFAULT_TIMEOUT_MS = 12000;
 const DEFAULT_CONCURRENCY = 4;
 let blobUploadsDisabled = false;
 let blobDisableReason: string | null = null;
-
-const getExtension = (url: string, contentType?: string | null) => {
-  if (contentType) {
-    if (contentType.includes("png")) return ".png";
-    if (contentType.includes("webp")) return ".webp";
-    if (contentType.includes("gif")) return ".gif";
-    if (contentType.includes("jpeg") || contentType.includes("jpg")) return ".jpg";
-  }
-  const ext = path.extname(new URL(url).pathname);
-  return ext && ext.length <= 5 ? ext : ".jpg";
-};
 
 const resolveBlobToken = () =>
   process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN || "";
@@ -29,9 +23,26 @@ const sanitizeBlobPath = (value: string) =>
     .map((segment) => encodeURIComponent(segment))
     .join("/");
 
+const buildBlobKey = (prefix: string, hash: string, ext: string) => {
+  const normalizedPrefix = prefix.replace(/^\/+|\/+$/g, "");
+  if (normalizedPrefix.startsWith("catalog/")) {
+    return sanitizeBlobPath(`catalog/by-hash/${hash}${ext}`);
+  }
+  return sanitizeBlobPath(`${normalizedPrefix}/${hash}${ext}`);
+};
+
 const isAccessDenied = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  return message.toLowerCase().includes("access denied") || message.includes("401");
+  const normalized = message.toLowerCase();
+  // Distinguish source hotlink/auth failures from Blob auth failures.
+  // Example source error: "Image fetch failed: 401 https://...".
+  if (normalized.includes("image fetch failed")) return false;
+  return (
+    normalized.includes("access denied") ||
+    normalized.includes("invalid blob token") ||
+    normalized.includes("invalid token") ||
+    normalized.includes("unauthorized")
+  );
 };
 
 const fetchWithTimeout = async (url: string, timeoutMs: number, headers?: Record<string, string>) => {
@@ -67,23 +78,38 @@ export const uploadImageToBlob = async (url: string, prefix: string, token: stri
   }
   const arrayBuffer = await res.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  if (buffer.length > MAX_IMAGE_BYTES) {
+  if (buffer.length > MAX_SOURCE_IMAGE_BYTES) {
     throw new Error(`Image too large (${buffer.length} bytes)`);
   }
 
   const contentType = res.headers.get("content-type");
-  const hash = hashBuffer(buffer).slice(0, 16);
-  const ext = getExtension(normalizedUrl, contentType);
-  const key = sanitizeBlobPath(`${prefix}/${hash}${ext}`);
+  const optimized = await optimizeBeforeBlob({
+    buffer,
+    sourceUrl: normalizedUrl,
+    contentType,
+    context: "catalog",
+  });
+  if (optimized.buffer.length > MAX_IMAGE_BYTES) {
+    throw new Error(`Optimized image too large (${optimized.buffer.length} bytes)`);
+  }
 
-  const blob = await put(key, buffer, {
+  const hash = hashBuffer(optimized.buffer).slice(0, 16);
+  const ext = optimized.extension;
+  const key = buildBlobKey(prefix, hash, ext);
+
+  const blob = await put(key, optimized.buffer, {
     access: "public",
-    contentType: contentType ?? undefined,
+    contentType: optimized.contentType ?? contentType ?? undefined,
     token,
     addRandomSuffix: false,
   });
 
-  return { url: blob.url, blobPath: blob.pathname ?? key, sourceUrl: normalizedUrl };
+  return {
+    url: blob.url,
+    blobPath: blob.pathname ?? key,
+    sourceUrl: normalizedUrl,
+    optimization: optimized.stats,
+  };
 };
 
 export const uploadImagesToBlob = async (urls: string[], prefix: string) => {
@@ -95,7 +121,15 @@ export const uploadImagesToBlob = async (urls: string[], prefix: string) => {
         .filter(Boolean),
     ),
   );
-  const mapping = new Map<string, { url: string; blobPath: string; sourceUrl: string }>();
+  const mapping = new Map<
+    string,
+    {
+      url: string;
+      blobPath: string;
+      sourceUrl: string;
+      optimization: ImageOptimizationStats;
+    }
+  >();
   const token = resolveBlobToken();
   if (!token) {
     blobUploadsDisabled = true;

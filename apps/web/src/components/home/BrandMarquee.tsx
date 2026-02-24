@@ -1,9 +1,47 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { BrandLogo } from "@/lib/home-types";
 import { proxiedImageUrl } from "@/lib/image-proxy";
+
+function LogoFallback({ name }: { name: string }) {
+  const initials = name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((token) => token[0]?.toUpperCase() ?? "")
+    .join("");
+
+  return (
+    <div className="grid h-full w-full place-items-center rounded-xl border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-2">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)]">{initials || "ODA"}</span>
+    </div>
+  );
+}
+
+function BrandLogoImage({ src, name, className }: { src: string | null; name: string; className?: string }) {
+  const [failed, setFailed] = useState(!src);
+
+  if (!src || failed) {
+    return <LogoFallback name={name} />;
+  }
+
+  return (
+    <div className="relative h-full w-full">
+      <Image
+        src={src}
+        alt={name}
+        fill
+        unoptimized
+        sizes="144px"
+        onError={() => setFailed(true)}
+        className={className ?? "object-contain"}
+      />
+    </div>
+  );
+}
 
 export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
   if (brands.length === 0) {
@@ -19,9 +57,7 @@ export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
 
   const [featured, ...rest] = brands;
   const featuredImageSrc = proxiedImageUrl(featured.heroImageUrl, { kind: "cover" });
-  const featuredLogoSrc = proxiedImageUrl(featured.logoUrl, { kind: "cover" });
-  const featuredImageProxy = Boolean(featuredImageSrc?.startsWith("/api/image-proxy"));
-  const featuredLogoProxy = Boolean(featuredLogoSrc?.startsWith("/api/image-proxy"));
+  const featuredLogoSrc = proxiedImageUrl(featured.logoUrl, { kind: "logo" });
 
   return (
     <div className="flex flex-col gap-8">
@@ -45,22 +81,11 @@ export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
                 quality={56}
                 sizes="(max-width: 1024px) 100vw, 52vw"
                 className="object-cover transition duration-700 ease-out group-hover:scale-[1.03]"
-                unoptimized={featuredImageProxy}
               />
             ) : null}
             <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.62),rgba(0,0,0,0.2),rgba(0,0,0,0.04))]" />
             <div className="absolute left-6 top-6 h-14 w-36 rounded-xl border border-white/28 bg-white/88 p-2 backdrop-blur-sm">
-              {featuredLogoSrc ? (
-                <Image
-                  src={featuredLogoSrc}
-                  alt={featured.name}
-                  fill
-                  quality={70}
-                  sizes="144px"
-                  className="object-contain p-2"
-                  unoptimized={featuredLogoProxy}
-                />
-              ) : null}
+              <BrandLogoImage src={featuredLogoSrc} name={featured.name} className="h-full w-full object-contain p-1" />
             </div>
             <div className="absolute bottom-6 left-6 right-6">
               <p className="text-[10px] uppercase tracking-[0.24em] text-white/76">Spotlight</p>
@@ -83,8 +108,7 @@ export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
           {rest.length > 0 ? (
             <ul className="flex flex-col divide-y divide-[color:var(--oda-border)]">
               {rest.slice(0, 8).map((brand) => {
-                const logoSrc = proxiedImageUrl(brand.logoUrl, { kind: "cover" });
-                const isProxy = Boolean(logoSrc?.startsWith("/api/image-proxy"));
+                const logoSrc = proxiedImageUrl(brand.logoUrl, { kind: "logo" });
                 return (
                   <li key={brand.id} className="py-3 first:pt-0 last:pb-0">
                     <Link
@@ -94,17 +118,7 @@ export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="relative h-8 w-24 shrink-0">
-                          {logoSrc ? (
-                            <Image
-                              src={logoSrc}
-                              alt={brand.name}
-                              fill
-                              quality={70}
-                              sizes="96px"
-                              className="object-contain"
-                              unoptimized={isProxy}
-                            />
-                          ) : null}
+                          <BrandLogoImage src={logoSrc} name={brand.name} className="h-full w-full object-contain" />
                         </div>
                         <div className="min-w-0">
                           <p className="truncate text-sm text-[color:var(--oda-ink)]">{brand.name}</p>

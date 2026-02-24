@@ -10,7 +10,6 @@ import { optimizeBeforeBlob, summarizeImageOptimization } from "./_image-optimiz
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Este repo guarda `.env` en la raiz; los scripts viven en `apps/web/scripts`.
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 const connectionString =
@@ -19,7 +18,6 @@ const connectionString =
   process.env.POSTGRES_URL ||
   process.env.POSTGRES_PRISMA_URL ||
   "";
-
 const blobToken = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN || "";
 
 if (!connectionString) {
@@ -34,7 +32,7 @@ if (!blobToken) {
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
 const MAX_SOURCE_IMAGE_BYTES = Math.max(
   MAX_IMAGE_BYTES,
-  Number(process.env.IMAGE_BACKFILL_MAX_SOURCE_IMAGE_BYTES ?? 32 * 1024 * 1024),
+  Number(process.env.VARIANT_IMAGE_BACKFILL_MAX_SOURCE_IMAGE_BYTES ?? 32 * 1024 * 1024),
 );
 const DEFAULT_TIMEOUT_MS = 12000;
 const BLOB_CACHE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
@@ -43,16 +41,30 @@ const ENABLE_LIST_FALLBACK =
     .trim()
     .toLowerCase() === "true";
 
-const LIMIT = Math.max(0, Number(process.env.BACKFILL_LIMIT ?? process.env.IMAGE_BACKFILL_LIMIT ?? 500));
-const CONCURRENCY = Math.max(1, Number(process.env.BACKFILL_CONCURRENCY ?? process.env.IMAGE_BACKFILL_CONCURRENCY ?? 6));
+const LIMIT = Math.max(0, Number(process.env.VARIANT_IMAGE_BACKFILL_LIMIT ?? process.env.BACKFILL_LIMIT ?? 500));
+const CONCURRENCY = Math.max(
+  1,
+  Number(process.env.VARIANT_IMAGE_BACKFILL_CONCURRENCY ?? process.env.BACKFILL_CONCURRENCY ?? 6),
+);
+const BRAND_SLUG = (process.env.VARIANT_IMAGE_BACKFILL_BRAND_SLUG ?? "").trim() || null;
+const ONLY_ENRICHED = process.env.VARIANT_IMAGE_BACKFILL_ONLY_ENRICHED === "true";
+const DRY_RUN =
+  process.env.VARIANT_IMAGE_BACKFILL_DRY_RUN === "true" || process.env.DRY_RUN === "true";
+const LOG_EVERY = Math.max(10, Number(process.env.VARIANT_IMAGE_BACKFILL_LOG_EVERY ?? 50));
 const MAX_ITEMS_PER_HOUR = Math.max(
   0,
-  Number(process.env.BACKFILL_MAX_ITEMS_PER_HOUR ?? process.env.IMAGE_BACKFILL_MAX_ITEMS_PER_HOUR ?? 4000),
+  Number(
+    process.env.VARIANT_IMAGE_BACKFILL_MAX_ITEMS_PER_HOUR ??
+      process.env.BACKFILL_MAX_ITEMS_PER_HOUR ??
+      4000,
+  ),
 );
-const ONLY_ENRICHED = process.env.IMAGE_BACKFILL_ONLY_ENRICHED !== "false";
-const BRAND_SLUG = (process.env.BACKFILL_BRAND_SLUG ?? process.env.IMAGE_BACKFILL_BRAND_SLUG ?? "").trim() || null;
-const DRY_RUN = process.env.DRY_RUN === "true";
-const LOG_EVERY = Math.max(10, Number(process.env.IMAGE_BACKFILL_LOG_EVERY ?? 50));
+const MAX_IMAGES_PER_VARIANT = Math.max(1, Number(process.env.VARIANT_IMAGE_BACKFILL_MAX_IMAGES ?? 40));
+const MAX_ERROR_RATE = Math.max(0, Math.min(1, Number(process.env.VARIANT_IMAGE_BACKFILL_MAX_ERROR_RATE ?? 0.02)));
+const ERROR_RATE_MIN_SAMPLES = Math.max(
+  1,
+  Number(process.env.VARIANT_IMAGE_BACKFILL_ERROR_RATE_MIN_SAMPLES ?? 100),
+);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const MIN_INTERVAL_MS = MAX_ITEMS_PER_HOUR > 0 ? Math.ceil((60 * 60 * 1000) / MAX_ITEMS_PER_HOUR) : 0;
@@ -79,6 +91,9 @@ const waitForRateLimit = async () => {
 };
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
+const BLOB_HOST_FRAGMENT = "blob.vercel-storage.com";
+const ALLOW_EXTERNAL_MEDIA_WRITE = (process.env.ALLOW_EXTERNAL_MEDIA_WRITE ?? "").trim().toLowerCase() === "true";
+
 const isIpv4Hostname = (hostname) => /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
 const isPrivateIpv4 = (hostname) => {
   if (!isIpv4Hostname(hostname)) return false;
@@ -95,7 +110,7 @@ const isPrivateIpv4 = (hostname) => {
 const normalizeSourceUrl = (raw) => {
   if (!raw) return null;
   const trimmed = String(raw).trim();
-  if (!trimmed || trimmed.length > 2048) return null;
+  if (!trimmed || trimmed.length > 8192) return null;
   if (trimmed.startsWith("data:")) return null;
   const withProtocol = trimmed.startsWith("//") ? `https:${trimmed}` : trimmed;
   const normalized = /^https?:\/\//i.test(withProtocol)
@@ -167,7 +182,7 @@ const resolveExistingBlobByHead = async (pathname, token) => {
   } catch (error) {
     if (isBlobNotFound(error)) return null;
     const message = error instanceof Error ? error.message : String(error);
-    console.warn("image-cover.backfill.head.failed", pathname, message);
+    console.warn("variant-image.backfill.head.failed", pathname, message);
     return null;
   }
 };
@@ -180,12 +195,13 @@ const resolveExistingBlobByListFallback = async (prefix, token) => {
     return match?.url ?? null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn("image-cover.backfill.list.fallback.failed", prefix, message);
+    console.warn("variant-image.backfill.list.fallback.failed", prefix, message);
     return null;
   }
 };
 
 const resolvedCache = new Map();
+const failedSourceCache = new Map();
 const cacheToBlob = async (sourceUrl, token) => {
   const cached = resolvedCache.get(sourceUrl);
   if (cached) return cached;
@@ -209,7 +225,7 @@ const cacheToBlob = async (sourceUrl, token) => {
   }
 
   const defaultHeaders = {
-    "user-agent": "ODA-ImageBackfill/1.0",
+    "user-agent": "ODA-VariantImageBackfill/1.0",
     accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
   };
 
@@ -234,7 +250,7 @@ const cacheToBlob = async (sourceUrl, token) => {
     buffer,
     sourceUrl,
     contentType,
-    context: "backfill-cover",
+    context: "backfill-variant",
   });
   if (optimized.buffer.length > MAX_IMAGE_BYTES) throw new Error(`too_large:${optimized.buffer.length}`);
   const ext = optimized.extension || getExtension(sourceUrl, optimized.contentType ?? contentType);
@@ -261,16 +277,27 @@ const cacheToBlob = async (sourceUrl, token) => {
   return entry;
 };
 
+const isBlobUrl = (value) => typeof value === "string" && value.includes(BLOB_HOST_FRAGMENT);
+
 const main = async () => {
   const client = new pg.Client({ connectionString });
   await client.connect();
 
   const where = [
-    `p."imageCoverUrl" is not null`,
-    `p."imageCoverUrl" not like '%blob.vercel-storage.com%'`,
+    `cardinality(v.images) > 0`,
+    `exists (
+      select 1
+      from unnest(v.images) as img
+      where img is not null
+        and img <> ''
+        and img not like '%blob.vercel-storage.com%'
+    )`,
   ];
   const values = [];
-  if (ONLY_ENRICHED) where.push(`(p."metadata" -> 'enrichment') is not null`);
+
+  if (ONLY_ENRICHED) {
+    where.push(`(p."metadata" -> 'enrichment') is not null`);
+  }
   if (BRAND_SLUG) {
     values.push(BRAND_SLUG);
     where.push(`b.slug = $${values.length}`);
@@ -280,26 +307,33 @@ const main = async () => {
 
   const sql = `
     select
-      p.id,
-      p."imageCoverUrl" as url
-    from products p
+      v.id,
+      v.images,
+      p.id as "productId",
+      b.slug as "brandSlug"
+    from variants v
+    join products p on p.id = v."productId"
     join brands b on b.id = p."brandId"
     where ${where.join(" and ")}
-    order by p."createdAt" desc
+    order by v."updatedAt" desc
     ${limitSql}
   `;
 
   const res = await client.query(sql, values);
   const rows = Array.isArray(res.rows) ? res.rows : [];
+
   console.log(
     JSON.stringify(
       {
         totalCandidates: rows.length,
-        onlyEnriched: ONLY_ENRICHED,
         brand: BRAND_SLUG,
+        onlyEnriched: ONLY_ENRICHED,
         limit: LIMIT,
         concurrency: CONCURRENCY,
         maxItemsPerHour: MAX_ITEMS_PER_HOUR,
+        maxImagesPerVariant: MAX_IMAGES_PER_VARIANT,
+        maxErrorRate: MAX_ERROR_RATE,
+        errorRateMinSamples: ERROR_RATE_MIN_SAMPLES,
         dryRun: DRY_RUN,
       },
       null,
@@ -312,72 +346,203 @@ const main = async () => {
   let updated = 0;
   let skipped = 0;
   let failed = 0;
+  let migratedImages = 0;
+  let imageFailures = 0;
+  let partialVariants = 0;
+  let throttledImages = 0;
+  let knownFailureSkips = 0;
   const optimizationSamples = [];
+  let abortReason = null;
+  let shouldAbort = false;
+
+  const getErrorRate = () => (processed > 0 ? failed / processed : 0);
+  const maybeAbortByErrorRate = () => {
+    if (shouldAbort) return;
+    if (processed < ERROR_RATE_MIN_SAMPLES) return;
+    const errorRate = getErrorRate();
+    if (errorRate <= MAX_ERROR_RATE) return;
+    shouldAbort = true;
+    abortReason = {
+      reason: "error_rate_guardrail",
+      maxErrorRate: MAX_ERROR_RATE,
+      currentErrorRate: Number(errorRate.toFixed(4)),
+      minSamples: ERROR_RATE_MIN_SAMPLES,
+      processed,
+      failed,
+      updated,
+      skipped,
+      partialVariants,
+      migratedImages,
+      imageFailures,
+      throttledImages,
+      knownFailureSkips,
+    };
+    console.error("variant-image.backfill.guardrail.triggered", JSON.stringify(abortReason));
+  };
 
   const worker = async () => {
-    while (cursor < rows.length) {
+    while (true) {
+      if (shouldAbort) return;
       const index = cursor;
+      if (index >= rows.length) return;
       cursor += 1;
       const row = rows[index];
       processed += 1;
 
-      const sourceUrl = normalizeSourceUrl(row.url);
-      if (!sourceUrl) {
-        skipped += 1;
-      } else {
+      const inputImages = Array.isArray(row.images) ? row.images : [];
+      const nextImages = [];
+      let changedInVariant = 0;
+      let failedInVariant = 0;
+      let processedExternalImages = 0;
+      const variantOptimizationSamples = [];
+
+      for (const rawValue of inputImages) {
+        if (typeof rawValue !== "string") {
+          nextImages.push(rawValue);
+          continue;
+        }
+
+        const original = rawValue.trim();
+        if (!original) {
+          nextImages.push(rawValue);
+          continue;
+        }
+
+        if (isBlobUrl(original)) {
+          nextImages.push(original);
+          continue;
+        }
+
+        if (processedExternalImages >= MAX_IMAGES_PER_VARIANT) {
+          nextImages.push(rawValue);
+          throttledImages += 1;
+          continue;
+        }
+
+        const sourceUrl = normalizeSourceUrl(original);
+        if (!sourceUrl) {
+          nextImages.push(rawValue);
+          failedInVariant += 1;
+          imageFailures += 1;
+          continue;
+        }
+
+        if (failedSourceCache.has(sourceUrl)) {
+          nextImages.push(rawValue);
+          failedInVariant += 1;
+          knownFailureSkips += 1;
+          continue;
+        }
+        processedExternalImages += 1;
+
         try {
           await waitForRateLimit();
           const blobAsset = await cacheToBlob(sourceUrl, blobToken);
+          nextImages.push(blobAsset.url);
           if (blobAsset.optimization) {
             optimizationSamples.push(blobAsset.optimization);
+            variantOptimizationSamples.push(blobAsset.optimization);
           }
-          if (!DRY_RUN) {
-            const optimizationSummary = blobAsset.optimization
-              ? summarizeImageOptimization([blobAsset.optimization])
-              : null;
-            if (optimizationSummary && optimizationSummary.count > 0) {
-              await client.query(
-                `
-                  update products
-                  set "imageCoverUrl"=$1,
-                      "updatedAt"=now(),
-                      metadata=jsonb_set(
-                        coalesce(metadata, '{}'::jsonb),
-                        '{image_optimization}',
-                        $3::jsonb,
-                        true
-                      )
-                  where id=$2
-                `,
-                [
-                  blobAsset.url,
-                  row.id,
-                  JSON.stringify({
-                    ...optimizationSummary,
-                    context: "backfill_cover",
-                    updatedAt: new Date().toISOString(),
-                  }),
-                ],
-              );
-            } else {
-              await client.query(
-                `update products set "imageCoverUrl"=$1, "updatedAt"=now() where id=$2`,
-                [blobAsset.url, row.id],
-              );
-            }
+          if (blobAsset.url !== original) {
+            changedInVariant += 1;
+            migratedImages += 1;
           }
-          updated += 1;
-        } catch (err) {
-          failed += 1;
-          const message = err instanceof Error ? err.message : String(err);
-          console.warn("image-cover.backfill.failed", row.id, sourceUrl ?? row.url, message);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!failedSourceCache.has(sourceUrl)) {
+            console.warn("variant-image.backfill.image_failed", row.id, sourceUrl, message);
+          }
+          failedSourceCache.set(sourceUrl, message);
+          nextImages.push(rawValue);
+          failedInVariant += 1;
+          imageFailures += 1;
         }
       }
 
-      if (processed % LOG_EVERY === 0 || processed === rows.length) {
+      if (changedInVariant > 0) {
+        const remainingExternal = nextImages.filter(
+          (item) => typeof item === "string" && item.trim() && !isBlobUrl(item),
+        ).length;
+        if (remainingExternal > 0 && !ALLOW_EXTERNAL_MEDIA_WRITE) {
+          failed += 1;
+          continue;
+        }
+        if (!DRY_RUN) {
+          const variantOptimizationSummary = summarizeImageOptimization(variantOptimizationSamples);
+          if (variantOptimizationSummary.count > 0) {
+            const metadataPayload = {
+              ...variantOptimizationSummary,
+              context: "backfill_variant",
+              updatedAt: new Date().toISOString(),
+              ...(ALLOW_EXTERNAL_MEDIA_WRITE ? { allow_external_media_write: true } : {}),
+            };
+            await client.query(
+              `
+                update variants
+                set images=$1,
+                    metadata=jsonb_set(
+                      coalesce(metadata, '{}'::jsonb),
+                      '{image_optimization}',
+                      $3::jsonb,
+                      true
+                    ),
+                    "updatedAt"=now()
+                where id=$2
+              `,
+              [
+                nextImages,
+                row.id,
+                JSON.stringify(metadataPayload),
+              ],
+            );
+          } else if (ALLOW_EXTERNAL_MEDIA_WRITE) {
+            await client.query(
+              `
+                update variants
+                set images=$1,
+                    metadata=jsonb_set(
+                      coalesce(metadata, '{}'::jsonb),
+                      '{allow_external_media_write}',
+                      'true'::jsonb,
+                      true
+                    ),
+                    "updatedAt"=now()
+                where id=$2
+              `,
+              [nextImages, row.id],
+            );
+          } else {
+            await client.query(`update variants set images=$1, "updatedAt"=now() where id=$2`, [nextImages, row.id]);
+          }
+        }
+        updated += 1;
+        if (failedInVariant > 0) partialVariants += 1;
+      } else if (failedInVariant > 0) {
+        failed += 1;
+      } else {
+        skipped += 1;
+      }
+
+      maybeAbortByErrorRate();
+
+      if (processed % LOG_EVERY === 0 || processed === rows.length || shouldAbort) {
         console.log(
           JSON.stringify(
-            { processed, total: rows.length, updated, skipped, failed, pct: Math.round((processed / rows.length) * 100) },
+            {
+              processed,
+              total: rows.length,
+              updated,
+              skipped,
+              failed,
+              partialVariants,
+              migratedImages,
+              imageFailures,
+              throttledImages,
+              knownFailureSkips,
+              errorRate: Number(getErrorRate().toFixed(4)),
+              aborted: shouldAbort,
+              pct: Math.round((processed / rows.length) * 100),
+            },
             null,
             2,
           ),
@@ -399,15 +564,27 @@ const main = async () => {
         updated,
         skipped,
         failed,
+        partialVariants,
+        migratedImages,
+        imageFailures,
+        throttledImages,
+        knownFailureSkips,
+        errorRate: Number(getErrorRate().toFixed(4)),
         optimization: optimizationSummary,
+        aborted: shouldAbort,
+        abortReason,
       },
       null,
       2,
     ),
   );
+
+  if (shouldAbort) {
+    process.exitCode = 2;
+  }
 };
 
-main().catch((err) => {
-  console.error("Backfill error", err);
+main().catch((error) => {
+  console.error("variant-image.backfill.failed", error);
   process.exit(1);
 });

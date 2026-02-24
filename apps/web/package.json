@@ -11,7 +11,12 @@
     "start": "NODE_ENV=production next start",
     "lint": "eslint",
     "db:import:brands": "node scripts/import-brands.mjs",
-    "db:seed:users": "node scripts/seed-users.mjs"
+    "db:seed:users": "node scripts/seed-users.mjs",
+    "blob:audit:cost": "node scripts/blob-cost-audit.mjs",
+    "blob:prune:orphans": "node scripts/prune-orphan-blobs.mjs",
+    "blob:backfill:covers": "node scripts/backfill-image-covers-to-blob.mjs",
+    "blob:backfill:variants": "node scripts/backfill-variant-images-to-blob.mjs",
+    "blob:backfill:logos": "node scripts/backfill-brand-logos-to-blob.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.978.0",
@@ -33,6 +38,7 @@
     "prisma": "^7.2.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "sharp": "^0.34.5",
     "xlsx": "^0.18.5",
     "zod": "^3.22.4"
   },

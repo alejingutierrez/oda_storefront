@@ -13,6 +13,7 @@ export default function ProductCarousel({
   ctaLabel,
   products,
   ariaLabel,
+  surface = "home_carousel",
 }: {
   title: string;
   subtitle?: string;
@@ -20,6 +21,7 @@ export default function ProductCarousel({
   ctaLabel?: string;
   products: HomeProductCardData[];
   ariaLabel: string;
+  surface?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{ startX: number; startScrollLeft: number } | null>(null);
@@ -44,6 +46,7 @@ export default function ProductCarousel({
           {ctaHref && ctaLabel ? (
             <Link
               href={ctaHref}
+              prefetch={false}
               className="hidden text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-ink)] sm:inline"
             >
               {ctaLabel}
@@ -122,6 +125,7 @@ export default function ProductCarousel({
           <div key={product.id} className="min-w-[72%] snap-start sm:min-w-[46%] lg:min-w-[29%] xl:min-w-[23.5%]">
             <HomeProductCard
               product={product}
+              surface={surface}
               sizes="(max-width: 640px) 74vw, (max-width: 1024px) 40vw, 25vw"
             />
           </div>
@@ -129,7 +133,7 @@ export default function ProductCarousel({
       </div>
 
       {ctaHref && ctaLabel ? (
-        <Link href={ctaHref} className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-ink)] sm:hidden">
+        <Link href={ctaHref} prefetch={false} className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-ink)] sm:hidden">
           {ctaLabel}
         </Link>
       ) : null}

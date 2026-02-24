@@ -268,3 +268,6 @@ Para cada historia (nueva o en curso) se debe:
   - Consultar eventos de build: `curl -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v2/deployments/<deploymentId>/events"`.
 - **.env no shell‑safe**: no usar `source .env` si contiene caracteres especiales (`&`, espacios o rutas). En su lugar, leer variables puntuales con un script (`python3`) y exportarlas al comando.
 - **Lint/build colgados**: si `npm run lint` o `npm run build` no responde, esperar un tiempo razonable y cortar el proceso; registrar en `STATUS.md` y reintentar con comandos más específicos (`npx next build`, `npx eslint <paths>`).
+- **Filtros de precio (price-only)**: cuando sólo se filtra por precio (sin `color/size/fit`), usar fast-path con rollups de `products` (`minPriceCop/maxPriceCop`) y regla de intersección de intervalos; evitar scans sobre `variants`.
+- **Price insights `mode=full`**: mantener `mode=lite` como default y disparar `mode=full` únicamente bajo demanda en interacción real de la sección Precio; evitar fetch eager al cambiar otros filtros.
+- **UX móvil al aplicar filtros**: bloquear interacción con lock duro + scrim + loading hasta que termine la navegación y el listado quede estable; impedir doble aplicación mientras `navigationPending` esté activo.

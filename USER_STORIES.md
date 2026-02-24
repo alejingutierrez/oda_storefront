@@ -258,6 +258,26 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Script de reconciliación genera reporte en dry-run y puede aplicar cambios idempotentes.
 - Estado: **done (2026-02-24)**.
 
+### MC-143 Home Fase 2: discovery expandido, módulos nuevos y dedupe global
+- Historia: Como usuario de ODA, quiero una home con más variedad real (categorías, foco, tendencia, price drops y favoritos) sin repetición de productos y con imágenes estables, para descubrir catálogo de forma más útil y confiable.
+- Alcance:
+  - Hero rotativo de 4 slides reales con altura reducida (`74svh/68svh`), autoplay/control manual y respeto de `prefers-reduced-motion`.
+  - Categorías clave en carrusel grande uniforme (`24` categorías por rotación), desktop 2 filas y mobile 1 fila.
+  - Foco V2 ampliado (`24` productos, hasta `12` subcategorías) con carga inicial móvil controlada y expansión incremental.
+  - Conversión V2 mejorada (informativa, CTA `Próximamente` deshabilitado).
+  - Nuevos módulos post-conversión: `HomePriceDropRail` (caídas >=5% en 7 días), `HomeFavoritesRail` (usuario logueado vs top anónimo 30 días), `HomeDailyTrendingRail` (snapshot diario por clicks).
+  - Dedupe global entre hero/novedades/foco/curated/price-drop/favoritos/tendencia/story con registro de selección compartido.
+  - Endurecimiento de imágenes/logos: normalización de `image-proxy`, fallback seguro para logos rotos y endpoint de favoritos de usuario con fallback anónimo sin `401`.
+  - Instrumentación sitewide de `product_click` (home + catálogo) y soporte de snapshot diario con tabla `HomeTrendingDaily` + cron interno.
+- CA:
+  - Hero rota 4 slides reales y mantiene controles operativos en desktop/mobile.
+  - Categorías muestran 24 elementos uniformes y navegables por teclado/drag/flechas.
+  - Foco, Price Drop, Favoritos y Tendencia diaria cargan con datos reales o fallback elegante sin romper layout.
+  - No hay repetición de producto entre módulos principales cuando existe inventario suficiente.
+  - Home no presenta errores `400` de imagen en verificación de red representativa desktop/mobile.
+  - Build pasa y lint focalizado de archivos tocados queda limpio.
+- Estado: **done (2026-02-24)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

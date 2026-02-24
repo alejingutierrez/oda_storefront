@@ -333,6 +333,14 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Carga inicial más corta en mobile: menos items visibles al inicio en `HomeTrendingGrid` y `CuratedStickyEdit` (con expansión on-demand).
   - Se removió `RevealOnScroll` de la composición principal del home para evitar aparición tardía percibida como “pantalla en blanco”.
   - `proxiedImageUrl` permite entrega directa para hosts soportados por Next (`blob.vercel-storage.com`, `cdn.shopify.com`, `*.myshopify.com`) y mantiene proxy como fallback.
+- Home Fase 2 (MC-143, 2026-02-24):
+  - Hero V3 rotativo con 4 slides reales (`getHeroSlides`), altura reducida (`74svh` desktop, `68svh` mobile), autoplay + controles manuales, respetando `prefers-reduced-motion`.
+  - Categorías clave migradas a carrusel editorial uniforme (`24` categorías por rotación): desktop en 2 filas y mobile en 1 fila, con navegación por drag/flechas/teclado.
+  - Módulo de foco ampliado (`24` productos, hasta `12` subcategorías) con carga móvil incremental (`ver más`) y tracking de click por superficie.
+  - Conversión mejorada con preview de beneficios y CTA no interactivo (`Próximamente`), seguida por tres módulos nuevos: `HomePriceDropRail`, `HomeFavoritesRail` y `HomeDailyTrendingRail`.
+  - Dedupe global de productos entre hero/novedades/foco/curated/price-drop/favoritos/tendencia/story mediante `HomeSelectionRegistry` + `collectUniqueProducts`.
+  - Tendencia diaria soportada por snapshot interno (`HomeTrendingDaily`) y cron `POST /api/admin/home-trending/cron` (programado en `vercel.json`).
+  - Robustez de imágenes/logos: `image-proxy` endurecido, fallback visual seguro para logos en `BrandMarquee`, y endpoint `GET /api/home/user-favorites` con fallback anónimo `200` (sin ruido `401` en home cacheable).
 - Header + mega menu (actualización 2026-02-18):
   - Desktop: layout del header en grid (`auto | minmax(0,1fr) | auto`), input de búsqueda responsivo (`w-[clamp(12rem,18vw,20rem)]`) y panel de megamenu compartido a ancho completo del container.
   - Desktop (ajuste UX): menor densidad vertical en líneas del panel para una lectura más compacta.
