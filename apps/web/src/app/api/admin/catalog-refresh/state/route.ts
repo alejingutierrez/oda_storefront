@@ -89,11 +89,29 @@ export async function GET(req: Request) {
       _count: { select: { products: true } },
     },
   });
+  const brandIds = brands.map((brand) => brand.id);
+  const latestRunRows = brandIds.length
+    ? await prisma.$queryRaw<Array<{ brandId: string; runStatus: string; runUpdatedAt: Date }>>(
+        Prisma.sql`
+          SELECT DISTINCT ON (cr."brandId")
+            cr."brandId" AS "brandId",
+            cr.status AS "runStatus",
+            cr."updatedAt" AS "runUpdatedAt"
+          FROM "catalog_runs" cr
+          WHERE cr."brandId" IN (${Prisma.join(brandIds)})
+          ORDER BY cr."brandId", cr."updatedAt" DESC
+        `,
+      )
+    : [];
+  const latestRunByBrand = new Map(
+    latestRunRows.map((row) => [row.brandId, { status: row.runStatus, updatedAt: row.runUpdatedAt }]),
+  );
 
   const brandRows = brands.map((brand) => {
     const metadata = readMetadata(brand.metadata);
     const refresh = (metadata.catalog_refresh ?? {}) as Record<string, unknown>;
     const schedulerDue = isBrandDueForRefresh(metadata, now, config);
+    const latestRun = latestRunByBrand.get(brand.id);
     return {
       id: brand.id,
       name: brand.name,
@@ -102,6 +120,8 @@ export async function GET(req: Request) {
       manualReview: brand.manualReview,
       productCount: brand._count.products,
       refresh,
+      runStatus: latestRun?.status ?? null,
+      runUpdatedAt: latestRun?.updatedAt ? latestRun.updatedAt.toISOString() : null,
       schedulerDue,
       due: schedulerDue,
     };
@@ -406,7 +426,7 @@ export async function GET(req: Request) {
   const heartbeatMissing = catalogBacklog > 0 && !catalogHeartbeat.online;
 
   const alertLimit = 12;
-  const alerts: Array<{
+  type RefreshAlert = {
     id: string;
     type: string;
     level: "info" | "warning" | "danger";
@@ -414,49 +434,57 @@ export async function GET(req: Request) {
     detail?: string;
     brandId?: string;
     action?: { type: string; label: string; brandId?: string };
-  }> = [];
+  };
+  const criticalOperationalAlerts: RefreshAlert[] = [];
+  const nonCriticalAlerts: RefreshAlert[] = [];
+  const pushAlert = (alert: RefreshAlert, options?: { critical?: boolean }) => {
+    if (options?.critical) {
+      criticalOperationalAlerts.push(alert);
+      return;
+    }
+    nonCriticalAlerts.push(alert);
+  };
 
   if (queueDrift.driftDetected) {
-    alerts.push({
+    pushAlert({
       id: "catalog_queue_drift",
       type: "catalog_queue_drift",
       level: "danger",
       title: "Drift detectado entre BullMQ y DB",
       detail: `waiting(sample=${queueDrift.waitingSampleSize}): non_queued=${queueDrift.waitingItemNotQueued}, run_not_processing=${queueDrift.waitingRunNotProcessing}, missing_item=${queueDrift.waitingMissingItem}. runs_without_queue_load=${queueDrift.runsRunnableWithoutQueueLoad}.`,
       action: { type: "reconcile_catalog", label: "Reconciliar cola" },
-    });
+    }, { critical: true });
   }
   if (heartbeatMissing) {
-    alerts.push({
+    pushAlert({
       id: "catalog_worker_heartbeat_missing",
       type: "catalog_worker_heartbeat_missing",
       level: "danger",
       title: "Heartbeat de worker catálogo ausente con backlog activo",
       detail: `backlog=${catalogBacklog} · ttl=${catalogHeartbeat.ttlSeconds ?? "n/a"} · enrich_online=${enrichHeartbeat.online ? "si" : "no"}.`,
       action: { type: "reconcile_catalog", label: "Reconciliar cola" },
-    });
+    }, { critical: true });
   }
   if (processingProgressRow.processingRunsWithoutRecentProgress > 0) {
-    alerts.push({
+    pushAlert({
       id: "catalog_processing_no_recent_progress",
       type: "catalog_processing_no_recent_progress",
       level: queueDrift.driftDetected ? "danger" : "warning",
       title: "Runs processing sin progreso reciente",
       detail: `${processingProgressRow.processingRunsWithoutRecentProgress}/${processingProgressRow.processingRuns} sin completions en ${progressWindowMinutes} min.`,
       action: { type: "reconcile_catalog", label: "Reconciliar cola" },
-    });
+    }, { critical: true });
   }
 
   const dueBrands = rowsWithOperationalStatus
-    .filter((brand) => !brand.manualReview && brand.operationalOverdue)
-    .slice(0, alertLimit);
+    .filter((brand) => !brand.manualReview && brand.operationalOverdue);
   dueBrands.forEach((brand) => {
     const latestProgress = latestRunProgressByBrand.get(brand.id);
     const forceMode = brand.lastForceResult?.mode ?? null;
     if (latestProgress && ["processing", "paused", "blocked"].includes(latestProgress.status)) {
       const hasRecentProgress = latestProgress.completedRecent > 0;
       if (latestProgress.status === "processing" && hasRecentProgress) {
-        alerts.push({
+        pushAlert({
           id: `stale_auto_recovering:${brand.id}`,
           type: "stale_auto_recovering",
           level: "info",
@@ -467,7 +495,7 @@ export async function GET(req: Request) {
         return;
       }
 
-      alerts.push({
+      pushAlert({
         id: `stale_processing_no_progress:${brand.id}`,
         type: "stale_processing_no_progress",
         level: queueDrift.driftDetected ? "danger" : "warning",
@@ -475,12 +503,12 @@ export async function GET(req: Request) {
         detail: `Run ${latestProgress.runId} · status ${latestProgress.status} · ${latestProgress.completed}/${latestProgress.total} · completions recientes=${latestProgress.completedRecent}.`,
         brandId: brand.id,
         action: { type: "resume_catalog_strong", label: "Resume fuerte", brandId: brand.id },
-      });
+      }, { critical: true });
       return;
     }
 
     if (forceMode === "no_refs") {
-      alerts.push({
+      pushAlert({
         id: `stale_no_refs:${brand.id}`,
         type: "stale_no_refs",
         level: "warning",
@@ -492,7 +520,7 @@ export async function GET(req: Request) {
       return;
     }
 
-    alerts.push({
+    pushAlert({
       id: `stale:${brand.id}`,
       type: "stale_brand",
       level: "warning",
@@ -518,7 +546,7 @@ export async function GET(req: Request) {
     include: { brand: { select: { id: true, name: true } } },
   });
   stuckCatalogRuns.forEach((run) => {
-    alerts.push({
+    pushAlert({
       id: `catalog_stuck:${run.id}`,
       type: "catalog_stuck",
       level: run.status === "processing" && queueDrift.driftDetected ? "danger" : "warning",
@@ -528,7 +556,7 @@ export async function GET(req: Request) {
       action: run.brandId
         ? { type: "resume_catalog_strong", label: "Resume fuerte", brandId: run.brandId }
         : undefined,
-    });
+    }, { critical: run.status === "processing" });
   });
 
   if (includeEnrichmentAlerts) {
@@ -577,7 +605,7 @@ export async function GET(req: Request) {
         `Última actividad ${run.updatedAt.toISOString()}`,
       ].filter(Boolean) as string[];
 
-      alerts.push({
+      pushAlert({
         id: `enrich_stuck:${run.id}`,
         type: isQueuedByRefresh ? "enrichment_queued" : "enrichment_stuck",
         level,
@@ -635,6 +663,19 @@ export async function GET(req: Request) {
       return new Date(a.lastOperationalAt).getTime() - new Date(b.lastOperationalAt).getTime();
     })[0];
 
+  const dedupeAlertsById = (items: RefreshAlert[]) => {
+    const map = new Map<string, RefreshAlert>();
+    for (const alert of items) {
+      if (!map.has(alert.id)) map.set(alert.id, alert);
+    }
+    return Array.from(map.values());
+  };
+  const dedupedCriticalAlerts = dedupeAlertsById(criticalOperationalAlerts);
+  const dedupedNonCritical = dedupeAlertsById(nonCriticalAlerts).filter(
+    (alert) => !dedupedCriticalAlerts.some((critical) => critical.id === alert.id),
+  );
+  const alerts = [...dedupedCriticalAlerts, ...dedupedNonCritical].slice(0, alertLimit);
+
   return NextResponse.json({
     config,
     windowStart: windowStart.toISOString(),
@@ -687,6 +728,7 @@ export async function GET(req: Request) {
           neverRefreshed: oldestOperationalCandidate.lastOperationalAt === null,
         }
       : null,
+    criticalOperationalAlerts: dedupedCriticalAlerts,
     alerts,
   });
 }

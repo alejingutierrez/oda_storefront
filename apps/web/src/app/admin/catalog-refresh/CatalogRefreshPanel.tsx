@@ -57,6 +57,8 @@ type RefreshBrand = {
   manualReview: boolean;
   productCount: number;
   refresh: RefreshMeta;
+  runStatus?: string | null;
+  runUpdatedAt?: string | null;
   due: boolean;
   schedulerDue?: boolean;
   operationalOverdue?: boolean;
@@ -119,6 +121,7 @@ type RefreshState = {
   brands: RefreshBrand[];
   windowStart: string;
   alerts: RefreshAlert[];
+  criticalOperationalAlerts?: RefreshAlert[];
   operationalMissingBrands?: OperationalMissingBrand[];
   oldestOperationalRefresh?: OldestOperationalRefresh | null;
 };
@@ -138,11 +141,24 @@ type QueueHealthState = {
     heartbeatMissing?: boolean;
     activeHung?: boolean;
     queueDriftDetected?: boolean;
+    aggressiveRecoveryRequired?: boolean;
   };
   activeHang?: {
     catalog?: {
       hungCount?: number;
       hungThresholdMinutes?: number;
+      zombieCount?: number;
+      zombieByReason?: Record<string, number>;
+      zombieByDbState?: {
+        completed?: number;
+        failed_terminal?: number;
+        run_not_processing?: number;
+        item_not_in_progress?: number;
+        missing_item?: number;
+      };
+      driftHungCount?: number;
+      aggressiveRecoveryRequired?: boolean;
+      aggressiveRecoveryReason?: string | null;
     };
     enrich?: {
       hungCount?: number;
@@ -454,7 +470,15 @@ export default function CatalogRefreshPanel() {
   const summary = state?.summary;
   const brands = state?.brands ?? [];
   const windowStart = state?.windowStart;
-  const alerts = state?.alerts ?? [];
+  const alertFeed = useMemo(() => {
+    const map = new Map<string, RefreshAlert>();
+    const criticalAlerts = state?.criticalOperationalAlerts ?? [];
+    const regularAlerts = state?.alerts ?? [];
+    [...criticalAlerts, ...regularAlerts].forEach((alert) => {
+      if (!map.has(alert.id)) map.set(alert.id, alert);
+    });
+    return Array.from(map.values());
+  }, [state?.alerts, state?.criticalOperationalAlerts]);
   const operationalMissingBrands = state?.operationalMissingBrands ?? [];
   const oldestOperationalRefresh = state?.oldestOperationalRefresh ?? null;
 
@@ -498,18 +522,18 @@ export default function CatalogRefreshPanel() {
               </svg>
               <span>Alertas</span>
               <span className="rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
-                {alerts.length}
+                {alertFeed.length}
               </span>
             </button>
             {alertsOpen ? (
               <div className="absolute right-0 z-30 mt-2 w-[min(94vw,28rem)] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-900">Alertas de refresh</h3>
-                  <span className="text-xs text-slate-500">{alerts.length} activas</span>
+                  <span className="text-xs text-slate-500">{alertFeed.length} activas</span>
                 </div>
-                {alerts.length ? (
+                {alertFeed.length ? (
                   <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-                    {alerts.map((alert) => {
+                    {alertFeed.map((alert) => {
                       const badge =
                         alert.level === "danger"
                           ? "bg-rose-100 text-rose-700"
@@ -760,7 +784,8 @@ export default function CatalogRefreshPanel() {
                   <p>
                     heartbeatMissing: {queueHealth.flags.heartbeatMissing ? "si" : "no"} · activeHung:{" "}
                     {queueHealth.flags.activeHung ? "si" : "no"} · drift:{" "}
-                    {queueHealth.flags.queueDriftDetected ? "si" : "no"}
+                    {queueHealth.flags.queueDriftDetected ? "si" : "no"} · aggressiveRecovery:{" "}
+                    {queueHealth.flags.aggressiveRecoveryRequired ? "si" : "no"}
                   </p>
                   {queueHealth.flags.queueDriftDetected ? (
                     <button
@@ -784,6 +809,21 @@ export default function CatalogRefreshPanel() {
                   hung: {queueHealth?.activeHang?.catalog?.hungCount ?? 0} /{" "}
                   {queueHealth?.activeHang?.catalog?.hungThresholdMinutes ?? 15}m
                 </p>
+                <p>
+                  zombies: {queueHealth?.activeHang?.catalog?.zombieCount ?? 0} · drift_hung:{" "}
+                  {queueHealth?.activeHang?.catalog?.driftHungCount ?? 0}
+                </p>
+                <p>
+                  completed={queueHealth?.activeHang?.catalog?.zombieByDbState?.completed ?? 0} ·
+                  failed_terminal={queueHealth?.activeHang?.catalog?.zombieByDbState?.failed_terminal ?? 0} ·
+                  run_not_processing={queueHealth?.activeHang?.catalog?.zombieByDbState?.run_not_processing ?? 0}
+                </p>
+                {queueHealth?.activeHang?.catalog?.aggressiveRecoveryRequired ? (
+                  <p className="text-rose-700">
+                    Recovery agresivo recomendado:{" "}
+                    {queueHealth?.activeHang?.catalog?.aggressiveRecoveryReason ?? "active_zombies_or_hung"}
+                  </p>
+                ) : null}
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                 <p className="font-semibold text-slate-900">Enrichment</p>
@@ -810,7 +850,7 @@ export default function CatalogRefreshPanel() {
               <th className="px-3">Plataforma</th>
               <th className="px-3">Productos</th>
               <th className="px-3">Ultimo refresh</th>
-              <th className="px-3">Status run</th>
+              <th className="px-3">Status run/refresh</th>
               <th className="px-3">Exito</th>
               <th className="px-3">Fallos</th>
               <th className="px-3">Nuevos</th>
@@ -850,7 +890,7 @@ export default function CatalogRefreshPanel() {
                     {formatDate(refresh.lastFinishedAt ?? refresh.lastCompletedAt)}
                   </td>
                   <td className="px-3 py-3 text-slate-600" title={refresh.lastError ?? ""}>
-                    {refresh.lastStatus ?? "-"}
+                    {brand.runStatus ?? "-"} / {refresh.lastStatus ?? "-"}
                   </td>
                   <td className="px-3 py-3 text-slate-600">
                     {typeof refresh.lastRunSuccessRate === "number"

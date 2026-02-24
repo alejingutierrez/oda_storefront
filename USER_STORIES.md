@@ -203,6 +203,24 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Build pasa y la home responde sin romper layout en mobile/tablet/desktop.
 - Estado: **done (2026-02-24)**.
 
+### MC-140 Antiatasco V2 por marca en `/admin/catalog-refresh` (recuperación + prevención real)
+- Historia: Como operador de catálogo, quiero diagnosticar y corregir atascos por marca con señales accionables (zombies/overdue/manual sticky/fallas terminales), para que los próximos runs mantengan progreso real y no acumulen drift DB↔Redis.
+- Alcance:
+  - Reconciliación catálogo extendida (`queue-drift` + `/api/admin/catalog-extractor/reconcile`) para escanear `waiting/delayed/active`, detectar `active` colgados/zombies y recomendar recovery agresivo (`aggressiveRequired/aggressiveReason`).
+  - `queue-health` amplía guardrails con `aggressiveRecoveryRequired` y breakdown de zombies activos por estado DB (`completed`, `failed_terminal`, `run_not_processing`).
+  - `runCatalogRefreshBatch` filtra reinyección de `failedRefs` por errores transitorios y sanitiza refs por plataforma (Shopify/Woo/VTEX) antes de crear items.
+  - `finalizeRefreshForRun` sincroniza estado de corrida en DB (`catalog_runs.status='failed'` cuando falla quality gate) para eliminar semántica dual.
+  - Guardrail de media/blob: `processCatalogRef` recibe `CATALOG_REFRESH_REQUIRE_BLOB_IMAGES` explícito, conserva media Blob existente cuando upload falla y canoniza errores de trigger/guardrail a `blob_required_no_blob_images`.
+  - Auto-clear de `manualReview` mantiene modo estricto y agrega modo relajado seguro (`1 run`, `45 días`, `failedRate<=10%`, `pending=0`, sin `blockedReason`) para evitar marcas pegadas en manual.
+  - `/api/admin/catalog-refresh/state` agrega `criticalOperationalAlerts` (sin truncar, prioridad crítica antes de `alertLimit`) y `runStatus` por marca; la UI muestra `run/refresh status` y señales de recovery agresivo.
+- CA:
+  - `reconcile` reporta `activeHungDetected`, `activeZombieCount`, `aggressiveRequired/aggressiveReason` con acción clara.
+  - URLs fallidas terminales (404/manual/parser/guardrail) no se reinyectan automáticamente en runs nuevos; timeouts/429/5xx sí.
+  - En fallas de upload Blob, no se vuelve a media externa ni se pierden blobs existentes; error visible canónico.
+  - Alertas críticas de marcas overdue en `processing` sin progreso nunca quedan ocultas por truncamiento.
+  - Estado de corrida en DB y metadata de refresh quedan consistentes (`failed`/`completed`).
+- Estado: **done (2026-02-24)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.
