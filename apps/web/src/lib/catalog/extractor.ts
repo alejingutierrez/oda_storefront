@@ -33,8 +33,141 @@ import {
   toCopEffective,
 } from "@/lib/pricing";
 import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
+import {
+  summarizeImageOptimization,
+  type ImageOptimizationStats,
+} from "@/lib/media/optimize-before-blob";
 
 const toNumber = (value: unknown) => sanitizeCatalogPrice(parsePriceValue(value));
+const BLOB_HOST_FRAGMENT = "blob.vercel-storage.com";
+const ALLOW_EXTERNAL_MEDIA_WRITE = (process.env.ALLOW_EXTERNAL_MEDIA_WRITE ?? "").trim().toLowerCase() === "true";
+
+const isBlobStorageUrl = (value: unknown) =>
+  typeof value === "string" && value.includes(BLOB_HOST_FRAGMENT);
+
+const normalizeImageList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+};
+
+const canonicalizeMediaGuardrailError = (message: string, refUrl: string) => {
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("external_media_url_blocked") ||
+    normalized.includes("external_media_blocked_product_create") ||
+    normalized.includes("external_media_blocked_variant_create")
+  ) {
+    return `blob_required_no_blob_images:${refUrl}`;
+  }
+  return message;
+};
+
+const readExistingBlobImages = async (params: {
+  brandId: string;
+  externalId: string | null;
+  sourceUrl: string | null;
+}) => {
+  const conditions = [] as Array<{ externalId?: string; sourceUrl?: string }>;
+  if (params.externalId) conditions.push({ externalId: params.externalId });
+  if (params.sourceUrl) conditions.push({ sourceUrl: params.sourceUrl });
+  if (!conditions.length) return [];
+
+  const existing = await prisma.product.findFirst({
+    where: { brandId: params.brandId, OR: conditions },
+    select: {
+      imageCoverUrl: true,
+      variants: { select: { images: true } },
+    },
+  });
+  if (!existing) return [];
+
+  const cover =
+    typeof existing.imageCoverUrl === "string" && isBlobStorageUrl(existing.imageCoverUrl)
+      ? [existing.imageCoverUrl]
+      : [];
+  const variantImages = existing.variants.flatMap((variant) =>
+    normalizeImageList(variant.images).filter((image) => isBlobStorageUrl(image)),
+  );
+  return Array.from(new Set([...cover, ...variantImages]));
+};
+
+type BlobUploadMappingEntry = {
+  url: string;
+  optimization?: ImageOptimizationStats;
+};
+
+type NormalizedVariant = {
+  sku?: string | null;
+  color?: string | null;
+  size?: string | null;
+  fit?: string | null;
+  material?: string | null;
+  price?: number | null;
+  currency?: string | null;
+};
+
+type NormalizedProduct = {
+  name?: string | null;
+  description?: string | null;
+  category?: string | null;
+  subcategory?: string | null;
+  style_tags?: string[] | null;
+  material_tags?: string[] | null;
+  pattern_tags?: string[] | null;
+  occasion_tags?: string[] | null;
+  gender?: string | null;
+  season?: string | null;
+  care?: string | null;
+  origin?: string | null;
+  status?: string | null;
+  metadata?: Record<string, unknown> | null;
+  variants?: NormalizedVariant[] | null;
+};
+
+type VariantUpsertPayload = {
+  sku?: string | null;
+  color?: string | null;
+  size?: string | null;
+  fit?: string | null;
+  material?: string | null;
+  price?: number | null;
+  currency?: string | null;
+  stock?: number | null;
+  stock_status?: string | null;
+  images?: string[] | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+const preferBlobCoverUrl = (existing: string | null | undefined, next: string | null | undefined) => {
+  const existingCover = typeof existing === "string" && existing.trim() ? existing.trim() : null;
+  const nextCover = typeof next === "string" && next.trim() ? next.trim() : null;
+
+  if (nextCover && isBlobStorageUrl(nextCover)) return nextCover;
+  if (existingCover && isBlobStorageUrl(existingCover)) return existingCover;
+  return nextCover ?? existingCover ?? null;
+};
+
+const preferBlobImageList = (existing: unknown, next: unknown) => {
+  const existingImages = normalizeImageList(existing);
+  const nextImages = normalizeImageList(next);
+  if (!nextImages.length) return existingImages;
+
+  const nextHasBlob = nextImages.some((image) => isBlobStorageUrl(image));
+  if (nextHasBlob) return nextImages;
+
+  const existingHasBlob = existingImages.some((image) => isBlobStorageUrl(image));
+  if (existingHasBlob) return existingImages;
+
+  return nextImages;
+};
+
 const chooseString = (
   existing: string | null | undefined,
   next: string | null | undefined,
@@ -96,6 +229,8 @@ type CatalogRunState = {
 
 const CATALOG_STATE_KEY = "catalog_extract";
 const PDP_LLM_ENABLED = process.env.CATALOG_PDP_LLM_ENABLED !== "false";
+const CATALOG_REQUIRE_BLOB_IMAGES =
+  (process.env.CATALOG_REFRESH_REQUIRE_BLOB_IMAGES ?? "true").trim().toLowerCase() !== "false";
 const CONSECUTIVE_ERROR_LIMIT = getCatalogConsecutiveErrorLimit();
 const AUTO_PAUSE_ON_ERRORS = process.env.CATALOG_AUTO_PAUSE_ON_ERRORS === "true";
 const PDP_LLM_MIN_CONFIDENCE = Math.max(
@@ -276,15 +411,27 @@ const extractVariantOptions = (variant: RawVariant) => {
 
 const buildVariantImages = (
   variant: RawVariant,
-  mapping: Map<string, { url: string }>,
+  mapping: Map<string, BlobUploadMappingEntry>,
   fallback: string[],
 ) => {
   const sources = [variant.image ?? "", ...(variant.images ?? [])].filter(Boolean);
-  const mapped = sources
-    .map((source) => mapping.get(source)?.url)
-    .filter(Boolean) as string[];
-  if (mapped.length) return Array.from(new Set(mapped));
-  return fallback;
+  const mappedEntries = sources
+    .map((source) => mapping.get(source))
+    .filter((entry): entry is BlobUploadMappingEntry => Boolean(entry));
+  const mapped = mappedEntries.map((entry) => entry.url).filter(Boolean);
+  if (mapped.length) {
+    const optimizationSamples = mappedEntries
+      .map((entry) => entry.optimization)
+      .filter((value): value is ImageOptimizationStats => Boolean(value));
+    return {
+      images: Array.from(new Set(mapped)),
+      optimizationSamples,
+    };
+  }
+  return {
+    images: fallback,
+    optimizationSamples: [] as ImageOptimizationStats[],
+  };
 };
 
 export const processCatalogRef = async ({
@@ -296,6 +443,7 @@ export const processCatalogRef = async ({
   brandCurrencyOverride,
   trmUsdCop,
   displayRoundingUnitCop,
+  requireBlobImages,
   onStage,
 }: {
   brand: { id: string; slug: string };
@@ -306,6 +454,7 @@ export const processCatalogRef = async ({
   brandCurrencyOverride?: "USD" | null;
   trmUsdCop: number;
   displayRoundingUnitCop: number;
+  requireBlobImages?: boolean;
   onStage?: (stage: string) => void;
 }) => {
   onStage?.("fetch");
@@ -393,13 +542,31 @@ export const processCatalogRef = async ({
   );
   const imagePrefix = `catalog/${brand.slug}/${raw.externalId ?? "product"}`;
   onStage?.("blob_upload");
-  let imageMapping = new Map<string, { url: string }>();
+  let imageMapping = new Map<string, BlobUploadMappingEntry>();
   let blobFailure: string | null = null;
   try {
     imageMapping = await uploadImagesToBlob(allImages, imagePrefix);
   } catch (error) {
-    blobFailure = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error ? error.message : String(error);
+    if (isBlobTokenError(message)) {
+      throw new Error(message);
+    }
+    blobFailure = message;
     imageMapping = new Map();
+  }
+  const optimizationSamples = Array.from(imageMapping.values())
+    .map((entry) => entry.optimization)
+    .filter((value): value is ImageOptimizationStats => Boolean(value));
+  if (optimizationSamples.length) {
+    const optimizationSummary = summarizeImageOptimization(optimizationSamples);
+    raw.metadata = {
+      ...(raw.metadata ?? {}),
+      image_optimization: {
+        ...optimizationSummary,
+        context: "catalog_upload",
+        updatedAt: new Date().toISOString(),
+      },
+    };
   }
   // Some platforms provide images only per-variant (or the product gallery can be empty).
   // If the product-level image array is empty, fall back to the union of variant images.
@@ -411,10 +578,31 @@ export const processCatalogRef = async ({
     ),
   );
   const rawFallbackImages = raw.images.length ? raw.images : variantImages;
-  const blobFallbackImages = rawFallbackImages
-    .map((url) => imageMapping.get(url)?.url)
-    .filter(Boolean) as string[];
-  const fallbackImages = blobFallbackImages.length ? blobFallbackImages : rawFallbackImages;
+  const blobFallbackImages = Array.from(
+    new Set(
+      rawFallbackImages
+        .map((url) => imageMapping.get(url)?.url)
+        .filter(Boolean) as string[],
+    ),
+  );
+  let fallbackImages = blobFallbackImages.length ? blobFallbackImages : rawFallbackImages;
+  const strictBlobRequirement = Boolean(requireBlobImages) || !ALLOW_EXTERNAL_MEDIA_WRITE;
+  if (strictBlobRequirement) {
+    if (blobFallbackImages.length) {
+      fallbackImages = blobFallbackImages;
+    } else {
+      const existingBlobImages = await readExistingBlobImages({
+        brandId: brand.id,
+        externalId: raw.externalId,
+        sourceUrl: raw.sourceUrl ?? ref.url,
+      });
+      if (existingBlobImages.length) {
+        fallbackImages = existingBlobImages;
+      } else {
+        throw new Error(`blob_required_no_blob_images:${ref.url}`);
+      }
+    }
+  }
   if (!fallbackImages.length) {
     throw new Error("No hay imágenes disponibles tras upload");
   }
@@ -424,147 +612,171 @@ export const processCatalogRef = async ({
   const coverImage = fallbackImages[0] ?? null;
 
   onStage?.("normalize");
-  const normalized = await normalizeCatalogProduct(
+  const normalized = (await normalizeCatalogProduct(
     {
     ...raw,
     images: fallbackImages,
     },
     adapter.platform,
-  );
+  )) as NormalizedProduct;
 
   onStage?.("upsert");
-  const { product, created } = await upsertProduct(
-    brand.id,
-    raw,
-    normalized,
-    coverImage,
-    brandCurrencyOverride ?? null,
-  );
+  try {
+    const { product, created } = await upsertProduct(
+      brand.id,
+      raw,
+      normalized,
+      coverImage,
+      brandCurrencyOverride ?? null,
+    );
 
-  const variantFallbackImages = fallbackImages;
-  const normalizedVariantMap = new Map<string, any>();
-  if (Array.isArray(normalized.variants)) {
-    normalized.variants.forEach((variant: any) => {
-      if (variant?.sku) normalizedVariantMap.set(String(variant.sku), variant);
+    const variantFallbackImages = fallbackImages;
+    const normalizedVariantMap = new Map<string, NormalizedVariant>();
+    if (Array.isArray(normalized.variants)) {
+      normalized.variants.forEach((variant) => {
+        if (variant?.sku) normalizedVariantMap.set(String(variant.sku), variant);
+      });
+    }
+
+    const rawVariants = raw.variants.length
+      ? raw.variants
+      : [
+          {
+            sku: raw.externalId ?? null,
+            price: null,
+            currency: brandCurrencyOverride === "USD" ? "USD" : (raw.currency ?? "COP"),
+            images: raw.images,
+          } as RawVariant,
+        ];
+
+    let createdVariants = 0;
+    const previousMinPriceCop = toNumber(product.minPriceCop ?? null);
+    const applyMarketingRounding = shouldApplyMarketingRounding({
+      brandOverride: brandCurrencyOverride,
+      sourceCurrency: product.currency,
     });
-  }
-
-  const rawVariants = raw.variants.length
-    ? raw.variants
-    : [
-        {
-          sku: raw.externalId ?? null,
-          price: null,
-          currency: brandCurrencyOverride === "USD" ? "USD" : (raw.currency ?? "COP"),
-          images: raw.images,
-        } as RawVariant,
-      ];
-
-  let createdVariants = 0;
-  const previousMinPriceCop = toNumber(product.minPriceCop ?? null);
-  const applyMarketingRounding = shouldApplyMarketingRounding({
-    brandOverride: brandCurrencyOverride,
-    sourceCurrency: product.currency,
-  });
-  const previousDisplayedMinPrice = toDisplayedCop({
-    effectiveCop: previousMinPriceCop,
-    applyMarketingRounding,
-    unitCop: displayRoundingUnitCop,
-  });
-  let hasInStock = false;
-  let minPriceCop: number | null = null;
-  let maxPriceCop: number | null = null;
-  for (let index = 0; index < rawVariants.length; index += 1) {
-    const rawVariant = rawVariants[index];
-    const sku = buildVariantSku(rawVariant, `${product.id}-${index}`);
-    const options = extractVariantOptions(rawVariant);
-    const normalizedVariant = normalizedVariantMap.get(sku) ?? null;
-    const color = options.color ?? normalizedVariant?.color ?? null;
-    const size = options.size ?? normalizedVariant?.size ?? null;
-    const variantImages = buildVariantImages(rawVariant, imageMapping, variantFallbackImages);
-    const priceValue = toNumber(rawVariant.price) ?? toNumber(normalizedVariant?.price) ?? 0;
-    const currencyValue =
-      brandCurrencyOverride === "USD"
-        ? "USD"
-        : guessCurrency(priceValue, rawVariant.currency ?? normalizedVariant?.currency ?? raw.currency ?? null);
-    const variantPayload = {
-      sku,
-      color,
-      size,
-      fit: normalizedVariant?.fit ?? null,
-      material: normalizedVariant?.material ?? null,
-      price: priceValue,
-      currency: currencyValue ?? "COP",
-      stock: typeof rawVariant.stock === "number" ? rawVariant.stock : null,
-      stock_status: resolveStockStatus(rawVariant),
-      images: variantImages,
-      metadata: {
+    const previousDisplayedMinPrice = toDisplayedCop({
+      effectiveCop: previousMinPriceCop,
+      applyMarketingRounding,
+      unitCop: displayRoundingUnitCop,
+    });
+    let hasInStock = false;
+    let minPriceCop: number | null = null;
+    let maxPriceCop: number | null = null;
+    for (let index = 0; index < rawVariants.length; index += 1) {
+      const rawVariant = rawVariants[index];
+      const sku = buildVariantSku(rawVariant, `${product.id}-${index}`);
+      const options = extractVariantOptions(rawVariant);
+      const normalizedVariant = normalizedVariantMap.get(sku) ?? null;
+      const color = options.color ?? normalizedVariant?.color ?? null;
+      const size = options.size ?? normalizedVariant?.size ?? null;
+      const variantImageBuild = buildVariantImages(rawVariant, imageMapping, variantFallbackImages);
+      const variantImages = variantImageBuild.images;
+      const variantOptimizationSummary = summarizeImageOptimization(variantImageBuild.optimizationSamples);
+      const variantMetadata: Record<string, unknown> = {
         compare_at_price: toNumber(rawVariant.compareAtPrice),
         source_variant_id: rawVariant.id ?? null,
         options: rawVariant.options ?? null,
         source_images: [rawVariant.image ?? "", ...(rawVariant.images ?? [])].filter(Boolean),
-      },
-    };
-
-    const inStock = isVariantInStock({
-      stock: variantPayload.stock,
-      stockStatus: variantPayload.stock_status,
-    });
-    if (inStock) {
-      hasInStock = true;
-      const effectivePriceCop = sanitizeCatalogPrice(
-        toCopEffective({
-          price: variantPayload.price ?? null,
-          currency: variantPayload.currency ?? null,
-          brandOverride: brandCurrencyOverride ?? null,
-          trmUsdCop,
-        }),
-      );
-      if (effectivePriceCop !== null) {
-        minPriceCop = minPriceCop === null ? effectivePriceCop : Math.min(minPriceCop, effectivePriceCop);
-        maxPriceCop = maxPriceCop === null ? effectivePriceCop : Math.max(maxPriceCop, effectivePriceCop);
+      };
+      if (variantOptimizationSummary.count > 0) {
+        variantMetadata.image_optimization = {
+          ...variantOptimizationSummary,
+          context: "catalog_variant_upload",
+          updatedAt: new Date().toISOString(),
+        };
       }
+      if (ALLOW_EXTERNAL_MEDIA_WRITE) {
+        variantMetadata.allow_external_media_write = true;
+      }
+      const priceValue = toNumber(rawVariant.price) ?? toNumber(normalizedVariant?.price) ?? 0;
+      const currencyValue =
+        brandCurrencyOverride === "USD"
+          ? "USD"
+          : guessCurrency(
+              priceValue,
+              rawVariant.currency ?? normalizedVariant?.currency ?? raw.currency ?? null,
+            );
+      const variantPayload = {
+        sku,
+        color,
+        size,
+        fit: normalizedVariant?.fit ?? null,
+        material: normalizedVariant?.material ?? null,
+        price: priceValue,
+        currency: currencyValue ?? "COP",
+        stock: typeof rawVariant.stock === "number" ? rawVariant.stock : null,
+        stock_status: resolveStockStatus(rawVariant),
+        images: variantImages,
+        metadata: variantMetadata,
+      };
+
+      const inStock = isVariantInStock({
+        stock: variantPayload.stock,
+        stockStatus: variantPayload.stock_status,
+      });
+      if (inStock) {
+        hasInStock = true;
+        const effectivePriceCop = sanitizeCatalogPrice(
+          toCopEffective({
+            price: variantPayload.price ?? null,
+            currency: variantPayload.currency ?? null,
+            brandOverride: brandCurrencyOverride ?? null,
+            trmUsdCop,
+          }),
+        );
+        if (effectivePriceCop !== null) {
+          minPriceCop =
+            minPriceCop === null ? effectivePriceCop : Math.min(minPriceCop, effectivePriceCop);
+          maxPriceCop =
+            maxPriceCop === null ? effectivePriceCop : Math.max(maxPriceCop, effectivePriceCop);
+        }
+      }
+
+      const variantResult = await upsertVariant(product.id, variantPayload);
+      if (variantResult.created) createdVariants += 1;
     }
 
-    const variantResult = await upsertVariant(product.id, variantPayload);
-    if (variantResult.created) createdVariants += 1;
+    const nextDisplayedMinPrice = toDisplayedCop({
+      effectiveCop: minPriceCop,
+      applyMarketingRounding,
+      unitCop: displayRoundingUnitCop,
+    });
+    const visiblePriceChanged =
+      previousDisplayedMinPrice !== null &&
+      nextDisplayedMinPrice !== null &&
+      previousDisplayedMinPrice !== nextDisplayedMinPrice;
+    const nextPriceChangeDirection = visiblePriceChanged
+      ? nextDisplayedMinPrice < previousDisplayedMinPrice
+        ? "down"
+        : "up"
+      : product.priceChangeDirection;
+    const nextPriceChangeAt = visiblePriceChanged ? new Date() : product.priceChangeAt;
+
+    await prisma.product.update({
+      where: { id: product.id },
+      data: {
+        hasInStock,
+        minPriceCop,
+        maxPriceCop,
+        priceRollupUpdatedAt: new Date(),
+        priceChangeDirection: nextPriceChangeDirection,
+        priceChangeAt: nextPriceChangeAt,
+      },
+    });
+
+    return { created, createdVariants };
+  } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const message = canonicalizeMediaGuardrailError(rawMessage, ref.url);
+    throw new Error(message);
   }
-
-  const nextDisplayedMinPrice = toDisplayedCop({
-    effectiveCop: minPriceCop,
-    applyMarketingRounding,
-    unitCop: displayRoundingUnitCop,
-  });
-  const visiblePriceChanged =
-    previousDisplayedMinPrice !== null &&
-    nextDisplayedMinPrice !== null &&
-    previousDisplayedMinPrice !== nextDisplayedMinPrice;
-  const nextPriceChangeDirection = visiblePriceChanged
-    ? nextDisplayedMinPrice < previousDisplayedMinPrice
-      ? "down"
-      : "up"
-    : product.priceChangeDirection;
-  const nextPriceChangeAt = visiblePriceChanged ? new Date() : product.priceChangeAt;
-
-  await prisma.product.update({
-    where: { id: product.id },
-    data: {
-      hasInStock,
-      minPriceCop,
-      maxPriceCop,
-      priceRollupUpdatedAt: new Date(),
-      priceChangeDirection: nextPriceChangeDirection,
-      priceChangeAt: nextPriceChangeAt,
-    },
-  });
-
-  return { created, createdVariants };
 };
 
 const upsertProduct = async (
   brandId: string,
   raw: RawProduct,
-  normalized: any,
+  normalized: NormalizedProduct,
   imageCoverUrl: string | null,
   brandCurrencyOverride: "USD" | null,
 ) => {
@@ -601,13 +813,17 @@ const upsertProduct = async (
     normalized?.metadata && typeof normalized.metadata === "object" && !Array.isArray(normalized.metadata)
       ? (normalized.metadata as Record<string, unknown>)
       : {};
+  const rawMetadata =
+    raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
+      ? (raw.metadata as Record<string, unknown>)
+      : {};
   const hasCompletedEnrichment =
     Boolean(existingMetadata.enrichment) || Boolean(existing?.enrichmentItems && existing.enrichmentItems.length);
   const mergedMetadata: Record<string, unknown> = {
     ...existingMetadata,
     ...normalizedMetadata,
-    platform: raw.metadata?.platform ?? existingMetadata.platform ?? null,
-    llm: raw.metadata?.llm ?? existingMetadata.llm ?? null,
+    platform: rawMetadata.platform ?? existingMetadata.platform ?? null,
+    llm: rawMetadata.llm ?? existingMetadata.llm ?? null,
     extraction: {
       source_url: raw.sourceUrl,
       external_id: raw.externalId,
@@ -616,14 +832,22 @@ const upsertProduct = async (
     },
   };
   const blobUploadFailure =
-    raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
-      ? (raw.metadata as Record<string, unknown>).blob_upload_failed
-      : null;
+    rawMetadata.blob_upload_failed;
   if (typeof blobUploadFailure === "string" && blobUploadFailure.trim()) {
     mergedMetadata.blob_upload_failed = blobUploadFailure.trim();
   } else if (imageCoverUrl && imageCoverUrl.includes("blob.vercel-storage.com")) {
     // Limpia una falla anterior cuando ya estamos guardando covers en Blob.
     if (existingMetadata.blob_upload_failed) mergedMetadata.blob_upload_failed = null;
+  }
+  if (
+    rawMetadata.image_optimization &&
+    typeof rawMetadata.image_optimization === "object" &&
+    !Array.isArray(rawMetadata.image_optimization)
+  ) {
+    mergedMetadata.image_optimization = rawMetadata.image_optimization;
+  }
+  if (ALLOW_EXTERNAL_MEDIA_WRITE) {
+    mergedMetadata.allow_external_media_write = true;
   }
   if (
     existingMetadata.enrichment !== undefined &&
@@ -652,9 +876,13 @@ const upsertProduct = async (
     status: chooseString(existing?.status, normalized.status ?? null, false),
     currency: currencyValue ?? null,
     sourceUrl: raw.sourceUrl ?? null,
-    imageCoverUrl: imageCoverUrl ?? existing?.imageCoverUrl ?? null,
+    imageCoverUrl: preferBlobCoverUrl(existing?.imageCoverUrl ?? null, imageCoverUrl),
     metadata: mergedMetadata as Prisma.InputJsonValue,
   };
+  const nextCover = data.imageCoverUrl;
+  if (!existing && nextCover && !isBlobStorageUrl(nextCover) && !ALLOW_EXTERNAL_MEDIA_WRITE) {
+    throw new Error(`external_media_blocked_product_create:${raw.sourceUrl ?? raw.externalId ?? "unknown"}`);
+  }
 
   if (existing) {
     const product = await prisma.product.update({ where: { id: existing.id }, data });
@@ -665,7 +893,7 @@ const upsertProduct = async (
   return { product, created: true };
 };
 
-const upsertVariant = async (productId: string, variant: any) => {
+const upsertVariant = async (productId: string, variant: VariantUpsertPayload) => {
   const sku = variant.sku;
   const existing = sku
     ? await prisma.variant.findUnique({
@@ -674,9 +902,10 @@ const upsertVariant = async (productId: string, variant: any) => {
     : null;
 
   const now = new Date();
+  const existingPriceValue = existing?.price as unknown as { toNumber?: () => number } | null;
   const existingPrice =
-    existing?.price && typeof (existing.price as any)?.toNumber === "function"
-      ? (existing.price as any).toNumber()
+    existingPriceValue && typeof existingPriceValue.toNumber === "function"
+      ? existingPriceValue.toNumber()
       : existing?.price ?? null;
   const nextPrice = variant.price ?? 0;
   const existingStock = existing?.stock ?? null;
@@ -702,6 +931,13 @@ const upsertVariant = async (productId: string, variant: any) => {
       ? `${existingStatus}=>${nextStatus ?? "unknown"}`
       : `unknown=>${nextStatus ?? "unknown"}`;
   }
+  const mergedVariantMetadata = JSON.parse(
+    JSON.stringify({
+      ...existingMetadata,
+      ...(variant.metadata ?? {}),
+      ...changeMetadata,
+    }),
+  ) as Prisma.InputJsonValue;
 
   const data = {
     productId,
@@ -714,13 +950,14 @@ const upsertVariant = async (productId: string, variant: any) => {
     currency: variant.currency ?? "COP",
     stock: variant.stock ?? null,
     stockStatus: variant.stock_status ?? null,
-    images: variant.images ?? [],
-    metadata: {
-      ...existingMetadata,
-      ...(variant.metadata ?? {}),
-      ...changeMetadata,
-    },
+    images: preferBlobImageList(existing?.images, variant.images ?? []),
+    metadata: mergedVariantMetadata,
   };
+  const nextImages = Array.isArray(data.images) ? data.images : [];
+  const hasExternalImage = nextImages.some((image) => typeof image === "string" && image.trim() && !isBlobStorageUrl(image));
+  if (!existing && hasExternalImage && !ALLOW_EXTERNAL_MEDIA_WRITE) {
+    throw new Error(`external_media_blocked_variant_create:${productId}:${sku ?? "no-sku"}`);
+  }
 
   if (existing) {
     const updated = await prisma.$transaction(async (tx) => {
@@ -1071,6 +1308,7 @@ export const extractCatalogForBrand = async (
         brandCurrencyOverride,
         trmUsdCop,
         displayRoundingUnitCop,
+        requireBlobImages: CATALOG_REQUIRE_BLOB_IMAGES,
         onStage: (stage) => {
           state.lastStage = stage;
         },

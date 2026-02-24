@@ -15,6 +15,20 @@ import { listRunnableItems, resetQueuedItems, resetStuckItems } from "@/lib/cata
 import { tryAcquireLock } from "@/lib/redis";
 
 const REFILL_LOCK_TTL_MS = 5000;
+const requireBlobImages =
+  (process.env.CATALOG_REFRESH_REQUIRE_BLOB_IMAGES ?? "true").trim().toLowerCase() !== "false";
+
+const canonicalizeCatalogItemError = (message: string, url: string) => {
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("external_media_url_blocked") ||
+    normalized.includes("external_media_blocked_product_create") ||
+    normalized.includes("external_media_blocked_variant_create")
+  ) {
+    return `blob_required_no_blob_images:${url}`;
+  }
+  return message;
+};
 
 const hasRemainingRunnableItems = async (runId: string) => {
   const row = await prisma.catalogItem.findFirst({
@@ -211,6 +225,7 @@ export const processCatalogItemById = async (
       brandCurrencyOverride,
       trmUsdCop,
       displayRoundingUnitCop,
+      requireBlobImages,
       onStage: (stage) => {
         lastStage = stage;
       },
@@ -269,7 +284,8 @@ export const processCatalogItemById = async (
 
     return { status: "completed", created: result.created, createdVariants: result.createdVariants };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const message = canonicalizeCatalogItemError(rawMessage, item.url);
     const isSoftError = isCatalogSoftError(message);
     const attempts = item.attempts + 1;
     await prisma.catalogItem.update({
