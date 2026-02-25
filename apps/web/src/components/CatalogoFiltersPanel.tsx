@@ -731,13 +731,14 @@ export default function CatalogoFiltersPanel({
       priceInsightsFullLastOkKeyRef.current === priceInsightsFullSessionKey &&
       now - priceInsightsFullLastOkAtRef.current < PRICE_INSIGHTS_FULL_FRESHNESS_MS;
     const isNetworkValidated = priceInsightsFullValidatedKeysRef.current.has(priceInsightsFullSessionKey);
-    const shouldForceDraftValidation = mode === "draft" && !isNetworkValidated;
-    const shouldForceRetryMissingHistogram =
-      mode === "draft" &&
-      !isRenderablePriceHistogram(resolvedPriceHistogram) &&
-      !priceInsightsMissingHistogramRetriedKeysRef.current.has(priceInsightsFullSessionKey);
-    if (isFresh && !shouldForceRetryMissingHistogram && !shouldForceDraftValidation) return;
-    if (shouldForceRetryMissingHistogram) {
+    const hasRenderableHistogram = isRenderablePriceHistogram(resolvedPriceHistogram);
+    const missingHistogramRetriedForKey = priceInsightsMissingHistogramRetriedKeysRef.current.has(
+      priceInsightsFullSessionKey,
+    );
+    const shouldForceMissingHistogram = !hasRenderableHistogram && !missingHistogramRetriedForKey;
+    const shouldForceNetworkValidation = !isNetworkValidated && !hasRenderableHistogram;
+    if (isFresh && !shouldForceMissingHistogram && !shouldForceNetworkValidation) return;
+    if (shouldForceMissingHistogram) {
       priceInsightsMissingHistogramRetriedKeysRef.current.add(priceInsightsFullSessionKey);
     }
 
@@ -1915,6 +1916,27 @@ function PriceRange({
   })();
 
   const selectedRangeSet = new Set(selectedRangeTokens);
+  const hasPriceMinFilter =
+    selectedMin !== null &&
+    Number.isFinite(selectedMin) &&
+    snap(clamp(selectedMin, minBound, maxBound)) > minBound;
+  const hasPriceMaxFilter =
+    selectedMax !== null &&
+    Number.isFinite(selectedMax) &&
+    snap(clamp(selectedMax, minBound, maxBound)) < maxBound;
+  const hasAnyPriceFilter = hasSelectedRanges || hasPriceMinFilter || hasPriceMaxFilter;
+  const isAllPresetActive = !hasAnyPriceFilter;
+
+  const resetAllPriceFilters = () => {
+    if (disabled) return;
+    setActiveThumb(null);
+    setDirty(false);
+    const next = new URLSearchParams(searchParamsString);
+    next.delete("price_min");
+    next.delete("price_max");
+    next.delete("price_range");
+    commitParams(next);
+  };
 
   const toggleRangeToken = (token: string) => {
     if (disabled) return;
@@ -2029,8 +2051,22 @@ function PriceRange({
         <p className="text-xs text-[color:var(--oda-ink-soft)]">{selectedRangesLabel}</p>
       ) : null}
 
-      {presets.length > 0 ? (
+      {presets.length > 0 || hasAnyPriceFilter ? (
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={resetAllPriceFilters}
+            disabled={disabled}
+            aria-pressed={isAllPresetActive}
+            className={[
+              "inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.18em] transition disabled:cursor-not-allowed disabled:opacity-60",
+              isAllPresetActive
+                ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                : "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]",
+            ].join(" ")}
+          >
+            Todas
+          </button>
           {presets.map((preset) => {
             const checked = selectedRangeSet.has(preset.token);
             return (
