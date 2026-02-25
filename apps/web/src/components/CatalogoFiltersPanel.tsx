@@ -516,10 +516,9 @@ export default function CatalogoFiltersPanel({
     setPriceInsightsFullDemandTick((prev) => prev + 1);
   }, [priceInsightsFullSessionKey]);
   useEffect(() => {
-    if (mode !== "draft") return;
     if (isPending) return;
     requestPriceInsightsFull();
-  }, [isPending, mode, requestPriceInsightsFull]);
+  }, [isPending, requestPriceInsightsFull]);
   const brandSearchResetKey = useMemo(
     () =>
       `${selected.categories.join(",")}::${selected.genders.join(",")}::${selected.subcategories.join(",")}`,
@@ -1683,28 +1682,44 @@ function PriceRange({
   const presets = (() => {
     const range = maxBound - minBound;
     if (!Number.isFinite(range) || range <= 0) return [];
+    if (!isRenderablePriceHistogram(histogram)) return [];
     const q = (value: number) => snap(value);
 
-    const fromHistogram = (() => {
-      if (!histogram) return null;
-      const buckets = Array.isArray(histogram.buckets) ? histogram.buckets : null;
-      if (!buckets || buckets.length < 10) return null;
+    const buckets = histogram.buckets.map((value) => (Number.isFinite(value) ? Math.max(0, value) : 0));
+    const total = buckets.reduce((acc, value) => acc + value, 0);
+    if (total <= 0) return [];
 
-      const bucketCount = buckets.length;
-      const width = range / bucketCount;
-      if (!Number.isFinite(width) || width <= 0) return null;
+    const bucketCount = buckets.length;
+    const width = range / bucketCount;
+    if (!Number.isFinite(width) || width <= 0) return [];
 
-      const weights = buckets.map((value) => (Number.isFinite(value) ? Math.max(0, value) : 0));
-      const total = weights.reduce((acc, value) => acc + value, 0);
-      if (total < 120) return null;
+    const midpoints = buckets.map((_, idx) => minBound + (idx + 0.5) * width);
+    const cumulative: number[] = [];
+    let running = 0;
+    for (let i = 0; i < bucketCount; i += 1) {
+      running += buckets[i] ?? 0;
+      cumulative.push(running);
+    }
 
-      const midpoints = weights.map((_, idx) => minBound + (idx + 0.5) * width);
+    const valueAtQuantile = (quantile: number) => {
+      if (!Number.isFinite(quantile) || quantile <= 0 || quantile >= 1) return null;
+      const target = total * quantile;
+      for (let i = 0; i < cumulative.length; i += 1) {
+        if ((cumulative[i] ?? 0) >= target) {
+          return clamp(q(midpoints[i] ?? minBound), minBound, maxBound);
+        }
+      }
+      return clamp(q(midpoints[bucketCount - 1] ?? maxBound), minBound, maxBound);
+    };
+
+    const naturalCuts = (() => {
+      if (total < 80) return null;
       const W = Array.from({ length: bucketCount + 1 }, () => 0);
       const WX = Array.from({ length: bucketCount + 1 }, () => 0);
       const WX2 = Array.from({ length: bucketCount + 1 }, () => 0);
 
       for (let i = 0; i < bucketCount; i += 1) {
-        const w = weights[i];
+        const w = buckets[i] ?? 0;
         const x = midpoints[i];
         W[i + 1] = W[i] + w;
         WX[i + 1] = WX[i] + w * x;
@@ -1767,65 +1782,125 @@ function PriceRange({
         .filter((value) => value > minBound && value < maxBound)
         .sort((a, b) => a - b);
 
-      if (uniqueCuts.length < 3) return null;
-      return uniqueCuts.slice(0, 3);
+      return uniqueCuts.length > 0 ? uniqueCuts.slice(0, 3) : null;
     })();
 
-    const fromStats =
-      typeof stats?.p25 === "number" &&
-      typeof stats?.p50 === "number" &&
-      typeof stats?.p75 === "number" &&
-      Number.isFinite(stats.p25) &&
-      Number.isFinite(stats.p50) &&
-      Number.isFinite(stats.p75) &&
-      stats.p25 < stats.p50 &&
-      stats.p50 < stats.p75
-        ? [stats.p25, stats.p50, stats.p75].map((value) => clamp(q(value), minBound, maxBound))
-        : null;
+    const quantileCuts = [0.25, 0.5, 0.75]
+      .map((quantile) => valueAtQuantile(quantile))
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
 
-    const fallbackCuts = [
-      clamp(q(minBound + range * 0.25), minBound, maxBound),
-      clamp(q(minBound + range * 0.5), minBound, maxBound),
-      clamp(q(minBound + range * 0.75), minBound, maxBound),
-    ];
+    let boundaries = [minBound, ...(naturalCuts ?? quantileCuts), maxBound]
+      .map((value) => clamp(q(value), minBound, maxBound))
+      .filter((value) => Number.isFinite(value));
+    boundaries = Array.from(new Set(boundaries)).sort((a, b) => a - b);
+    if (boundaries[0] !== minBound) boundaries.unshift(minBound);
+    if (boundaries[boundaries.length - 1] !== maxBound) boundaries.push(maxBound);
 
-    const unique = Array.from(new Set(fromHistogram ?? fromStats ?? fallbackCuts)).filter(
-      (v) => v > minBound && v < maxBound,
-    );
-    const cuts = [minBound, ...unique.sort((a, b) => a - b), maxBound];
-    if (cuts.length < 3) return [];
+    const segmentMass = (from: number, to: number) => {
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return 0;
+      let mass = 0;
+      for (let i = 0; i < bucketCount; i += 1) {
+        const bucketStart = minBound + i * width;
+        const bucketEnd = bucketStart + width;
+        if (bucketEnd <= from || bucketStart >= to) continue;
+        mass += buckets[i] ?? 0;
+      }
+      return mass;
+    };
+
+    let segments = Array.from({ length: Math.max(0, boundaries.length - 1) }, (_, index) => {
+      const from = boundaries[index] ?? minBound;
+      const to = boundaries[index + 1] ?? maxBound;
+      return { from, to, mass: segmentMass(from, to) };
+    }).filter((segment) => segment.to > segment.from);
+    if (segments.length === 0) return [];
+
+    const mergeAt = (index: number) => {
+      if (index < 0 || index >= segments.length - 1) return;
+      const left = segments[index]!;
+      const right = segments[index + 1]!;
+      segments.splice(index, 2, {
+        from: left.from,
+        to: right.to,
+        mass: left.mass + right.mass,
+      });
+    };
+
+    while (segments.length > 1) {
+      const zeroIndex = segments.findIndex((segment) => segment.mass <= 0);
+      if (zeroIndex < 0) break;
+      if (zeroIndex === 0) mergeAt(0);
+      else mergeAt(zeroIndex - 1);
+    }
+
+    if (segments.length < 2) {
+      const medianCut = valueAtQuantile(0.5);
+      if (
+        typeof medianCut !== "number" ||
+        !Number.isFinite(medianCut) ||
+        medianCut <= minBound ||
+        medianCut >= maxBound
+      ) {
+        return [];
+      }
+      segments = [
+        { from: minBound, to: medianCut, mass: segmentMass(minBound, medianCut) },
+        { from: medianCut, to: maxBound, mass: segmentMass(medianCut, maxBound) },
+      ];
+      if (segments.some((segment) => segment.mass <= 0)) return [];
+    }
+
+    while (segments.length > 4) {
+      let bestIndex = 0;
+      let bestCombinedMass = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < segments.length - 1; i += 1) {
+        const combinedMass = (segments[i]?.mass ?? 0) + (segments[i + 1]?.mass ?? 0);
+        if (combinedMass < bestCombinedMass) {
+          bestCombinedMass = combinedMass;
+          bestIndex = i;
+        }
+      }
+      mergeAt(bestIndex);
+    }
+    if (segments.length < 2) return [];
 
     const tokenFor = (min: number | null, max: number | null) => `${min ?? ""}:${max ?? ""}`;
     const next: Array<{ id: string; label: string; min: number | null; max: number | null; token: string }> = [];
-    const firstMax = cuts[1];
+
+    const first = segments[0]!;
     next.push({
       id: "under",
-      label: `Hasta ${formatCop(firstMax)}`,
+      label: `Hasta ${formatCop(first.to)}`,
       min: null,
-      max: firstMax,
-      token: tokenFor(null, firstMax),
+      max: first.to,
+      token: tokenFor(null, first.to),
     });
-    for (let i = 1; i < cuts.length - 2; i += 1) {
-      const from = cuts[i];
-      const to = cuts[i + 1];
+    for (let i = 1; i < segments.length - 1; i += 1) {
+      const segment = segments[i]!;
       next.push({
         id: `mid_${i}`,
-        label: `${formatCop(from)} a ${formatCop(to)}`,
-        min: from,
-        max: to,
-        token: tokenFor(from, to),
+        label: `${formatCop(segment.from)} a ${formatCop(segment.to)}`,
+        min: segment.from,
+        max: segment.to,
+        token: tokenFor(segment.from, segment.to),
       });
     }
-    const lastMin = cuts[cuts.length - 2];
+
+    const last = segments[segments.length - 1]!;
     next.push({
       id: "over",
-      label: `Desde ${formatCop(lastMin)}`,
-      min: lastMin,
+      label: `Desde ${formatCop(last.from)}`,
+      min: last.from,
       max: null,
-      token: tokenFor(lastMin, null),
+      token: tokenFor(last.from, null),
     });
 
-    return next.slice(0, 4);
+    const seenTokens = new Set<string>();
+    return next.filter((preset) => {
+      if (seenTokens.has(preset.token)) return false;
+      seenTokens.add(preset.token);
+      return true;
+    });
   })();
 
   const histogramBars = (() => {
@@ -1978,6 +2053,11 @@ function PriceRange({
           })}
         </div>
       ) : null}
+      {!presets.length && histogramLoading ? (
+        <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+          Calculando distribución de precio...
+        </p>
+      ) : null}
 
       <div className="oda-price-range relative h-12" data-active-thumb={activeThumb ?? undefined}>
         {activeTooltip ? (
@@ -2012,7 +2092,7 @@ function PriceRange({
         {!histogramBars && histogramLoading ? (
           <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center">
             <span className="inline-flex rounded-full border border-[color:var(--oda-border)] bg-white/95 px-3 py-1 text-[9px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-              Cargando histograma…
+              Calculando distribución de precio...
             </span>
           </div>
         ) : null}

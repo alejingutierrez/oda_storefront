@@ -552,29 +552,50 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
   const cached = unstable_cache(
     async () => {
       const { pricing } = await getPricingContext();
+      const useRollupFastPath = !hasNonPriceVariantFilters(boundsFilters);
       const rows = await (async () => {
-        if (!hasVariantLevelFilters(boundsFilters)) {
+        if (useRollupFastPath) {
           const productWhere = buildProductWhere(boundsFilters);
-          return prisma.$queryRaw<Array<{ min_price: string | null; max_price: string | null }>>(
-            Prisma.sql`
-              select
-                min(case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end) as min_price,
-                max(case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end) as max_price
+          return prisma.$queryRaw<
+            Array<{
+              n: bigint;
+              min_price: string | null;
+              max_price: string | null;
+              p02: string | null;
+              p98: string | null;
+            }>
+          >(Prisma.sql`
+            with prices as (
+              select least(p."minPriceCop", p."maxPriceCop") as price
               from products p
               join brands b on b.id = p."brandId"
               ${productWhere}
               and p."hasInStock" = true
-            `,
-          );
+              and ${buildProductRollupPriceValidityCondition()}
+            )
+            select
+              count(*) as n,
+              min(price) as min_price,
+              max(price) as max_price,
+              percentile_cont(0.02) within group (order by price) as p02,
+              percentile_cont(0.98) within group (order by price) as p98
+            from prices
+          `);
         }
 
         const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
         const { productWhere, variantWhere } = buildVariantWhere(boundsFilters, pricing);
-        return prisma.$queryRaw<Array<{ min_price: string | null; max_price: string | null }>>(
-          Prisma.sql`
-            select
-              min(${priceCopExpr}) as min_price,
-              max(${priceCopExpr}) as max_price
+        return prisma.$queryRaw<
+          Array<{
+            n: bigint;
+            min_price: string | null;
+            max_price: string | null;
+            p02: string | null;
+            p98: string | null;
+          }>
+        >(Prisma.sql`
+          with prices as (
+            select ${priceCopExpr} as price
             from products p
             join brands b on b.id = p."brandId"
             join variants v on v."productId" = p.id
@@ -582,20 +603,55 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
             ${variantWhere}
             and ${priceCopExpr} > 0
             and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
-          `,
-        );
+          )
+          select
+            count(*) as n,
+            min(price) as min_price,
+            max(price) as max_price,
+            percentile_cont(0.02) within group (order by price) as p02,
+            percentile_cont(0.98) within group (order by price) as p98
+          from prices
+        `);
       })();
+
       const row = rows[0];
-      const min = row?.min_price ? Number(row.min_price) : null;
-      const max = row?.max_price ? Number(row.max_price) : null;
-      const minOk = Number.isFinite(min ?? NaN) && (min ?? 0) > 0;
-      const maxOk = Number.isFinite(max ?? NaN) && (max ?? 0) > 0;
+      const count = Number(row?.n ?? 0);
+      const minHard = row?.min_price ? Number(row.min_price) : null;
+      const maxHard = row?.max_price ? Number(row.max_price) : null;
+      const p02 = row?.p02 ? Number(row.p02) : null;
+      const p98 = row?.p98 ? Number(row.p98) : null;
 
-      if (!minOk || !maxOk) return { min: null, max: null };
+      const hardOk =
+        typeof minHard === "number" &&
+        typeof maxHard === "number" &&
+        Number.isFinite(minHard) &&
+        Number.isFinite(maxHard) &&
+        minHard > 0 &&
+        maxHard > 0 &&
+        maxHard >= minHard;
+      if (!hardOk) return { min: null, max: null };
 
-      const step = getPriceStep(min as number, max as number);
-      const exactMin = Math.max(0, Math.round(min as number));
-      const alignedMax = Math.ceil((max as number) / step) * step;
+      let min = minHard;
+      let max = maxHard;
+      const robustOk =
+        count >= 30 &&
+        typeof p02 === "number" &&
+        typeof p98 === "number" &&
+        Number.isFinite(p02) &&
+        Number.isFinite(p98) &&
+        p98 > p02;
+      if (robustOk) {
+        min = Math.max(minHard, p02);
+        max = Math.min(maxHard, p98);
+      }
+
+      if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) {
+        return { min: null, max: null };
+      }
+
+      const step = getPriceStep(min, Math.max(max, min + 1));
+      const exactMin = Math.max(0, Math.round(min));
+      const alignedMax = Math.ceil(max / step) * step;
       return {
         min: exactMin,
         max: alignedMax > exactMin ? alignedMax : exactMin + step,
