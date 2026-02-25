@@ -237,7 +237,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Facets contextuales: marcas/materiales/patrones vienen de `/api/catalog/facets-lite` según filtros efectivos de la PLP (marcas ordenadas por conteo desc). El contador “X marcas” es `count(distinct brandId)` del set filtrado.
 - Hardening de estabilidad en pestañas inactivas:
   - Filtros (desktop/mobile): lock transitorio de interacción con timeout + liberación automática al volver (`focus`, `visibilitychange`, `pageshow`) para evitar estados “pegados” en `Aplicando/Actualizando`.
-  - Infinite scroll: `loadMore` y prefetch con timeout/abort; reintento automático al recuperar foco/conectividad (`focus`, `online`, `pageshow`) y fallback por proximidad al sentinel.
+  - Infinite scroll: `loadMore` secuencial con timeout/abort y cursor interno (`pageCursorRef` + `inFlightPageRef`), sin prefetch agresivo por página para evitar carreras. Incluye reintento acotado cuando una página llega completa pero con IDs 100% duplicados.
   - Navegación defensiva: se evita `router.replace` cuando el query final no cambia (reduce transiciones no-op y estados pendientes innecesarios).
   - Prefetch defensivo de navegación: `next/link` del header/mega menu (desktop y mobile) usa `prefetch={false}` para evitar ráfagas de requests `_rsc` que compitan con la actualización de filtros (en especial precio).
 - Filtro de precio:
@@ -248,11 +248,12 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - UX de limpieza: `PriceRange` no tiene botones locales `Limpiar/Todos`; la limpieza queda centralizada en el botón global de PLP (toolbar desktop / dock mobile).
   - Header de rango en UI: mínimo y máximo se muestran en bloques fijos con `tabular-nums` para evitar solapes visuales cuando cambian longitudes.
   - Step del slider: dinámico por rango (`1.000`, `5.000`, `10.000`, `50.000`, `100.000`) en vez de fijo a `10.000`.
+  - Semántica de mínimo: `bounds.min` y `insights.bounds.min` conservan el mínimo real filtrado (sin bajar artificialmente por alineación de step); solo el máximo se alinea hacia arriba para mantener UX del slider.
   - Cambio de precio (30 días): filtro single-select `price_change=down|up` en sección Precio (`Bajó de precio` / `Subió de precio`), combinable con el resto de filtros.
   - Bounds/histograma: `/api/catalog/price-bounds` soporta `mode=lite|full`.
     - `mode=lite`: devuelve `{ bounds }` (rápido).
     - `mode=full` (default): devuelve `{ bounds, histogram, stats }` y usa un dominio robusto (percentiles p02/p98 cuando hay suficientes datos) para que outliers no dominen el rango.
-    - La UI carga `lite` inmediatamente y `full` de forma lazy/idle para reducir lag percibido al combinar filtros.
+    - La UI carga `lite` inmediatamente y `full` de forma controlada: en desktop se mantiene lazy/idle bajo demanda real; en mobile draft se dispara inmediato al abrir/editar Precio, con fallback visual `Cargando histograma…` cuando aún no hay barras renderizables.
   - Guardia anti-outliers: los cálculos de `min/max` y `price_asc/price_desc` ignoran variantes con `price > CATALOG_PRICE_MAX_VALID` para evitar rangos astronómicos por datos de origen defectuosos.
 - Layout mobile:
   - Preferencia persistida en `localStorage` key `oda_catalog_mobile_layout_v1` (default = layout previo).
@@ -301,7 +302,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - En Neon (prod/stg), los filtros del catálogo dependen de índices para evitar `seq scan` en queries de `products/variants` (subcategorías, bounds de precio, listados).
 - El sort por precio (`price_asc`/`price_desc`) y `price-bounds` en modo lite usan rollups persistidos en `products` (`hasInStock`, `minPriceCop`, `maxPriceCop`, `priceRollupUpdatedAt`) para evitar agregaciones pesadas por request.
 - El histograma de precio (`mode=full`) cuenta productos por bin (no variantes crudas): fast-path por rollups cuando no hay filtros `color/size/fit`, y deduplicación por `productId` dentro de cada bin cuando sí existen.
-- Infinite scroll (`CatalogProductsInfinite`): combina `knownTotalCount` con señal de fin por payload real (respuesta vacía/corta o página sin IDs nuevos) y umbral de auto-carga dinámico desktop/mobile para reducir atascos percibidos.
+- Infinite scroll (`CatalogProductsInfinite`): combina `knownTotalCount` con señal de fin por payload real (respuesta vacía/corta), usa cursor secuencial robusto (sin prefetch agresivo) y aplica reintento acotado cuando una página completa llega con IDs duplicados para evitar cortes falsos en mobile.
 - Orden paginado determinista: los listados usan desempate por `id` además de `createdAt/rank/precio` para evitar solape intermitente entre páginas consecutivas.
 - SQL (re-aplicable): `apps/web/scripts/catalog-filter-indexes.sql`
 - Script: `apps/web/scripts/apply-catalog-filter-indexes.sh` (usa `NEON_DATABASE_URL` desde `.env` y `CREATE INDEX CONCURRENTLY`).

@@ -594,11 +594,11 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
       if (!minOk || !maxOk) return { min: null, max: null };
 
       const step = getPriceStep(min as number, max as number);
-      const alignedMin = Math.max(0, Math.floor((min as number) / step) * step);
+      const exactMin = Math.max(0, Math.round(min as number));
       const alignedMax = Math.ceil((max as number) / step) * step;
       return {
-        min: alignedMin,
-        max: alignedMax > alignedMin ? alignedMax : alignedMin + step,
+        min: exactMin,
+        max: alignedMax > exactMin ? alignedMax : exactMin + step,
       };
     },
     ["catalog-price-bounds", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
@@ -753,10 +753,10 @@ export async function getCatalogPriceInsights(
       // Alinea el rango a pasos “humanos” para que el slider no muestre números raros.
       if (hardOk && typeof min === "number" && typeof max === "number") {
         const step = getPriceStep(min, max);
-        const alignedMin = Math.max(0, Math.floor(min / step) * step);
+        const exactMin = Math.max(0, Math.round(min));
         const alignedMax = Math.ceil(max / step) * step;
-        min = alignedMin;
-        max = alignedMax > alignedMin ? alignedMax : alignedMin + step;
+        min = exactMin;
+        max = alignedMax > exactMin ? alignedMax : exactMin + step;
       }
 
       const bounds: CatalogPriceBounds = {

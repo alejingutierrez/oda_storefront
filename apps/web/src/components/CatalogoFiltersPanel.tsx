@@ -113,6 +113,13 @@ function isValidPriceHistogram(input: unknown): input is CatalogPriceHistogram {
   return obj.buckets.every((value) => typeof value === "number" && Number.isFinite(value));
 }
 
+function isRenderablePriceHistogram(input: unknown): input is CatalogPriceHistogram {
+  if (!isValidPriceHistogram(input)) return false;
+  if (!Array.isArray(input.buckets) || input.buckets.length < 6) return false;
+  const maxCount = Math.max(...input.buckets.map((value) => (Number.isFinite(value) ? value : 0)));
+  return maxCount > 0;
+}
+
 function isValidPriceStats(input: unknown): input is CatalogPriceStats {
   if (!input || typeof input !== "object") return false;
   const obj = input as Partial<CatalogPriceStats>;
@@ -427,10 +434,12 @@ export default function CatalogoFiltersPanel({
     stats: CatalogPriceStats | null | undefined;
   } | null>(null);
   const [priceBoundsLoading, setPriceBoundsLoading] = useState(false);
+  const [priceInsightsFullLoading, setPriceInsightsFullLoading] = useState(false);
   const priceBoundsAbortRef = useRef<AbortController | null>(null);
   const priceInsightsFullAbortRef = useRef<AbortController | null>(null);
   const priceInsightsFullIdleRef = useRef<number | null>(null);
   const priceInsightsFullTimeoutRef = useRef<number | null>(null);
+  const priceInsightsMissingHistogramRetriedKeysRef = useRef<Set<string>>(new Set());
   const priceBoundsFetchKey = useMemo(() => {
     const next = new URLSearchParams(currentParamsString);
     next.delete("page");
@@ -687,7 +696,14 @@ export default function CatalogoFiltersPanel({
     const isFresh =
       priceInsightsFullLastOkKeyRef.current === priceInsightsFullSessionKey &&
       now - priceInsightsFullLastOkAtRef.current < 600_000;
-    if (isFresh) return;
+    const shouldForceRetryMissingHistogram =
+      mode === "draft" &&
+      !isRenderablePriceHistogram(resolvedPriceHistogram) &&
+      !priceInsightsMissingHistogramRetriedKeysRef.current.has(priceInsightsFullSessionKey);
+    if (isFresh && !shouldForceRetryMissingHistogram) return;
+    if (shouldForceRetryMissingHistogram) {
+      priceInsightsMissingHistogramRetriedKeysRef.current.add(priceInsightsFullSessionKey);
+    }
 
     // Cancel any pending schedule for the previous key.
     if (priceInsightsFullIdleRef.current !== null) {
@@ -709,6 +725,7 @@ export default function CatalogoFiltersPanel({
     next.set("mode", "full");
 
     const run = async () => {
+      setPriceInsightsFullLoading(true);
       const watchdog = window.setTimeout(() => controller.abort(), 8000);
       try {
         const res = await fetch(`/api/catalog/price-bounds?${next.toString()}`, {
@@ -732,6 +749,9 @@ export default function CatalogoFiltersPanel({
         const histogram = payload?.histogram;
         const nextHistogram = histogram && Array.isArray(histogram.buckets) ? histogram : null;
         setResolvedPriceHistogram(nextHistogram);
+        if (isRenderablePriceHistogram(nextHistogram)) {
+          priceInsightsMissingHistogramRetriedKeysRef.current.delete(priceInsightsFullSessionKey);
+        }
 
         const stats = payload?.stats;
         const nextStats = stats === null ? null : isValidPriceStats(stats) ? stats : null;
@@ -748,16 +768,20 @@ export default function CatalogoFiltersPanel({
         priceInsightsFullLastOkKeyRef.current = priceInsightsFullSessionKey;
       } catch (err) {
         if (isAbortError(err)) return;
+        priceInsightsMissingHistogramRetriedKeysRef.current.delete(priceInsightsFullSessionKey);
         // Mantén el último estado válido (evita “romper” el filtro de precio al volver a una pestaña inactiva).
         setResolvedPriceBounds((prev) => prev);
         setResolvedPriceHistogram((prev) => prev);
         setResolvedPriceStats((prev) => prev);
       } finally {
         window.clearTimeout(watchdog);
+        setPriceInsightsFullLoading(false);
       }
     };
 
-    if (typeof window.requestIdleCallback === "function") {
+    if (mode === "draft") {
+      void run();
+    } else if (typeof window.requestIdleCallback === "function") {
       priceInsightsFullIdleRef.current = window.requestIdleCallback(() => void run(), { timeout: 1200 });
     } else {
       priceInsightsFullTimeoutRef.current = window.setTimeout(() => void run(), 900);
@@ -775,13 +799,16 @@ export default function CatalogoFiltersPanel({
         priceInsightsFullTimeoutRef.current = null;
       }
       controller.abort();
+      setPriceInsightsFullLoading(false);
     };
   }, [
     isPending,
+    mode,
     priceBoundsFetchKey,
     priceBoundsSessionKey,
     priceInsightsFullDemandTick,
     priceInsightsFullSessionKey,
+    resolvedPriceHistogram,
     resumeTick,
   ]);
 
@@ -1213,7 +1240,7 @@ export default function CatalogoFiltersPanel({
         <summary className="flex cursor-pointer items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">
           <span className="flex items-center gap-3">
             Precio
-            {isPending || priceBoundsLoading ? (
+            {isPending || priceBoundsLoading || priceInsightsFullLoading ? (
               <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                 Actualizando…
               </span>
@@ -1257,6 +1284,7 @@ export default function CatalogoFiltersPanel({
           searchParamsString={currentParamsString}
           commitParams={commitParams}
           onDemandFullInsights={requestPriceInsightsFull}
+          histogramLoading={priceInsightsFullLoading}
           disabled={isPending}
         />
       </details>
@@ -1464,6 +1492,7 @@ function PriceRange({
   searchParamsString,
   commitParams,
   onDemandFullInsights,
+  histogramLoading,
   disabled,
 }: {
   bounds: CatalogPriceBounds;
@@ -1475,6 +1504,7 @@ function PriceRange({
   searchParamsString: string;
   commitParams: (next: URLSearchParams) => void;
   onDemandFullInsights?: () => void;
+  histogramLoading?: boolean;
   disabled?: boolean;
 }) {
   const hasBounds = typeof bounds.min === "number" && typeof bounds.max === "number";
@@ -1712,15 +1742,13 @@ function PriceRange({
   })();
 
   const histogramBars = (() => {
-    if (!histogram) return null;
-    if (!Array.isArray(histogram.buckets)) return null;
-    if (histogram.buckets.length < 6) return null;
+    if (!isRenderablePriceHistogram(histogram)) return null;
     const maxCount = Math.max(...histogram.buckets.map((value) => (Number.isFinite(value) ? value : 0)));
     if (!maxCount) return null;
     return histogram.buckets.map((count, index) => ({
       key: index,
-      // 6px..40px (más legible sin hacer crecer la caja)
-      height: 6 + Math.round((Math.max(0, count) / maxCount) * 34),
+      // 10px..48px para que sea visible incluso en pantallas móviles con brillo bajo.
+      height: 10 + Math.round((Math.max(0, count) / maxCount) * 38),
     }));
   })();
 
@@ -1882,16 +1910,23 @@ function PriceRange({
 
         {histogramBars ? (
           <div
-            className="absolute inset-x-0 top-1/2 flex h-10 -translate-y-1/2 items-end gap-[2px] opacity-75"
+            className="absolute inset-x-0 top-1/2 flex h-11 -translate-y-1/2 items-end gap-[2px]"
             aria-hidden
           >
             {histogramBars.map((bar) => (
               <span
                 key={bar.key}
-                className="flex-1 rounded-[3px] bg-[color:var(--oda-stone)]"
+                className="flex-1 rounded-[3px] bg-[color:var(--oda-taupe)]"
                 style={{ height: `${bar.height}px` }}
               />
             ))}
+          </div>
+        ) : null}
+        {!histogramBars && histogramLoading ? (
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center">
+            <span className="inline-flex rounded-full border border-[color:var(--oda-border)] bg-white/95 px-3 py-1 text-[9px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+              Cargando histograma…
+            </span>
           </div>
         ) : null}
 

@@ -24,9 +24,10 @@ type MobileColumns = 1 | 2;
 
 const DEFAULT_PAGE_SIZE = 24;
 const LOAD_MORE_TIMEOUT_MS = 12_000;
-const PREFETCH_TIMEOUT_MS = 8_000;
+const PREVIEW_TIMEOUT_MS = 8_000;
 const AUTO_LOAD_THRESHOLD_DESKTOP_PX = 1200;
 const AUTO_LOAD_THRESHOLD_MOBILE_PX = 1800;
+const MAX_DUPLICATE_PAGE_RETRIES = 2;
 
 function getAutoLoadThresholdPx() {
   if (typeof window === "undefined") return AUTO_LOAD_THRESHOLD_DESKTOP_PX;
@@ -148,12 +149,13 @@ export default function CatalogProductsInfinite({
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadedIdsRef = useRef(new Set((restored?.items ?? initialItems).map((item) => item.id)));
-  const prefetchRef = useRef<Record<number, ApiResponse>>({});
   const scrollYRef = useRef(restored?.scrollY ?? 0);
   const persistTimeoutRef = useRef<number | null>(null);
   const loadingRef = useRef(false);
   const loadAbortRef = useRef<AbortController | null>(null);
-  const prefetchAbortRef = useRef<AbortController | null>(null);
+  const pageCursorRef = useRef(restored?.page ?? 1);
+  const inFlightPageRef = useRef<number | null>(null);
+  const pageSizeRef = useRef(DEFAULT_PAGE_SIZE);
   const [resumeTick, setResumeTick] = useState(0);
 
   const fetchPageData = useCallback(
@@ -237,7 +239,7 @@ export default function CatalogProductsInfinite({
 
     void fetchPageData(1, {
       signal: controller.signal,
-      timeoutMs: PREFETCH_TIMEOUT_MS,
+      timeoutMs: PREVIEW_TIMEOUT_MS,
     })
       .then(async (res) => {
         const data = res;
@@ -252,6 +254,7 @@ export default function CatalogProductsInfinite({
         if (!payload) return;
         if (controller.signal.aborted) return;
         setPreview({ key, items: payload.items, pageSize: payload.pageSize });
+        pageSizeRef.current = payload.pageSize;
         setPageSize(payload.pageSize);
       })
       .catch((err) => {
@@ -262,8 +265,7 @@ export default function CatalogProductsInfinite({
   useEffect(() => {
     loadAbortRef.current?.abort();
     loadAbortRef.current = null;
-    prefetchAbortRef.current?.abort();
-    prefetchAbortRef.current = null;
+    inFlightPageRef.current = null;
     loadingRef.current = false;
     const persisted = readPersisted(stateKey);
     const usable =
@@ -276,15 +278,19 @@ export default function CatalogProductsInfinite({
         : null;
 
     const nextItems = usable?.items ?? initialItems;
+    const inferredPage = Math.max(1, Math.ceil(nextItems.length / DEFAULT_PAGE_SIZE));
+    const restoredPage = usable?.page ?? inferredPage;
+    const safePage = Math.max(1, Math.min(restoredPage, inferredPage));
     setItems(nextItems);
-    setPage(usable?.page ?? 1);
+    setPage(safePage);
+    pageCursorRef.current = safePage;
+    pageSizeRef.current = DEFAULT_PAGE_SIZE;
     setPageSize(DEFAULT_PAGE_SIZE);
     setHasMoreFallback(nextItems.length >= DEFAULT_PAGE_SIZE);
     setReachedEndByPayload(false);
     setLoading(false);
     setError(null);
     loadedIdsRef.current = new Set(nextItems.map((item) => item.id));
-    prefetchRef.current = {};
     scrollYRef.current = usable?.scrollY ?? 0;
 
     if (usable?.scrollY && typeof window !== "undefined") {
@@ -327,6 +333,10 @@ export default function CatalogProductsInfinite({
     });
   }, [items, navigationPending, page, stateKey]);
 
+  useEffect(() => {
+    pageSizeRef.current = pageSize;
+  }, [pageSize]);
+
   const displayItems = useMemo(() => {
     if (navigationPending) {
       if (preview && (optimisticSearchParams ?? "").trim() === preview.key) {
@@ -353,46 +363,63 @@ export default function CatalogProductsInfinite({
     if (navigationPending) return;
     if (typeof document !== "undefined" && document.hidden) return;
     if (loadingRef.current || loading || !hasMore) return;
+    const initialPageToLoad = pageCursorRef.current + 1;
+    if (inFlightPageRef.current === initialPageToLoad) return;
+
     loadingRef.current = true;
     setLoading(true);
     setError(null);
 
-    const nextPage = page + 1;
-    const prefetched = prefetchRef.current[nextPage];
     const controller = new AbortController();
     loadAbortRef.current?.abort();
     loadAbortRef.current = controller;
+    inFlightPageRef.current = initialPageToLoad;
 
     try {
-      const data: ApiResponse = prefetched
-        ? prefetched
-        : await fetchPageData(nextPage, {
-            signal: controller.signal,
-            timeoutMs: LOAD_MORE_TIMEOUT_MS,
-          });
+      let pageToLoad = initialPageToLoad;
+      let duplicateRetriesLeft = MAX_DUPLICATE_PAGE_RETRIES;
 
-      if (controller.signal.aborted) return;
+      while (true) {
+        inFlightPageRef.current = pageToLoad;
+        const data: ApiResponse = await fetchPageData(pageToLoad, {
+          signal: controller.signal,
+          timeoutMs: LOAD_MORE_TIMEOUT_MS,
+        });
+        if (controller.signal.aborted) return;
 
-      delete prefetchRef.current[nextPage];
-      const nextItems = Array.isArray(data.items) ? data.items : [];
-      const nextPageSize =
-        typeof data.pageSize === "number" && Number.isFinite(data.pageSize) && data.pageSize > 0
-          ? Math.round(data.pageSize)
-          : pageSize;
-      const itemsToAppend: CatalogProduct[] = [];
-      for (const item of nextItems) {
-        if (loadedIdsRef.current.has(item.id)) continue;
-        loadedIdsRef.current.add(item.id);
-        itemsToAppend.push(item);
-      }
-      if (itemsToAppend.length > 0) {
-        setItems((prev) => [...prev, ...itemsToAppend]);
-      }
-      setPage(nextPage);
-      setPageSize(nextPageSize);
-      setHasMoreFallback(nextItems.length >= nextPageSize);
-      if (nextItems.length === 0 || nextItems.length < nextPageSize || itemsToAppend.length === 0) {
-        setReachedEndByPayload(true);
+        const nextItems = Array.isArray(data.items) ? data.items : [];
+        const nextPageSize =
+          typeof data.pageSize === "number" && Number.isFinite(data.pageSize) && data.pageSize > 0
+            ? Math.round(data.pageSize)
+            : pageSizeRef.current;
+
+        pageCursorRef.current = pageToLoad;
+        pageSizeRef.current = nextPageSize;
+        setPage(pageToLoad);
+        setPageSize(nextPageSize);
+        setHasMoreFallback(nextItems.length >= nextPageSize);
+
+        if (nextItems.length === 0 || nextItems.length < nextPageSize) {
+          setReachedEndByPayload(true);
+          break;
+        }
+
+        const itemsToAppend: CatalogProduct[] = [];
+        for (const item of nextItems) {
+          if (loadedIdsRef.current.has(item.id)) continue;
+          loadedIdsRef.current.add(item.id);
+          itemsToAppend.push(item);
+        }
+
+        if (itemsToAppend.length > 0) {
+          setItems((prev) => [...prev, ...itemsToAppend]);
+          break;
+        }
+
+        // Página completa pero sin IDs nuevos: avanzamos una vez y reintentamos.
+        if (duplicateRetriesLeft <= 0) break;
+        duplicateRetriesLeft -= 1;
+        pageToLoad += 1;
       }
     } catch (err) {
       if (isAbortError(err)) return;
@@ -402,54 +429,11 @@ export default function CatalogProductsInfinite({
       if (loadAbortRef.current === controller) {
         loadAbortRef.current = null;
       }
+      inFlightPageRef.current = null;
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [fetchPageData, hasMore, loading, navigationPending, page, pageSize]);
-
-  useEffect(() => {
-    if (navigationPending) return;
-    if (!hasMore) return;
-    if (loading) return;
-    if (typeof document !== "undefined" && document.hidden) return;
-    const nextPage = page + 1;
-    if (prefetchRef.current[nextPage]) return;
-
-    prefetchAbortRef.current?.abort();
-    const controller = new AbortController();
-    prefetchAbortRef.current = controller;
-
-    const schedule = (fn: () => void) => {
-      if (typeof window === "undefined") return;
-      type RequestIdleCallbackFn = (cb: () => void, opts?: { timeout?: number }) => number;
-      const ric = (window as unknown as { requestIdleCallback?: RequestIdleCallbackFn }).requestIdleCallback;
-      if (ric) {
-        ric(fn, { timeout: 650 });
-      } else {
-        window.setTimeout(fn, 140);
-      }
-    };
-
-    schedule(() => {
-      if (controller.signal.aborted) return;
-      void fetchPageData(nextPage, {
-        signal: controller.signal,
-        timeoutMs: PREFETCH_TIMEOUT_MS,
-      })
-        .then((payload) => {
-          if (controller.signal.aborted) return;
-          if (prefetchRef.current[nextPage]) return;
-          prefetchRef.current[nextPage] = payload;
-        })
-        .catch(() => {});
-    });
-    return () => {
-      controller.abort();
-      if (prefetchAbortRef.current === controller) {
-        prefetchAbortRef.current = null;
-      }
-    };
-  }, [fetchPageData, hasMore, loading, navigationPending, page, resumeTick]);
+  }, [fetchPageData, hasMore, loading, navigationPending]);
 
   useEffect(() => {
     const node = sentinelRef.current;
@@ -521,7 +505,6 @@ export default function CatalogProductsInfinite({
   useEffect(() => {
     return () => {
       loadAbortRef.current?.abort();
-      prefetchAbortRef.current?.abort();
       previewAbortRef.current?.abort();
     };
   }, []);
