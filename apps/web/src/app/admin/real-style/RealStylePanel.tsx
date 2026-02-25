@@ -276,6 +276,11 @@ export default function RealStylePanel() {
         const payload = await res.json().catch(() => ({}));
 
         if (!res.ok) {
+          if (res.status === 504 || payload?.error === "assign_busy") {
+            setError("Servidor ocupado. Intenta de nuevo.");
+            return;
+          }
+
           if (res.status === 409) {
             if (payload?.summary) {
               setSummary(payload.summary as Summary);
@@ -309,7 +314,6 @@ export default function RealStylePanel() {
           });
         }
 
-        setMessage(`Asignado a ${REAL_STYLE_LABELS[realStyle]}.`);
         removeFirstItem();
         bumpAndMaybeResyncSummary();
       } catch (err) {

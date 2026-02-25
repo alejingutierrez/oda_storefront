@@ -5,7 +5,6 @@ import { prisma } from "@/lib/prisma";
 import { isRealStyleKey } from "@/lib/real-style/constants";
 import {
   getRealStyleSummary,
-  isEligibleRealStyleProduct,
 } from "@/lib/real-style/server";
 
 export const runtime = "nodejs";
@@ -48,7 +47,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_include_summary" }, { status: 400 });
   }
 
+  let phase = "init";
   try {
+    phase = "load_product";
     const product = await prisma.product.findUnique({
       where: { id: productId },
       select: { id: true, realStyle: true, metadata: true },
@@ -71,19 +72,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const eligible = await isEligibleRealStyleProduct(productId);
-    if (!eligible) {
-      const summary = includeSummary ? await getRealStyleSummary() : undefined;
-      return NextResponse.json(
-        {
-          error: "product_not_eligible",
-          conflict: true,
-          ...(summary ? { summary } : {}),
-        },
-        { status: 409 },
-      );
-    }
-
+    phase = "build_metadata";
     const now = new Date();
     const nowIso = now.toISOString();
 
@@ -130,22 +119,82 @@ export async function POST(req: Request) {
       enrichment_human: nextHuman,
     };
 
-    const updated = await prisma.product.updateMany({
-      where: {
-        id: productId,
-        realStyle: null,
-      },
-      data: {
-        realStyle: realStyleRaw,
-        metadata: toJsonValue(nextMetadata),
-      },
-    });
+    phase = "atomic_assign";
+    const updatedRows = await prisma.$queryRaw<Array<{ id: string; realStyle: string }>>(Prisma.sql`
+      with candidate as (
+        select p.id
+        from products p
+        where p.id = ${productId}
+          and p."real_style" is null
+          and p."hasInStock" = true
+          and p."imageCoverUrl" is not null
+          and (p."metadata" -> 'enrichment') is not null
+        for update skip locked
+      ),
+      updated as (
+        update products p
+        set
+          "real_style" = ${realStyleRaw},
+          "metadata" = ${toJsonValue(nextMetadata)}::jsonb,
+          "updatedAt" = now()
+        from candidate c
+        where p.id = c.id
+        returning p.id as id, p."real_style" as "realStyle"
+      )
+      select id, "realStyle"
+      from updated
+    `);
 
-    if (updated.count === 0) {
+    if (updatedRows.length === 0) {
+      phase = "diagnose_conflict";
+      const diagnosticRows = await prisma.$queryRaw<Array<{ id: string; realStyle: string | null; eligible: boolean }>>(
+        Prisma.sql`
+          select
+            p.id as id,
+            p."real_style" as "realStyle",
+            (
+              p."hasInStock" = true
+              and p."imageCoverUrl" is not null
+              and (p."metadata" -> 'enrichment') is not null
+            ) as eligible
+          from products p
+          where p.id = ${productId}
+          limit 1
+        `,
+      );
+
+      const diagnostic = diagnosticRows[0];
+      if (!diagnostic) {
+        return NextResponse.json({ error: "not_found" }, { status: 404 });
+      }
+
       const summary = includeSummary ? await getRealStyleSummary() : undefined;
+      if (diagnostic.realStyle) {
+        return NextResponse.json(
+          {
+            error: "already_assigned",
+            conflict: true,
+            currentRealStyle: diagnostic.realStyle,
+            ...(summary ? { summary } : {}),
+          },
+          { status: 409 },
+        );
+      }
+
+      if (!diagnostic.eligible) {
+        return NextResponse.json(
+          {
+            error: "product_not_eligible",
+            conflict: true,
+            ...(summary ? { summary } : {}),
+          },
+          { status: 409 },
+        );
+      }
+
       return NextResponse.json(
         {
-          error: "assign_conflict",
+          error: "assign_busy",
           conflict: true,
           ...(summary ? { summary } : {}),
         },
@@ -153,6 +202,7 @@ export async function POST(req: Request) {
       );
     }
 
+    phase = "summary";
     const summary = includeSummary ? await getRealStyleSummary() : undefined;
 
     return NextResponse.json({
@@ -165,7 +215,27 @@ export async function POST(req: Request) {
       ...(summary ? { summary } : {}),
     });
   } catch (error) {
-    console.error("real-style.assign.failed", error);
+    const errorCode =
+      typeof error === "object" && error && "code" in error && typeof (error as { code?: unknown }).code === "string"
+        ? (error as { code: string }).code
+        : null;
+    const isBusyError = errorCode === "55P03" || errorCode === "57014";
+    console.error("real-style.assign.failed", {
+      productId,
+      realStyle: realStyleRaw,
+      phase,
+      errorCode,
+      error,
+    });
+    if (isBusyError) {
+      return NextResponse.json(
+        {
+          error: "assign_busy",
+          conflict: true,
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
