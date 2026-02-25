@@ -93,6 +93,11 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - `warm`: p95 `< 1.2s`
   - `cold`: p95 `< 3s`
 - Estado: **done (2026-02-20)**.
+- Seguimiento (2026-02-25):
+  - Mobile draft de filtros: `CatalogoFiltersPanel` calcula `priceBoundsFetchKey` con estado efectivo (`currentParamsString`) y dispara `mode=full` automáticamente al abrir el bloque de filtros, evitando histograma vacío hasta el primer gesto del slider.
+  - UX de precio: `PriceRange` elimina acciones locales `Limpiar/Todos`; la limpieza queda centralizada en toolbar/dock global de PLP. El encabezado de precio ahora usa dos bloques fijos (`Mínimo`/`Máximo`) con números tabulares para evitar montajes por longitud.
+  - Infinite scroll: `CatalogProductsInfinite` agrega señal de fin por payload real (respuesta corta/vacía o sin IDs nuevos) y umbral dinámico desktop/mobile para autoload más oportuno en móvil.
+  - Backend paginado determinista: desempate por `id` en `ORDER BY` para ramas paginadas de catálogo (`new`, `relevancia`, `top_picks`, `editorial_favorites`, `price_asc`, `price_desc`) y prevención de solape intermitente entre página 1/2.
 
 ### MC-134 Home inmersivo editorial (SSR + islas client)
 - Historia: Como usuario, quiero una home inmersiva con calidad visual premium (hero full-bleed, motion editorial y navegación por bloques interactivos), para descubrir moda colombiana con una experiencia comparable a e-commerce de lujo internacional.

@@ -316,9 +316,9 @@ export function buildOrderBy(sort: string, filters: CatalogFilters | undefined, 
   const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
   switch (sort) {
     case "price_asc":
-      return Prisma.sql`order by min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) asc nulls last, p."createdAt" desc`;
+      return Prisma.sql`order by min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) asc nulls last, p."createdAt" desc, p.id desc`;
     case "price_desc":
-      return Prisma.sql`order by max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) desc nulls last, p."createdAt" desc`;
+      return Prisma.sql`order by max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) desc nulls last, p."createdAt" desc, p.id desc`;
     case "relevancia":
       if (q) {
         return Prisma.sql`
@@ -328,27 +328,30 @@ export function buildOrderBy(sort: string, filters: CatalogFilters | undefined, 
               when b.name ilike ${q} then 1
               else 2
             end asc,
-            p."createdAt" desc
+            p."createdAt" desc,
+            p.id desc
         `;
       }
-      return Prisma.sql`order by p."createdAt" desc`;
+      return Prisma.sql`order by p."createdAt" desc, p.id desc`;
     case "top_picks":
       return Prisma.sql`
         order by
           case when p."editorialTopPickRank" is null then 1 else 0 end asc,
           p."editorialTopPickRank" asc nulls last,
-          p."createdAt" desc
+          p."createdAt" desc,
+          p.id desc
       `;
     case "editorial_favorites":
       return Prisma.sql`
         order by
           case when p."editorialFavoriteRank" is null then 1 else 0 end asc,
           p."editorialFavoriteRank" asc nulls last,
-          p."createdAt" desc
+          p."createdAt" desc,
+          p.id desc
       `;
     case "new":
-      return Prisma.sql`order by p."createdAt" desc`;
+      return Prisma.sql`order by p."createdAt" desc, p.id desc`;
     default:
-      return Prisma.sql`order by p."createdAt" desc`;
+      return Prisma.sql`order by p."createdAt" desc, p.id desc`;
   }
 }

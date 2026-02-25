@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import CatalogProductCard from "@/components/CatalogProductCard";
 import CompareProvider from "@/components/CompareProvider";
 import CompareBar from "@/components/CompareBar";
@@ -24,7 +25,13 @@ type MobileColumns = 1 | 2;
 const DEFAULT_PAGE_SIZE = 24;
 const LOAD_MORE_TIMEOUT_MS = 12_000;
 const PREFETCH_TIMEOUT_MS = 8_000;
-const AUTO_LOAD_THRESHOLD_PX = 1200;
+const AUTO_LOAD_THRESHOLD_DESKTOP_PX = 1200;
+const AUTO_LOAD_THRESHOLD_MOBILE_PX = 1800;
+
+function getAutoLoadThresholdPx() {
+  if (typeof window === "undefined") return AUTO_LOAD_THRESHOLD_DESKTOP_PX;
+  return window.innerWidth < 1024 ? AUTO_LOAD_THRESHOLD_MOBILE_PX : AUTO_LOAD_THRESHOLD_DESKTOP_PX;
+}
 
 function isAbortError(err: unknown) {
   if (!err) return false;
@@ -122,6 +129,7 @@ export default function CatalogProductsInfinite({
     const initialCount = (restored?.items ?? initialItems).length;
     return initialCount >= DEFAULT_PAGE_SIZE;
   });
+  const [reachedEndByPayload, setReachedEndByPayload] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
@@ -272,6 +280,7 @@ export default function CatalogProductsInfinite({
     setPage(usable?.page ?? 1);
     setPageSize(DEFAULT_PAGE_SIZE);
     setHasMoreFallback(nextItems.length >= DEFAULT_PAGE_SIZE);
+    setReachedEndByPayload(false);
     setLoading(false);
     setError(null);
     loadedIdsRef.current = new Set(nextItems.map((item) => item.id));
@@ -330,9 +339,10 @@ export default function CatalogProductsInfinite({
   const knownTotalCount =
     typeof totalCount === "number" && Number.isFinite(totalCount) && totalCount >= 0 ? totalCount : null;
   const hasMore = useMemo(() => {
-    if (knownTotalCount !== null) return displayItems.length < knownTotalCount;
-    return hasMoreFallback;
-  }, [displayItems.length, hasMoreFallback, knownTotalCount]);
+    const hasMoreByCount = knownTotalCount !== null ? displayItems.length < knownTotalCount : hasMoreFallback;
+    if (!hasMoreByCount) return false;
+    return !reachedEndByPayload;
+  }, [displayItems.length, hasMoreFallback, knownTotalCount, reachedEndByPayload]);
 
   const progressPct = useMemo(() => {
     if (!knownTotalCount) return null;
@@ -369,19 +379,21 @@ export default function CatalogProductsInfinite({
         typeof data.pageSize === "number" && Number.isFinite(data.pageSize) && data.pageSize > 0
           ? Math.round(data.pageSize)
           : pageSize;
-      setItems((prev) => {
-        const merged = [...prev];
-        for (const item of nextItems) {
-          if (!loadedIdsRef.current.has(item.id)) {
-            loadedIdsRef.current.add(item.id);
-            merged.push(item);
-          }
-        }
-        return merged;
-      });
+      const itemsToAppend: CatalogProduct[] = [];
+      for (const item of nextItems) {
+        if (loadedIdsRef.current.has(item.id)) continue;
+        loadedIdsRef.current.add(item.id);
+        itemsToAppend.push(item);
+      }
+      if (itemsToAppend.length > 0) {
+        setItems((prev) => [...prev, ...itemsToAppend]);
+      }
       setPage(nextPage);
       setPageSize(nextPageSize);
       setHasMoreFallback(nextItems.length >= nextPageSize);
+      if (nextItems.length === 0 || nextItems.length < nextPageSize || itemsToAppend.length === 0) {
+        setReachedEndByPayload(true);
+      }
     } catch (err) {
       if (isAbortError(err)) return;
       const message = err instanceof Error ? err.message : "load_failed";
@@ -454,7 +466,7 @@ export default function CatalogProductsInfinite({
           void loadMore();
         }
       },
-      { rootMargin: `${AUTO_LOAD_THRESHOLD_PX}px` },
+      { rootMargin: `${getAutoLoadThresholdPx()}px` },
     );
     observer.observe(node);
     return () => observer.disconnect();
@@ -467,7 +479,6 @@ export default function CatalogProductsInfinite({
     if (!hasMore) return;
     if (document.hidden) return;
 
-    const thresholdPx = AUTO_LOAD_THRESHOLD_PX;
     let raf: number | null = null;
 
     const check = () => {
@@ -478,6 +489,7 @@ export default function CatalogProductsInfinite({
       const viewport = window.innerHeight || 0;
       const top = sentinel.getBoundingClientRect().top;
       if (!Number.isFinite(top)) return;
+      const thresholdPx = getAutoLoadThresholdPx();
       if (top - viewport <= thresholdPx) {
         void loadMore();
       }
@@ -523,12 +535,12 @@ export default function CatalogProductsInfinite({
         <p className="mt-2 text-sm text-[color:var(--oda-ink-soft)]">
           Prueba ajustar genero, categoria o rango de precio para ampliar resultados.
         </p>
-        <a
+        <Link
           href="/catalogo"
           className="mt-6 inline-flex rounded-full bg-[color:var(--oda-ink)] px-5 py-3 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-cream)]"
         >
           Volver al catálogo
-        </a>
+        </Link>
       </div>
     );
   }

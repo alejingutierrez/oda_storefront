@@ -432,8 +432,7 @@ export default function CatalogoFiltersPanel({
   const priceInsightsFullIdleRef = useRef<number | null>(null);
   const priceInsightsFullTimeoutRef = useRef<number | null>(null);
   const priceBoundsFetchKey = useMemo(() => {
-    const source = mode === "draft" ? searchParamsString : currentParamsString;
-    const next = new URLSearchParams(source);
+    const next = new URLSearchParams(currentParamsString);
     next.delete("page");
     next.delete("sort");
     // El slider muestra el rango disponible segun filtros, pero no debe re-contarse contra si mismo.
@@ -441,7 +440,7 @@ export default function CatalogoFiltersPanel({
     next.delete("price_max");
     next.delete("price_range");
     return next.toString();
-  }, [currentParamsString, mode, searchParamsString]);
+  }, [currentParamsString]);
   const priceBoundsSessionKey = useMemo(
     () => `oda_catalog_price_bounds_v1:${priceBoundsFetchKey || "base"}`,
     [priceBoundsFetchKey],
@@ -457,6 +456,11 @@ export default function CatalogoFiltersPanel({
     priceInsightsFullDemandedKeysRef.current.add(priceInsightsFullSessionKey);
     setPriceInsightsFullDemandTick((prev) => prev + 1);
   }, [priceInsightsFullSessionKey]);
+  useEffect(() => {
+    if (mode !== "draft") return;
+    if (isPending) return;
+    requestPriceInsightsFull();
+  }, [isPending, mode, requestPriceInsightsFull]);
   const brandSearchResetKey = useMemo(
     () =>
       `${selected.categories.join(",")}::${selected.genders.join(",")}::${selected.subcategories.join(",")}`,
@@ -1745,17 +1749,6 @@ function PriceRange({
     commitParams(next);
   };
 
-  const clearPriceFilters = () => {
-    if (disabled) return;
-    setActiveThumb(null);
-    setDirty(false);
-    const next = new URLSearchParams(searchParamsString);
-    next.delete("price_min");
-    next.delete("price_max");
-    next.delete("price_range");
-    commitParams(next);
-  };
-
   const commitMin = (value: number) => {
     onDemandFullInsights?.();
     const baseMax = dirty ? maxValue : derived.max;
@@ -1775,11 +1768,6 @@ function PriceRange({
     setMinValue(Math.min(baseMin, nextMax - step));
     setMaxValue(nextMax);
   };
-
-  const hasAnyPriceSelection =
-    hasSelectedRanges ||
-    (selectedMin !== null && Number.isFinite(selectedMin) && selectedMin > minBound) ||
-    (selectedMax !== null && Number.isFinite(selectedMax) && selectedMax < maxBound);
 
   const tokenLabelMap = new Map<string, string>(presets.map((preset) => [preset.token, preset.label]));
 
@@ -1826,23 +1814,26 @@ function PriceRange({
 
   return (
     <div className="mt-4 grid gap-3">
-      <div className="flex items-center justify-between gap-4 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-        <span className="min-w-0 truncate">
-          {hasSelectedRanges
-            ? `Rangos: ${selectedRangeTokens.length}`
-            : `${formatCop(liveMinValue)} · ${formatCop(liveMaxValue)}`}
-        </span>
-        {hasAnyPriceSelection ? (
-          <button
-            type="button"
-            onClick={clearPriceFilters}
-            disabled={disabled}
-            className="rounded-full border border-[color:var(--oda-border)] bg-white px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Limpiar
-          </button>
-        ) : null}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-xl border border-[color:var(--oda-border)] bg-white px-3 py-2">
+          <p className="text-[9px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">Mínimo</p>
+          <p className="mt-1 truncate text-sm font-semibold tabular-nums text-[color:var(--oda-ink)]">
+            {formatCop(liveMinValue)}
+          </p>
+        </div>
+        <div className="rounded-xl border border-[color:var(--oda-border)] bg-white px-3 py-2">
+          <p className="text-[9px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">Máximo</p>
+          <p className="mt-1 truncate text-sm font-semibold tabular-nums text-[color:var(--oda-ink)]">
+            {formatCop(liveMaxValue)}
+          </p>
+        </div>
       </div>
+
+      {hasSelectedRanges ? (
+        <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+          Rangos activos: {selectedRangeTokens.length}
+        </p>
+      ) : null}
 
       {hasSelectedRanges && selectedRangesLabel ? (
         <p className="text-xs text-[color:var(--oda-ink-soft)]">{selectedRangesLabel}</p>
@@ -1860,7 +1851,7 @@ function PriceRange({
                 disabled={disabled}
                 aria-pressed={checked}
                 className={[
-                  "rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.18em] transition disabled:cursor-not-allowed disabled:opacity-60",
+                  "inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.18em] transition disabled:cursor-not-allowed disabled:opacity-60",
                   checked
                     ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
                     : "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]",
@@ -1870,14 +1861,6 @@ function PriceRange({
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={clearPriceFilters}
-            disabled={disabled}
-            className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)] transition hover:bg-[color:var(--oda-stone)] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Todos
-          </button>
         </div>
       ) : null}
 

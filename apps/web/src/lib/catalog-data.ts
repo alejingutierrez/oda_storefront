@@ -2074,7 +2074,7 @@ async function computeCatalogProductsPage(params: {
           join brands b on b.id = p."brandId"
           ${productWhere}
           ${rollupListingFastPath ? rollupListingWhere : filters.inStock ? Prisma.sql`and p."hasInStock" = true` : Prisma.empty}
-          order by ${priceOrder}, p."createdAt" desc
+          order by ${priceOrder}, p."createdAt" desc, p.id desc
           limit ${CATALOG_PAGE_SIZE}
           offset ${offset}
         `,
@@ -2184,7 +2184,8 @@ async function computeCatalogProductsPage(params: {
                 `
                 : Prisma.empty}
               ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
-              p."createdAt" desc
+              p."createdAt" desc,
+              p.id desc
             limit ${CATALOG_PAGE_SIZE}
             offset ${offset}
           )
@@ -2216,7 +2217,8 @@ async function computeCatalogProductsPage(params: {
               `
               : Prisma.empty}
             ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
-            ids.created_at desc
+            ids.created_at desc,
+            ids.id desc
         `,
       );
     }
@@ -2268,7 +2270,8 @@ async function computeCatalogProductsPage(params: {
               `
               : Prisma.empty}
             ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
-            p."createdAt" desc
+            p."createdAt" desc,
+            p.id desc
           limit ${CATALOG_PAGE_SIZE}
           offset ${offset}
         )
@@ -2308,7 +2311,8 @@ async function computeCatalogProductsPage(params: {
             `
             : Prisma.empty}
           ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
-          ids.created_at desc
+          ids.created_at desc,
+          ids.id desc
       `,
     );
   })();
@@ -2447,7 +2451,7 @@ async function computeCatalogProducts(params: {
           join brands b on b.id = p."brandId"
           ${productWhere}
           ${rollupListingFastPath ? rollupListingWhere : filters.inStock ? Prisma.sql`and p."hasInStock" = true` : Prisma.empty}
-          order by ${priceOrder}, p."createdAt" desc
+          order by ${priceOrder}, p."createdAt" desc, p.id desc
           limit ${CATALOG_PAGE_SIZE}
           offset ${offset}
         `,
@@ -2557,7 +2561,8 @@ async function computeCatalogProducts(params: {
                 `
                 : Prisma.empty}
               ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
-              p."createdAt" desc
+              p."createdAt" desc,
+              p.id desc
             limit ${CATALOG_PAGE_SIZE}
             offset ${offset}
           )
@@ -2589,7 +2594,8 @@ async function computeCatalogProducts(params: {
               `
               : Prisma.empty}
             ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
-            ids.created_at desc
+            ids.created_at desc,
+            ids.id desc
         `,
       );
     }
@@ -2641,7 +2647,8 @@ async function computeCatalogProducts(params: {
               `
               : Prisma.empty}
             ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
-            p."createdAt" desc
+            p."createdAt" desc,
+            p.id desc
           limit ${CATALOG_PAGE_SIZE}
           offset ${offset}
         )
@@ -2681,7 +2688,8 @@ async function computeCatalogProducts(params: {
             `
             : Prisma.empty}
           ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
-          ids.created_at desc
+          ids.created_at desc,
+          ids.id desc
       `,
     );
   })();
