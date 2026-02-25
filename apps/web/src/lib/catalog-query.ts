@@ -142,7 +142,7 @@ const CATEGORY_FILTER_ALIASES: Record<string, Prisma.Sql[]> = {
 // Objetivo: evitar que un filtro devuelva productos obviamente fuera de tipo
 // mientras se completa el saneo de datos en enrichment/remap.
 const SUBCATEGORY_TEXT_GUARDS: Record<string, string[]> = {
-  camiseta_deportiva: ["camiseta", "jersey", "playera", "tshirt", "t-shirt", "tee"],
+  camiseta_deportiva: ["camiseta", "jersey", "playera", "tshirt", "t-shirt", "tee", "muscle tee"],
   shorts_deportivos: ["short", "shorts", "pantaloneta", "bermuda"],
   ropa_de_running: ["running", "runner", "run", "correr"],
 };
