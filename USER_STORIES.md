@@ -97,6 +97,25 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: sin cambios breaking en APIs públicas; orden determinista de cola (`createdAt desc, id desc`); trazabilidad por usuario/fecha/fuente.
 - Estado: **done (2026-02-25)**.
 
+### MC-149 Aceleración y simplificación de `/admin/real-style` (click-only)
+- Historia: Como curador de catálogo, quiero clasificar en segundos sin fricción ni esperas largas, para mantener ritmo alto de curación 1x1.
+- Alcance:
+  - UI click-only: se elimina drag/drop de la baraja; se mantienen click en caja + atajos `1..8`; se agrega `Usar sugerido` como acción manual.
+  - Fast-path frontend: la baraja carga con `GET /api/admin/real-style/queue?includeSummary=false`, prefetch por low-watermark y sin refetch completo al `Saltar` (skipped en `useRef` + `sessionStorage`).
+  - Resumen híbrido: `GET /api/admin/real-style/summary` en background + actualización optimista tras asignación/conflicto + resync manual/cada 10 asignaciones/al vaciar lote local.
+  - Backend hot path: elegibilidad de cola por `products.hasInStock = true` (sin `EXISTS variants`), `queue` y `assign` aceptan `includeSummary` opcional (default `true` por compatibilidad) y nuevo endpoint `GET /api/admin/real-style/summary`.
+  - Sugerencias: cache en memoria de contexto `style_profiles` (TTL 5 min) para evitar recomputar en cada request.
+  - Persistencia/DB: migración de performance con índices parciales para cola pendiente ordenada y resumen elegible.
+- CA:
+  - La carta activa aparece sin esperar el resumen global.
+  - Asignación por click/teclado guarda y autoavanza.
+  - `Saltar` no recarga toda la cola ni reintroduce el producto en la sesión.
+  - `queue?includeSummary=false` y `assign includeSummary=false` responden sin `summary`; `GET /summary` entrega resumen global completo.
+  - Sin handlers/estado residual de drag en `RealStylePanel`.
+- Datos: `products.hasInStock`, `products.real_style`, `products.metadata`, `style_profiles`.
+- NF: compatibilidad retro para clientes existentes (`includeSummary` default `true`), orden determinista de cola y sin cambios en APIs públicas de catálogo.
+- Estado: **done (2026-02-25)**.
+
 ### MC-133 PLP `/catalogo`: corrección de filtro de precios (histograma + UX + performance medible)
 - Historia: Como usuario de catálogo, quiero que el filtro de precios represente productos reales, responda rápido y tenga feedback claro en desktop/mobile, para evitar resultados confusos y frustración al aplicar filtros.
 - Alcance:

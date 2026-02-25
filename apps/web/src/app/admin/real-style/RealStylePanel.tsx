@@ -1,9 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { proxiedImageUrl } from "@/lib/image-proxy";
-import { REAL_STYLE_OPTIONS, REAL_STYLE_LABELS, type RealStyleKey } from "@/lib/real-style/constants";
+import {
+  isRealStyleKey,
+  REAL_STYLE_OPTIONS,
+  REAL_STYLE_LABELS,
+  type RealStyleKey,
+} from "@/lib/real-style/constants";
 
 type QueueItem = {
   id: string;
@@ -29,16 +34,24 @@ type Summary = {
   byRealStyle: Array<{ key: RealStyleKey; label: string; order: number; count: number }>;
 };
 
-type QueueResponse = {
+type QueuePayload = {
   ok: boolean;
   limit: number;
   items: QueueItem[];
   nextCursor: string | null;
+  summary?: Summary;
+};
+
+type SummaryPayload = {
+  ok: boolean;
   summary: Summary;
 };
 
 const BATCH_LIMIT = 30;
+const PREFETCH_LOW_WATERMARK = 8;
+const SUMMARY_SYNC_EVERY_ASSIGNMENTS = 10;
 const SKIPPED_SESSION_KEY = "oda_admin_real_style_skipped_v1";
+const MESSAGE_TIMEOUT_MS = 2_400;
 
 function classNames(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -64,98 +77,137 @@ function formatDate(value: string) {
   }
 }
 
+function readSkippedSetFromSession() {
+  if (typeof window === "undefined") return new Set<string>();
+  try {
+    const raw = window.sessionStorage.getItem(SKIPPED_SESSION_KEY);
+    if (!raw) return new Set<string>();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set<string>();
+    return new Set(parsed.filter((entry) => typeof entry === "string"));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function writeSkippedSetToSession(skippedSet: Set<string>) {
+  try {
+    window.sessionStorage.setItem(SKIPPED_SESSION_KEY, JSON.stringify(Array.from(skippedSet)));
+  } catch {
+    // ignore
+  }
+}
+
 export default function RealStylePanel() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingQueue, setLoadingQueue] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+  const [assigning, setAssigning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dragOverKey, setDragOverKey] = useState<RealStyleKey | null>(null);
 
-  const [skippedSet, setSkippedSet] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    try {
-      const raw = window.sessionStorage.getItem(SKIPPED_SESSION_KEY);
-      if (!raw) return new Set();
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return new Set();
-      return new Set(parsed.filter((entry) => typeof entry === "string"));
-    } catch {
-      return new Set();
-    }
-  });
-
-  useEffect(() => {
-    try {
-      window.sessionStorage.setItem(SKIPPED_SESSION_KEY, JSON.stringify(Array.from(skippedSet)));
-    } catch {
-      // ignore
-    }
-  }, [skippedSet]);
+  const skippedSetRef = useRef<Set<string>>(readSkippedSetFromSession());
+  const assignmentsSinceSummarySyncRef = useRef(0);
 
   const removeFirstItem = useCallback(() => {
     setItems((prev) => prev.slice(1));
   }, []);
 
-  const fetchQueue = useCallback(
-    async (mode: "reset" | "append", cursor: string | null) => {
-      if (mode === "reset") {
-        setLoading(true);
-        setError(null);
-      } else {
-        setLoadingMore(true);
+  const fetchSummary = useCallback(async (options?: { silent?: boolean }) => {
+    setLoadingSummary(true);
+    try {
+      const res = await fetch("/api/admin/real-style/summary", { cache: "no-store" });
+      const payload = (await res.json().catch(() => ({}))) as Partial<SummaryPayload> & { error?: string };
+      if (!res.ok) {
+        throw new Error(payload.error ?? "No se pudo actualizar el resumen");
+      }
+      if (payload.summary) {
+        setSummary(payload.summary);
+      }
+      assignmentsSinceSummarySyncRef.current = 0;
+    } catch (err) {
+      console.warn(err);
+      if (!options?.silent) {
+        setError(err instanceof Error ? err.message : "Error actualizando resumen");
+      }
+    } finally {
+      setLoadingSummary(false);
+    }
+  }, []);
+
+  const fetchQueue = useCallback(async (mode: "reset" | "append", cursor: string | null) => {
+    if (mode === "reset") {
+      setLoadingQueue(true);
+      setError(null);
+    } else {
+      setLoadingMore(true);
+    }
+
+    try {
+      const params = new URLSearchParams();
+      params.set("limit", String(BATCH_LIMIT));
+      params.set("includeSummary", "false");
+      if (cursor) params.set("cursor", cursor);
+
+      const res = await fetch(`/api/admin/real-style/queue?${params.toString()}`, { cache: "no-store" });
+      const payload = (await res.json().catch(() => ({}))) as Partial<QueuePayload> & { error?: string };
+      if (!res.ok) {
+        throw new Error(payload.error ?? "No se pudo cargar la cola real_style");
       }
 
-      try {
-        const params = new URLSearchParams();
-        params.set("limit", String(BATCH_LIMIT));
-        if (cursor) params.set("cursor", cursor);
+      const batch = Array.isArray(payload.items) ? payload.items : [];
+      const filteredBatch = batch.filter((item) => !skippedSetRef.current.has(item.id));
 
-        const res = await fetch(`/api/admin/real-style/queue?${params.toString()}`, { cache: "no-store" });
-        const payload = (await res.json().catch(() => ({}))) as Partial<QueueResponse> & { error?: string };
-        if (!res.ok) {
-          throw new Error(payload.error ?? "No se pudo cargar la cola real_style");
+      setItems((prev) => {
+        if (mode === "reset") return filteredBatch;
+        if (filteredBatch.length === 0) return prev;
+
+        const existing = new Set(prev.map((item) => item.id));
+        const merged = [...prev];
+        for (const item of filteredBatch) {
+          if (existing.has(item.id)) continue;
+          merged.push(item);
+          existing.add(item.id);
         }
+        return merged;
+      });
 
-        const batch = Array.isArray(payload.items) ? payload.items : [];
-        const filteredBatch = batch.filter((item) => !skippedSet.has(item.id));
-
-        setItems((prev) => {
-          if (mode === "reset") return filteredBatch;
-          const existing = new Set(prev.map((item) => item.id));
-          const merged = [...prev];
-          for (const item of filteredBatch) {
-            if (existing.has(item.id)) continue;
-            merged.push(item);
-          }
-          return merged;
-        });
-
-        setNextCursor(typeof payload.nextCursor === "string" && payload.nextCursor.length > 0 ? payload.nextCursor : null);
-        if (payload.summary) setSummary(payload.summary);
-      } catch (err) {
-        console.warn(err);
-        setError(err instanceof Error ? err.message : "Error cargando la cola");
-      } finally {
-        if (mode === "reset") setLoading(false);
-        else setLoadingMore(false);
-      }
-    },
-    [skippedSet],
-  );
+      setNextCursor(typeof payload.nextCursor === "string" && payload.nextCursor.length > 0 ? payload.nextCursor : null);
+      if (payload.summary) setSummary(payload.summary);
+    } catch (err) {
+      console.warn(err);
+      setError(err instanceof Error ? err.message : "Error cargando la cola");
+    } finally {
+      if (mode === "reset") setLoadingQueue(false);
+      else setLoadingMore(false);
+    }
+  }, []);
 
   useEffect(() => {
     void fetchQueue("reset", null);
-  }, [fetchQueue]);
+    void fetchSummary({ silent: true });
+  }, [fetchQueue, fetchSummary]);
 
   useEffect(() => {
-    if (loading || loadingMore || !nextCursor) return;
-    if (items.length > 5) return;
+    if (loadingQueue || loadingMore || !nextCursor) return;
+    if (items.length > PREFETCH_LOW_WATERMARK) return;
     void fetchQueue("append", nextCursor);
-  }, [fetchQueue, items.length, loading, loadingMore, nextCursor]);
+  }, [fetchQueue, items.length, loadingQueue, loadingMore, nextCursor]);
+
+  useEffect(() => {
+    if (loadingQueue || loadingMore) return;
+    if (items.length !== 0) return;
+    void fetchSummary({ silent: true });
+  }, [fetchSummary, items.length, loadingQueue, loadingMore]);
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(null), MESSAGE_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [message]);
 
   const activeItem = items[0] ?? null;
   const previewItems = items.slice(1, 3);
@@ -165,10 +217,49 @@ export default function RealStylePanel() {
     return Math.round((summary.assignedCount / summary.eligibleTotal) * 100);
   }, [summary]);
 
+  const applyOptimisticSummaryUpdate = useCallback(
+    (params: {
+      pendingDelta?: number;
+      assignedDelta?: number;
+      eligibleDelta?: number;
+      realStyle?: RealStyleKey | null;
+    }) => {
+      setSummary((prev) => {
+        if (!prev) return prev;
+
+        const pendingCount = Math.max(0, prev.pendingCount + (params.pendingDelta ?? 0));
+        const assignedCount = Math.max(0, prev.assignedCount + (params.assignedDelta ?? 0));
+        const eligibleTotal = Math.max(0, prev.eligibleTotal + (params.eligibleDelta ?? 0));
+
+        const byRealStyle = prev.byRealStyle.map((row) => {
+          if (!params.realStyle || row.key !== params.realStyle) return row;
+          return { ...row, count: Math.max(0, row.count + 1) };
+        });
+
+        return {
+          ...prev,
+          eligibleTotal,
+          pendingCount,
+          assignedCount,
+          byRealStyle,
+        };
+      });
+    },
+    [],
+  );
+
+  const bumpAndMaybeResyncSummary = useCallback(() => {
+    assignmentsSinceSummarySyncRef.current += 1;
+    if (assignmentsSinceSummarySyncRef.current >= SUMMARY_SYNC_EVERY_ASSIGNMENTS) {
+      assignmentsSinceSummarySyncRef.current = 0;
+      void fetchSummary({ silent: true });
+    }
+  }, [fetchSummary]);
+
   const assignRealStyle = useCallback(
     async (realStyle: RealStyleKey) => {
-      if (!activeItem || saving) return;
-      setSaving(true);
+      if (!activeItem || assigning) return;
+      setAssigning(true);
       setError(null);
       setMessage(null);
 
@@ -176,49 +267,85 @@ export default function RealStylePanel() {
         const res = await fetch("/api/admin/real-style/assign", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productId: activeItem.id, realStyle }),
+          body: JSON.stringify({
+            productId: activeItem.id,
+            realStyle,
+            includeSummary: false,
+          }),
         });
         const payload = await res.json().catch(() => ({}));
 
         if (!res.ok) {
           if (res.status === 409) {
-            if (payload?.summary) setSummary(payload.summary as Summary);
-            setMessage("Producto ya clasificado por otro admin. Continuamos con el siguiente.");
+            if (payload?.summary) {
+              setSummary(payload.summary as Summary);
+            } else {
+              const conflictStyle = isRealStyleKey(payload?.currentRealStyle) ? payload.currentRealStyle : null;
+              applyOptimisticSummaryUpdate({
+                pendingDelta: -1,
+                assignedDelta: conflictStyle ? 1 : 0,
+                realStyle: conflictStyle,
+              });
+            }
+
+            setMessage("Producto ya cambió de estado. Continuamos con el siguiente.");
             removeFirstItem();
+            bumpAndMaybeResyncSummary();
+            if (!payload?.summary) {
+              void fetchSummary({ silent: true });
+            }
             return;
           }
           throw new Error(payload?.error ?? "No se pudo guardar real_style");
         }
 
-        if (payload?.summary) setSummary(payload.summary as Summary);
+        if (payload?.summary) {
+          setSummary(payload.summary as Summary);
+        } else {
+          applyOptimisticSummaryUpdate({
+            pendingDelta: -1,
+            assignedDelta: 1,
+            realStyle,
+          });
+        }
+
         setMessage(`Asignado a ${REAL_STYLE_LABELS[realStyle]}.`);
         removeFirstItem();
+        bumpAndMaybeResyncSummary();
       } catch (err) {
         console.warn(err);
         setError(err instanceof Error ? err.message : "Error guardando clasificación");
       } finally {
-        setSaving(false);
+        setAssigning(false);
       }
     },
-    [activeItem, removeFirstItem, saving],
+    [
+      activeItem,
+      applyOptimisticSummaryUpdate,
+      assigning,
+      bumpAndMaybeResyncSummary,
+      fetchSummary,
+      removeFirstItem,
+    ],
   );
 
   const handleSkip = useCallback(() => {
-    if (!activeItem || saving) return;
-    setSkippedSet((prev) => {
-      const next = new Set(prev);
-      next.add(activeItem.id);
-      return next;
-    });
+    if (!activeItem || assigning) return;
+
+    const nextSkippedSet = new Set(skippedSetRef.current);
+    nextSkippedSet.add(activeItem.id);
+    skippedSetRef.current = nextSkippedSet;
+    writeSkippedSetToSession(nextSkippedSet);
+
     setMessage("Producto saltado para esta sesión.");
     setError(null);
     removeFirstItem();
-  }, [activeItem, removeFirstItem, saving]);
+  }, [activeItem, assigning, removeFirstItem]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTextInputLike(event.target)) return;
-      if (!activeItem || saving) return;
+      if (!activeItem || assigning) return;
 
       const n = Number(event.key);
       if (!Number.isInteger(n) || n < 1 || n > 8) return;
@@ -231,13 +358,14 @@ export default function RealStylePanel() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeItem, assignRealStyle, saving]);
+  }, [activeItem, assignRealStyle, assigning]);
 
   const renderedCover = activeItem
     ? proxiedImageUrl(activeItem.imageCoverUrl, { productId: activeItem.id, kind: "cover" }) ?? activeItem.imageCoverUrl
     : null;
+  const suggestedKey = activeItem?.suggestedRealStyle ?? null;
 
-  const queueDone = !loading && items.length === 0 && !nextCursor;
+  const queueDone = !loadingQueue && items.length === 0 && !nextCursor;
 
   return (
     <section className="space-y-6">
@@ -254,10 +382,18 @@ export default function RealStylePanel() {
             <button
               type="button"
               onClick={() => void fetchQueue("reset", null)}
-              disabled={loading || saving}
+              disabled={loadingQueue || loadingMore}
               className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
             >
               Recargar cola
+            </button>
+            <button
+              type="button"
+              onClick={() => void fetchSummary()}
+              disabled={loadingSummary}
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
+            >
+              {loadingSummary ? "Actualizando…" : "Actualizar resumen"}
             </button>
           </div>
         </div>
@@ -289,7 +425,7 @@ export default function RealStylePanel() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
         <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-          {loading ? (
+          {loadingQueue ? (
             <div className="flex min-h-[560px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-600">
               Cargando baraja…
             </div>
@@ -309,14 +445,7 @@ export default function RealStylePanel() {
                   <div className="absolute inset-x-5 top-6 h-[500px] rounded-3xl border border-slate-200 bg-slate-100/80 shadow-inner" />
                 ) : null}
 
-                <article
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("text/plain", activeItem.id);
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                  className="absolute inset-x-0 top-0 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl"
-                >
+                <article className="absolute inset-x-0 top-0 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
                   <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-100">
                     {renderedCover ? (
                       <Image
@@ -364,14 +493,27 @@ export default function RealStylePanel() {
                     </div>
 
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={handleSkip}
-                        disabled={saving}
-                        className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
-                      >
-                        Saltar
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSkip}
+                          disabled={assigning}
+                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                        >
+                          Saltar
+                        </button>
+
+                        {suggestedKey ? (
+                          <button
+                            type="button"
+                            onClick={() => void assignRealStyle(suggestedKey)}
+                            disabled={assigning}
+                            className="rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 disabled:opacity-50"
+                          >
+                            {assigning ? "Guardando…" : "Usar sugerido"}
+                          </button>
+                        ) : null}
+                      </div>
 
                       {activeItem.sourceUrl ? (
                         <a
@@ -402,38 +544,25 @@ export default function RealStylePanel() {
         <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Cajas de clasificación</p>
-            <p className="mt-1 text-sm text-slate-600">Arrastra la card o toca una caja para guardar inmediatamente.</p>
+            <p className="mt-1 text-sm text-slate-600">Haz clic en una caja o usa teclas 1–8 para guardar inmediatamente.</p>
           </div>
 
           <div className="grid gap-3">
             {REAL_STYLE_OPTIONS.map((option, index) => {
               const count = summary?.byRealStyle.find((row) => row.key === option.key)?.count ?? 0;
               const suggested = activeItem?.suggestedRealStyle === option.key;
-              const isDragOver = dragOverKey === option.key;
 
               return (
                 <button
                   key={option.key}
                   type="button"
                   onClick={() => void assignRealStyle(option.key)}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                    setDragOverKey(option.key);
-                  }}
-                  onDragLeave={() => setDragOverKey((prev) => (prev === option.key ? null : prev))}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    setDragOverKey(null);
-                    void assignRealStyle(option.key);
-                  }}
-                  disabled={!activeItem || saving}
+                  disabled={!activeItem || assigning}
                   className={classNames(
                     "w-full rounded-2xl border px-4 py-3 text-left transition disabled:opacity-50",
                     suggested
                       ? "border-emerald-300 bg-emerald-50"
                       : "border-slate-200 bg-white hover:bg-slate-50",
-                    isDragOver && "border-slate-900 bg-slate-100",
                   )}
                 >
                   <div className="flex items-center justify-between gap-3">

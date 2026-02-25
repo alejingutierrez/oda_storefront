@@ -39,14 +39,53 @@ export type RealStyleCursor = {
 };
 
 const ELIGIBLE_WHERE_SQL = Prisma.sql`
+  p."hasInStock" = true
+  and p."imageCoverUrl" is not null
+  and (p."metadata" -> 'enrichment') is not null
+`;
+
+const STYLE_PROFILES_CACHE_TTL_MS = 5 * 60 * 1000;
+
+let cachedSuggestionContext:
+  | {
+    expiresAt: number;
+    context: ReturnType<typeof buildRealStyleSuggestionContext>;
+  }
+  | null = null;
+let suggestionContextInFlight: Promise<ReturnType<typeof buildRealStyleSuggestionContext>> | null = null;
+
+async function getSuggestionContextCached() {
+  const now = Date.now();
+  if (cachedSuggestionContext && cachedSuggestionContext.expiresAt > now) {
+    return cachedSuggestionContext.context;
+  }
+
+  if (suggestionContextInFlight) {
+    return suggestionContextInFlight;
+  }
+
+  suggestionContextInFlight = (async () => {
+    const styleProfiles = await getStyleProfiles();
+    const context = buildRealStyleSuggestionContext(styleProfiles);
+    cachedSuggestionContext = {
+      context,
+      expiresAt: Date.now() + STYLE_PROFILES_CACHE_TTL_MS,
+    };
+    return context;
+  })();
+
+  try {
+    return await suggestionContextInFlight;
+  } finally {
+    suggestionContextInFlight = null;
+  }
+}
+
+const ELIGIBLE_PENDING_WHERE_SQL = Prisma.sql`
   p."imageCoverUrl" is not null
   and (p."metadata" -> 'enrichment') is not null
-  and exists (
-    select 1
-    from variants v
-    where v."productId" = p.id
-      and (v.stock > 0 or v."stockStatus" in ('in_stock','preorder'))
-  )
+  and p."hasInStock" = true
+  and p."real_style" is null
 `;
 
 function toNumber(value: bigint | number | string | null | undefined) {
@@ -124,7 +163,8 @@ export async function getRealStyleSummary(): Promise<RealStyleQueueSummary> {
 export async function getRealStyleQueue(params: {
   limit: number;
   cursor: RealStyleCursor | null;
-}): Promise<{ items: RealStyleQueueItem[]; nextCursor: string | null; summary: RealStyleQueueSummary }> {
+  includeSummary?: boolean;
+}): Promise<{ items: RealStyleQueueItem[]; nextCursor: string | null; summary?: RealStyleQueueSummary }> {
   const cursorClause = params.cursor
     ? Prisma.sql`
       and (
@@ -163,15 +203,13 @@ export async function getRealStyleQueue(params: {
       p."createdAt"
     from products p
     join brands b on b.id = p."brandId"
-    where ${ELIGIBLE_WHERE_SQL}
-      and p."real_style" is null
+    where ${ELIGIBLE_PENDING_WHERE_SQL}
       ${cursorClause}
     order by p."createdAt" desc, p.id desc
     limit ${params.limit}
   `);
 
-  const styleProfiles = await getStyleProfiles();
-  const suggestionContext = buildRealStyleSuggestionContext(styleProfiles);
+  const suggestionContext = await getSuggestionContextCached();
 
   const items = rows.map((row) => {
     const suggestion = suggestRealStyle({
@@ -204,7 +242,8 @@ export async function getRealStyleQueue(params: {
       ? encodeRealStyleCursor({ id: last.id, createdAt: last.createdAt.toISOString() })
       : null;
 
-  const summary = await getRealStyleSummary();
+  const includeSummary = params.includeSummary ?? true;
+  const summary = includeSummary ? await getRealStyleSummary() : undefined;
 
   return { items, nextCursor, summary };
 }

@@ -29,6 +29,13 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const productId = typeof body?.productId === "string" ? body.productId.trim() : "";
   const realStyleRaw = typeof body?.realStyle === "string" ? body.realStyle.trim() : "";
+  const includeSummaryRaw = body?.includeSummary;
+  const includeSummary =
+    includeSummaryRaw == null
+      ? true
+      : typeof includeSummaryRaw === "boolean"
+        ? includeSummaryRaw
+        : null;
 
   if (!productId) {
     return NextResponse.json({ error: "missing_product_id" }, { status: 400 });
@@ -36,6 +43,9 @@ export async function POST(req: Request) {
 
   if (!isRealStyleKey(realStyleRaw)) {
     return NextResponse.json({ error: "invalid_real_style" }, { status: 400 });
+  }
+  if (includeSummary == null) {
+    return NextResponse.json({ error: "invalid_include_summary" }, { status: 400 });
   }
 
   try {
@@ -49,13 +59,13 @@ export async function POST(req: Request) {
     }
 
     if (product.realStyle) {
-      const summary = await getRealStyleSummary();
+      const summary = includeSummary ? await getRealStyleSummary() : undefined;
       return NextResponse.json(
         {
           error: "already_assigned",
           conflict: true,
           currentRealStyle: product.realStyle,
-          summary,
+          ...(summary ? { summary } : {}),
         },
         { status: 409 },
       );
@@ -63,12 +73,12 @@ export async function POST(req: Request) {
 
     const eligible = await isEligibleRealStyleProduct(productId);
     if (!eligible) {
-      const summary = await getRealStyleSummary();
+      const summary = includeSummary ? await getRealStyleSummary() : undefined;
       return NextResponse.json(
         {
           error: "product_not_eligible",
           conflict: true,
-          summary,
+          ...(summary ? { summary } : {}),
         },
         { status: 409 },
       );
@@ -132,18 +142,18 @@ export async function POST(req: Request) {
     });
 
     if (updated.count === 0) {
-      const summary = await getRealStyleSummary();
+      const summary = includeSummary ? await getRealStyleSummary() : undefined;
       return NextResponse.json(
         {
           error: "assign_conflict",
           conflict: true,
-          summary,
+          ...(summary ? { summary } : {}),
         },
         { status: 409 },
       );
     }
 
-    const summary = await getRealStyleSummary();
+    const summary = includeSummary ? await getRealStyleSummary() : undefined;
 
     return NextResponse.json({
       ok: true,
@@ -152,7 +162,7 @@ export async function POST(req: Request) {
         realStyle: realStyleRaw,
         assignedAt: nowIso,
       },
-      summary,
+      ...(summary ? { summary } : {}),
     });
   } catch (error) {
     console.error("real-style.assign.failed", error);

@@ -174,9 +174,11 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Panel `/admin/real-style` (curación manual 1x1):
   - Flujo global lineal (sin filtros) sobre productos elegibles del catálogo público: enriquecidos + en stock + con imagen.
   - Interfaz tipo baraja (1 carta activa + 2 previsualizadas) y 8 cajas fijas de clasificación `real_style`.
-  - Asignación inmediata por drag/drop, click/tap o teclado (`1..8`), con autoavance al siguiente producto.
+  - Asignación inmediata **solo por click/tap o teclado (`1..8`)**, con autoavance al siguiente producto.
   - Botón `Saltar`: omite el producto solo en la sesión actual (no escribe en DB).
+  - Botón `Usar sugerido`: acción manual rápida cuando existe sugerencia (sin autoasignar).
   - Sugerencia visual no automática: mapea `stylePrimary/styleTags` a una de las 8 cajas por similitud de tags de `style_profiles`.
+  - Fast-path de performance: la cola carga primero (`GET /api/admin/real-style/queue?includeSummary=false`) y el resumen global se actualiza en background (`GET /api/admin/real-style/summary`) con sincronización optimista tras asignaciones.
   - Persistencia en `products.real_style` (nullable, set cerrado de 8) + auditoría en `products.metadata.enrichment_human`.
 - Panel `/admin/pricing` (precios/TRM):
   - Editar TRM USD→COP y reglas de auto-clasificación de marcas USD (umbral % + `COP <` sospechoso + incluir variantes ya en USD).
