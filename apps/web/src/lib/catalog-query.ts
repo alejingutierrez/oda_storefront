@@ -166,8 +166,6 @@ function buildSubcategoryTextGuardConditions(subcategories: string[]): Prisma.Sq
       return Prisma.sql`
         (
           lower(coalesce(p.name, '')) like ${like}
-          or lower(coalesce(p.description, '')) like ${like}
-          or lower(array_to_string(coalesce(p."seoTags", '{}'::text[]), ' ')) like ${like}
         )
       `;
     });
