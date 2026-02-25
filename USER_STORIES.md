@@ -353,6 +353,35 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Runs manuales sobre marcas inactivas no se ejecutan (`409 brand_inactive`).
 - Estado: **done (2026-02-24)**.
 
+### MC-147 Hero Home con collage responsive por producto
+- Historia: Como usuario de ODA, quiero que el hero muestre una composición editorial con varias fotos del mismo producto (sin cambiar el espacio del banner), para entender mejor la prenda y su variedad visual desde el primer fold.
+- Alcance:
+  - `HomeHeroSlide` se extiende con `heroImageUrls: string[]`.
+  - `getHeroSlides(seed, count)` hidrata `heroImageUrls` con `variants.images[]` en una sola consulta por lote de slides, normaliza URLs, deduplica y fuerza `imageCoverUrl` como primera imagen.
+  - Orden de galería determinista por semilla (`seed + productId + imageUrl`) y límite de pool por slide (`8`) para controlar payload.
+  - `HomeHeroImmersive` deja de renderizar imagen única y pasa a collage de 4 slots con visibilidad por breakpoint:
+    - `<768`: 1 panel
+    - `768-1023`: 2 paneles
+    - `1024-1535`: 3 paneles
+    - `>=1536`: 4 paneles
+  - Reglas de composición por cantidad de imágenes únicas:
+    - `>=4`: `A,B,C,D`
+    - `3`: `A,B,C,A`
+    - `2`: `A,B,A,B`
+    - `1`: `A,A,A,A`
+  - Sin separadores entre paneles, mismo espacio visual del hero, `cover` siempre incluida y fallback por repetición controlada.
+  - `proxiedImageUrl` por panel (`cover`/`gallery`), `sizes` fraccional por breakpoint y prioridad alta solo para slide 1/panel 1.
+- CA:
+  - Conteo visible de paneles correcto por breakpoint objetivo (1/2/3/4).
+  - Cover incluida en todas las composiciones.
+  - Autoplay y navegación manual del hero se mantienen operativos.
+  - Mobile muestra solo una imagen (sin collage visible adicional).
+- Datos: `products.imageCoverUrl`, `variants.images[]`, seed de rotación de 3 días.
+- NF: mantener estabilidad de LCP y no inflar bytes del hero (prioridad/fetchPriority solo en el primer panel del primer slide).
+- Riesgos: productos con pocas imágenes pueden verse repetitivos; mitigación con reglas de repetición deterministas.
+- Métricas: CTR en CTAs del fold, estabilidad visual por breakpoint, ausencia de regresión en Home core.
+- Estado: **done (2026-02-25)**.
+
 ### MC-003 Esquema Neon + migraciones
 - Historia: Como ingeniero de datos, quiero un esquema base y migraciones reproducibles para Postgres/Neon con pgvector, para persistir el catálogo unificado y eventos.
 - Alcance: Modelos brands, stores, products, variants, price_history, stock_history, assets con enlaces a product/variant/brand/store/user, taxonomy_tags, users, events, announcements; índices y FKs; extensión pgvector habilitada.

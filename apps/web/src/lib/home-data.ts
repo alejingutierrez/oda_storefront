@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -51,10 +52,11 @@ export type {
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 9;
+const HOME_CACHE_VERSION = 10;
 const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 6;
+const HOME_HERO_IMAGE_POOL_LIMIT = 8;
 
 type HomePricingContext = {
   pricing: {
@@ -984,6 +986,66 @@ function mapHomeProductRows(
   }));
 }
 
+function normalizeHomeImageUrl(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function buildHomeImageOrderKey(seed: number, productId: string, imageUrl: string): string {
+  return createHash("sha1").update(`${seed}:${productId}:${imageUrl}`).digest("hex");
+}
+
+async function getHeroImageUrlsByProduct(
+  seed: number,
+  products: Array<Pick<ProductCard, "id" | "imageCoverUrl">>,
+): Promise<Map<string, string[]>> {
+  const productIds = products.map((product) => product.id).filter(Boolean);
+  if (!productIds.length) return new Map();
+
+  const variants = await prisma.variant.findMany({
+    where: { productId: { in: productIds } },
+    select: { productId: true, images: true },
+  });
+
+  const imageSetByProduct = new Map<string, Set<string>>();
+  for (const variant of variants) {
+    let set = imageSetByProduct.get(variant.productId);
+    if (!set) {
+      set = new Set<string>();
+      imageSetByProduct.set(variant.productId, set);
+    }
+    for (const imageUrl of variant.images) {
+      const normalized = normalizeHomeImageUrl(imageUrl);
+      if (!normalized) continue;
+      set.add(normalized);
+    }
+  }
+
+  const urlsByProduct = new Map<string, string[]>();
+  for (const product of products) {
+    const coverUrl = normalizeHomeImageUrl(product.imageCoverUrl);
+    const imageSet = imageSetByProduct.get(product.id) ?? new Set<string>();
+    if (coverUrl) imageSet.add(coverUrl);
+
+    const sortedUrls = Array.from(imageSet).sort((left, right) => {
+      if (coverUrl) {
+        if (left === coverUrl && right !== coverUrl) return -1;
+        if (right === coverUrl && left !== coverUrl) return 1;
+      }
+
+      const leftKey = buildHomeImageOrderKey(seed, product.id, left);
+      const rightKey = buildHomeImageOrderKey(seed, product.id, right);
+      if (leftKey !== rightKey) return leftKey.localeCompare(rightKey);
+      return left.localeCompare(right);
+    });
+
+    urlsByProduct.set(product.id, sortedUrls.slice(0, HOME_HERO_IMAGE_POOL_LIMIT));
+  }
+
+  return urlsByProduct;
+}
+
 export async function getHeroSlides(
   seed: number,
   count = 4,
@@ -991,10 +1053,18 @@ export async function getHeroSlides(
 ): Promise<HomeHeroSlide[]> {
   const pool = await getNewArrivals(seed, Math.max(36, count * 10));
   const registry = createHomeSelectionRegistry(excludeIds);
-  return collectUniqueProducts(pool, registry, count).map((item, index) => ({
-    ...item,
-    slideOrder: index + 1,
-  }));
+  const selectedSlides = collectUniqueProducts(pool, registry, count);
+  const heroImageUrlsByProduct = await getHeroImageUrlsByProduct(seed, selectedSlides);
+
+  return selectedSlides.map((item, index) => {
+    const fallbackCover = normalizeHomeImageUrl(item.imageCoverUrl);
+    const heroImageUrls = heroImageUrlsByProduct.get(item.id) ?? [];
+    return {
+      ...item,
+      slideOrder: index + 1,
+      heroImageUrls: heroImageUrls.length > 0 ? heroImageUrls : fallbackCover ? [fallbackCover] : [],
+    };
+  });
 }
 
 export async function getFocusPicks(

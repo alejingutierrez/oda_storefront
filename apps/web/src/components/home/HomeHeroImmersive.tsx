@@ -7,6 +7,8 @@ import type { HomeHeroSlide } from "@/lib/home-types";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 
 const AUTOPLAY_MS = 6200;
+const HERO_COMPOSITE_SIZES = "(max-width: 767px) 100vw, (max-width: 1023px) 50vw, (max-width: 1535px) 33vw, 25vw";
+const HERO_PANEL_VISIBILITY_CLASSES = ["block", "hidden md:block", "hidden lg:block", "hidden 2xl:block"] as const;
 
 function toLabel(value: string | null | undefined) {
   if (!value) return null;
@@ -31,6 +33,31 @@ function formatPrice(amount: string | null, currency: string | null) {
   } catch {
     return `${currency || "COP"} ${numeric.toFixed(0)}`;
   }
+}
+
+function normalizeImageUrl(value: string | null | undefined) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function buildHeroPanelUrls(slide: HomeHeroSlide): string[] {
+  const coverUrl = normalizeImageUrl(slide.imageCoverUrl);
+  const set = new Set<string>();
+  if (coverUrl) set.add(coverUrl);
+  for (const candidate of slide.heroImageUrls) {
+    const normalized = normalizeImageUrl(candidate);
+    if (!normalized) continue;
+    set.add(normalized);
+  }
+
+  const uniqueUrls = Array.from(set);
+  const primary = uniqueUrls[0];
+  if (!primary) return [];
+  if (uniqueUrls.length >= 4) return [uniqueUrls[0], uniqueUrls[1], uniqueUrls[2], uniqueUrls[3]];
+  if (uniqueUrls.length === 3) return [uniqueUrls[0], uniqueUrls[1], uniqueUrls[2], uniqueUrls[0]];
+  if (uniqueUrls.length === 2) return [uniqueUrls[0], uniqueUrls[1], uniqueUrls[0], uniqueUrls[1]];
+  return [primary, primary, primary, primary];
 }
 
 function usePrefersReducedMotion() {
@@ -77,8 +104,24 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
       <div className="home-parallax-media absolute inset-0">
         {slides.length > 0 ? (
           slides.map((slide, index) => {
-            const imageSrc = proxiedImageUrl(slide.imageCoverUrl, { productId: slide.id, kind: "cover" });
-            if (!imageSrc) return null;
+            const coverUrl = normalizeImageUrl(slide.imageCoverUrl);
+            const panelUrls = buildHeroPanelUrls(slide);
+            const panelAssets = panelUrls
+              .map((panelUrl, panelIndex) => {
+                const imageSrc = proxiedImageUrl(panelUrl, {
+                  productId: slide.id,
+                  kind: panelUrl === coverUrl ? "cover" : "gallery",
+                });
+                if (!imageSrc) return null;
+                return {
+                  imageSrc,
+                  originalUrl: panelUrl,
+                  panelIndex,
+                };
+              })
+              .filter(Boolean) as Array<{ imageSrc: string; originalUrl: string; panelIndex: number }>;
+            if (panelAssets.length === 0) return null;
+
             return (
               <div
                 key={slide.id}
@@ -87,16 +130,25 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
                 }`}
                 aria-hidden={safeActiveIndex !== index}
               >
-                <Image
-                  src={imageSrc}
-                  alt={slide.name}
-                  fill
-                  priority={index === 0}
-                  fetchPriority={index === 0 ? "high" : "auto"}
-                  quality={58}
-                  sizes="100vw"
-                  className="object-cover"
-                />
+                <div className="flex h-full w-full">
+                  {panelAssets.map((panel) => (
+                    <div
+                      key={`${slide.id}-${panel.panelIndex}-${panel.originalUrl}`}
+                      className={`relative h-full min-w-0 flex-1 ${HERO_PANEL_VISIBILITY_CLASSES[panel.panelIndex]}`}
+                    >
+                      <Image
+                        src={panel.imageSrc}
+                        alt={panel.panelIndex === 0 ? slide.name : ""}
+                        fill
+                        priority={index === 0 && panel.panelIndex === 0}
+                        fetchPriority={index === 0 && panel.panelIndex === 0 ? "high" : "auto"}
+                        quality={panel.panelIndex === 0 ? 58 : 56}
+                        sizes={HERO_COMPOSITE_SIZES}
+                        className="object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })

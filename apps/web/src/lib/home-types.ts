@@ -40,6 +40,7 @@ export type ProductCard = HomeProductCardData;
 
 export type HomeHeroSlide = HomeProductCardData & {
   slideOrder: number;
+  heroImageUrls: string[];
 };
 
 export type HomePriceDropCardData = HomeProductCardData & {

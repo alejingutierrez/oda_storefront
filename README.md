@@ -341,6 +341,7 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Home Fase 2 (MC-143, 2026-02-24):
   - Hero V3 rotativo con 4 slides reales (`getHeroSlides`), altura reducida (`74svh` desktop, `68svh` mobile), autoplay + controles manuales, respetando `prefers-reduced-motion`.
   - Ajuste posterior de UX mobile: primer fold mas compacto en hero (`min-h 64svh` real en mobile con menor densidad vertical) y controles `Anterior/Siguiente` visibles desde `sm` para evitar overflow del fold en pantallas pequenas.
+  - Hero collage responsive (MC-147, 2026-02-25): cada slide compone una galería del mismo producto a partir de `variants.images[]` + `imageCoverUrl` con selección determinista por semilla de 3 días; breakpoints de paneles `1/2/3/4` para `<768 / 768-1023 / 1024-1535 / >=1536`; sin separadores entre paneles; fallback por repetición controlada (`A,A,A,A`, `A,B,A,B`, `A,B,C,A`).
   - Categorías clave migradas a carrusel editorial uniforme (`24` categorías por rotación): desktop en 2 filas y mobile en 1 fila, con navegación por drag/flechas/teclado.
   - Módulo de foco ampliado (`24` productos, hasta `12` subcategorías) con carga móvil incremental (`ver más`) y tracking de click por superficie.
   - Conversión mejorada con preview de beneficios y CTA no interactivo (`Próximamente`), seguida por tres módulos nuevos: `HomePriceDropRail`, `HomeFavoritesRail` y `HomeDailyTrendingRail`.
