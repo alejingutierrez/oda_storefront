@@ -142,6 +142,12 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Infinite scroll móvil: `CatalogProductsInfinite` elimina prefetch agresivo por página y migra a cursor secuencial robusto (`pageCursorRef` + `inFlightPageRef`) para evitar carreras con `page=2` repetido. Si llega una página completa con IDs 100% duplicados, avanza cursor y reintenta de forma acotada sin declarar fin falso.
   - Precio exacto del universo filtrado: `catalog-data` deja de alinear el mínimo hacia abajo por step en `getCatalogPriceBounds/getCatalogPriceInsights`; el mínimo se conserva real y solo el máximo se alinea hacia arriba.
   - Histograma móvil determinista: en modo draft se fuerza fetch `mode=full` inmediato por key y, si el cache fresco no trae histograma renderizable, se hace un refetch controlado. UI agrega estado explícito `Cargando histograma…` y aumenta contraste/altura mínima de barras para evitar percepción de bloqueo.
+- Seguimiento (2026-02-25, corrección determinista de precio inicial):
+  - SSR seed obligatorio de precio en PLP: `CatalogoView` ahora carga `getCatalogPriceBounds(filters)` y pasa `initialPriceInsights={ bounds, histogram:null, stats:null }` a `CatalogoClient` para evitar primer render con valores stale de sesión.
+  - Caché de precio con semántica real de frescura: `CatalogoFiltersPanel` migra a envoltura `{ value, cachedAt }`, con compatibilidad legacy (`cachedAt=0`) y sin refrescar timestamps al leer.
+  - Revalidación full por key en mobile draft: separación explícita entre keys `demanded` y `networkValidated`; solo se considera validada tras `200` con payload válido. Se evita que abort/error inicial “congele” la key.
+  - Robustez de primer fetch full: watchdog por intento sube a `12s` y se agregan hasta `2` reintentos con backoff corto para reducir falsos negativos al abrir filtros.
+  - Slider consistente al montar: normalización de `min/max/step` para evitar coerción silenciosa de `input[type=range]` y divergencias iniciales de thumb/valor.
 
 ### MC-134 Home inmersivo editorial (SSR + islas client)
 - Historia: Como usuario, quiero una home inmersiva con calidad visual premium (hero full-bleed, motion editorial y navegación por bloques interactivos), para descubrir moda colombiana con una experiencia comparable a e-commerce de lujo internacional.

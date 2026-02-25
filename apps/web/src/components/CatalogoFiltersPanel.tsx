@@ -97,6 +97,33 @@ function writeSessionJson(key: string, value: unknown) {
   }
 }
 
+type SessionCacheEnvelope<T> = {
+  value: T;
+  cachedAt: number;
+};
+
+function readSessionCachedValue<T>(
+  key: string,
+  isValue: (input: unknown) => input is T,
+): SessionCacheEnvelope<T> | null {
+  const cached = readSessionJson<unknown>(key);
+  if (cached === null) return null;
+  if (isValue(cached)) {
+    // Legacy format (raw value, sin metadata de frescura).
+    return { value: cached, cachedAt: 0 };
+  }
+  if (!cached || typeof cached !== "object") return null;
+  const obj = cached as { value?: unknown; cachedAt?: unknown };
+  if (!isValue(obj.value)) return null;
+  const cachedAt =
+    typeof obj.cachedAt === "number" && Number.isFinite(obj.cachedAt) && obj.cachedAt > 0 ? obj.cachedAt : 0;
+  return { value: obj.value, cachedAt };
+}
+
+function writeSessionCachedValue<T>(key: string, value: T) {
+  writeSessionJson(key, { value, cachedAt: Date.now() } satisfies SessionCacheEnvelope<T>);
+}
+
 function isValidPriceBounds(input: unknown): input is CatalogPriceBounds {
   if (!input || typeof input !== "object") return false;
   const obj = input as { min?: unknown; max?: unknown };
@@ -132,6 +159,22 @@ function isValidPriceStats(input: unknown): input is CatalogPriceStats {
     if (value === null) return true;
     return typeof value === "number" && Number.isFinite(value);
   });
+}
+
+type PriceInsightsSessionValue = {
+  bounds: CatalogPriceBounds;
+  histogram: CatalogPriceHistogram | null;
+  stats: CatalogPriceStats | null;
+};
+
+function isValidPriceInsightsSessionValue(input: unknown): input is PriceInsightsSessionValue {
+  if (!input || typeof input !== "object") return false;
+  const obj = input as { bounds?: unknown; histogram?: unknown; stats?: unknown };
+  if (!isValidPriceBounds(obj.bounds)) return false;
+  const histogramOk = obj.histogram === null || isValidPriceHistogram(obj.histogram);
+  if (!histogramOk) return false;
+  const statsOk = obj.stats === null || isValidPriceStats(obj.stats);
+  return statsOk;
 }
 
 function sortFacetItems(items: FacetItem[], selectedValues: string[]) {
@@ -245,6 +288,10 @@ function getStep(min: number, max: number) {
 }
 
 const INTERACTION_PENDING_TIMEOUT_MS = 4500;
+const PRICE_BOUNDS_FRESHNESS_MS = 60_000;
+const PRICE_INSIGHTS_FULL_FRESHNESS_MS = 600_000;
+const PRICE_INSIGHTS_FULL_WATCHDOG_MS = 12_000;
+const PRICE_INSIGHTS_FULL_MAX_RETRIES = 2;
 
 export default function CatalogoFiltersPanel({
   facets,
@@ -459,9 +506,12 @@ export default function CatalogoFiltersPanel({
     [priceBoundsFetchKey],
   );
   const priceInsightsFullDemandedKeysRef = useRef<Set<string>>(new Set());
+  const priceInsightsFullValidatedKeysRef = useRef<Set<string>>(new Set());
   const [priceInsightsFullDemandTick, setPriceInsightsFullDemandTick] = useState(0);
   const requestPriceInsightsFull = useCallback(() => {
-    if (priceInsightsFullDemandedKeysRef.current.has(priceInsightsFullSessionKey)) return;
+    const alreadyDemanded = priceInsightsFullDemandedKeysRef.current.has(priceInsightsFullSessionKey);
+    const alreadyValidated = priceInsightsFullValidatedKeysRef.current.has(priceInsightsFullSessionKey);
+    if (alreadyDemanded && alreadyValidated) return;
     priceInsightsFullDemandedKeysRef.current.add(priceInsightsFullSessionKey);
     setPriceInsightsFullDemandTick((prev) => prev + 1);
   }, [priceInsightsFullSessionKey]);
@@ -512,12 +562,12 @@ export default function CatalogoFiltersPanel({
     setResolvedPriceBounds(priceBounds);
     setResolvedPriceHistogram(priceHistogram ?? null);
     setResolvedPriceStats(priceStats ?? null);
-    writeSessionJson(priceBoundsSessionKey, priceBounds);
-    writeSessionJson(priceInsightsFullSessionKey, {
+    writeSessionCachedValue(priceBoundsSessionKey, priceBounds);
+    writeSessionCachedValue(priceInsightsFullSessionKey, {
       bounds: priceBounds,
       histogram: priceHistogram ?? null,
       stats: priceStats ?? null,
-    });
+    } satisfies PriceInsightsSessionValue);
 
     priceBoundsLastOkAtRef.current = Date.now();
     priceBoundsLastOkKeyRef.current = priceBoundsSessionKey;
@@ -549,39 +599,24 @@ export default function CatalogoFiltersPanel({
   }, [subcategories.length, subcategoriesSessionKey]);
 
   useEffect(() => {
-    const cached = readSessionJson<unknown>(priceBoundsSessionKey);
-    if (!isValidPriceBounds(cached)) return;
-    setResolvedPriceBounds(cached);
-    if (typeof cached.min === "number" && typeof cached.max === "number") {
-      priceBoundsLastOkAtRef.current = Date.now();
+    const cached = readSessionCachedValue(priceBoundsSessionKey, isValidPriceBounds);
+    if (!cached) return;
+    setResolvedPriceBounds(cached.value);
+    if (typeof cached.value.min === "number" && typeof cached.value.max === "number") {
+      priceBoundsLastOkAtRef.current = cached.cachedAt;
       priceBoundsLastOkKeyRef.current = priceBoundsSessionKey;
     }
   }, [priceBoundsSessionKey]);
 
   useEffect(() => {
-    const cached = readSessionJson<unknown>(priceInsightsFullSessionKey);
-    if (!cached || typeof cached !== "object") return;
-    const obj = cached as { bounds?: unknown; histogram?: unknown; stats?: unknown };
-    if (isValidPriceBounds(obj.bounds)) {
-      setResolvedPriceBounds(obj.bounds);
-    }
-    if (obj.histogram === null) {
-      setResolvedPriceHistogram(null);
-    } else if (isValidPriceHistogram(obj.histogram)) {
-      setResolvedPriceHistogram(obj.histogram);
-    }
-    if (obj.stats === null) {
-      setResolvedPriceStats(null);
-    } else if (isValidPriceStats(obj.stats)) {
-      setResolvedPriceStats(obj.stats);
-    }
+    const cached = readSessionCachedValue(priceInsightsFullSessionKey, isValidPriceInsightsSessionValue);
+    if (!cached) return;
+    setResolvedPriceBounds(cached.value.bounds);
+    setResolvedPriceHistogram(cached.value.histogram);
+    setResolvedPriceStats(cached.value.stats);
 
-    if (
-      isValidPriceBounds(obj.bounds) &&
-      typeof obj.bounds.min === "number" &&
-      typeof obj.bounds.max === "number"
-    ) {
-      priceInsightsFullLastOkAtRef.current = Date.now();
+    if (typeof cached.value.bounds.min === "number" && typeof cached.value.bounds.max === "number") {
+      priceInsightsFullLastOkAtRef.current = cached.cachedAt;
       priceInsightsFullLastOkKeyRef.current = priceInsightsFullSessionKey;
     }
   }, [priceInsightsFullSessionKey]);
@@ -642,7 +677,7 @@ export default function CatalogoFiltersPanel({
     const now = Date.now();
     const isFresh =
       priceBoundsLastOkKeyRef.current === priceBoundsSessionKey &&
-      now - priceBoundsLastOkAtRef.current < 60_000;
+      now - priceBoundsLastOkAtRef.current < PRICE_BOUNDS_FRESHNESS_MS;
     if (isFresh) return;
 
     priceBoundsAbortRef.current?.abort();
@@ -668,7 +703,7 @@ export default function CatalogoFiltersPanel({
           max: typeof bounds?.max === "number" ? bounds.max : null,
         };
         setResolvedPriceBounds(nextBounds);
-        writeSessionJson(priceBoundsSessionKey, nextBounds);
+        writeSessionCachedValue(priceBoundsSessionKey, nextBounds);
         priceBoundsLastOkAtRef.current = Date.now();
         priceBoundsLastOkKeyRef.current = priceBoundsSessionKey;
       } catch (err) {
@@ -695,12 +730,14 @@ export default function CatalogoFiltersPanel({
     const now = Date.now();
     const isFresh =
       priceInsightsFullLastOkKeyRef.current === priceInsightsFullSessionKey &&
-      now - priceInsightsFullLastOkAtRef.current < 600_000;
+      now - priceInsightsFullLastOkAtRef.current < PRICE_INSIGHTS_FULL_FRESHNESS_MS;
+    const isNetworkValidated = priceInsightsFullValidatedKeysRef.current.has(priceInsightsFullSessionKey);
+    const shouldForceDraftValidation = mode === "draft" && !isNetworkValidated;
     const shouldForceRetryMissingHistogram =
       mode === "draft" &&
       !isRenderablePriceHistogram(resolvedPriceHistogram) &&
       !priceInsightsMissingHistogramRetriedKeysRef.current.has(priceInsightsFullSessionKey);
-    if (isFresh && !shouldForceRetryMissingHistogram) return;
+    if (isFresh && !shouldForceRetryMissingHistogram && !shouldForceDraftValidation) return;
     if (shouldForceRetryMissingHistogram) {
       priceInsightsMissingHistogramRetriedKeysRef.current.add(priceInsightsFullSessionKey);
     }
@@ -726,55 +763,102 @@ export default function CatalogoFiltersPanel({
 
     const run = async () => {
       setPriceInsightsFullLoading(true);
-      const watchdog = window.setTimeout(() => controller.abort(), 8000);
       try {
-        const res = await fetch(`/api/catalog/price-bounds?${next.toString()}`, {
-          signal: controller.signal,
-        });
-        if (!res.ok) {
-          throw new Error(`http_${res.status}`);
+        for (let attempt = 0; attempt <= PRICE_INSIGHTS_FULL_MAX_RETRIES; attempt += 1) {
+          if (controller.signal.aborted) return;
+
+          const attemptController = new AbortController();
+          const abortAttempt = () => attemptController.abort();
+          controller.signal.addEventListener("abort", abortAttempt, { once: true });
+          const watchdog = window.setTimeout(() => attemptController.abort(), PRICE_INSIGHTS_FULL_WATCHDOG_MS);
+
+          try {
+            const res = await fetch(`/api/catalog/price-bounds?${next.toString()}`, {
+              signal: attemptController.signal,
+            });
+            if (!res.ok) {
+              throw new Error(`http_${res.status}`);
+            }
+
+            const payload = (await res.json()) as {
+              bounds?: CatalogPriceBounds;
+              histogram?: CatalogPriceHistogram | null;
+              stats?: CatalogPriceStats | null;
+            };
+            const payloadBounds = payload?.bounds;
+            const payloadHistogram = payload?.histogram ?? null;
+            const payloadStats = payload?.stats ?? null;
+            const payloadValid =
+              isValidPriceBounds(payloadBounds) &&
+              (payloadHistogram === null || isValidPriceHistogram(payloadHistogram)) &&
+              (payloadStats === null || isValidPriceStats(payloadStats));
+            if (!payloadValid) {
+              throw new Error("invalid_payload");
+            }
+
+            const nextBounds: CatalogPriceBounds = {
+              min: typeof payloadBounds.min === "number" ? payloadBounds.min : null,
+              max: typeof payloadBounds.max === "number" ? payloadBounds.max : null,
+            };
+            setResolvedPriceBounds(nextBounds);
+
+            const nextHistogram = payloadHistogram && Array.isArray(payloadHistogram.buckets) ? payloadHistogram : null;
+            setResolvedPriceHistogram(nextHistogram);
+            if (isRenderablePriceHistogram(nextHistogram)) {
+              priceInsightsMissingHistogramRetriedKeysRef.current.delete(priceInsightsFullSessionKey);
+            }
+
+            const nextStats = payloadStats === null ? null : payloadStats;
+            setResolvedPriceStats(nextStats);
+
+            // Keep both caches in sync: `lite` can be shown immediately, `full` can be lazy.
+            writeSessionCachedValue(priceBoundsSessionKey, nextBounds);
+            writeSessionCachedValue(priceInsightsFullSessionKey, {
+              bounds: nextBounds,
+              histogram: nextHistogram,
+              stats: nextStats,
+            } satisfies PriceInsightsSessionValue);
+
+            priceInsightsFullLastOkAtRef.current = Date.now();
+            priceInsightsFullLastOkKeyRef.current = priceInsightsFullSessionKey;
+            priceInsightsFullValidatedKeysRef.current.add(priceInsightsFullSessionKey);
+            return;
+          } catch (err) {
+            if (isAbortError(err) && controller.signal.aborted) return;
+            if (attempt >= PRICE_INSIGHTS_FULL_MAX_RETRIES) {
+              throw err;
+            }
+
+            await new Promise<void>((resolve) => {
+              if (controller.signal.aborted) {
+                resolve();
+                return;
+              }
+              let timeoutId = 0;
+              const onAbort = () => {
+                window.clearTimeout(timeoutId);
+                controller.signal.removeEventListener("abort", onAbort);
+                resolve();
+              };
+              timeoutId = window.setTimeout(() => {
+                controller.signal.removeEventListener("abort", onAbort);
+                resolve();
+              }, 220 * (attempt + 1));
+              controller.signal.addEventListener("abort", onAbort, { once: true });
+            });
+          } finally {
+            window.clearTimeout(watchdog);
+            controller.signal.removeEventListener("abort", abortAttempt);
+          }
         }
-        const payload = (await res.json()) as {
-          bounds?: CatalogPriceBounds;
-          histogram?: CatalogPriceHistogram | null;
-          stats?: CatalogPriceStats | null;
-        };
-        const bounds = payload?.bounds;
-        const nextBounds: CatalogPriceBounds = {
-          min: typeof bounds?.min === "number" ? bounds.min : null,
-          max: typeof bounds?.max === "number" ? bounds.max : null,
-        };
-        setResolvedPriceBounds(nextBounds);
-
-        const histogram = payload?.histogram;
-        const nextHistogram = histogram && Array.isArray(histogram.buckets) ? histogram : null;
-        setResolvedPriceHistogram(nextHistogram);
-        if (isRenderablePriceHistogram(nextHistogram)) {
-          priceInsightsMissingHistogramRetriedKeysRef.current.delete(priceInsightsFullSessionKey);
-        }
-
-        const stats = payload?.stats;
-        const nextStats = stats === null ? null : isValidPriceStats(stats) ? stats : null;
-        setResolvedPriceStats(nextStats);
-
-        // Keep both caches in sync: `lite` can be shown immediately, `full` can be lazy.
-        writeSessionJson(priceBoundsSessionKey, nextBounds);
-        writeSessionJson(priceInsightsFullSessionKey, {
-          bounds: nextBounds,
-          histogram: nextHistogram,
-          stats: nextStats,
-        });
-        priceInsightsFullLastOkAtRef.current = Date.now();
-        priceInsightsFullLastOkKeyRef.current = priceInsightsFullSessionKey;
       } catch (err) {
-        if (isAbortError(err)) return;
+        if (isAbortError(err) && controller.signal.aborted) return;
         priceInsightsMissingHistogramRetriedKeysRef.current.delete(priceInsightsFullSessionKey);
         // Mantén el último estado válido (evita “romper” el filtro de precio al volver a una pestaña inactiva).
         setResolvedPriceBounds((prev) => prev);
         setResolvedPriceHistogram((prev) => prev);
         setResolvedPriceStats((prev) => prev);
       } finally {
-        window.clearTimeout(watchdog);
         setPriceInsightsFullLoading(false);
       }
     };
@@ -1508,11 +1592,14 @@ function PriceRange({
   disabled?: boolean;
 }) {
   const hasBounds = typeof bounds.min === "number" && typeof bounds.max === "number";
-  const minBound = typeof bounds.min === "number" ? bounds.min : 0;
-  const maxBound = typeof bounds.max === "number" ? bounds.max : 0;
-  const rawStep = getStep(minBound, maxBound);
-  const step = Math.max(1, Math.min(rawStep, Math.max(1, maxBound - minBound)));
-  const hasRange = hasBounds && Number.isFinite(minBound) && Number.isFinite(maxBound) && maxBound > minBound;
+  const rawMinBound = typeof bounds.min === "number" ? Math.round(bounds.min) : 0;
+  const rawMaxBound = typeof bounds.max === "number" ? Math.round(bounds.max) : 0;
+  const hasRange = hasBounds && Number.isFinite(rawMinBound) && Number.isFinite(rawMaxBound) && rawMaxBound > rawMinBound;
+  const rawStep = hasRange ? getStep(rawMinBound, rawMaxBound) : 1;
+  const step = hasRange ? Math.max(1, Math.min(rawStep, Math.max(1, rawMaxBound - rawMinBound))) : 1;
+  const stepsInRange = hasRange ? Math.max(1, Math.ceil((rawMaxBound - rawMinBound) / step)) : 1;
+  const minBound = rawMinBound;
+  const maxBound = hasRange ? minBound + stepsInRange * step : rawMaxBound;
 
   const selectedMin = selectedMinRaw ? Number(selectedMinRaw) : null;
   const selectedMax = selectedMaxRaw ? Number(selectedMaxRaw) : null;

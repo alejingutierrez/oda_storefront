@@ -246,10 +246,13 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Slider (rango continuo): `price_min` y `price_max`.
   - Regla de display: si el precio fuente es `COP`, se muestra sin redondeo marketing; si es `USD` (o la marca tiene `currency_override=USD`), se convierte a COP y sí se redondea al `unit_cop` configurado.
   - Rangos múltiples (unión disjunta real): `price_range=min:max` (parámetro repetible). Si existe al menos un `price_range`, tiene prioridad sobre `price_min/price_max` (la UI limpia `price_range` al interactuar con el slider).
+  - Inicialización determinista: `CatalogoView` siembra `initialPriceInsights` desde SSR con `bounds` reales (`getCatalogPriceBounds(filters)`) y `histogram/stats=null`, evitando arranque “a ciegas” por caché local.
+  - Frescura de caché en cliente: `CatalogoFiltersPanel` usa envoltura `{ value, cachedAt }` para `bounds/full`; lectura legacy (valor crudo) se trata como `cachedAt=0` y no renueva frescura artificialmente por solo leer.
   - Mobile (sheet en modo draft): `priceBounds` se recalcula con el estado efectivo de filtros y se solicita `mode=full` automáticamente al abrir/interactuar el bloque de precio (sin esperar el primer movimiento del slider).
   - UX de limpieza: `PriceRange` no tiene botones locales `Limpiar/Todos`; la limpieza queda centralizada en el botón global de PLP (toolbar desktop / dock mobile).
   - Header de rango en UI: mínimo y máximo se muestran en bloques fijos con `tabular-nums` para evitar solapes visuales cuando cambian longitudes.
   - Step del slider: dinámico por rango (`1.000`, `5.000`, `10.000`, `50.000`, `100.000`) en vez de fijo a `10.000`.
+  - Revalidación `mode=full` robusta: en draft mobile se exige al menos una validación real por key (`demanded` vs `networkValidated`), con watchdog por intento de `12s` y hasta `2` reintentos cortos en abort/error inicial.
   - Semántica de mínimo: `bounds.min` y `insights.bounds.min` conservan el mínimo real filtrado (sin bajar artificialmente por alineación de step); solo el máximo se alinea hacia arriba para mantener UX del slider.
   - Cambio de precio (30 días): filtro single-select `price_change=down|up` en sección Precio (`Bajó de precio` / `Subió de precio`), combinable con el resto de filtros.
   - Bounds/histograma: `/api/catalog/price-bounds` soporta `mode=lite|full`.

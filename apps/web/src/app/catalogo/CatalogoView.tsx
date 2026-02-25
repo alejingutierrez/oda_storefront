@@ -1,6 +1,11 @@
 import Header from "@/components/Header";
 import CatalogoClient from "@/app/catalogo/CatalogoClient";
-import { getCatalogFacetsLite, getCatalogProductsPage, type CatalogFilters } from "@/lib/catalog-data";
+import {
+  getCatalogFacetsLite,
+  getCatalogPriceBounds,
+  getCatalogProductsPage,
+  type CatalogFilters,
+} from "@/lib/catalog-data";
 import { getMegaMenuData } from "@/lib/home-data";
 import type { CatalogPlpContext } from "@/lib/catalog-plp";
 import {
@@ -44,10 +49,11 @@ export default async function CatalogoView({
     parsedFilters.priceMin !== undefined ||
     parsedFilters.priceMax !== undefined;
 
-  const [menu, page, facets] = await Promise.all([
+  const [menu, page, facets, initialPriceBounds] = await Promise.all([
     getMegaMenuData(),
     getCatalogProductsPage({ filters, page: 1, sort }),
     hasPriceFilter ? Promise.resolve(null) : getCatalogFacetsLite(filters),
+    getCatalogPriceBounds(filters),
   ]);
   const searchKeyParams = new URLSearchParams(params.toString());
   searchKeyParams.delete("page");
@@ -61,6 +67,7 @@ export default async function CatalogoView({
         totalCount={null}
         initialSearchParams={searchKey}
         initialFacets={facets}
+        initialPriceInsights={{ bounds: initialPriceBounds, histogram: null, stats: null }}
         plpContext={plp ?? null}
       />
     </main>
