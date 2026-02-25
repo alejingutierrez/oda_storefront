@@ -209,10 +209,10 @@ export default async function HomeBelowFold({
     <>
       <section className={`oda-container py-12 sm:py-16 ${FOLD_SECTION_CLASS}`}>
         <ProductCarousel
-          title="Novedades que rotan cada 3 dias"
-          subtitle="Nuevo"
+          title="Novedades para tu próximo look"
+          subtitle="Recién llegado"
           ctaHref="/novedades"
-          ctaLabel="Ver todo"
+          ctaLabel="Ver novedades"
           products={newArrivals}
           ariaLabel="Carrusel de novedades"
           surface="home_new_arrivals"
@@ -258,20 +258,19 @@ export default async function HomeBelowFold({
       <section className={`border-y border-[color:var(--oda-border)] bg-white ${FOLD_SECTION_CLASS}`}>
         <div className="oda-container grid gap-8 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
           <div className="flex flex-col gap-4 lg:pr-8">
-            <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">ODA Story</p>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Inspiración ODA</p>
             <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
-              Editorial colombiano, siempre actualizado.
+              Menos búsqueda, más outfits que sí van contigo.
             </h2>
             <p className="max-w-xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
-              Mantenemos la curaduria viva usando una semilla determinista de 3 dias y un pipeline continuo de
-              catalogo. Resultado: descubrimiento premium sin perder consistencia de data.
+              Combinamos marcas colombianas, estilos y precio para ayudarte a decidir rápido y comprar mejor.
             </p>
             <Link
               href="/unisex"
               prefetch={false}
               className="mt-2 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
             >
-              Ver todo el catalogo
+              Ir al catálogo completo
             </Link>
           </div>
 

@@ -29,12 +29,12 @@ export default function HomeDailyTrendingRail({ products }: { products: HomeTren
   if (products.length === 0) {
     return (
       <section className="rounded-[1.2rem] border border-[color:var(--oda-border)] bg-white p-8 sm:p-10">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Tendencia diaria</p>
+        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">En tendencia</p>
         <h3 className="mt-3 font-display text-3xl leading-none text-[color:var(--oda-ink)] sm:text-4xl">
-          Sin snapshot diario disponible.
+          Aún no tenemos tendencia de hoy.
         </h3>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
-          Estamos consolidando la primera corrida de clics diarios para esta seccion.
+          Estamos actualizando este bloque para mostrarte lo que más está gustando.
         </p>
       </section>
     );
@@ -45,12 +45,12 @@ export default function HomeDailyTrendingRail({ products }: { products: HomeTren
   return (
     <section className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Tendencia diaria</p>
+        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">En tendencia</p>
         <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
-          Productos mas cliqueados
+          Lo que más está gustando hoy
         </h2>
         <p className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
-          {snapshotDate ? `Actualizado ${snapshotDate}` : "Actualizando señal diaria"}
+          {snapshotDate ? `Actualizado ${snapshotDate}` : "Actualizando tendencias de hoy"}
         </p>
       </div>
 
@@ -77,7 +77,7 @@ export default function HomeDailyTrendingRail({ products }: { products: HomeTren
           onClick={() => setVisibleCount((count) => count + LOAD_STEP)}
           className="self-start rounded-full border border-[color:var(--oda-border)] bg-white px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
         >
-          Ver mas tendencia
+          Ver más tendencia
         </button>
       ) : null}
     </section>

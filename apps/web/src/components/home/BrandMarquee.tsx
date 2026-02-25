@@ -49,7 +49,8 @@ export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
       <div className="flex flex-col gap-3 rounded-[1.2rem] border border-[color:var(--oda-border)] bg-white p-6">
         <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Marcas</p>
         <p className="text-sm leading-relaxed text-[color:var(--oda-ink-soft)]">
-          Estamos sincronizando marcas destacadas. Puedes navegar el catalogo completo mientras cargamos este modulo.
+          Estamos actualizando esta selección. Mientras tanto, explora marcas colombianas y encuentra productos para tu
+          estilo.
         </p>
       </div>
     );
@@ -63,7 +64,7 @@ export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-2">
         <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Marcas</p>
-        <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">Marcas destacadas</h2>
+        <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">Marcas para descubrir hoy</h2>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
@@ -88,17 +89,17 @@ export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
               <BrandLogoImage src={featuredLogoSrc} name={featured.name} className="h-full w-full object-contain p-1" />
             </div>
             <div className="absolute bottom-6 left-6 right-6">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-white/76">Spotlight</p>
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white/76">Destacada</p>
               <p className="mt-2 font-display text-3xl leading-none text-white sm:text-4xl">{featured.name}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 border-t border-[color:var(--oda-border)] px-6 py-5">
             <div>
-              <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Productos</p>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Productos disponibles</p>
               <p className="mt-1 text-lg text-[color:var(--oda-ink)]">{new Intl.NumberFormat("es-CO").format(featured.productCount)}</p>
             </div>
             <div>
-              <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Categorias</p>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Categorías</p>
               <p className="mt-1 text-lg text-[color:var(--oda-ink)]">{new Intl.NumberFormat("es-CO").format(featured.categoryCount)}</p>
             </div>
           </div>
@@ -123,7 +124,7 @@ export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
                         <div className="min-w-0">
                           <p className="truncate text-sm text-[color:var(--oda-ink)]">{brand.name}</p>
                           <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                            {brand.productCount} productos · {brand.categoryCount} categorias
+                            {brand.productCount} productos · {brand.categoryCount} categorías
                           </p>
                         </div>
                       </div>
@@ -136,7 +137,9 @@ export default function BrandMarquee({ brands }: { brands: BrandLogo[] }) {
               })}
             </ul>
           ) : (
-            <p className="text-sm text-[color:var(--oda-ink-soft)]">Sumaremos mas marcas destacadas en la siguiente rotacion.</p>
+            <p className="text-sm text-[color:var(--oda-ink-soft)]">
+              Pronto mostraremos más marcas para seguir descubriendo.
+            </p>
           )}
         </div>
       </div>

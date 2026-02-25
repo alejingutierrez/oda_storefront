@@ -80,8 +80,8 @@ export default function CuratedStickyEdit({ styleGroups }: { styleGroups: StyleG
     <div className="flex flex-col gap-8 lg:gap-10">
       <div className="flex items-end justify-between">
         <div className="flex flex-col gap-2">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Estilo</p>
-          <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">Curated edit</h2>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Looks</p>
+          <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">Looks curados para ti</h2>
         </div>
       </div>
 
@@ -101,7 +101,7 @@ export default function CuratedStickyEdit({ styleGroups }: { styleGroups: StyleG
             ) : null}
             <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.56),rgba(0,0,0,0.08),rgba(0,0,0,0))]" />
             <div className="absolute bottom-5 left-5 right-5 text-white">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-white/78">Edit activo</p>
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white/78">Look activo</p>
               <p className="mt-2 font-display text-2xl">{activeGroup.label}</p>
             </div>
           </div>
@@ -124,9 +124,9 @@ export default function CuratedStickyEdit({ styleGroups }: { styleGroups: StyleG
                 ) : null}
                 <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.68),rgba(0,0,0,0.14),rgba(0,0,0,0))]" />
                 <div className="absolute bottom-8 left-8 right-8 text-white">
-                  <p className="text-[10px] uppercase tracking-[0.24em] text-white/78">Curated edit</p>
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-white/78">Look curado</p>
                   <p className="mt-2 font-display text-4xl leading-none">{activeGroup.label}</p>
-                  <p className="mt-3 text-sm text-white/82">Scroll para descubrir productos del look.</p>
+                  <p className="mt-3 text-sm text-white/82">Desliza para descubrir y comprar cada pieza.</p>
                 </div>
               </div>
             </div>
@@ -150,7 +150,7 @@ export default function CuratedStickyEdit({ styleGroups }: { styleGroups: StyleG
                   prefetch={false}
                   className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]"
                 >
-                  Ver estilo
+                  Ver look
                 </Link>
               </div>
 
@@ -176,7 +176,7 @@ export default function CuratedStickyEdit({ styleGroups }: { styleGroups: StyleG
                   }
                   className="self-start rounded-full border border-[color:var(--oda-border)] bg-white px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
                 >
-                  Ver mas productos
+                  Ver más productos
                 </button>
               ) : null}
             </div>
@@ -188,7 +188,7 @@ export default function CuratedStickyEdit({ styleGroups }: { styleGroups: StyleG
               onClick={() => setVisibleGroupCount((current) => Math.min(groups.length, current + 1))}
               className="self-start rounded-full border border-[color:var(--oda-border)] bg-white px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
             >
-              Ver mas edits
+              Ver más looks
             </button>
           ) : null}
         </div>

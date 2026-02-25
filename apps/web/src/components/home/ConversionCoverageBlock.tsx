@@ -32,17 +32,17 @@ export default function ConversionCoverageBlock({
   const metricCards = [
     {
       key: "products",
-      label: "Productos activos",
+      label: "Productos disponibles",
       value: formatCount(safeStats.productCount),
     },
     {
       key: "brands",
-      label: "Marcas activas",
+      label: "Marcas colombianas",
       value: formatCount(safeStats.brandCount),
     },
     {
       key: "categories",
-      label: "Categorias cubiertas",
+      label: "Categorías activas",
       value: formatCount(safeStats.categoryCount),
     },
   ];
@@ -50,21 +50,21 @@ export default function ConversionCoverageBlock({
   const plans = [
     {
       key: "base",
-      name: "Exploracion",
-      status: "Activo",
-      bullets: ["Cobertura completa de catalogo", "Rotacion editorial cada 3 dias", "Acceso abierto a descubrimiento"],
+      name: "Explora gratis",
+      status: "Disponible",
+      bullets: ["Descubre productos por estilo", "Compara marcas y precios rápido", "Compra directo en tiendas oficiales"],
     },
     {
       key: "plus",
-      name: "Proactivo",
-      status: "Preview",
-      bullets: ["Alertas de precio y stock", "Prioridad de recomendaciones", "Seguimiento de favoritos"],
+      name: "Plus",
+      status: "Muy pronto",
+      bullets: ["Alertas cuando bajen de precio", "Avisos de tallas y reposiciones", "Recomendaciones más afines a tu estilo"],
     },
     {
       key: "stylist",
       name: "Stylist IA",
-      status: "Preview",
-      bullets: ["Looks personalizados", "Try-on asistido", "Asesoria de outfit"],
+      status: "Muy pronto",
+      bullets: ["Outfits personalizados para ti", "Try-on asistido", "Sugerencias para completar tu look"],
     },
   ];
 
@@ -76,21 +76,21 @@ export default function ConversionCoverageBlock({
     <section className="rounded-[1.5rem] border border-[color:var(--oda-border)] bg-white p-8 sm:p-10">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,360px)] lg:items-start">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Cobertura ODA</p>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Compra con confianza</p>
           <h2 className="mt-3 font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
-            Conversion en modo preview.
+            Más opciones reales para elegir mejor.
           </h2>
           <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
-            Mostramos el estado real de cobertura y adelantamos los bloques de conversion sin abrir aun el flujo final.
-            La activacion quedara disponible en el siguiente release.
+            Te mostramos opciones reales de marcas colombianas para que encuentres lo que te gusta, compares rápido y
+            compres con seguridad.
           </p>
           <p className="mt-3 text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
-            {lastUpdate ? `Ultima actualizacion detectada: ${lastUpdate}` : "Actualizando cobertura de catalogo..."}
+            {lastUpdate ? `Última actualización del catálogo: ${lastUpdate}` : "Actualizando catálogo..."}
           </p>
         </div>
 
         <div className="rounded-[1.2rem] border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] p-5">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">Activacion comercial</p>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">Muy pronto</p>
           <button
             type="button"
             disabled
@@ -100,7 +100,7 @@ export default function ConversionCoverageBlock({
             Próximamente
           </button>
           <p className="mt-3 text-xs leading-relaxed text-[color:var(--oda-ink-soft)]">
-            Este boton permanece deshabilitado hasta que esten listos planes y landing de conversion.
+            Estamos preparando beneficios para comprar aún más fácil: alertas, recomendaciones y ayuda de estilo.
           </p>
         </div>
       </div>

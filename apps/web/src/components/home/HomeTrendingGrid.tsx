@@ -88,19 +88,19 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
   if (products.length === 0) {
     return (
       <div className="rounded-[1.2rem] border border-[color:var(--oda-border)] bg-white p-8 sm:p-10">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Foco</p>
+        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Tendencia</p>
         <h3 className="mt-3 font-display text-3xl leading-none text-[color:var(--oda-ink)] sm:text-4xl">
-          Aun no hay picks activos.
+          Hoy no hay selección disponible.
         </h3>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
-          Estamos actualizando esta seleccion con nuevos productos. Mientras tanto, puedes explorar todo el catalogo.
+          Estamos actualizando esta vitrina. Mientras tanto, explora productos para encontrar tu próximo look.
         </p>
         <Link
           href="/buscar"
           prefetch={false}
           className="mt-6 inline-flex rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-cream)] transition hover:bg-[color:var(--oda-ink-soft)]"
         >
-          Explorar catalogo
+          Explorar catálogo
         </Link>
       </div>
     );
@@ -110,12 +110,12 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
     <div className="flex flex-col gap-7">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="flex flex-col gap-2">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Foco</p>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Tendencia</p>
           <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
-            Productos en foco
+            Lo más buscado ahora
           </h2>
           <p className="max-w-2xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
-            24 productos curados y hasta 12 subcategorias por ventana para ampliar descubrimiento sin ruido.
+            Una selección pensada para descubrir rápido, comparar opciones y comprar con más confianza.
           </p>
         </div>
       </div>
@@ -160,7 +160,7 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
       {filteredProducts.length === 0 ? (
         <div className="rounded-[1.1rem] border border-[color:var(--oda-border)] bg-white p-6">
           <p className="text-sm text-[color:var(--oda-ink-soft)]">
-            No encontramos productos para este filtro. Prueba con otra subcategoria.
+            No encontramos productos para este filtro. Prueba con otra subcategoría.
           </p>
         </div>
       ) : (
@@ -222,7 +222,7 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
           onClick={() => setVisibleCount((count) => count + LOAD_STEP)}
           className="self-start rounded-full border border-[color:var(--oda-border)] bg-white px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
         >
-          Ver mas picks
+          Ver más productos
         </button>
       ) : null}
     </div>

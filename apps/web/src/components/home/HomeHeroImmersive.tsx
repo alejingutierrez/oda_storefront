@@ -96,7 +96,7 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
 
   const contextualBadge = useMemo(() => {
     const values = [toLabel(activeSlide?.category), toLabel(activeSlide?.subcategory)].filter(Boolean) as string[];
-    return values.length > 0 ? values.join(" · ") : "Edicion curada";
+    return values.length > 0 ? values.join(" · ") : "Estilo destacado";
   }, [activeSlide?.category, activeSlide?.subcategory]);
 
   return (
@@ -163,26 +163,24 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
         <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-end">
           <div className="max-w-[58rem] space-y-4 sm:space-y-5">
             <div className="flex flex-wrap items-center gap-3">
-              <p className="text-[11px] uppercase tracking-[0.28em] text-[color:var(--oda-gold)]">ODA editorial</p>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-[color:var(--oda-gold)]">Moda colombiana para ti</p>
               <span className="rounded-full border border-white/30 bg-black/25 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/88">
                 {contextualBadge}
               </span>
             </div>
 
             <h1 className="font-display text-[2.75rem] leading-[0.92] sm:text-[4.2rem] lg:text-[6.6rem]">
-              Descubre moda colombiana
-              <br className="hidden md:block" /> con criterio editorial.
+              Encuentra tu próximo look colombiano
             </h1>
 
             <p className="max-w-xl text-[1.04rem] leading-snug text-white/82 sm:max-w-2xl sm:text-base sm:leading-relaxed">
-              Curaduria viva con rotacion determinista cada 3 dias. Priorizamos producto real, navegacion rapida y
-              composiciones visuales pensadas para descubrir mejor.
+              Explora prendas por estilo, compara precios en segundos y compra directo en la tienda oficial.
             </p>
           </div>
 
           {showProductSupport ? (
             <div className="hidden rounded-[1.15rem] border border-white/20 bg-white/10 p-5 backdrop-blur-sm lg:flex lg:flex-col lg:gap-3">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-white/76">Pieza destacada</p>
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white/76">Producto destacado</p>
               <p className="line-clamp-2 text-lg leading-tight text-white">{activeSlide?.name}</p>
               <p className="text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-gold)]">{activeSlide?.brandName}</p>
               <p className="text-sm text-white/88">{heroPrice}</p>
@@ -204,19 +202,19 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
             prefetch={false}
             className="rounded-full bg-[color:var(--oda-cream)] px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-white sm:px-6 sm:py-3"
           >
-            Explorar ahora
+            Descubrir productos
           </Link>
           <Link
             href="/unisex"
             prefetch={false}
             className="rounded-full border border-white/55 px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/8 sm:px-6 sm:py-3"
           >
-            Ver catalogo
+            Ver novedades
           </Link>
 
           <div className="ml-auto hidden rounded-full border border-white/25 bg-black/20 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white/80 md:flex md:items-center md:gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--oda-gold)]" />
-            Rotacion semilla 3 dias
+            Selección actualizada constantemente
           </div>
         </div>
 

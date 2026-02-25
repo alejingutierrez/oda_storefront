@@ -65,10 +65,10 @@ export default function HomeFavoritesRail({
       <section className="rounded-[1.2rem] border border-[color:var(--oda-border)] bg-white p-8 sm:p-10">
         <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Favoritos</p>
         <h3 className="mt-3 font-display text-3xl leading-none text-[color:var(--oda-ink)] sm:text-4xl">
-          Aun no hay guardados para mostrar.
+          Aún no hay favoritos para mostrar.
         </h3>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
-          Cuando existan suficientes favoritos recientes, este bloque mostrara tus referencias o las mas guardadas.
+          Cuando tengamos más guardados, aquí verás opciones que te ayuden a decidir más rápido qué comprar.
         </p>
       </section>
     );
@@ -81,7 +81,7 @@ export default function HomeFavoritesRail({
       <div className="flex flex-col gap-2">
         <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Favoritos</p>
         <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
-          {mode === "user" ? "Tus guardados recientes" : "Los mas guardados del mes"}
+          {mode === "user" ? "Tus favoritos recientes" : "Lo más guardado por la comunidad"}
         </h2>
       </div>
 
@@ -102,7 +102,7 @@ export default function HomeFavoritesRail({
           onClick={() => setVisibleCount((count) => count + LOAD_STEP)}
           className="self-start rounded-full border border-[color:var(--oda-border)] bg-white px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
         >
-          Ver mas favoritos
+          Ver más favoritos
         </button>
       ) : null}
     </section>

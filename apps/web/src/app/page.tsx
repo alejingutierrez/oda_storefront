@@ -33,7 +33,7 @@ export default async function Home() {
           <div className="flex flex-col gap-3">
             <span className="text-sm uppercase tracking-[0.3em] text-[color:var(--oda-ink)]">ODA Storefront</span>
             <p className="text-sm text-[color:var(--oda-ink-soft)]">
-              Moda colombiana curada, catalogo vivo y experiencia editorial inmersiva.
+              Descubre marcas colombianas, encuentra tu estilo y compra directo en tienda oficial.
             </p>
           </div>
           <div className="flex flex-col gap-2 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)]">

@@ -7,7 +7,7 @@ export default function ColorSwatchPalette({ colorCombos }: { colorCombos: Color
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-2">
         <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Color</p>
-        <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">Shop by color</h2>
+        <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">Compra por color</h2>
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -19,7 +19,7 @@ export default function ColorSwatchPalette({ colorCombos }: { colorCombos: Color
             <div className="flex items-center justify-between gap-4">
               <p className="text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]">{combo.comboKey}</p>
               <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
-                {combo.detectedLayout ?? "combo"}
+                {combo.detectedLayout ?? "combinación"}
               </p>
             </div>
 

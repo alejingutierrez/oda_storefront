@@ -30,12 +30,12 @@ export default function HomePriceDropRail({ products }: { products: HomePriceDro
   if (products.length === 0) {
     return (
       <section className="rounded-[1.2rem] border border-[color:var(--oda-border)] bg-white p-8 sm:p-10">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Price drop</p>
+        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Rebajas</p>
         <h3 className="mt-3 font-display text-3xl leading-none text-[color:var(--oda-ink)] sm:text-4xl">
-          Sin bajadas recientes detectadas.
+          Aún no detectamos rebajas recientes.
         </h3>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
-          Seguimos monitoreando cambios diarios. Vuelve en la siguiente rotacion para descubrir nuevas rebajas.
+          Seguimos revisando cambios de precio para ayudarte a encontrar mejores oportunidades. Vuelve pronto.
         </p>
       </section>
     );
@@ -46,7 +46,7 @@ export default function HomePriceDropRail({ products }: { products: HomePriceDro
   return (
     <section className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Price drop</p>
+        <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Rebajas</p>
         <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
           Bajaron de precio esta semana
         </h2>
@@ -121,7 +121,7 @@ export default function HomePriceDropRail({ products }: { products: HomePriceDro
           onClick={() => setVisibleCount((count) => count + LOAD_STEP)}
           className="self-start rounded-full border border-[color:var(--oda-border)] bg-white px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
         >
-          Ver mas rebajas
+          Ver más rebajas
         </button>
       ) : null}
     </section>
