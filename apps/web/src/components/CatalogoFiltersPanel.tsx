@@ -599,7 +599,13 @@ export default function CatalogoFiltersPanel({
 
   useEffect(() => {
     const cached = readSessionCachedValue(priceBoundsSessionKey, isValidPriceBounds);
-    if (!cached) return;
+    if (!cached) {
+      const seededForCurrentKey = priceBoundsLastOkKeyRef.current === priceBoundsSessionKey;
+      if (!seededForCurrentKey) {
+        setResolvedPriceBounds({ min: null, max: null });
+      }
+      return;
+    }
     setResolvedPriceBounds(cached.value);
     if (typeof cached.value.min === "number" && typeof cached.value.max === "number") {
       priceBoundsLastOkAtRef.current = cached.cachedAt;
@@ -609,7 +615,14 @@ export default function CatalogoFiltersPanel({
 
   useEffect(() => {
     const cached = readSessionCachedValue(priceInsightsFullSessionKey, isValidPriceInsightsSessionValue);
-    if (!cached) return;
+    if (!cached) {
+      const seededForCurrentKey = priceInsightsFullLastOkKeyRef.current === priceInsightsFullSessionKey;
+      if (!seededForCurrentKey) {
+        setResolvedPriceHistogram(null);
+        setResolvedPriceStats(null);
+      }
+      return;
+    }
     setResolvedPriceBounds(cached.value.bounds);
     setResolvedPriceHistogram(cached.value.histogram);
     setResolvedPriceStats(cached.value.stats);
@@ -863,7 +876,8 @@ export default function CatalogoFiltersPanel({
       }
     };
 
-    if (mode === "draft") {
+    const runImmediately = mode === "draft" || priceBoundsFetchKey.includes("subcategory=");
+    if (runImmediately) {
       void run();
     } else if (typeof window.requestIdleCallback === "function") {
       priceInsightsFullIdleRef.current = window.requestIdleCallback(() => void run(), { timeout: 1200 });

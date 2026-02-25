@@ -138,6 +138,48 @@ const CATEGORY_FILTER_ALIASES: Record<string, Prisma.Sql[]> = {
   bolsos_y_marroquineria: [Prisma.sql`(p.category='accesorios' and p.subcategory='bolsos')`],
 };
 
+// Guardrails de calidad para subcategorías con contaminación histórica.
+// Objetivo: evitar que un filtro devuelva productos obviamente fuera de tipo
+// mientras se completa el saneo de datos en enrichment/remap.
+const SUBCATEGORY_TEXT_GUARDS: Record<string, string[]> = {
+  camiseta_deportiva: ["camiseta", "jersey", "playera", "tshirt", "t-shirt", "tee"],
+  shorts_deportivos: ["short", "shorts", "pantaloneta", "bermuda"],
+  ropa_de_running: ["running", "runner", "run", "correr"],
+};
+
+function buildSubcategoryTextGuardConditions(subcategories: string[]): Prisma.Sql[] {
+  const normalized = Array.from(
+    new Set(
+      subcategories
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+  const conditions: Prisma.Sql[] = [];
+
+  for (const subcategory of normalized) {
+    const keywords = SUBCATEGORY_TEXT_GUARDS[subcategory];
+    if (!keywords || keywords.length === 0) continue;
+
+    const keywordConditions = keywords.map((keyword) => {
+      const like = `%${keyword.toLowerCase()}%`;
+      return Prisma.sql`
+        (
+          lower(coalesce(p.name, '')) like ${like}
+          or lower(coalesce(p.description, '')) like ${like}
+          or lower(array_to_string(coalesce(p."seoTags", '{}'::text[]), ' ')) like ${like}
+        )
+      `;
+    });
+
+    conditions.push(
+      Prisma.sql`(p.subcategory <> ${subcategory} or (${Prisma.join(keywordConditions, " or ")}))`,
+    );
+  }
+
+  return conditions;
+}
+
 function buildCategoryFilterCondition(categories: string[]): Prisma.Sql {
   const normalized = categories.map((value) => value.trim()).filter(Boolean);
   const groups = normalized.map((category) => {
@@ -161,6 +203,7 @@ export function buildProductConditions(filters: CatalogFilters): Prisma.Sql[] {
   }
   if (filters.subcategories && filters.subcategories.length > 0) {
     conditions.push(Prisma.sql`p.subcategory in (${Prisma.join(filters.subcategories)})`);
+    conditions.push(...buildSubcategoryTextGuardConditions(filters.subcategories));
   }
   if (filters.brandIds && filters.brandIds.length > 0) {
     conditions.push(Prisma.sql`p."brandId" in (${Prisma.join(filters.brandIds)})`);
