@@ -76,6 +76,27 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - Métricas: tiempo de curación por lote, % de runs con errores parciales, uso de sorts editoriales en PLP.
 - Estado: **done (2026-02-20)**.
 
+### MC-148 Curación manual `real_style` en `/admin/real-style`
+- Historia: Como curador de catálogo, quiero clasificar productos uno a uno en un set cerrado de 8 estilos reales, para corregir manualmente el estilo final con un flujo rápido tipo baraja.
+- Alcance:
+  - Nueva ruta admin `/admin/real-style` con guard de sesión, entrada en sidebar y UI de baraja (1 carta activa + 2 previsualizadas).
+  - Ocho cajas fijas de destino (`real_style`) con asignación inmediata por drag/drop, click/tap o atajos teclado `1..8`.
+  - Flujo lineal global (sin filtros), sobre universo elegible del catálogo público: enriquecidos + en stock + con cover.
+  - Botón `Saltar` que omite el producto solo durante la sesión (sin escribir en DB).
+  - Sugerencia visual (no automática) basada en similitud de tags (`stylePrimary` priorizado, fallback por `styleTags`) contra `style_profiles`.
+  - Persistencia en columna nueva `products.real_style` (nullable, set cerrado) + auditoría en `products.metadata.enrichment_human`.
+  - Endpoints admin dedicados:
+    - `GET /api/admin/real-style/queue` (cursor + summary global + sugerencia por producto).
+    - `POST /api/admin/real-style/assign` (guardado inmediato, no sobrescribe si ya fue asignado).
+- CA:
+  - La pantalla muestra cola de pendientes `real_style IS NULL` y progreso global (`eligible/pending/assigned + counts por caja`).
+  - Asignar (drag/click/tecla) guarda de inmediato y autoavanza al siguiente producto.
+  - Si hay conflicto de concurrencia (otro admin ya asignó), API responde `409`, UI avanza al siguiente y no se bloquea.
+  - Valores inválidos de `real_style` se rechazan por API y constraint de DB.
+- Datos: `products.real_style`, `products.metadata.enrichment_human`, `style_profiles`.
+- NF: sin cambios breaking en APIs públicas; orden determinista de cola (`createdAt desc, id desc`); trazabilidad por usuario/fecha/fuente.
+- Estado: **done (2026-02-25)**.
+
 ### MC-133 PLP `/catalogo`: corrección de filtro de precios (histograma + UX + performance medible)
 - Historia: Como usuario de catálogo, quiero que el filtro de precios represente productos reales, responda rápido y tenga feedback claro en desktop/mobile, para evitar resultados confusos y frustración al aplicar filtros.
 - Alcance:

@@ -5,6 +5,7 @@ const navItems = [
   { key: "brands", label: "Marcas", href: "/admin/brands" },
   { key: "products", label: "Productos", href: "/admin/products" },
   { key: "product-curation", label: "Curación", href: "/admin/product-curation" },
+  { key: "real-style", label: "Real Style", href: "/admin/real-style" },
   { key: "taxonomy", label: "Taxonomía", href: "/admin/taxonomy" },
   { key: "taxonomy-remap-review", label: "Remap review", href: "/admin/taxonomy-remap-review" },
   { key: "product-enrichment", label: "Enriquecimiento", href: "/admin/product-enrichment" },

@@ -171,6 +171,13 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Integridad: al reemplazar `category` se limpia `subcategory` si deja de pertenecer; al reemplazar `subcategory` se valida contra la categoría.
   - Editorial: corazón/corona son excluyentes en DB y en motor de aplicación (nunca ambos ranks simultáneos).
   - No permite editar `description` ni campos SEO. Preserva `products.metadata.enrichment` y registra trazabilidad en `products.metadata.enrichment_human`.
+- Panel `/admin/real-style` (curación manual 1x1):
+  - Flujo global lineal (sin filtros) sobre productos elegibles del catálogo público: enriquecidos + en stock + con imagen.
+  - Interfaz tipo baraja (1 carta activa + 2 previsualizadas) y 8 cajas fijas de clasificación `real_style`.
+  - Asignación inmediata por drag/drop, click/tap o teclado (`1..8`), con autoavance al siguiente producto.
+  - Botón `Saltar`: omite el producto solo en la sesión actual (no escribe en DB).
+  - Sugerencia visual no automática: mapea `stylePrimary/styleTags` a una de las 8 cajas por similitud de tags de `style_profiles`.
+  - Persistencia en `products.real_style` (nullable, set cerrado de 8) + auditoría en `products.metadata.enrichment_human`.
 - Panel `/admin/pricing` (precios/TRM):
   - Editar TRM USD→COP y reglas de auto-clasificación de marcas USD (umbral % + `COP <` sospechoso + incluir variantes ya en USD).
   - Configuración multi-moneda a COP (`fx_rates_to_cop` + `supported_currencies`) con soporte inicial `COP/USD/EUR/ARS`.
@@ -459,6 +466,8 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
 - Endpoints de curación (`products`, `facets`, `ids`) fuerzan el mismo gating de catálogo público: `enrichedOnly=true` e `inStock=true`.
 - `POST /api/admin/product-curation/selection-summary`: resumen de la selección actual (categorías) para guiar la modal y hacer preflight (body: `{ productIds[] }`, límite 1200).
 - `POST /api/admin/product-curation/bulk`: bulk edit de características de productos. Body: `{ productIds, changes: [{ field, op, value }] }` (legacy: `{ field, op, value }`) (límite default: 1200 IDs).
+- `GET /api/admin/real-style/queue`: cola paginada por cursor para curación manual (`real_style IS NULL`) con resumen global (`eligibleTotal/pending/assigned/byRealStyle`) y sugerencia por producto.
+- `POST /api/admin/real-style/assign`: asigna `real_style` a un producto (`{ productId, realStyle }`) con guardia de concurrencia (`409` si ya fue asignado) y actualización de auditoría en metadata.
   - No modifica `description` ni campos SEO.
   - Preserva `products.metadata.enrichment` y registra auditoría en `products.metadata.enrichment_human`.
 

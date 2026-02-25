@@ -171,6 +171,7 @@ model Product {
   styleTags             String[]
   stylePrimary          String?
   styleSecondary        String?
+  realStyle             String?                 @map("real_style") // curacion humana de estilo real (set cerrado de 8)
   stylePrimaryCount     Int?
   styleSecondaryCount   Int?
   materialTags          String[]
@@ -213,6 +214,7 @@ model Product {
   @@index([externalId])
   @@index([stylePrimary])
   @@index([styleSecondary])
+  @@index([realStyle], map: "products_real_style_idx")
   @@index([hasInStock, imageCoverUrl, updatedAt])
   @@index([priceChangeDirection, priceChangeAt])
   @@map("products")
