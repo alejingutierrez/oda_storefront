@@ -30,12 +30,19 @@ import {
 } from "@/lib/price-display";
 
 const CATALOG_REVALIDATE_SECONDS = 60 * 30;
+const CATALOG_FIXED_PLP_PRICE_INSIGHTS_REVALIDATE_SECONDS = (() => {
+  const fallback = 60 * 60 * 24 * 7;
+  const raw = Number(process.env.CATALOG_FIXED_PLP_PRICE_INSIGHTS_REVALIDATE_SECONDS ?? fallback);
+  if (!Number.isFinite(raw)) return fallback;
+  const normalized = Math.floor(raw);
+  return normalized > 0 ? normalized : fallback;
+})();
 // Products can change frequently (stock/price), but we still want to avoid DB spikes on filters.
 // Keep this short so the catalog stays fresh while being resilient.
 const CATALOG_PRODUCTS_REVALIDATE_SECONDS = 60;
 export const CATALOG_PAGE_SIZE = 24;
 // Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
-const CATALOG_CACHE_VERSION = 11;
+const CATALOG_CACHE_VERSION = 12;
 const PRICE_CHANGE_WINDOW_DAYS = 30;
 
 const buildCatalogCacheOptions = (revalidate: number) => ({
@@ -664,287 +671,323 @@ export async function getCatalogPriceBounds(filters: CatalogFilters): Promise<Ca
   return cached();
 }
 
-export async function getCatalogPriceInsights(
+type CatalogPriceInsightsCacheContext = {
+  boundsFilters: CatalogFilters;
+  requestedBucketCount: number | null;
+  cacheKey: string;
+};
+
+function resolveCatalogPriceInsightsCacheContext(
   filters: CatalogFilters,
   bucketCount?: number,
-): Promise<CatalogPriceInsights> {
+): CatalogPriceInsightsCacheContext {
   const boundsFilters = omitFilters(filters, ["priceMin", "priceMax", "priceRanges"]);
   const requestedBucketCount =
     typeof bucketCount === "number" && Number.isFinite(bucketCount) && bucketCount >= 6
       ? Math.round(bucketCount)
       : null;
   const bucketKey = requestedBucketCount ? String(requestedBucketCount) : "auto";
-  const cacheKey = `${buildFacetsCacheKey(boundsFilters)}::buckets:${bucketKey}`;
-  const cached = unstable_cache(
-    async () => {
-      const { pricing } = await getPricingContext();
-      const useRollupFastPath = !hasNonPriceVariantFilters(boundsFilters);
-      const productWhere = buildProductWhere(boundsFilters);
-      const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
-      const variantConditions = buildVariantConditions(boundsFilters, pricing);
-      const variantWhere =
-        variantConditions.length > 0
-          ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
-          : Prisma.empty;
+  return {
+    boundsFilters,
+    requestedBucketCount,
+    cacheKey: `${buildFacetsCacheKey(boundsFilters)}::buckets:${bucketKey}`,
+  };
+}
 
-      const statsRows = await (async () => {
-        if (useRollupFastPath) {
-          return prisma.$queryRaw<
-            Array<{
-              n: bigint;
-              min_price: string | null;
-              max_price: string | null;
-              p02: string | null;
-              p25: string | null;
-              p50: string | null;
-              p75: string | null;
-              p98: string | null;
-            }>
-          >(Prisma.sql`
-            with prices as (
-              select least(p."minPriceCop", p."maxPriceCop") as price
-              from products p
-              join brands b on b.id = p."brandId"
-              ${productWhere}
-              and p."hasInStock" = true
-              and ${buildProductRollupPriceValidityCondition()}
-            )
-            select
-              count(*) as n,
-              min(price) as min_price,
-              max(price) as max_price,
-              percentile_cont(0.02) within group (order by price) as p02,
-              percentile_cont(0.25) within group (order by price) as p25,
-              percentile_cont(0.50) within group (order by price) as p50,
-              percentile_cont(0.75) within group (order by price) as p75,
-              percentile_cont(0.98) within group (order by price) as p98
-            from prices
-          `);
-        }
+async function computeCatalogPriceInsightsResolved(
+  context: CatalogPriceInsightsCacheContext,
+): Promise<CatalogPriceInsights> {
+  const { boundsFilters, requestedBucketCount } = context;
+  const { pricing } = await getPricingContext();
+  const useRollupFastPath = !hasNonPriceVariantFilters(boundsFilters);
+  const productWhere = buildProductWhere(boundsFilters);
+  const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
+  const variantConditions = buildVariantConditions(boundsFilters, pricing);
+  const variantWhere =
+    variantConditions.length > 0
+      ? Prisma.sql`and ${Prisma.join(variantConditions, " and ")}`
+      : Prisma.empty;
 
-        return prisma.$queryRaw<
-          Array<{
-            n: bigint;
-            min_price: string | null;
-            max_price: string | null;
-            p02: string | null;
-            p25: string | null;
-            p50: string | null;
-            p75: string | null;
-            p98: string | null;
-          }>
-        >(Prisma.sql`
-          with prices as (
-            select ${priceCopExpr} as price
-            from products p
-            join brands b on b.id = p."brandId"
-            join variants v on v."productId" = p.id
-            ${productWhere}
-            ${variantWhere}
-            and ${priceCopExpr} > 0
-            and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
-          )
+  const statsRows = await (async () => {
+    if (useRollupFastPath) {
+      return prisma.$queryRaw<
+        Array<{
+          n: bigint;
+          min_price: string | null;
+          max_price: string | null;
+          p02: string | null;
+          p25: string | null;
+          p50: string | null;
+          p75: string | null;
+          p98: string | null;
+        }>
+      >(Prisma.sql`
+        with prices as (
+          select least(p."minPriceCop", p."maxPriceCop") as price
+          from products p
+          join brands b on b.id = p."brandId"
+          ${productWhere}
+          and p."hasInStock" = true
+          and ${buildProductRollupPriceValidityCondition()}
+        )
+        select
+          count(*) as n,
+          min(price) as min_price,
+          max(price) as max_price,
+          percentile_cont(0.02) within group (order by price) as p02,
+          percentile_cont(0.25) within group (order by price) as p25,
+          percentile_cont(0.50) within group (order by price) as p50,
+          percentile_cont(0.75) within group (order by price) as p75,
+          percentile_cont(0.98) within group (order by price) as p98
+        from prices
+      `);
+    }
+
+    return prisma.$queryRaw<
+      Array<{
+        n: bigint;
+        min_price: string | null;
+        max_price: string | null;
+        p02: string | null;
+        p25: string | null;
+        p50: string | null;
+        p75: string | null;
+        p98: string | null;
+      }>
+    >(Prisma.sql`
+      with prices as (
+        select ${priceCopExpr} as price
+        from products p
+        join brands b on b.id = p."brandId"
+        join variants v on v."productId" = p.id
+        ${productWhere}
+        ${variantWhere}
+        and ${priceCopExpr} > 0
+        and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
+      )
+      select
+        count(*) as n,
+        min(price) as min_price,
+        max(price) as max_price,
+        percentile_cont(0.02) within group (order by price) as p02,
+        percentile_cont(0.25) within group (order by price) as p25,
+        percentile_cont(0.50) within group (order by price) as p50,
+        percentile_cont(0.75) within group (order by price) as p75,
+        percentile_cont(0.98) within group (order by price) as p98
+      from prices
+    `);
+  })();
+  const row = statsRows[0];
+
+  const count = Number(row?.n ?? 0);
+  const minHard = row?.min_price ? Number(row.min_price) : null;
+  const maxHard = row?.max_price ? Number(row.max_price) : null;
+  const p02 = row?.p02 ? Number(row.p02) : null;
+  const p25 = row?.p25 ? Number(row.p25) : null;
+  const p50 = row?.p50 ? Number(row.p50) : null;
+  const p75 = row?.p75 ? Number(row.p75) : null;
+  const p98 = row?.p98 ? Number(row.p98) : null;
+
+  const hardOk =
+    typeof minHard === "number" &&
+    typeof maxHard === "number" &&
+    Number.isFinite(minHard) &&
+    Number.isFinite(maxHard) &&
+    maxHard > minHard;
+
+  const stats: CatalogPriceStats | null = hardOk
+    ? {
+        count,
+        min: minHard,
+        max: maxHard,
+        p02: typeof p02 === "number" && Number.isFinite(p02) ? p02 : null,
+        p25: typeof p25 === "number" && Number.isFinite(p25) ? p25 : null,
+        p50: typeof p50 === "number" && Number.isFinite(p50) ? p50 : null,
+        p75: typeof p75 === "number" && Number.isFinite(p75) ? p75 : null,
+        p98: typeof p98 === "number" && Number.isFinite(p98) ? p98 : null,
+      }
+    : null;
+  const statsDisplay = roundPriceStats(stats);
+
+  let min = hardOk ? minHard : null;
+  let max = hardOk ? maxHard : null;
+
+  const robustOk =
+    hardOk &&
+    count >= 30 &&
+    typeof p02 === "number" &&
+    typeof p98 === "number" &&
+    Number.isFinite(p02) &&
+    Number.isFinite(p98) &&
+    p98 > p02;
+
+  // Dominio robusto: evita que outliers dominen el rango/histograma.
+  if (robustOk) {
+    min = Math.max(minHard!, p02);
+    max = Math.min(maxHard!, p98);
+  }
+
+  // Alinea el rango a pasos “humanos” para que el slider no muestre números raros.
+  if (hardOk && typeof min === "number" && typeof max === "number") {
+    const step = getPriceStep(min, max);
+    const exactMin = Math.max(0, Math.round(min));
+    const alignedMax = Math.ceil(max / step) * step;
+    min = exactMin;
+    max = alignedMax > exactMin ? alignedMax : exactMin + step;
+  }
+
+  const bounds: CatalogPriceBounds = {
+    min: typeof min === "number" && Number.isFinite(min) ? min : null,
+    max: typeof max === "number" && Number.isFinite(max) ? max : null,
+  };
+
+  const autoBucketCount = (input: { stats: CatalogPriceStats | null; bounds: CatalogPriceBounds }) => {
+    // Buenas prácticas: Freedman–Diaconis con IQR cuando hay suficientes datos.
+    // Con pocos datos o IQR inválido, caemos a un bucketCount estable para evitar UI inestable.
+    const DEFAULT = 18;
+    const { stats, bounds } = input;
+    if (!stats) return DEFAULT;
+    if (stats.count < 60) return DEFAULT;
+    if (typeof bounds.min !== "number" || typeof bounds.max !== "number") return DEFAULT;
+    const range = bounds.max - bounds.min;
+    if (!Number.isFinite(range) || range <= 0) return DEFAULT;
+    const p25 = stats.p25;
+    const p75 = stats.p75;
+    if (typeof p25 !== "number" || typeof p75 !== "number") return DEFAULT;
+    const iqr = p75 - p25;
+    if (!Number.isFinite(iqr) || iqr <= 0) return DEFAULT;
+    const denom = Math.cbrt(stats.count);
+    if (!Number.isFinite(denom) || denom <= 0) return DEFAULT;
+    const binWidth = (2 * iqr) / denom;
+    if (!Number.isFinite(binWidth) || binWidth <= 0) return DEFAULT;
+    const raw = Math.round(range / binWidth);
+    // Clamp para que el histograma siga siendo legible y barato de computar.
+    return Math.max(12, Math.min(28, raw || DEFAULT));
+  };
+
+  const resolvedBucketCount = requestedBucketCount ?? autoBucketCount({ stats, bounds });
+
+  const histogramRangeOk =
+    typeof bounds.min === "number" &&
+    typeof bounds.max === "number" &&
+    Number.isFinite(bounds.min) &&
+    Number.isFinite(bounds.max) &&
+    bounds.max > bounds.min;
+
+  if (!histogramRangeOk || resolvedBucketCount < 6) {
+    return { bounds, histogram: null, stats: statsDisplay };
+  }
+
+  const rows = await (async () => {
+    if (useRollupFastPath) {
+      return prisma.$queryRaw<Array<{ bucket: number; cnt: bigint }>>(Prisma.sql`
+        with priced_products as (
           select
-            count(*) as n,
-            min(price) as min_price,
-            max(price) as max_price,
-            percentile_cont(0.02) within group (order by price) as p02,
-            percentile_cont(0.25) within group (order by price) as p25,
-            percentile_cont(0.50) within group (order by price) as p50,
-            percentile_cont(0.75) within group (order by price) as p75,
-            percentile_cont(0.98) within group (order by price) as p98
-          from prices
-        `);
-      })();
-      const row = statsRows[0];
-
-      const count = Number(row?.n ?? 0);
-      const minHard = row?.min_price ? Number(row.min_price) : null;
-      const maxHard = row?.max_price ? Number(row.max_price) : null;
-      const p02 = row?.p02 ? Number(row.p02) : null;
-      const p25 = row?.p25 ? Number(row.p25) : null;
-      const p50 = row?.p50 ? Number(row.p50) : null;
-      const p75 = row?.p75 ? Number(row.p75) : null;
-      const p98 = row?.p98 ? Number(row.p98) : null;
-
-      const hardOk =
-        typeof minHard === "number" &&
-        typeof maxHard === "number" &&
-        Number.isFinite(minHard) &&
-        Number.isFinite(maxHard) &&
-        maxHard > minHard;
-
-      const stats: CatalogPriceStats | null = hardOk
-        ? {
-            count,
-            min: minHard,
-            max: maxHard,
-            p02: typeof p02 === "number" && Number.isFinite(p02) ? p02 : null,
-            p25: typeof p25 === "number" && Number.isFinite(p25) ? p25 : null,
-            p50: typeof p50 === "number" && Number.isFinite(p50) ? p50 : null,
-            p75: typeof p75 === "number" && Number.isFinite(p75) ? p75 : null,
-            p98: typeof p98 === "number" && Number.isFinite(p98) ? p98 : null,
-          }
-        : null;
-      const statsDisplay = roundPriceStats(stats);
-
-      let min = hardOk ? minHard : null;
-      let max = hardOk ? maxHard : null;
-
-      const robustOk =
-        hardOk &&
-        count >= 30 &&
-        typeof p02 === "number" &&
-        typeof p98 === "number" &&
-        Number.isFinite(p02) &&
-        Number.isFinite(p98) &&
-        p98 > p02;
-
-      // Dominio robusto: evita que outliers dominen el rango/histograma.
-      if (robustOk) {
-        min = Math.max(minHard!, p02);
-        max = Math.min(maxHard!, p98);
-      }
-
-      // Alinea el rango a pasos “humanos” para que el slider no muestre números raros.
-      if (hardOk && typeof min === "number" && typeof max === "number") {
-        const step = getPriceStep(min, max);
-        const exactMin = Math.max(0, Math.round(min));
-        const alignedMax = Math.ceil(max / step) * step;
-        min = exactMin;
-        max = alignedMax > exactMin ? alignedMax : exactMin + step;
-      }
-
-      const bounds: CatalogPriceBounds = {
-        min: typeof min === "number" && Number.isFinite(min) ? min : null,
-        max: typeof max === "number" && Number.isFinite(max) ? max : null,
-      };
-
-      const autoBucketCount = (input: { stats: CatalogPriceStats | null; bounds: CatalogPriceBounds }) => {
-        // Buenas prácticas: Freedman–Diaconis con IQR cuando hay suficientes datos.
-        // Con pocos datos o IQR inválido, caemos a un bucketCount estable para evitar UI inestable.
-        const DEFAULT = 18;
-        const { stats, bounds } = input;
-        if (!stats) return DEFAULT;
-        if (stats.count < 60) return DEFAULT;
-        if (typeof bounds.min !== "number" || typeof bounds.max !== "number") return DEFAULT;
-        const range = bounds.max - bounds.min;
-        if (!Number.isFinite(range) || range <= 0) return DEFAULT;
-        const p25 = stats.p25;
-        const p75 = stats.p75;
-        if (typeof p25 !== "number" || typeof p75 !== "number") return DEFAULT;
-        const iqr = p75 - p25;
-        if (!Number.isFinite(iqr) || iqr <= 0) return DEFAULT;
-        const denom = Math.cbrt(stats.count);
-        if (!Number.isFinite(denom) || denom <= 0) return DEFAULT;
-        const binWidth = (2 * iqr) / denom;
-        if (!Number.isFinite(binWidth) || binWidth <= 0) return DEFAULT;
-        const raw = Math.round(range / binWidth);
-        // Clamp para que el histograma siga siendo legible y barato de computar.
-        return Math.max(12, Math.min(28, raw || DEFAULT));
-      };
-
-      const resolvedBucketCount = requestedBucketCount ?? autoBucketCount({ stats, bounds });
-
-      const histogramRangeOk =
-        typeof bounds.min === "number" &&
-        typeof bounds.max === "number" &&
-        Number.isFinite(bounds.min) &&
-        Number.isFinite(bounds.max) &&
-        bounds.max > bounds.min;
-
-      if (!histogramRangeOk || resolvedBucketCount < 6) {
-        return { bounds, histogram: null, stats: statsDisplay };
-      }
-
-      const rows = await (async () => {
-        if (useRollupFastPath) {
-          return prisma.$queryRaw<Array<{ bucket: number; cnt: bigint }>>(Prisma.sql`
-            with priced_products as (
-              select
-                p.id as product_id,
-                p."minPriceCop" as min_price,
-                p."maxPriceCop" as max_price
-              from products p
-              join brands b on b.id = p."brandId"
-              ${productWhere}
-              and p."hasInStock" = true
-              and ${buildProductRollupPriceValidityCondition()}
+            p.id as product_id,
+            p."minPriceCop" as min_price,
+            p."maxPriceCop" as max_price
+          from products p
+          join brands b on b.id = p."brandId"
+          ${productWhere}
+          and p."hasInStock" = true
+          and ${buildProductRollupPriceValidityCondition()}
+        ),
+        bucketed as (
+          select
+            pp.product_id,
+            gs.bucket
+          from priced_products pp
+          cross join lateral generate_series(
+            least(
+              ${resolvedBucketCount},
+              greatest(
+                1,
+                width_bucket(greatest(pp.min_price, ${bounds.min}), ${bounds.min}, ${bounds.max}, ${resolvedBucketCount})
+              )
             ),
-            bucketed as (
-              select
-                pp.product_id,
-                gs.bucket
-              from priced_products pp
-              cross join lateral generate_series(
-                least(
-                  ${resolvedBucketCount},
-                  greatest(
-                    1,
-                    width_bucket(greatest(pp.min_price, ${bounds.min}), ${bounds.min}, ${bounds.max}, ${resolvedBucketCount})
-                  )
-                ),
-                least(
-                  ${resolvedBucketCount},
-                  greatest(
-                    1,
-                    width_bucket(least(pp.max_price, ${bounds.max}), ${bounds.min}, ${bounds.max}, ${resolvedBucketCount})
-                  )
-                )
-              ) as gs(bucket)
-              where pp.max_price >= ${bounds.min}
-                and pp.min_price <= ${bounds.max}
+            least(
+              ${resolvedBucketCount},
+              greatest(
+                1,
+                width_bucket(least(pp.max_price, ${bounds.max}), ${bounds.min}, ${bounds.max}, ${resolvedBucketCount})
+              )
             )
-            select bucket, count(*) as cnt
-            from bucketed
-            group by 1
-            order by 1 asc
-          `);
-        }
+          ) as gs(bucket)
+          where pp.max_price >= ${bounds.min}
+            and pp.min_price <= ${bounds.max}
+        )
+        select bucket, count(*) as cnt
+        from bucketed
+        group by 1
+        order by 1 asc
+      `);
+    }
 
-        return prisma.$queryRaw<Array<{ bucket: number; cnt: bigint }>>(Prisma.sql`
-          with prices as (
-            select
-              p.id as product_id,
-              ${priceCopExpr} as price
-            from products p
-            join brands b on b.id = p."brandId"
-            join variants v on v."productId" = p.id
-            ${productWhere}
-            ${variantWhere}
-            and ${priceCopExpr} > 0
-            and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
-          ),
-          bucketed as (
-            select
-              product_id,
-              least(
-                ${resolvedBucketCount},
-                greatest(1, width_bucket(price, ${bounds.min}, ${bounds.max}, ${resolvedBucketCount}))
-              ) as bucket
-            from prices
-          )
-          select bucket, count(distinct product_id) as cnt
-          from bucketed
-          group by 1
-          order by 1 asc
-        `);
-      })();
+    return prisma.$queryRaw<Array<{ bucket: number; cnt: bigint }>>(Prisma.sql`
+      with prices as (
+        select
+          p.id as product_id,
+          ${priceCopExpr} as price
+        from products p
+        join brands b on b.id = p."brandId"
+        join variants v on v."productId" = p.id
+        ${productWhere}
+        ${variantWhere}
+        and ${priceCopExpr} > 0
+        and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE}
+      ),
+      bucketed as (
+        select
+          product_id,
+          least(
+            ${resolvedBucketCount},
+            greatest(1, width_bucket(price, ${bounds.min}, ${bounds.max}, ${resolvedBucketCount}))
+          ) as bucket
+        from prices
+      )
+      select bucket, count(distinct product_id) as cnt
+      from bucketed
+      group by 1
+      order by 1 asc
+    `);
+  })();
 
-      const buckets = Array.from({ length: resolvedBucketCount }, () => 0);
-      for (const row of rows) {
-        const index = Math.max(0, Math.min(resolvedBucketCount - 1, Number(row.bucket) - 1));
-        buckets[index] = Number(row.cnt ?? 0);
-      }
+  const buckets = Array.from({ length: resolvedBucketCount }, () => 0);
+  for (const row of rows) {
+    const index = Math.max(0, Math.min(resolvedBucketCount - 1, Number(row.bucket) - 1));
+    buckets[index] = Number(row.cnt ?? 0);
+  }
 
-      return {
-        bounds,
-        histogram: { bucketCount: resolvedBucketCount, buckets },
-        stats: statsDisplay,
-      };
-    },
-    ["catalog-price-insights", `cache-v${CATALOG_CACHE_VERSION}`, cacheKey],
+  return {
+    bounds,
+    histogram: { bucketCount: resolvedBucketCount, buckets },
+    stats: statsDisplay,
+  };
+}
+
+export async function getCatalogPriceInsights(
+  filters: CatalogFilters,
+  bucketCount?: number,
+): Promise<CatalogPriceInsights> {
+  const context = resolveCatalogPriceInsightsCacheContext(filters, bucketCount);
+  const cached = unstable_cache(
+    async () => computeCatalogPriceInsightsResolved(context),
+    ["catalog-price-insights", `cache-v${CATALOG_CACHE_VERSION}`, context.cacheKey],
     buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS),
+  );
+
+  return cached();
+}
+
+export async function getCatalogPriceInsightsFixedPlp(
+  filters: CatalogFilters,
+  bucketCount?: number,
+): Promise<CatalogPriceInsights> {
+  const context = resolveCatalogPriceInsightsCacheContext(filters, bucketCount);
+  const cached = unstable_cache(
+    async () => computeCatalogPriceInsightsResolved(context),
+    ["catalog-price-insights-fixed-plp", `cache-v${CATALOG_CACHE_VERSION}`, context.cacheKey],
+    buildCatalogCacheOptions(CATALOG_FIXED_PLP_PRICE_INSIGHTS_REVALIDATE_SECONDS),
   );
 
   return cached();
