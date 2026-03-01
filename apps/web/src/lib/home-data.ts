@@ -50,6 +50,54 @@ export type {
   StyleGroup,
 } from "@/lib/home-types";
 
+export const HOME_CONFIG_DEFAULTS: Record<string, string> = {
+  "hero.eyebrow": "Moda colombiana para ti",
+  "hero.title": "Encuentra tu próximo look colombiano",
+  "hero.subtitle":
+    "Explora prendas por estilo, compara precios en segundos y compra directo en la tienda oficial.",
+  "hero.cta_primary_label": "Descubrir productos",
+  "hero.cta_primary_href": "/buscar",
+  "hero.cta_secondary_label": "Ver novedades",
+  "hero.cta_secondary_href": "/unisex",
+  "section.new_arrivals.heading": "Novedades para tu próximo look",
+  "section.new_arrivals.subheading": "Recién llegado",
+  "section.new_arrivals.cta_label": "Ver novedades",
+  "section.new_arrivals.cta_href": "/novedades",
+  "section.new_arrivals.limit": "8",
+  "section.new_arrivals.days_window": "30",
+  "section.price_drops.limit": "12",
+  "section.price_drops.window_days": "3",
+  "section.daily_trending.limit": "12",
+  "section.daily_trending.cron_limit": "48",
+  "section.story.eyebrow": "Inspiración ODA",
+  "section.story.heading": "Menos búsqueda, más outfits que sí van contigo.",
+  "section.story.body":
+    "Combinamos marcas colombianas, estilos y precio para ayudarte a decidir rápido y comprar mejor.",
+  "section.story.cta_label": "Ir al catálogo completo",
+  "section.story.cta_href": "/unisex",
+};
+
+export type HomeConfigMap = Record<string, string>;
+
+export function getHomeConfigValue(config: HomeConfigMap, key: string): string {
+  return config[key] ?? HOME_CONFIG_DEFAULTS[key] ?? "";
+}
+
+export function getHomeConfigInt(config: HomeConfigMap, key: string): number {
+  const raw = config[key] ?? HOME_CONFIG_DEFAULTS[key];
+  const parsed = parseInt(raw ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : parseInt(HOME_CONFIG_DEFAULTS[key] ?? "0", 10);
+}
+
+export const getHomeConfig = unstable_cache(
+  async (): Promise<HomeConfigMap> => {
+    const rows = await prisma.homeConfig.findMany();
+    return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  },
+  ["home-config"],
+  { revalidate: 60 * 60, tags: ["home-config"] },
+);
+
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
 const HOME_CACHE_VERSION = 11;
@@ -1053,12 +1101,86 @@ export async function getHeroSlides(
   count = 4,
   excludeIds: string[] = [],
 ): Promise<HomeHeroSlide[]> {
-  const pool = await getNewArrivals(seed, Math.max(36, count * 10));
-  const registry = createHomeSelectionRegistry(excludeIds);
-  const selectedSlides = collectUniqueProducts(pool, registry, count);
-  const heroImageUrlsByProduct = await getHeroImageUrlsByProduct(seed, selectedSlides);
+  const now = new Date();
 
-  return selectedSlides.map((item, index) => {
+  // 1. Collect active hero pins ordered by position
+  const heroPins = await prisma.homeHeroPin.findMany({
+    where: {
+      active: true,
+      OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+      AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
+    },
+    orderBy: { position: "asc" },
+    select: { productId: true },
+    take: count,
+  });
+
+  const pinnedProductIds = heroPins.map((p) => p.productId);
+
+  // 2. Fetch pinned products if any exist
+  let pinnedProducts: ProductCard[] = [];
+  if (pinnedProductIds.length > 0) {
+    const pricingContext = await getHomePricingContext();
+    const rows = await prisma.$queryRaw<HomeProductQueryRow[]>(Prisma.sql`
+      select
+        p.id,
+        p.name,
+        p."imageCoverUrl",
+        b.name as "brandName",
+        p.category,
+        p.subcategory,
+        p."sourceUrl",
+        p.currency as "sourceCurrency",
+        coalesce(b."metadata"->>'overrideAllPricesToUsd', 'false')::boolean as "brandOverrideUsd",
+        ${buildEffectiveVariantPriceCopExpr(pricingContext.pricing)} as "minPrice"
+      from products p
+      join brands b on b.id = p."brandId"
+      where p.id = any(${pinnedProductIds}::uuid[])
+        and p."imageCoverUrl" is not null
+        and b."isActive" = true
+        and (p.status is null or lower(p.status) <> 'archived')
+    `);
+
+    // Maintain pin order
+    const rowsById = new Map(rows.map((r) => [r.id, r]));
+    for (const productId of pinnedProductIds) {
+      const row = rowsById.get(productId);
+      if (!row) continue;
+      const sourceCurrency = row.sourceCurrency;
+      const brandOverrideUsd = Boolean(row.brandOverrideUsd);
+      pinnedProducts.push({
+        id: row.id,
+        name: row.name,
+        imageCoverUrl: row.imageCoverUrl,
+        brandName: row.brandName,
+        category: row.category,
+        subcategory: row.subcategory,
+        sourceUrl: row.sourceUrl,
+        minPrice: toCopDisplayString({
+          value: row.minPrice,
+          unitCop: pricingContext.displayUnitCop,
+          sourceCurrency,
+          brandOverrideUsd,
+        }),
+        currency: "COP",
+      });
+    }
+  }
+
+  // 3. Fill remaining slots with automatic new arrivals
+  const remainingCount = Math.max(0, count - pinnedProducts.length);
+  const allExcludeIds = [...excludeIds, ...pinnedProducts.map((p) => p.id)];
+  let autoSlides: ProductCard[] = [];
+  if (remainingCount > 0) {
+    const pool = await getNewArrivals(seed, Math.max(36, remainingCount * 10));
+    const registry = createHomeSelectionRegistry(allExcludeIds);
+    autoSlides = collectUniqueProducts(pool, registry, remainingCount);
+  }
+
+  const allSlides = [...pinnedProducts, ...autoSlides];
+  const heroImageUrlsByProduct = await getHeroImageUrlsByProduct(seed, allSlides);
+
+  return allSlides.map((item, index) => {
     const fallbackCover = normalizeHomeImageUrl(item.imageCoverUrl);
     const heroImageUrls = heroImageUrlsByProduct.get(item.id) ?? [];
     return {

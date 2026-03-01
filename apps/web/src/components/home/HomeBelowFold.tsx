@@ -25,8 +25,20 @@ import {
   getResilientPriceDropPicks,
   getStyleGroups,
   getTrendingPicks,
+  HOME_CONFIG_DEFAULTS,
+  type HomeConfigMap,
 } from "@/lib/home-data";
 import type { HomeCoverageStats } from "@/lib/home-types";
+
+function cfgVal(config: HomeConfigMap | undefined, key: string): string {
+  return (config?.[key] ?? HOME_CONFIG_DEFAULTS[key]) as string;
+}
+
+function cfgInt(config: HomeConfigMap | undefined, key: string): number {
+  const raw = config?.[key] ?? HOME_CONFIG_DEFAULTS[key];
+  const parsed = parseInt(raw ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : parseInt(HOME_CONFIG_DEFAULTS[key] ?? "0", 10);
+}
 
 const FOLD_SECTION_CLASS = "[content-visibility:auto] [contain-intrinsic-size:960px]";
 const HOME_FETCH_TIMEOUT_MS = 24_000;
@@ -52,12 +64,18 @@ const DEFAULT_COVERAGE_STATS: HomeCoverageStats = {
 export default async function HomeBelowFold({
   seed,
   heroIds,
+  config,
 }: {
   seed: number;
   heroIds: string[];
+  config?: HomeConfigMap;
 }) {
   const registry = createHomeSelectionRegistry(heroIds);
   const initialExcludeIds = Array.from(registry.usedIds);
+
+  const newArrivalsLimit = cfgInt(config, "section.new_arrivals.limit");
+  const priceDropsLimit = cfgInt(config, "section.price_drops.limit");
+  const dailyTrendingLimit = cfgInt(config, "section.daily_trending.limit");
 
   const [
     categoryHighlightsResult,
@@ -76,7 +94,7 @@ export default async function HomeBelowFold({
     withTimeout(getColorCombos(seed, 3), []),
     withTimeout(getBrandLogos(seed, 12), []),
     withTimeout(getHomeCoverageStats(), DEFAULT_COVERAGE_STATS),
-    getResilientNewArrivals(seed, { limit: 18 }),
+    getResilientNewArrivals(seed, { limit: Math.max(18, newArrivalsLimit * 2) }),
     getResilientFocusPicks(seed, {
         limit: 24,
         subcategoryLimit: 12,
@@ -84,11 +102,11 @@ export default async function HomeBelowFold({
       }),
     withTimeout(getStyleGroups(seed, 2), []),
     getResilientPriceDropPicks(seed, {
-        limit: 12,
+        limit: priceDropsLimit,
         excludeIds: initialExcludeIds,
       }),
     getResilientDailyTrendingPicks(seed, {
-        limit: 12,
+        limit: dailyTrendingLimit,
         excludeIds: initialExcludeIds,
       }),
     withTimeout(getTrendingPicks(seed + 19, 24), []),
@@ -104,7 +122,7 @@ export default async function HomeBelowFold({
 
   const categoryHighlights = categoryHighlightsResult.items;
 
-  const newArrivals = collectUniqueProducts(newArrivalsResult.items, registry, 8);
+  const newArrivals = collectUniqueProducts(newArrivalsResult.items, registry, newArrivalsLimit);
 
   const focusProducts = collectUniqueProducts(focusResult.items, registry, 24);
 
@@ -209,10 +227,10 @@ export default async function HomeBelowFold({
     <>
       <section className={`oda-container py-12 sm:py-16 ${FOLD_SECTION_CLASS}`}>
         <ProductCarousel
-          title="Novedades para tu próximo look"
-          subtitle="Recién llegado"
-          ctaHref="/novedades"
-          ctaLabel="Ver novedades"
+          title={cfgVal(config, "section.new_arrivals.heading")}
+          subtitle={cfgVal(config, "section.new_arrivals.subheading")}
+          ctaHref={cfgVal(config, "section.new_arrivals.cta_href")}
+          ctaLabel={cfgVal(config, "section.new_arrivals.cta_label")}
           products={newArrivals}
           ariaLabel="Carrusel de novedades"
           surface="home_new_arrivals"
@@ -258,19 +276,19 @@ export default async function HomeBelowFold({
       <section className={`border-y border-[color:var(--oda-border)] bg-white ${FOLD_SECTION_CLASS}`}>
         <div className="oda-container grid gap-8 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
           <div className="flex flex-col gap-4 lg:pr-8">
-            <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Inspiración ODA</p>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">{cfgVal(config, "section.story.eyebrow")}</p>
             <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
-              Menos búsqueda, más outfits que sí van contigo.
+              {cfgVal(config, "section.story.heading")}
             </h2>
             <p className="max-w-xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
-              Combinamos marcas colombianas, estilos y precio para ayudarte a decidir rápido y comprar mejor.
+              {cfgVal(config, "section.story.body")}
             </p>
             <Link
-              href="/unisex"
+              href={cfgVal(config, "section.story.cta_href")}
               prefetch={false}
               className="mt-2 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
             >
-              Ir al catálogo completo
+              {cfgVal(config, "section.story.cta_label")}
             </Link>
           </div>
 

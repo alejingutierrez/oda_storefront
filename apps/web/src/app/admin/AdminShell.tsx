@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const navItems = [
   { key: "dashboard", label: "Dashboard", href: "/admin" },
+  { key: "home", label: "Home", href: "/admin/home" },
   { key: "brands", label: "Marcas", href: "/admin/brands" },
   { key: "products", label: "Productos", href: "/admin/products" },
   { key: "product-curation", label: "Curación", href: "/admin/product-curation" },
