@@ -48,7 +48,7 @@ export async function PUT(req: Request) {
   );
 
   revalidatePath("/");
-  revalidateTag("home-config");
+  revalidateTag("home-config", { expire: 0 });
 
   const rows = await prisma.homeConfig.findMany({ orderBy: { key: "asc" } });
   const config: HomeConfigMap = Object.fromEntries(rows.map((r) => [r.key, r.value]));
