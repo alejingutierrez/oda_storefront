@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import AccountLink from "@/components/AccountLink";
@@ -10,7 +10,6 @@ import { GENDER_ROUTE, type GenderKey } from "@/lib/navigation";
 
 const GENDERS: GenderKey[] = ["Femenino", "Masculino", "Unisex", "Infantil"];
 type MenuSectionKey = "Superiores" | "Completos" | "Inferiores" | "Accesorios" | "Lifestyle";
-type MobileMenuLevel = "root" | "gender" | "section";
 const MENU_SECTIONS: MenuSectionKey[] = ["Superiores", "Completos", "Inferiores", "Accesorios", "Lifestyle"];
 const SECTION_LABELS: Record<MenuSectionKey, string> = {
   Superiores: "Superiores",
@@ -22,24 +21,16 @@ const SECTION_LABELS: Record<MenuSectionKey, string> = {
 
 export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
   const [open, setOpen] = useState(false);
-  const [activeGender, setActiveGender] = useState<GenderKey | null>(null);
-  const [activeSection, setActiveSection] = useState<MenuSectionKey | null>(null);
-  const lastStepRef = useRef<string | null>(null);
+  const [activeGender, setActiveGender] = useState<GenderKey>("Femenino");
 
   const portalRoot = typeof document !== "undefined" ? document.body : null;
-  const level: MobileMenuLevel = activeGender ? (activeSection ? "section" : "gender") : "root";
-  const activeGenderMenu = activeGender ? menu[activeGender] : null;
-  const sectionItems = useMemo(() => {
-    if (!activeGenderMenu || !activeSection) return [];
-    return activeGenderMenu[activeSection];
-  }, [activeGenderMenu, activeSection]);
+  const genderMenu = menu[activeGender];
 
   const closeMenu = useCallback(() => {
     setOpen(false);
-    setActiveGender(null);
-    setActiveSection(null);
   }, []);
 
+  // Scroll lock + Escape key
   useEffect(() => {
     if (!open) return;
     const prevOverflow = document.body.style.overflow;
@@ -54,67 +45,43 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
     };
   }, [closeMenu, open]);
 
+  // Log menu open
   useEffect(() => {
-    if (!open) {
-      lastStepRef.current = null;
-      return;
-    }
+    if (!open) return;
     logExperienceEvent({
       type: "menu_open",
       path: `${window.location.pathname}${window.location.search}`,
       properties: {
         surface: "mobile",
+        gender: activeGender,
       },
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const stepKey = `${level}|${activeGender ?? ""}|${activeSection ?? ""}`;
-    if (lastStepRef.current === stepKey) return;
-    logExperienceEvent({
-      type: "menu_mobile_step",
-      path: `${window.location.pathname}${window.location.search}`,
-      properties: {
-        level,
-        gender: activeGender,
-        section: activeSection,
-      },
-    });
-    lastStepRef.current = stepKey;
-  }, [activeGender, activeSection, level, open]);
+  const handleGenderSwitch = (gender: GenderKey) => {
+    const prev = activeGender;
+    setActiveGender(gender);
+    if (prev !== gender) {
+      logExperienceEvent({
+        type: "menu_gender_switch",
+        path: `${window.location.pathname}${window.location.search}`,
+        properties: { surface: "mobile", from: prev, to: gender },
+      });
+    }
+  };
 
   const handleItemClick = useCallback(
     (href: string, label: string, meta?: Record<string, unknown>) => {
       logExperienceEvent({
         type: "menu_item_click",
         path: `${window.location.pathname}${window.location.search}`,
-        properties: {
-          surface: "mobile",
-          href,
-          label,
-          ...meta,
-        },
+        properties: { surface: "mobile", href, label, ...meta },
       });
       window.requestAnimationFrame(() => closeMenu());
     },
     [closeMenu],
   );
-
-  const goBack = () => {
-    if (level === "section") {
-      setActiveSection(null);
-      return;
-    }
-    setActiveGender(null);
-  };
-
-  const panelTitle = (() => {
-    if (level === "root") return "Menu";
-    if (level === "gender") return activeGender ?? "Menu";
-    if (activeGender && activeSection) return `${activeGender} · ${SECTION_LABELS[activeSection]}`;
-    return "Menu";
-  })();
 
   return (
     <>
@@ -139,6 +106,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
       {open && portalRoot
         ? createPortal(
             <div className="fixed inset-0 z-[200] lg:hidden" role="dialog" aria-modal="true" aria-label="Menu principal">
+              {/* Backdrop */}
               <button
                 type="button"
                 className="absolute inset-0 bg-black/30 backdrop-blur-lg backdrop-saturate-150"
@@ -146,193 +114,121 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                 onClick={closeMenu}
               />
 
-              <div className="oda-glass-noise absolute inset-x-4 bottom-6 top-24 overflow-hidden rounded-3xl border border-white/50 bg-white/85 shadow-[0_30px_90px_rgba(23,21,19,0.30)] backdrop-blur-2xl">
-                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-white/40 bg-white/75 px-5 py-4 backdrop-blur-xl">
-                  <div className="flex items-center gap-2">
-                    {level !== "root" ? (
-                      <button
-                        type="button"
-                        onClick={goBack}
-                        className="inline-flex h-11 min-h-11 min-w-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-sm text-[color:var(--oda-ink)]"
-                        aria-label="Volver"
-                      >
-                        ←
-                      </button>
-                    ) : (
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-                        Explorar
-                      </span>
-                    )}
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-                      {panelTitle}
-                    </p>
-                  </div>
+              {/* Panel */}
+              <div className="oda-glass-noise absolute inset-x-3 bottom-5 top-20 flex flex-col overflow-hidden rounded-3xl border border-white/50 bg-white/90 shadow-[0_30px_90px_rgba(23,21,19,0.30)] backdrop-blur-2xl">
+
+                {/* Header fijo */}
+                <div className="flex shrink-0 items-center justify-between border-b border-[color:var(--oda-border)]/60 px-5 py-4">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                    Explorar
+                  </span>
                   <button
                     type="button"
                     onClick={closeMenu}
-                    className="inline-flex h-11 min-h-11 min-w-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-sm font-semibold text-[color:var(--oda-ink)]"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-base font-medium text-[color:var(--oda-ink)]"
                     aria-label="Cerrar"
-                    title="Cerrar"
                   >
                     ×
                   </button>
                 </div>
 
-                <div className="max-h-[calc(100vh-10rem)] overflow-auto overscroll-contain px-5 pb-8 pt-5">
-                  {level === "root" ? (
-                    <>
-                      <div className="flex items-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-3">
-                        <input
-                          type="text"
-                          placeholder="Buscar"
-                          // iOS: >= 16px evita el zoom automático al focus.
-                          className="w-full bg-transparent text-base uppercase tracking-[0.2em] text-[color:var(--oda-ink)] placeholder:text-[color:var(--oda-taupe)] focus:outline-none"
-                        />
-                      </div>
-                      <div className="mt-6 grid grid-cols-3 gap-2">
-                        <Link
-                          prefetch={false}
-                          href="/novedades"
-                          className="inline-flex min-h-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
-                          onClick={() => handleItemClick("/novedades", "Novedades", { level: "root" })}
-                        >
-                          Novedades
-                        </Link>
-                        <Link
-                          prefetch={false}
-                          href="/buscar"
-                          className="inline-flex min-h-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
-                          onClick={() => handleItemClick("/buscar", "Buscar", { level: "root" })}
-                        >
-                          Buscar
-                        </Link>
-                        <Link
-                          prefetch={false}
-                          href="/catalogo"
-                          className="inline-flex min-h-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
-                          onClick={() => handleItemClick("/catalogo", "Ver todo", { level: "root" })}
-                        >
-                          Ver todo
-                        </Link>
-                      </div>
-                      <div className="mt-6 flex flex-col gap-2">
-                        {GENDERS.map((gender) => (
-                          <button
-                            key={gender}
-                            type="button"
-                            onClick={() => {
-                              setActiveGender(gender);
-                              setActiveSection(null);
-                            }}
-                            className="inline-flex min-h-11 items-center justify-between rounded-2xl border border-[color:var(--oda-border)] bg-white/70 px-4 py-3 text-xs uppercase tracking-[0.18em] text-[color:var(--oda-ink)]"
-                          >
-                            {gender}
-                            <span aria-hidden className="text-[color:var(--oda-taupe)]">
-                              →
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  ) : null}
-
-                  {level === "gender" && activeGender && activeGenderMenu ? (
-                    <div className="flex flex-col gap-2">
-                      {MENU_SECTIONS.map((section) => {
-                        const count = activeGenderMenu[section].length;
-                        return (
-                          <button
-                            key={section}
-                            type="button"
-                            onClick={() => setActiveSection(section)}
-                            disabled={count === 0}
-                            className={[
-                              "inline-flex min-h-11 items-center justify-between rounded-2xl border px-4 py-3 text-xs uppercase tracking-[0.18em]",
-                              count === 0
-                                ? "cursor-not-allowed border-[color:var(--oda-border)] bg-white/40 text-[color:var(--oda-taupe)]"
-                                : "border-[color:var(--oda-border)] bg-white/70 text-[color:var(--oda-ink)]",
-                            ].join(" ")}
-                          >
-                            <span>{SECTION_LABELS[section]}</span>
-                            <span className="text-[10px]">{count}</span>
-                          </button>
-                        );
-                      })}
-                      <Link
-                        prefetch={false}
-                        href={`/${GENDER_ROUTE[activeGender]}`}
-                        className="mt-4 inline-flex min-h-11 items-center justify-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
-                        onClick={() =>
-                          handleItemClick(`/${GENDER_ROUTE[activeGender]}`, `Ver todo ${activeGender}`, {
-                            level: "gender",
-                            gender: activeGender,
-                          })
-                        }
+                {/* Tabs de género */}
+                <div className="shrink-0 overflow-x-auto border-b border-[color:var(--oda-border)]/60 px-4 py-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="flex gap-2">
+                    {GENDERS.map((gender) => (
+                      <button
+                        key={gender}
+                        type="button"
+                        onClick={() => handleGenderSwitch(gender)}
+                        aria-pressed={activeGender === gender}
+                        className={[
+                          "shrink-0 rounded-full px-4 py-2 text-[10px] font-medium uppercase tracking-[0.18em] transition-all",
+                          activeGender === gender
+                            ? "bg-[color:var(--oda-ink)] text-white"
+                            : "border border-[color:var(--oda-border)] bg-white/70 text-[color:var(--oda-ink)] hover:bg-[color:var(--oda-stone)]",
+                        ].join(" ")}
                       >
-                        Ver todo {activeGender}
-                      </Link>
-                    </div>
-                  ) : null}
+                        {gender}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                  {level === "section" && activeGender && activeSection ? (
-                    <div className="flex flex-col gap-3">
-                      {sectionItems.length === 0 ? (
-                        <p className="rounded-2xl border border-[color:var(--oda-border)] bg-white/50 px-4 py-4 text-xs uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
-                          Sin categorias disponibles
+                {/* Contenido scrollable */}
+                <div className="flex-1 overflow-y-auto overscroll-contain px-5 pb-8 pt-5">
+
+                  {/* Quick links */}
+                  <div className="mb-6 flex flex-wrap gap-2">
+                    <Link
+                      prefetch={false}
+                      href="/novedades"
+                      className="inline-flex min-h-9 items-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+                      onClick={() => handleItemClick("/novedades", "Novedades", { gender: activeGender })}
+                    >
+                      Novedades
+                    </Link>
+                    <Link
+                      prefetch={false}
+                      href={`/${GENDER_ROUTE[activeGender]}`}
+                      className="inline-flex min-h-9 items-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+                      onClick={() =>
+                        handleItemClick(
+                          `/${GENDER_ROUTE[activeGender]}`,
+                          `Ver todo ${activeGender}`,
+                          { gender: activeGender },
+                        )
+                      }
+                    >
+                      Ver todo {activeGender}
+                    </Link>
+                    <Link
+                      prefetch={false}
+                      href="/buscar"
+                      className="inline-flex min-h-9 items-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
+                      onClick={() => handleItemClick("/buscar", "Buscar", { gender: activeGender })}
+                    >
+                      Buscar
+                    </Link>
+                  </div>
+
+                  {/* Secciones con categorías */}
+                  {MENU_SECTIONS.map((section) => {
+                    const items = genderMenu[section];
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={section} className="mb-7">
+                        <p className="mb-1 text-[10px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+                          {SECTION_LABELS[section]}
                         </p>
-                      ) : (
-                        sectionItems.map((item) => {
-                          const visibleSubcategories = (item.subcategories ?? []).filter(
-                            (sub) => sub.count > 0,
-                          );
-                          return (
-                            <div
+                        <div className="flex flex-col">
+                          {items.map((item, idx) => (
+                            <Link
                               key={item.key}
-                              className="rounded-2xl border border-[color:var(--oda-border)] bg-white/70 px-3 py-3"
+                              prefetch={false}
+                              href={item.href}
+                              className={[
+                                "inline-flex min-h-11 items-center py-2.5 text-sm font-medium text-[color:var(--oda-ink)]",
+                                idx < items.length - 1
+                                  ? "border-b border-[color:var(--oda-border)]/50"
+                                  : "",
+                              ].join(" ")}
+                              onClick={() =>
+                                handleItemClick(item.href, item.label, {
+                                  gender: activeGender,
+                                  section,
+                                })
+                              }
                             >
-                              <Link
-                                prefetch={false}
-                                href={item.href}
-                                className="inline-flex min-h-11 items-center rounded-xl px-2 py-2 text-xs font-medium uppercase tracking-[0.14em] text-[color:var(--oda-ink)]"
-                                onClick={() =>
-                                  handleItemClick(item.href, item.label, {
-                                    level: "section",
-                                    gender: activeGender,
-                                    section: activeSection,
-                                  })
-                                }
-                              >
-                                {item.label}
-                              </Link>
-                              {visibleSubcategories.length > 0 ? (
-                                <div className="mt-2 flex flex-wrap gap-2 px-1">
-                                  {visibleSubcategories.map((sub) => (
-                                    <Link
-                                      prefetch={false}
-                                      key={sub.key}
-                                      href={sub.href}
-                                      className="inline-flex min-h-11 items-center rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-[color:var(--oda-taupe)]"
-                                      onClick={() =>
-                                        handleItemClick(sub.href, sub.label, {
-                                          level: "section",
-                                          gender: activeGender,
-                                          section: activeSection,
-                                        })
-                                      }
-                                    >
-                                      {sub.label}
-                                    </Link>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  ) : null}
+                              {item.label}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
 
-                  <div className="mt-8 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
+                  {/* Cuenta */}
+                  <div className="mt-6 flex items-center justify-between border-t border-[color:var(--oda-border)]/50 pt-5 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
                     <span>Cuenta</span>
                     <AccountLink className="rounded-full border border-[color:var(--oda-border)] bg-white/70 px-3 py-2" />
                   </div>
