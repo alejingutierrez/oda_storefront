@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   if (!admin) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   revalidatePath("/");
-  revalidateTag("home-config");
+  revalidateTag("home-config", { expire: 0 });
   invalidateCatalogCache();
 
   return NextResponse.json({ ok: true, revalidatedAt: new Date().toISOString() });
