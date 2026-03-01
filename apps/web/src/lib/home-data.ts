@@ -66,8 +66,14 @@ export function getHomeConfigInt(config: HomeConfigMap, key: string): number {
 
 export const getHomeConfig = unstable_cache(
   async (): Promise<HomeConfigMap> => {
-    const rows = await prisma.homeConfig.findMany();
-    return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    try {
+      const rows = await prisma.homeConfig.findMany();
+      return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    } catch (error) {
+      if (!isMissingTableError(error, "home_config")) throw error;
+      console.warn("home.config.table_missing_fallback", { table: "home_config" });
+      return { ...HOME_CONFIG_DEFAULTS };
+    }
   },
   ["home-config"],
   { revalidate: 60 * 60, tags: ["home-config"] },
@@ -1021,6 +1027,15 @@ function buildHomeImageOrderKey(seed: number, productId: string, imageUrl: strin
   return createHash("sha1").update(`${seed}:${productId}:${imageUrl}`).digest("hex");
 }
 
+function isMissingTableError(error: unknown, tableName: string): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code !== "P2021") return false;
+
+  const metaTable = typeof error.meta?.table === "string" ? error.meta.table : null;
+  if (metaTable?.toLowerCase().includes(tableName.toLowerCase())) return true;
+  return error.message.toLowerCase().includes(tableName.toLowerCase());
+}
+
 async function getHeroImageUrlsByProduct(
   seed: number,
   products: Array<Pick<ProductCard, "id" | "imageCoverUrl">>,
@@ -1079,16 +1094,22 @@ export async function getHeroSlides(
   const now = new Date();
 
   // 1. Collect active hero pins ordered by position
-  const heroPins = await prisma.homeHeroPin.findMany({
-    where: {
-      active: true,
-      OR: [{ startsAt: null }, { startsAt: { lte: now } }],
-      AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
-    },
-    orderBy: { position: "asc" },
-    select: { productId: true },
-    take: count,
-  });
+  let heroPins: Array<{ productId: string }> = [];
+  try {
+    heroPins = await prisma.homeHeroPin.findMany({
+      where: {
+        active: true,
+        OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+        AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
+      },
+      orderBy: { position: "asc" },
+      select: { productId: true },
+      take: count,
+    });
+  } catch (error) {
+    if (!isMissingTableError(error, "home_hero_pins")) throw error;
+    console.warn("home.hero_pins.table_missing_fallback", { table: "home_hero_pins" });
+  }
 
   const pinnedProductIds = heroPins.map((p) => p.productId);
 
