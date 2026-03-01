@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import type { HomeHeroSlide } from "@/lib/home-types";
-import { HOME_CONFIG_DEFAULTS, type HomeConfigMap } from "@/lib/home-data";
+import { HOME_CONFIG_DEFAULTS, type HomeConfigMap, type HomeHeroSlide } from "@/lib/home-types";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 
 function cfgVal(config: HomeConfigMap | undefined, key: string): string {
