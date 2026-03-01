@@ -9,9 +9,16 @@ import { logExperienceEvent } from "@/lib/experience-events";
 import { GENDER_ROUTE, type GenderKey } from "@/lib/navigation";
 
 const GENDERS: GenderKey[] = ["Femenino", "Masculino", "Unisex", "Infantil"];
-type MenuSectionKey = "Superiores" | "Inferiores" | "Accesorios";
+type MenuSectionKey = "Superiores" | "Completos" | "Inferiores" | "Accesorios" | "Lifestyle";
 type MobileMenuLevel = "root" | "gender" | "section";
-const MENU_SECTIONS: MenuSectionKey[] = ["Superiores", "Inferiores", "Accesorios"];
+const MENU_SECTIONS: MenuSectionKey[] = ["Superiores", "Completos", "Inferiores", "Accesorios", "Lifestyle"];
+const SECTION_LABELS: Record<MenuSectionKey, string> = {
+  Superiores: "Superiores",
+  Completos: "Completos y vestidos",
+  Inferiores: "Inferiores",
+  Accesorios: "Accesorios",
+  Lifestyle: "Íntimo y descanso",
+};
 
 export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
   const [open, setOpen] = useState(false);
@@ -105,7 +112,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
   const panelTitle = (() => {
     if (level === "root") return "Menu";
     if (level === "gender") return activeGender ?? "Menu";
-    if (activeGender && activeSection) return `${activeGender} · ${activeSection}`;
+    if (activeGender && activeSection) return `${activeGender} · ${SECTION_LABELS[activeSection]}`;
     return "Menu";
   })();
 
@@ -246,7 +253,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                                 : "border-[color:var(--oda-border)] bg-white/70 text-[color:var(--oda-ink)]",
                             ].join(" ")}
                           >
-                            <span>{section}</span>
+                            <span>{SECTION_LABELS[section]}</span>
                             <span className="text-[10px]">{count}</span>
                           </button>
                         );

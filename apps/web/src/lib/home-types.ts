@@ -19,8 +19,10 @@ export type MegaMenuData = Record<
   GenderKey,
   {
     Superiores: MenuCategory[];
+    Completos: MenuCategory[];
     Inferiores: MenuCategory[];
     Accesorios: MenuCategory[];
+    Lifestyle: MenuCategory[];
   }
 >;
 

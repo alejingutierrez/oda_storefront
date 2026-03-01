@@ -12,20 +12,78 @@ import {
   type FocusEvent,
   type MouseEvent,
 } from "react";
-import type { MegaMenuData } from "@/lib/home-types";
+import type { MegaMenuData, MenuCategory } from "@/lib/home-types";
 import { logExperienceEvent } from "@/lib/experience-events";
 import { GENDER_ROUTE, type GenderKey } from "@/lib/navigation";
 
 const GENDERS: GenderKey[] = ["Femenino", "Masculino", "Unisex", "Infantil"];
-type MenuSectionKey = "Superiores" | "Inferiores" | "Accesorios";
+type MenuSectionKey = "Superiores" | "Completos" | "Inferiores" | "Accesorios" | "Lifestyle";
 
-const splitColumns = <T,>(items: T[], columns: number) => {
-  if (columns <= 1) return [items];
-  const perColumn = Math.ceil(items.length / columns);
-  return Array.from({ length: columns }, (_, index) =>
-    items.slice(index * perColumn, (index + 1) * perColumn),
-  );
+type MenuColumnSectionProps = {
+  title: string;
+  items: MenuCategory[];
+  gender: GenderKey;
+  sectionKey: MenuSectionKey;
+  onItemClick: (
+    gender: GenderKey,
+    section: MenuSectionKey | "Novedades" | "VerTodo",
+    href: string,
+    label: string,
+  ) => void;
 };
+
+function MenuColumnSection({ title, items, gender, sectionKey, onItemClick }: MenuColumnSectionProps) {
+  if (items.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-3">
+      <span className="text-xs uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+        {title}
+      </span>
+      <div className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto pr-2">
+        {items.map((item) => {
+          const visibleSubcategories = (item.subcategories ?? []).filter(
+            (sub) => sub.count > 0,
+          );
+          return (
+            <div key={item.key} className="flex flex-col gap-1">
+              <Link
+                prefetch={false}
+                href={item.href}
+                className={[
+                  "-mx-2 inline-flex rounded-lg px-2 py-0.5 text-sm font-medium text-[color:var(--oda-ink)] transition",
+                  "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                ].join(" ")}
+                onClick={() => onItemClick(gender, sectionKey, item.href, item.label)}
+              >
+                {item.label}
+              </Link>
+              {visibleSubcategories.length > 0 ? (
+                <div className="grid gap-0.5 border-l border-[color:var(--oda-border)] pl-3">
+                  {visibleSubcategories.map((sub) => (
+                    <Link
+                      prefetch={false}
+                      key={sub.key}
+                      href={sub.href}
+                      className={[
+                        "-mx-2 inline-flex rounded-md px-2 py-0.5 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
+                        "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                      ].join(" ")}
+                      onClick={() => onItemClick(gender, sectionKey, sub.href, sub.label)}
+                    >
+                      {sub.label}
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
   const [hoveredGender, setHoveredGender] = useState<GenderKey | null>(null);
@@ -41,9 +99,11 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
   const sectionData = useMemo(() => {
     if (!openData) return null;
     return {
-      SuperioresColumns: splitColumns(openData.Superiores, 2),
+      Superiores: openData.Superiores,
+      Completos:  openData.Completos,
       Inferiores: openData.Inferiores,
       Accesorios: openData.Accesorios,
+      Lifestyle:  openData.Lifestyle,
     };
   }, [openData]);
 
@@ -242,160 +302,53 @@ export default function MegaMenu({ menu }: { menu: MegaMenuData }) {
             }
           >
             <div className="grid grid-cols-4 gap-8">
-              <div className="col-span-2 flex flex-col gap-3">
-                <span className="text-xs uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-                  Superiores
-                </span>
-                <div className="grid grid-cols-2 gap-6">
-                  {sectionData.SuperioresColumns.map((items, columnIndex) => (
-                    <div
-                      key={`${openGender}-superiores-${columnIndex}`}
-                      className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto pr-2"
-                    >
-                      {items.map((item) => {
-                        const visibleSubcategories = (item.subcategories ?? []).filter(
-                          (sub) => sub.count > 0,
-                        );
-                        return (
-                          <div key={item.key} className="flex flex-col gap-1">
-                            <Link
-                              prefetch={false}
-                              href={item.href}
-                              className={[
-                                "-mx-2 inline-flex rounded-lg px-2 py-0.5 text-sm font-medium text-[color:var(--oda-ink)] transition",
-                                "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
-                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                              ].join(" ")}
-                              onClick={() => handleItemClick(openGender, "Superiores", item.href, item.label)}
-                            >
-                              {item.label}
-                            </Link>
-                            {visibleSubcategories.length > 0 ? (
-                              <div className="grid gap-0.5 border-l border-[color:var(--oda-border)] pl-3">
-                                {visibleSubcategories.map((sub) => (
-                                  <Link
-                                    prefetch={false}
-                                    key={sub.key}
-                                    href={sub.href}
-                                    className={[
-                                      "-mx-2 inline-flex rounded-md px-2 py-0.5 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
-                                      "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
-                                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                                    ].join(" ")}
-                                    onClick={() =>
-                                      handleItemClick(openGender, "Superiores", sub.href, sub.label)
-                                    }
-                                  >
-                                    {sub.label}
-                                  </Link>
-                                ))}
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
+              {/* Col 1: Superiores */}
+              <MenuColumnSection
+                title="Superiores"
+                items={sectionData.Superiores}
+                gender={openGender}
+                sectionKey="Superiores"
+                onItemClick={handleItemClick}
+              />
+
+              {/* Col 2: Completos + Inferiores apilados */}
+              <div className="flex flex-col gap-6">
+                <MenuColumnSection
+                  title="Completos"
+                  items={sectionData.Completos}
+                  gender={openGender}
+                  sectionKey="Completos"
+                  onItemClick={handleItemClick}
+                />
+                {sectionData.Completos.length > 0 && sectionData.Inferiores.length > 0 ? (
+                  <div className="border-t border-[color:var(--oda-border)]" aria-hidden="true" />
+                ) : null}
+                <MenuColumnSection
+                  title="Inferiores"
+                  items={sectionData.Inferiores}
+                  gender={openGender}
+                  sectionKey="Inferiores"
+                  onItemClick={handleItemClick}
+                />
               </div>
-              <div className="flex flex-col gap-3">
-                <span className="text-xs uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-                  Inferiores
-                </span>
-                <div className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto pr-2">
-                  {sectionData.Inferiores.map((item) => {
-                    const visibleSubcategories = (item.subcategories ?? []).filter(
-                      (sub) => sub.count > 0,
-                    );
-                    return (
-                      <div key={item.key} className="flex flex-col gap-1">
-                        <Link
-                          prefetch={false}
-                          href={item.href}
-                          className={[
-                            "-mx-2 inline-flex rounded-lg px-2 py-0.5 text-sm font-medium text-[color:var(--oda-ink)] transition",
-                            "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
-                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                          ].join(" ")}
-                          onClick={() => handleItemClick(openGender, "Inferiores", item.href, item.label)}
-                        >
-                          {item.label}
-                        </Link>
-                        {visibleSubcategories.length > 0 ? (
-                          <div className="grid gap-0.5 border-l border-[color:var(--oda-border)] pl-3">
-                            {visibleSubcategories.map((sub) => (
-                              <Link
-                                prefetch={false}
-                                key={sub.key}
-                                href={sub.href}
-                                className={[
-                                  "-mx-2 inline-flex rounded-md px-2 py-0.5 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
-                                  "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
-                                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                                ].join(" ")}
-                                onClick={() =>
-                                  handleItemClick(openGender, "Inferiores", sub.href, sub.label)
-                                }
-                              >
-                                {sub.label}
-                              </Link>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="flex flex-col gap-3">
-                <span className="text-xs uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
-                  Accesorios
-                </span>
-                <div className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto pr-2">
-                  {sectionData.Accesorios.map((item) => {
-                    const visibleSubcategories = (item.subcategories ?? []).filter(
-                      (sub) => sub.count > 0,
-                    );
-                    return (
-                      <div key={item.key} className="flex flex-col gap-1">
-                        <Link
-                          prefetch={false}
-                          href={item.href}
-                          className={[
-                            "-mx-2 inline-flex rounded-lg px-2 py-0.5 text-sm font-medium text-[color:var(--oda-ink)] transition",
-                            "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink-soft)]",
-                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                          ].join(" ")}
-                          onClick={() => handleItemClick(openGender, "Accesorios", item.href, item.label)}
-                        >
-                          {item.label}
-                        </Link>
-                        {visibleSubcategories.length > 0 ? (
-                          <div className="grid gap-0.5 border-l border-[color:var(--oda-border)] pl-3">
-                            {visibleSubcategories.map((sub) => (
-                              <Link
-                                prefetch={false}
-                                key={sub.key}
-                                href={sub.href}
-                                className={[
-                                  "-mx-2 inline-flex rounded-md px-2 py-0.5 text-xs uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] transition",
-                                  "hover:bg-[color:var(--oda-stone)] hover:text-[color:var(--oda-ink)]",
-                                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oda-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                                ].join(" ")}
-                                onClick={() =>
-                                  handleItemClick(openGender, "Accesorios", sub.href, sub.label)
-                                }
-                              >
-                                {sub.label}
-                              </Link>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+
+              {/* Col 3: Accesorios */}
+              <MenuColumnSection
+                title="Accesorios"
+                items={sectionData.Accesorios}
+                gender={openGender}
+                sectionKey="Accesorios"
+                onItemClick={handleItemClick}
+              />
+
+              {/* Col 4: Lifestyle */}
+              <MenuColumnSection
+                title="Íntimo y descanso"
+                items={sectionData.Lifestyle}
+                gender={openGender}
+                sectionKey="Lifestyle"
+                onItemClick={handleItemClick}
+              />
             </div>
             <div className="mt-6 border-t border-[color:var(--oda-border)] pt-4 text-xs uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
               <Link

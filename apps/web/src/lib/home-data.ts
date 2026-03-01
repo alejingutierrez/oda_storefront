@@ -52,7 +52,7 @@ export type {
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 10;
+const HOME_CACHE_VERSION = 11;
 const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 6;
@@ -326,7 +326,7 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
       for (const gender of genders) {
         const catMap = byGender.get(gender) ?? new Map();
         const buildColumn = (
-          column: "Superiores" | "Inferiores" | "Accesorios"
+          column: "Superiores" | "Completos" | "Inferiores" | "Accesorios" | "Lifestyle"
         ): MenuCategory[] => {
           const categories = CATEGORY_GROUPS[column];
           const items: MenuCategory[] = [];
@@ -350,8 +350,10 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
 
         result[gender] = {
           Superiores: buildColumn("Superiores"),
+          Completos:  buildColumn("Completos"),
           Inferiores: buildColumn("Inferiores"),
           Accesorios: buildColumn("Accesorios"),
+          Lifestyle:  buildColumn("Lifestyle"),
         };
       }
 
