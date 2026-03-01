@@ -37,7 +37,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   for (const gender of GENDERS) {
     menuPagesSet.add(buildGenderUrl(gender));
     const columns = menu[gender];
-    for (const section of [columns.Superiores, columns.Inferiores, columns.Accesorios]) {
+    for (const section of [columns.Superiores, columns.Completos, columns.Inferiores, columns.Accesorios, columns.Lifestyle]) {
       for (const category of section) {
         menuPagesSet.add(category.href);
         for (const sub of category.subcategories ?? []) {

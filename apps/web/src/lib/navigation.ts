@@ -35,12 +35,14 @@ export const CATEGORY_GROUPS = {
     "buzos_hoodies_y_sueteres",
     "chaquetas_y_abrigos",
     "blazers_y_sastreria",
-    "conjuntos_y_sets_2_piezas",
-    "vestidos",
-    "enterizos_y_overoles",
-    "uniformes_y_ropa_de_trabajo_escolar",
     "ropa_deportiva_y_performance",
+    "uniformes_y_ropa_de_trabajo_escolar",
     "ropa_de_bebe_0_24_meses",
+  ],
+  Completos: [
+    "vestidos",
+    "conjuntos_y_sets_2_piezas",
+    "enterizos_y_overoles",
   ],
   Inferiores: [
     "pantalones_no_denim",
@@ -49,17 +51,19 @@ export const CATEGORY_GROUPS = {
     "shorts_y_bermudas",
   ],
   Accesorios: [
-    "accesorios_textiles_y_medias",
     "bolsos_y_marroquineria",
-    "joyeria_y_bisuteria",
     "calzado",
+    "joyeria_y_bisuteria",
     "gafas_y_optica",
-    "tarjeta_regalo",
-    "hogar_y_lifestyle",
+    "accesorios_textiles_y_medias",
+  ],
+  Lifestyle: [
     "ropa_interior_basica",
     "lenceria_y_fajas_shapewear",
     "pijamas_y_ropa_de_descanso_loungewear",
     "trajes_de_bano_y_playa",
+    "hogar_y_lifestyle",
+    "tarjeta_regalo",
   ],
 } as const;
 
