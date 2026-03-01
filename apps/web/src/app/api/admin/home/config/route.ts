@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { validateAdminRequest } from "@/lib/auth";
+import { isPrismaTableMissingError } from "@/lib/prisma-error-utils";
 import { revalidatePath, revalidateTag } from "next/cache";
 
 export const runtime = "nodejs";
@@ -11,9 +12,15 @@ export async function GET(req: Request) {
   const admin = await validateAdminRequest(req);
   if (!admin) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const rows = await prisma.homeConfig.findMany({ orderBy: { key: "asc" } });
-  const config: HomeConfigMap = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  return NextResponse.json({ config });
+  try {
+    const rows = await prisma.homeConfig.findMany({ orderBy: { key: "asc" } });
+    const config: HomeConfigMap = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    return NextResponse.json({ config });
+  } catch (error) {
+    if (!isPrismaTableMissingError(error, "home_config")) throw error;
+    console.warn("admin.home.api.config.table_missing_fallback", { table: "home_config" });
+    return NextResponse.json({ config: {}, unavailable: true });
+  }
 }
 
 export async function PUT(req: Request) {
@@ -37,20 +44,25 @@ export async function PUT(req: Request) {
     }
   }
 
-  await prisma.$transaction(
-    entries.map(([key, value]) =>
-      prisma.homeConfig.upsert({
-        where: { key },
-        create: { key, value, updatedBy: admin.email },
-        update: { value, updatedBy: admin.email },
-      }),
-    ),
-  );
+  try {
+    await prisma.$transaction(
+      entries.map(([key, value]) =>
+        prisma.homeConfig.upsert({
+          where: { key },
+          create: { key, value, updatedBy: admin.email },
+          update: { value, updatedBy: admin.email },
+        }),
+      ),
+    );
 
-  revalidatePath("/");
-  revalidateTag("home-config", { expire: 0 });
+    revalidatePath("/");
+    revalidateTag("home-config", { expire: 0 });
 
-  const rows = await prisma.homeConfig.findMany({ orderBy: { key: "asc" } });
-  const config: HomeConfigMap = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  return NextResponse.json({ ok: true, config });
+    const rows = await prisma.homeConfig.findMany({ orderBy: { key: "asc" } });
+    const config: HomeConfigMap = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    return NextResponse.json({ ok: true, config });
+  } catch (error) {
+    if (!isPrismaTableMissingError(error, "home_config")) throw error;
+    return NextResponse.json({ error: "home_config_table_missing" }, { status: 503 });
+  }
 }

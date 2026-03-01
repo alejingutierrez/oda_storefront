@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth";
+import { isPrismaTableMissingError } from "@/lib/prisma-error-utils";
 import AdminShell from "@/app/admin/AdminShell";
 import HomeManagementPanel from "./HomeManagementPanel";
 
@@ -23,7 +24,13 @@ export default async function HomeAdminPage() {
   const authed = await isAdminSession();
   if (!authed) redirect("/admin");
 
-  const configRows = await prisma.homeConfig.findMany({ orderBy: { key: "asc" } });
+  let configRows: Array<{ key: string; value: string }> = [];
+  try {
+    configRows = await prisma.homeConfig.findMany({ orderBy: { key: "asc" } });
+  } catch (error) {
+    if (!isPrismaTableMissingError(error, "home_config")) throw error;
+    console.warn("admin.home.config.table_missing_fallback", { table: "home_config" });
+  }
   const config = Object.fromEntries(configRows.map((r) => [r.key, r.value]));
 
   return (
