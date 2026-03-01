@@ -5,11 +5,13 @@ import { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { CATALOG_CACHE_TAG } from "@/lib/catalog-cache";
+import { HOME_CONFIG_DEFAULTS } from "@/lib/home-types";
 import type {
   BrandLogo,
   CategoryHighlight,
   ColorCombo,
   HomeCoverageStats,
+  HomeConfigMap,
   HomeHeroSlide,
   HomePriceDropCardData,
   HomeTrendingDailyCardData,
@@ -43,41 +45,14 @@ export type {
   HomePriceDropCardData,
   HomeTrendingDailyCardData,
   HomeProductCardData,
+  HomeConfigMap,
   MegaMenuData,
   MenuCategory,
   MenuSubcategory,
   ProductCard,
   StyleGroup,
 } from "@/lib/home-types";
-
-export const HOME_CONFIG_DEFAULTS: Record<string, string> = {
-  "hero.eyebrow": "Moda colombiana para ti",
-  "hero.title": "Encuentra tu próximo look colombiano",
-  "hero.subtitle":
-    "Explora prendas por estilo, compara precios en segundos y compra directo en la tienda oficial.",
-  "hero.cta_primary_label": "Descubrir productos",
-  "hero.cta_primary_href": "/buscar",
-  "hero.cta_secondary_label": "Ver novedades",
-  "hero.cta_secondary_href": "/unisex",
-  "section.new_arrivals.heading": "Novedades para tu próximo look",
-  "section.new_arrivals.subheading": "Recién llegado",
-  "section.new_arrivals.cta_label": "Ver novedades",
-  "section.new_arrivals.cta_href": "/novedades",
-  "section.new_arrivals.limit": "8",
-  "section.new_arrivals.days_window": "30",
-  "section.price_drops.limit": "12",
-  "section.price_drops.window_days": "3",
-  "section.daily_trending.limit": "12",
-  "section.daily_trending.cron_limit": "48",
-  "section.story.eyebrow": "Inspiración ODA",
-  "section.story.heading": "Menos búsqueda, más outfits que sí van contigo.",
-  "section.story.body":
-    "Combinamos marcas colombianas, estilos y precio para ayudarte a decidir rápido y comprar mejor.",
-  "section.story.cta_label": "Ir al catálogo completo",
-  "section.story.cta_href": "/unisex",
-};
-
-export type HomeConfigMap = Record<string, string>;
+export { HOME_CONFIG_DEFAULTS } from "@/lib/home-types";
 
 export function getHomeConfigValue(config: HomeConfigMap, key: string): string {
   return config[key] ?? HOME_CONFIG_DEFAULTS[key] ?? "";
