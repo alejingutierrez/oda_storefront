@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { HomeHeroSlide } from "@/lib/home-types";
+import { HOME_CONFIG_DEFAULTS, type HomeConfigMap } from "@/lib/home-data";
 import { proxiedImageUrl } from "@/lib/image-proxy";
+
+function cfgVal(config: HomeConfigMap | undefined, key: string): string {
+  return (config?.[key] ?? HOME_CONFIG_DEFAULTS[key]) as string;
+}
 
 const AUTOPLAY_MS = 6200;
 const HERO_COMPOSITE_SIZES = "(max-width: 767px) 100vw, (max-width: 1023px) 50vw, (max-width: 1535px) 33vw, 25vw";
@@ -75,7 +80,13 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
-export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] }) {
+export default function HomeHeroImmersive({
+  slides,
+  config,
+}: {
+  slides: HomeHeroSlide[];
+  config?: HomeConfigMap;
+}) {
   const prefersReducedMotion = usePrefersReducedMotion();
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -163,18 +174,18 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
         <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-end">
           <div className="max-w-[58rem] space-y-4 sm:space-y-5">
             <div className="flex flex-wrap items-center gap-3">
-              <p className="text-[11px] uppercase tracking-[0.28em] text-[color:var(--oda-gold)]">Moda colombiana para ti</p>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-[color:var(--oda-gold)]">{cfgVal(config, "hero.eyebrow")}</p>
               <span className="rounded-full border border-white/30 bg-black/25 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/88">
                 {contextualBadge}
               </span>
             </div>
 
             <h1 className="font-display text-[2.75rem] leading-[0.92] sm:text-[4.2rem] lg:text-[6.6rem]">
-              Encuentra tu próximo look colombiano
+              {cfgVal(config, "hero.title")}
             </h1>
 
             <p className="max-w-xl text-[1.04rem] leading-snug text-white/82 sm:max-w-2xl sm:text-base sm:leading-relaxed">
-              Explora prendas por estilo, compara precios en segundos y compra directo en la tienda oficial.
+              {cfgVal(config, "hero.subtitle")}
             </p>
           </div>
 
@@ -198,18 +209,18 @@ export default function HomeHeroImmersive({ slides }: { slides: HomeHeroSlide[] 
 
         <div className="flex flex-wrap items-center gap-3 pb-1 sm:gap-4 sm:pb-2">
           <Link
-            href="/buscar"
+            href={cfgVal(config, "hero.cta_primary_href")}
             prefetch={false}
             className="rounded-full bg-[color:var(--oda-cream)] px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-white sm:px-6 sm:py-3"
           >
-            Descubrir productos
+            {cfgVal(config, "hero.cta_primary_label")}
           </Link>
           <Link
-            href="/unisex"
+            href={cfgVal(config, "hero.cta_secondary_href")}
             prefetch={false}
             className="rounded-full border border-white/55 px-5 py-2.5 text-[11px] uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white/8 sm:px-6 sm:py-3"
           >
-            Ver novedades
+            {cfgVal(config, "hero.cta_secondary_label")}
           </Link>
 
           <div className="ml-auto hidden rounded-full border border-white/25 bg-black/20 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white/80 md:flex md:items-center md:gap-2">

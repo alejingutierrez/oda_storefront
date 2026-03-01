@@ -3,19 +3,23 @@ import Link from "next/link";
 import Header from "@/components/Header";
 import HomeBelowFold from "@/components/home/HomeBelowFold";
 import HomeHeroImmersive from "@/components/home/HomeHeroImmersive";
-import { getHeroSlides, getMegaMenuData, getRotationSeed } from "@/lib/home-data";
+import { getHeroSlides, getHomeConfig, getMegaMenuData, getRotationSeed } from "@/lib/home-data";
 
 export const revalidate = 3600;
 
 export default async function Home() {
   const seed = getRotationSeed();
-  const [menu, heroSlides] = await Promise.all([getMegaMenuData(), getHeroSlides(seed, 4)]);
+  const [menu, heroSlides, homeConfig] = await Promise.all([
+    getMegaMenuData(),
+    getHeroSlides(seed, 4),
+    getHomeConfig(),
+  ]);
 
   return (
     <main className="min-h-screen bg-[color:var(--oda-cream)]">
       <Header menu={menu} />
 
-      <HomeHeroImmersive slides={heroSlides} />
+      <HomeHeroImmersive slides={heroSlides} config={homeConfig} />
 
       <Suspense
         fallback={
@@ -25,7 +29,7 @@ export default async function Home() {
           </div>
         }
       >
-        <HomeBelowFold seed={seed} heroIds={heroSlides.map((slide) => slide.id)} />
+        <HomeBelowFold seed={seed} heroIds={heroSlides.map((slide) => slide.id)} config={homeConfig} />
       </Suspense>
 
       <footer className="bg-[color:var(--oda-cream)]">

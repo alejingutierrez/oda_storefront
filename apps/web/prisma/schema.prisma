@@ -205,6 +205,7 @@ model Product {
   events                Event[]
   experienceEvents      ExperienceEvent[]
   homeTrendingDaily     HomeTrendingDaily[]
+  homeHeroPins          HomeHeroPin[]
   favorites             UserFavorite[]
   listItems             UserListItem[]
   enrichmentItems       ProductEnrichmentItem[]
@@ -856,6 +857,32 @@ model Announcement {
   @@index([brandId])
   @@index([slot])
   @@map("announcements")
+}
+
+model HomeConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@map("home_config")
+}
+
+model HomeHeroPin {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  position  Int      @default(0)
+  active    Boolean  @default(true)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, position])
+  @@index([productId])
+  @@map("home_hero_pins")
 }
 
 model PlpSeoPage {
