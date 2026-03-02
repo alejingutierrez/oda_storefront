@@ -356,7 +356,12 @@ export async function POST(req: Request) {
 
   if (!dryRun && isCatalogQueueEnabled() && isRedisEnabled()) {
     const lockTtlMs = Math.max(5000, safeMaxMs + 5000);
-    const lockKey = `catalog:drain:route:lock:${brandId ?? "all"}`;
+    const lockScope = requestedRunId
+      ? `run:${requestedRunId}`
+      : brandId
+        ? `brand:${brandId}`
+        : "all";
+    const lockKey = `catalog:drain:route:lock:${lockScope}`;
     const acquired = await tryAcquireLock(lockKey, lockTtlMs);
     if (!acquired) {
       return NextResponse.json(

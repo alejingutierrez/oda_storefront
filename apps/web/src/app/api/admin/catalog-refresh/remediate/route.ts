@@ -6,7 +6,7 @@ import {
 } from "@/lib/catalog/refresh";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const parseBody = async (req: Request) => {
   const body = await req.json().catch(() => null);
