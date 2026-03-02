@@ -83,6 +83,16 @@ export async function GET(req: Request) {
 
   const includeEnrichmentAlerts = new URL(req.url).searchParams.get("includeEnrichmentAlerts") === "true";
   const config = getRefreshConfig();
+  const activeRunCap = Math.max(
+    1,
+    Number(
+      (
+        config as {
+          maxActiveRuns?: number;
+        }
+      ).maxActiveRuns ?? config.maxBrands * 3,
+    ),
+  );
   const now = new Date();
   const windowStart = new Date(now.getTime() - config.intervalDays * 24 * 60 * 60 * 1000);
 
@@ -948,8 +958,8 @@ export async function GET(req: Request) {
       qualityStaleBrands,
       staleBreakdown,
       activeRunCount,
-      activeRunCap: config.maxActiveRuns,
-      activeRunCapacityRemaining: Math.max(0, config.maxActiveRuns - activeRunCount),
+      activeRunCap,
+      activeRunCapacityRemaining: Math.max(0, activeRunCap - activeRunCount),
       avgDiscoveryCoverage,
       avgRunSuccessRate,
       newProducts: newProducts?.count ?? 0,
