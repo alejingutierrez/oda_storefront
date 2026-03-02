@@ -4,6 +4,7 @@ import { discoverCatalogRefs } from "@/lib/catalog/discovery";
 import type { ProductRef } from "@/lib/catalog/types";
 import { isCatalogQueueEnabled } from "@/lib/catalog/queue";
 import { topUpCatalogRunQueue } from "@/lib/catalog/queue-control";
+import { readCatalogQueueDriftSummary, reconcileCatalogQueue } from "@/lib/catalog/queue-drift";
 import { CATALOG_MAX_ATTEMPTS } from "@/lib/catalog/constants";
 import {
   createRunWithItems,
@@ -265,6 +266,49 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     1,
     Number(process.env.CATALOG_REFRESH_AUTO_REMEDIATE_COOLDOWN_HOURS ?? 12),
   );
+  const maxActiveRunsEnvRaw = String(process.env.CATALOG_REFRESH_MAX_ACTIVE_RUNS ?? "")
+    .replace(/\\n/g, "")
+    .trim();
+  const maxActiveRunsRaw = Number(maxActiveRunsEnvRaw || maxBrands * 3);
+  const maxActiveRuns = Number.isFinite(maxActiveRunsRaw)
+    ? Math.max(1, Math.floor(maxActiveRunsRaw))
+    : Math.max(1, maxBrands * 3);
+  const autoReconcile =
+    (process.env.CATALOG_REFRESH_AUTO_RECONCILE ?? "true")
+      .trim()
+      .toLowerCase() !== "false";
+  const autoReconcileJobScanLimit = Math.max(
+    100,
+    Number(process.env.CATALOG_REFRESH_AUTO_RECONCILE_JOB_SCAN_LIMIT ?? 1000),
+  );
+  const autoReconcileReenqueueLimit = Math.max(
+    10,
+    Number(process.env.CATALOG_REFRESH_AUTO_RECONCILE_REENQUEUE_LIMIT ?? 500),
+  );
+  const stuckRemediateEnabled =
+    (process.env.CATALOG_REFRESH_STUCK_REMEDIATE_ENABLED ?? "true")
+      .trim()
+      .toLowerCase() === "true";
+  const stuckRemediateLimit = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_STUCK_REMEDIATE_LIMIT ?? 30),
+  );
+  const stuckRemediateWindowMinutes = Math.max(
+    5,
+    Number(process.env.CATALOG_REFRESH_STUCK_REMEDIATE_WINDOW_MINUTES ?? 30),
+  );
+  const stuckRemediateThreshold = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_STUCK_REMEDIATE_THRESHOLD ?? stuckRemediateLimit),
+  );
+  const stuckPauseOverCapEnabled =
+    (process.env.CATALOG_REFRESH_STUCK_PAUSE_OVER_CAP_ENABLED ?? "true")
+      .trim()
+      .toLowerCase() === "true";
+  const stuckPauseOverCapTarget = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_STUCK_PAUSE_OVER_CAP_TARGET ?? 48),
+  );
   const manualReviewAutoClearEnabled =
     (process.env.CATALOG_MANUAL_REVIEW_AUTOCLEAR_ENABLED ?? "true")
       .trim()
@@ -322,6 +366,16 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     forceDiscoveryBudgetMs,
     autoRemediateMaxBrands,
     autoRemediateCooldownHours,
+    maxActiveRuns,
+    autoReconcile,
+    autoReconcileJobScanLimit,
+    autoReconcileReenqueueLimit,
+    stuckRemediateEnabled,
+    stuckRemediateLimit,
+    stuckRemediateWindowMinutes,
+    stuckRemediateThreshold,
+    stuckPauseOverCapEnabled,
+    stuckPauseOverCapTarget,
     manualReviewAutoClearEnabled,
     manualReviewAutoClearMinCompletedRuns,
     manualReviewAutoClearWindowDays,
@@ -1756,6 +1810,125 @@ export const finalizeRefreshForRun = async (params: {
   });
 };
 
+type AutoFinalizeDormantRunsResult = {
+  examined: number;
+  finalized: number;
+  completed: number;
+  failed: number;
+  errors: number;
+  runIds: string[];
+};
+
+const autoFinalizeDormantProcessingRuns = async (): Promise<AutoFinalizeDormantRunsResult> => {
+  const limit = Math.max(0, Number(process.env.CATALOG_REFRESH_AUTO_FINALIZE_LIMIT ?? 20));
+  if (limit <= 0) {
+    return {
+      examined: 0,
+      finalized: 0,
+      completed: 0,
+      failed: 0,
+      errors: 0,
+      runIds: [],
+    };
+  }
+
+  const minAgeMinutes = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_AUTO_FINALIZE_MIN_AGE_MINUTES ?? 10),
+  );
+  const includePausedBlocked =
+    (process.env.CATALOG_REFRESH_AUTO_FINALIZE_INCLUDE_PAUSED_BLOCKED ?? "true")
+      .trim()
+      .toLowerCase() !== "false";
+  const statuses = includePausedBlocked
+    ? (["processing", "paused", "blocked"] as const)
+    : (["processing"] as const);
+  const staleCutoff = new Date(Date.now() - minAgeMinutes * 60 * 1000);
+
+  const dormantRuns = await prisma.$queryRaw<
+    Array<{
+      runId: string;
+      brandId: string;
+      startedAt: Date;
+      lastError: string | null;
+    }>
+  >(
+    Prisma.sql`
+      SELECT
+        cr.id AS "runId",
+        cr."brandId" AS "brandId",
+        cr."startedAt" AS "startedAt",
+        cr."lastError" AS "lastError"
+      FROM "catalog_runs" cr
+      WHERE cr.status IN (${Prisma.join(statuses)})
+        AND cr."updatedAt" < ${staleCutoff}
+        AND NOT (
+          cr.status IN ('paused', 'blocked')
+          AND COALESCE(cr."blockReason", '') LIKE 'manual_review%'
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "catalog_items" ci
+          WHERE ci."runId" = cr.id
+            AND (
+              ci.status IN ('pending', 'queued', 'in_progress')
+              OR (ci.status = 'failed' AND ci.attempts < ${CATALOG_MAX_ATTEMPTS})
+            )
+        )
+      ORDER BY cr."updatedAt" ASC
+      LIMIT ${limit}
+    `,
+  );
+
+  if (!dormantRuns.length) {
+    return {
+      examined: 0,
+      finalized: 0,
+      completed: 0,
+      failed: 0,
+      errors: 0,
+      runIds: [],
+    };
+  }
+
+  let finalized = 0;
+  let completed = 0;
+  let failed = 0;
+  let errors = 0;
+  const runIds: string[] = [];
+
+  for (const run of dormantRuns) {
+    try {
+      await finalizeRefreshForRun({
+        brandId: run.brandId,
+        runId: run.runId,
+        startedAt: run.startedAt,
+        lastError: run.lastError,
+      });
+      const nextRun = await prisma.catalogRun.findUnique({
+        where: { id: run.runId },
+        select: { status: true },
+      });
+      finalized += 1;
+      runIds.push(run.runId);
+      if (nextRun?.status === "failed") failed += 1;
+      else completed += 1;
+    } catch (error) {
+      errors += 1;
+      console.warn("catalog.refresh.auto_finalize_failed", run.runId, error);
+    }
+  }
+
+  return {
+    examined: dormantRuns.length,
+    finalized,
+    completed,
+    failed,
+    errors,
+    runIds,
+  };
+};
+
 type CatalogRefreshBatchResult = {
   brandId: string;
   status: string;
@@ -1771,6 +1944,360 @@ type RunCatalogRefreshBatchOptions = {
   maxRuntimeMs?: number;
 };
 
+type CatalogRefreshAutoReconcileSummary = {
+  enabled: boolean;
+  attempted: boolean;
+  driftDetected: boolean;
+  applied: boolean;
+  skipped: string | null;
+  result: Awaited<ReturnType<typeof reconcileCatalogQueue>> | null;
+};
+
+export type CatalogRefreshStuckRemediationStrategy = "balanced";
+
+export type CatalogRefreshStuckRemediationResult = {
+  attempted: boolean;
+  dryRun: boolean;
+  strategy: CatalogRefreshStuckRemediationStrategy;
+  limit: number;
+  minNoProgressMinutes: number;
+  pauseOverCapTarget: number | null;
+  processingRuns: number;
+  processingRunsWithoutRecentProgress: number;
+  processingActiveRunCount?: number;
+  activeRunCount: number;
+  activeRunCap: number;
+  resumed: number;
+  paused: number;
+  requeued: number;
+  reconciled: boolean;
+  reconcileResult: Awaited<ReturnType<typeof reconcileCatalogQueue>> | null;
+  postReconciled?: boolean;
+  postReconcileResult?: Awaited<ReturnType<typeof reconcileCatalogQueue>> | null;
+  errors: number;
+  runIds: string[];
+  sampleRunIds: string[];
+};
+
+type RunCatalogRefreshStuckRemediationOptions = {
+  dryRun?: boolean;
+  strategy?: CatalogRefreshStuckRemediationStrategy;
+  limit?: number;
+  minNoProgressMinutes?: number;
+  pauseOverCapTarget?: number | null;
+  pauseOverCapEnabled?: boolean;
+  queueEnabled?: boolean;
+};
+
+type ProcessingRunProgress = {
+  runId: string;
+  brandId: string;
+  status: string;
+  blockReason: string | null;
+  updatedAt: Date;
+  totalItems: number;
+  completed: number;
+  completedRecent: number;
+  failed: number;
+  pending: number;
+};
+
+const readProcessingRunProgress = async (
+  progressCutoff: Date,
+  statuses: Array<"processing" | "paused" | "blocked"> = ["processing"],
+) => {
+  return prisma.$queryRaw<ProcessingRunProgress[]>(
+    Prisma.sql`
+      WITH processing_runs AS (
+        SELECT
+          cr.id AS "runId",
+          cr."brandId" AS "brandId",
+          cr.status,
+          cr."blockReason" AS "blockReason",
+          cr."updatedAt" AS "updatedAt",
+          cr."totalItems"::int AS "totalItems"
+        FROM "catalog_runs" cr
+        WHERE cr.status IN (${Prisma.join(statuses)})
+      ),
+      counts AS (
+        SELECT
+          ci."runId" AS "runId",
+          COUNT(*) FILTER (WHERE ci.status = 'completed')::int AS completed,
+          COUNT(*) FILTER (WHERE ci.status = 'completed' AND ci."completedAt" >= ${progressCutoff})::int AS "completedRecent",
+          COUNT(*) FILTER (WHERE ci.status = 'failed')::int AS failed,
+          COUNT(*) FILTER (WHERE ci.status IN ('pending', 'queued', 'in_progress'))::int AS pending
+        FROM "catalog_items" ci
+        WHERE ci."runId" IN (SELECT "runId" FROM processing_runs)
+        GROUP BY ci."runId"
+      )
+      SELECT
+        pr."runId" AS "runId",
+        pr."brandId" AS "brandId",
+        pr.status,
+        pr."blockReason" AS "blockReason",
+        pr."updatedAt" AS "updatedAt",
+        COALESCE(pr."totalItems", 0)::int AS "totalItems",
+        COALESCE(c.completed, 0)::int AS completed,
+        COALESCE(c."completedRecent", 0)::int AS "completedRecent",
+        COALESCE(c.failed, 0)::int AS failed,
+        COALESCE(c.pending, 0)::int AS pending
+      FROM processing_runs pr
+      LEFT JOIN counts c ON c."runId" = pr."runId"
+      ORDER BY pr."updatedAt" ASC
+    `,
+  );
+};
+
+const rankBalancedResumeCandidates = (runs: ProcessingRunProgress[]) => {
+  const resumePriority = (status: string) => {
+    if (status === "paused") return 3;
+    if (status === "blocked") return 2;
+    if (status === "processing") return 1;
+    return 0;
+  };
+  return [...runs].sort((a, b) => {
+    const aPriority = resumePriority(a.status);
+    const bPriority = resumePriority(b.status);
+    if (aPriority !== bPriority) return bPriority - aPriority;
+    if (a.pending !== b.pending) return b.pending - a.pending;
+    if (a.completed !== b.completed) return b.completed - a.completed;
+    if (a.failed !== b.failed) return a.failed - b.failed;
+    return a.updatedAt.getTime() - b.updatedAt.getTime();
+  });
+};
+
+const rankBalancedPauseCandidates = (runs: ProcessingRunProgress[]) => {
+  return [...runs].sort((a, b) => {
+    const aHardStuck = a.pending <= 0 ? 1 : 0;
+    const bHardStuck = b.pending <= 0 ? 1 : 0;
+    if (aHardStuck !== bHardStuck) return bHardStuck - aHardStuck;
+    if (a.completed !== b.completed) return a.completed - b.completed;
+    if (a.failed !== b.failed) return b.failed - a.failed;
+    return a.updatedAt.getTime() - b.updatedAt.getTime();
+  });
+};
+
+export const runCatalogRefreshStuckRemediation = async (
+  options: RunCatalogRefreshStuckRemediationOptions = {},
+): Promise<CatalogRefreshStuckRemediationResult> => {
+  const config = getRefreshConfig();
+  const dryRun = options.dryRun ?? false;
+  const strategy: CatalogRefreshStuckRemediationStrategy = options.strategy ?? "balanced";
+  const limit = Math.max(1, Math.floor(options.limit ?? config.stuckRemediateLimit));
+  const minNoProgressMinutes = Math.max(
+    5,
+    Math.floor(options.minNoProgressMinutes ?? config.stuckRemediateWindowMinutes),
+  );
+  const queueEnabled = options.queueEnabled ?? isCatalogQueueEnabled();
+  const pauseOverCapEnabled = options.pauseOverCapEnabled ?? config.stuckPauseOverCapEnabled;
+  const pauseOverCapTargetRaw = options.pauseOverCapTarget ?? config.stuckPauseOverCapTarget;
+  const pauseOverCapTarget = pauseOverCapEnabled
+    ? Math.max(1, Math.floor(pauseOverCapTargetRaw ?? config.stuckPauseOverCapTarget))
+    : null;
+  const progressCutoff = new Date(Date.now() - minNoProgressMinutes * 60 * 1000);
+
+  const activeStatuses: Array<"processing" | "paused" | "blocked"> = [
+    "processing",
+    "paused",
+    "blocked",
+  ];
+  const [processingRuns, activeRunCount, processingRunCount] = await Promise.all([
+    readProcessingRunProgress(progressCutoff, activeStatuses),
+    prisma.catalogRun.count({
+      where: { status: { in: activeStatuses } },
+    }),
+    prisma.catalogRun.count({
+      where: { status: "processing" },
+    }),
+  ]);
+
+  const staleRuns = processingRuns.filter((run) => run.completedRecent <= 0);
+  const staleProcessingRuns = staleRuns.filter((run) => run.status === "processing");
+  const canResumeRun = (run: ProcessingRunProgress) => {
+    if (run.pending <= 0) return false;
+    if (run.status !== "blocked") return true;
+    const reason = (run.blockReason ?? "").trim().toLowerCase();
+    return !reason.startsWith("manual_review");
+  };
+  const runIds: string[] = [];
+  let resumed = 0;
+  let paused = 0;
+  let requeued = 0;
+  let errors = 0;
+  let reconciled = false;
+  let reconcileResult: Awaited<ReturnType<typeof reconcileCatalogQueue>> | null = null;
+  let postReconciled = false;
+  let postReconcileResult: Awaited<ReturnType<typeof reconcileCatalogQueue>> | null = null;
+
+  if (queueEnabled) {
+    const drift = await readCatalogQueueDriftSummary({
+      sampleLimit: config.autoReconcileJobScanLimit,
+      activeCompletedGraceSeconds: Number(
+        process.env.CATALOG_QUEUE_ACTIVE_COMPLETED_GRACE_SECONDS ?? 180,
+      ),
+    });
+    if (drift.driftDetected) {
+      reconcileResult = await reconcileCatalogQueue({
+        dryRun,
+        jobScanLimit: config.autoReconcileJobScanLimit,
+        reenqueueLimit: config.autoReconcileReenqueueLimit,
+        activeCompletedGraceSeconds: Number(
+          process.env.CATALOG_QUEUE_ACTIVE_COMPLETED_GRACE_SECONDS ?? 180,
+        ),
+      });
+      reconciled = true;
+    }
+  }
+
+  const resumeCapacityByProcessing =
+    pauseOverCapTarget !== null ? Math.max(0, pauseOverCapTarget - processingRunCount) : limit;
+  const resumeLimit = Math.max(0, Math.min(limit, resumeCapacityByProcessing));
+  const resumeCandidates = rankBalancedResumeCandidates(staleRuns.filter(canResumeRun)).slice(
+    0,
+    resumeLimit,
+  );
+  const resumeIds = new Set(resumeCandidates.map((run) => run.runId));
+
+  if (dryRun) {
+    resumed += resumeCandidates.length;
+    requeued += resumeCandidates.reduce((acc, run) => acc + Math.max(1, run.pending), 0);
+    runIds.push(...resumeCandidates.map((run) => run.runId));
+  } else {
+    const enqueueLimit = Math.max(10, Number(process.env.CATALOG_QUEUE_ENQUEUE_LIMIT ?? 50));
+    for (const run of resumeCandidates) {
+      try {
+        await prisma.catalogRun.update({
+          where: { id: run.runId },
+          data: {
+            status: "processing",
+            blockReason: null,
+            lastError: null,
+            consecutiveErrors: 0,
+            updatedAt: new Date(),
+          },
+        });
+        await resetQueuedItemsAll(run.runId);
+        await resetStuckItemsAll(run.runId);
+        const refill = await topUpCatalogRunQueue({
+          runId: run.runId,
+          enqueueLimit,
+          queueEnabled,
+        });
+        resumed += 1;
+        requeued += refill.enqueued;
+        runIds.push(run.runId);
+      } catch (error) {
+        errors += 1;
+        console.warn("catalog.refresh.stuck_remediation.resume_failed", run.runId, error);
+      }
+    }
+  }
+
+  const shouldRunPostReconcile =
+    queueEnabled && !dryRun && (resumed > 0 || paused > 0 || requeued > 0);
+  if (shouldRunPostReconcile) {
+    try {
+      const driftAfterActions = await readCatalogQueueDriftSummary({
+        sampleLimit: config.autoReconcileJobScanLimit,
+        activeCompletedGraceSeconds: Number(
+          process.env.CATALOG_QUEUE_ACTIVE_COMPLETED_GRACE_SECONDS ?? 180,
+        ),
+      });
+      const postDriftDetected =
+        driftAfterActions.waitingItemNotQueued > 0 ||
+        driftAfterActions.waitingRunNotProcessing > 0 ||
+        driftAfterActions.waitingMissingItem > 0 ||
+        driftAfterActions.activeZombieCriticalCount > 0 ||
+        driftAfterActions.runsRunnableWithoutQueueLoad > 0;
+      if (postDriftDetected) {
+        postReconcileResult = await reconcileCatalogQueue({
+          dryRun: false,
+          jobScanLimit: config.autoReconcileJobScanLimit,
+          reenqueueLimit: config.autoReconcileReenqueueLimit,
+          activeCompletedGraceSeconds: Number(
+            process.env.CATALOG_QUEUE_ACTIVE_COMPLETED_GRACE_SECONDS ?? 180,
+          ),
+        });
+        postReconciled = true;
+      }
+    } catch (error) {
+      errors += 1;
+      console.warn("catalog.refresh.stuck_remediation.post_reconcile_failed", error);
+    }
+  }
+
+  const overCapBy =
+    pauseOverCapTarget !== null && processingRunCount > pauseOverCapTarget
+      ? processingRunCount - pauseOverCapTarget
+      : 0;
+  const pauseCandidates = overCapBy
+    ? rankBalancedPauseCandidates(
+        staleProcessingRuns.filter((run) => !resumeIds.has(run.runId)),
+      ).slice(
+        0,
+        Math.min(limit, overCapBy),
+      )
+    : [];
+
+  if (dryRun) {
+    paused += pauseCandidates.length;
+    runIds.push(...pauseCandidates.map((run) => run.runId));
+  } else {
+    for (const run of pauseCandidates) {
+      try {
+        await prisma.$transaction([
+          prisma.catalogItem.updateMany({
+            where: {
+              runId: run.runId,
+              status: { in: ["queued", "in_progress"] },
+            },
+            data: { status: "pending", startedAt: null, updatedAt: new Date() },
+          }),
+          prisma.catalogRun.update({
+            where: { id: run.runId },
+            data: {
+              status: "paused",
+              blockReason: "stuck_over_cap",
+              lastError: "stuck_remediation_paused_over_cap",
+              updatedAt: new Date(),
+            },
+          }),
+        ]);
+        paused += 1;
+        runIds.push(run.runId);
+      } catch (error) {
+        errors += 1;
+        console.warn("catalog.refresh.stuck_remediation.pause_failed", run.runId, error);
+      }
+    }
+  }
+
+  const uniqueRunIds = Array.from(new Set(runIds));
+  return {
+    attempted: resumeCandidates.length > 0 || pauseCandidates.length > 0 || reconciled,
+    dryRun,
+    strategy,
+    limit,
+    minNoProgressMinutes,
+    pauseOverCapTarget,
+    processingRuns: processingRuns.length,
+    processingRunsWithoutRecentProgress: staleRuns.length,
+    processingActiveRunCount: processingRunCount,
+    activeRunCount,
+    activeRunCap: config.maxActiveRuns,
+    resumed,
+    paused,
+    requeued,
+    reconciled: reconciled || postReconciled,
+    reconcileResult,
+    postReconciled,
+    postReconcileResult,
+    errors,
+    runIds: uniqueRunIds,
+    sampleRunIds: uniqueRunIds.slice(0, 20),
+  };
+};
+
 export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOptions) => {
   const config = getRefreshConfig({
     maxBrands: options?.maxBrands,
@@ -1783,6 +2310,16 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   let manualReviewAutoClear: Awaited<ReturnType<typeof autoClearManualReviewByEvidence>> | null = null;
   let autoRemediation: CatalogRefreshForceResult[] = [];
   let archiveAutomation: Awaited<ReturnType<typeof evaluateArchiveCandidates>> | null = null;
+  let autoFinalizedRuns: AutoFinalizeDormantRunsResult | null = null;
+  let stuckRemediation: CatalogRefreshStuckRemediationResult & { skipped: string | null };
+  const autoReconcile: CatalogRefreshAutoReconcileSummary = {
+    enabled: config.autoReconcile,
+    attempted: false,
+    driftDetected: false,
+    applied: false,
+    skipped: null,
+    result: null,
+  };
 
   const queueEnabled = isCatalogQueueEnabled();
 
@@ -1794,6 +2331,42 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   }
   await recoverEnrichmentRuns(config);
   await reconcileStaleRefreshStates();
+
+  if (!options?.brandId) {
+    if (!queueEnabled) {
+      autoReconcile.skipped = "queue_disabled";
+    } else if (!config.autoReconcile) {
+      autoReconcile.skipped = "auto_reconcile_disabled";
+    } else {
+      autoReconcile.attempted = true;
+      try {
+        const drift = await readCatalogQueueDriftSummary({
+          sampleLimit: config.autoReconcileJobScanLimit,
+        });
+        autoReconcile.driftDetected = drift.driftDetected;
+        if (!drift.driftDetected) {
+          autoReconcile.skipped = "drift_not_detected";
+        } else {
+          autoReconcile.result = await reconcileCatalogQueue({
+            dryRun: false,
+            jobScanLimit: config.autoReconcileJobScanLimit,
+            reenqueueLimit: config.autoReconcileReenqueueLimit,
+          });
+          autoReconcile.applied = true;
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        autoReconcile.skipped = `auto_reconcile_error:${reason.slice(0, 160)}`;
+      }
+    }
+  } else {
+    autoReconcile.skipped = "brand_scope";
+  }
+
+  if (!options?.brandId) {
+    autoFinalizedRuns = await autoFinalizeDormantProcessingRuns();
+  }
+
   if (!options?.brandId) {
     manualReviewAutoClear = await autoClearManualReviewByEvidence({
       apply: true,
@@ -1817,7 +2390,23 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     },
   });
 
-  if (!options?.brandId && !options?.force) {
+  const activeRunCap = config.maxActiveRuns;
+  const activeRunsBeforeAutoRemediation = await prisma.catalogRun.count({
+    where: { status: { in: ["processing", "paused", "blocked"] } },
+  });
+  const autoRemediationCapacity = options?.brandId
+    ? config.autoRemediateMaxBrands
+    : Math.max(0, activeRunCap - activeRunsBeforeAutoRemediation);
+
+  if (!options?.brandId && !options?.force && autoRemediationCapacity > 0) {
+    const autoRemediationMaxBrands = Math.max(
+      0,
+      Math.min(config.autoRemediateMaxBrands, autoRemediationCapacity),
+    );
+    const autoRemediationConfig = {
+      ...config,
+      autoRemediateMaxBrands: autoRemediationMaxBrands,
+    };
     autoRemediation = await autoRemediateOperationalStaleBrands({
       brands: brands.map((brand) => ({
         id: brand.id,
@@ -1827,9 +2416,147 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
         metadata: brand.metadata,
       })),
       now,
-      config,
+      config: autoRemediationConfig,
     });
   }
+
+  const [activeRunsBefore, pausedOverCapRuns] = await Promise.all([
+    prisma.catalogRun.count({
+      where: { status: { in: ["processing", "paused", "blocked"] } },
+    }),
+    prisma.catalogRun.count({
+      where: {
+        status: "paused",
+        blockReason: "stuck_over_cap",
+      },
+    }),
+  ]);
+  const stuckProgressCutoff = new Date(
+    Date.now() - config.stuckRemediateWindowMinutes * 60 * 1000,
+  );
+  const [processingGate] = await prisma.$queryRaw<
+    Array<{
+      processingRuns: number;
+      processingRunsWithoutRecentProgress: number;
+    }>
+  >(Prisma.sql`
+    WITH processing_runs AS (
+      SELECT cr.id
+      FROM "catalog_runs" cr
+      WHERE cr.status = 'processing'
+    ),
+    recent AS (
+      SELECT ci."runId", COUNT(*)::int AS "completedRecent"
+      FROM "catalog_items" ci
+      WHERE ci.status = 'completed'
+        AND ci."completedAt" IS NOT NULL
+        AND ci."completedAt" >= ${stuckProgressCutoff}
+      GROUP BY ci."runId"
+    )
+    SELECT
+      COUNT(*)::int AS "processingRuns",
+      COUNT(*) FILTER (WHERE COALESCE(recent."completedRecent", 0) = 0)::int AS "processingRunsWithoutRecentProgress"
+    FROM processing_runs pr
+    LEFT JOIN recent ON recent."runId" = pr.id
+  `);
+  const processingRunsGate = processingGate?.processingRuns ?? 0;
+  const processingNoProgressGate = processingGate?.processingRunsWithoutRecentProgress ?? 0;
+  stuckRemediation = {
+    attempted: false,
+    dryRun: false,
+    strategy: "balanced",
+    limit: config.stuckRemediateLimit,
+    minNoProgressMinutes: config.stuckRemediateWindowMinutes,
+    pauseOverCapTarget: config.stuckPauseOverCapEnabled ? config.stuckPauseOverCapTarget : null,
+    processingRuns: processingRunsGate,
+    processingRunsWithoutRecentProgress: processingNoProgressGate,
+    processingActiveRunCount: processingRunsGate,
+    activeRunCount: activeRunsBefore,
+    activeRunCap,
+    resumed: 0,
+    paused: 0,
+    requeued: 0,
+    reconciled: false,
+    reconcileResult: null,
+    errors: 0,
+    runIds: [],
+    sampleRunIds: [],
+    skipped: null,
+  };
+  const shouldRunStuckRemediation =
+    !options?.brandId &&
+    !options?.force &&
+    config.stuckRemediateEnabled &&
+    activeRunsBefore > activeRunCap &&
+    (processingNoProgressGate >= config.stuckRemediateThreshold || pausedOverCapRuns > 0);
+  if (shouldRunStuckRemediation) {
+    try {
+      const result = await runCatalogRefreshStuckRemediation({
+        dryRun: false,
+        strategy: "balanced",
+        limit: config.stuckRemediateLimit,
+        minNoProgressMinutes: config.stuckRemediateWindowMinutes,
+        pauseOverCapTarget: config.stuckPauseOverCapTarget,
+        pauseOverCapEnabled: config.stuckPauseOverCapEnabled,
+        queueEnabled,
+      });
+      stuckRemediation = { ...result, skipped: null };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const previous = stuckRemediation;
+      stuckRemediation = {
+        ...(previous ?? {
+          attempted: false,
+          dryRun: false,
+          strategy: "balanced" as const,
+          limit: config.stuckRemediateLimit,
+          minNoProgressMinutes: config.stuckRemediateWindowMinutes,
+          pauseOverCapTarget: config.stuckPauseOverCapEnabled ? config.stuckPauseOverCapTarget : null,
+          processingRuns: processingRunsGate,
+          processingRunsWithoutRecentProgress: processingNoProgressGate,
+          processingActiveRunCount: processingRunsGate,
+          activeRunCount: activeRunsBefore,
+          activeRunCap,
+          resumed: 0,
+          paused: 0,
+          requeued: 0,
+          reconciled: false,
+          reconcileResult: null,
+          errors: 0,
+          runIds: [],
+          sampleRunIds: [],
+          skipped: null,
+        }),
+        attempted: true,
+        errors: (previous?.errors ?? 0) + 1,
+        skipped: `stuck_remediation_error:${reason.slice(0, 160)}`,
+      };
+      console.warn("catalog.refresh.stuck_remediation_failed", reason, error);
+    }
+  } else if (options?.brandId) {
+    stuckRemediation.skipped = "brand_scope";
+  } else if (options?.force) {
+    stuckRemediation.skipped = "force_mode";
+  } else if (!config.stuckRemediateEnabled) {
+    stuckRemediation.skipped = "stuck_remediation_disabled";
+  } else if (activeRunsBefore <= activeRunCap) {
+    stuckRemediation.skipped = "active_within_cap";
+  } else if (
+    processingNoProgressGate < config.stuckRemediateThreshold &&
+    pausedOverCapRuns <= 0
+  ) {
+    stuckRemediation.skipped = "below_processing_no_progress_threshold";
+  }
+  const activeBrandRows = await prisma.catalogRun.findMany({
+    where: { status: { in: ["processing", "paused", "blocked"] } },
+    select: { brandId: true },
+    distinct: ["brandId"],
+  });
+  const activeBrandIds = new Set(activeBrandRows.map((row) => row.brandId));
+  const activeRunCapacityRemaining = options?.brandId
+    ? activeRunCap
+    : Math.max(0, activeRunCap - activeRunsBefore);
+  const throttledByActiveCap = !options?.brandId && activeRunCapacityRemaining <= 0;
 
   const archiveAutomationEnabled =
     (process.env.CATALOG_REFRESH_ARCHIVE_AUTOMATION_ENABLED ?? "true")
@@ -1856,6 +2583,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   const candidates = options?.brandId
     ? brands.filter((brand) => brand.id === options.brandId)
     : brands.filter((brand) => {
+        if (activeBrandIds.has(brand.id)) return false;
         if (brand.manualReview) return false;
         const metadata = readMetadata(brand.metadata);
         return options?.force ? true : isBrandDueForRefresh(metadata, now, config);
@@ -1867,17 +2595,27 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
 
-  const selected = shuffled.slice(0, config.maxBrands);
+  const selectionCap = options?.brandId
+    ? 1
+    : Math.max(0, Math.min(config.maxBrands, activeRunCapacityRemaining));
+  const selected = shuffled.slice(0, selectionCap);
   if (!selected.length) {
     return {
       status: "ok",
       processed: 0,
       selected: 0,
       brandConcurrency: 0,
+      activeRunsBefore,
+      activeRunCap,
+      activeRunCapacityRemaining,
+      throttledByActiveCap,
       results,
       autoRemediation,
+      autoFinalizedRuns,
       manualReviewAutoClear,
       archiveAutomation,
+      autoReconcile,
+      stuckRemediation,
     };
   }
 
@@ -2031,9 +2769,16 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     processed: results.length,
     selected: selected.length,
     brandConcurrency,
+    activeRunsBefore,
+    activeRunCap,
+    activeRunCapacityRemaining: Math.max(0, activeRunCapacityRemaining - selected.length),
+    throttledByActiveCap,
     results,
     autoRemediation,
+    autoFinalizedRuns,
     manualReviewAutoClear,
     archiveAutomation,
+    autoReconcile,
+    stuckRemediation,
   };
 };
