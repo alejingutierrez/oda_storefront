@@ -2194,11 +2194,25 @@ export const runCatalogRefreshStuckRemediation = async (
       const driftAfterActions = await readCatalogQueueDriftSummary({
         sampleLimit: config.autoReconcileJobScanLimit,
       });
+      const postActiveZombieCriticalCount = Number(
+        (
+          driftAfterActions as {
+            activeZombieCriticalCount?: number;
+            activeZombieCount?: number;
+          }
+        ).activeZombieCriticalCount ??
+          (
+            driftAfterActions as {
+              activeZombieCount?: number;
+            }
+          ).activeZombieCount ??
+          0,
+      );
       const postDriftDetected =
         driftAfterActions.waitingItemNotQueued > 0 ||
         driftAfterActions.waitingRunNotProcessing > 0 ||
         driftAfterActions.waitingMissingItem > 0 ||
-        driftAfterActions.activeZombieCriticalCount > 0 ||
+        postActiveZombieCriticalCount > 0 ||
         driftAfterActions.runsRunnableWithoutQueueLoad > 0;
       if (postDriftDetected) {
         postReconcileResult = await reconcileCatalogQueue({
