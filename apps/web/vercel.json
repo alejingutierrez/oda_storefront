@@ -15,7 +15,11 @@
       "schedule": "*/1 * * * *"
     },
     {
-      "path": "/api/admin/catalog-refresh/cron",
+      "path": "/api/admin/catalog-refresh/cron?mode=light",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/admin/catalog-refresh/cron?mode=heavy",
       "schedule": "0 * * * *"
     },
     {

@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
-import { runCatalogRefreshBatch } from "@/lib/catalog/refresh";
+import {
+  runCatalogRefreshBatch,
+  type CatalogRefreshBatchMode,
+} from "@/lib/catalog/refresh";
 import { validateAdminRequest } from "@/lib/auth";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const isCronRequest = (req: Request) => {
   const cronHeader = (req.headers.get("x-vercel-cron") ?? "").toLowerCase();
@@ -30,6 +33,11 @@ const parseOptionalPositiveInt = (value: string | null) => {
   return normalized > 0 ? normalized : undefined;
 };
 
+const parseMode = (value: string | null): CatalogRefreshBatchMode => {
+  if (!value) return "light";
+  return value.trim().toLowerCase() === "heavy" ? "heavy" : "light";
+};
+
 export async function GET(req: Request) {
   const isCron = isCronRequest(req);
   const hasToken = hasAdminToken(req);
@@ -49,6 +57,7 @@ export async function GET(req: Request) {
       url.searchParams.get("brandConcurrency"),
     );
     const maxRuntimeMs = parseOptionalPositiveInt(url.searchParams.get("maxRuntimeMs"));
+    const mode = parseMode(url.searchParams.get("mode"));
 
     const result = await runCatalogRefreshBatch({
       brandId: brandId ?? undefined,
@@ -56,6 +65,7 @@ export async function GET(req: Request) {
       maxBrands,
       brandConcurrency,
       maxRuntimeMs,
+      mode,
     });
 
     return NextResponse.json({ ok: true, ...result });

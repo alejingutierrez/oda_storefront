@@ -1942,7 +1942,10 @@ type RunCatalogRefreshBatchOptions = {
   maxBrands?: number;
   brandConcurrency?: number;
   maxRuntimeMs?: number;
+  mode?: CatalogRefreshBatchMode;
 };
+
+export type CatalogRefreshBatchMode = "light" | "heavy";
 
 type CatalogRefreshAutoReconcileSummary = {
   enabled: boolean;
@@ -2301,6 +2304,8 @@ export const runCatalogRefreshStuckRemediation = async (
 };
 
 export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOptions) => {
+  const mode: CatalogRefreshBatchMode = options?.mode === "heavy" ? "heavy" : "light";
+  const heavyMode = mode === "heavy";
   const config = getRefreshConfig({
     maxBrands: options?.maxBrands,
     brandConcurrency: options?.brandConcurrency,
@@ -2365,11 +2370,11 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     autoReconcile.skipped = "brand_scope";
   }
 
-  if (!options?.brandId) {
+  if (!options?.brandId && heavyMode) {
     autoFinalizedRuns = await autoFinalizeDormantProcessingRuns();
   }
 
-  if (!options?.brandId) {
+  if (!options?.brandId && heavyMode) {
     manualReviewAutoClear = await autoClearManualReviewByEvidence({
       apply: true,
       now,
@@ -2393,14 +2398,19 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   });
 
   const activeRunCap = config.maxActiveRuns;
-  const activeRunsBeforeAutoRemediation = await prisma.catalogRun.count({
-    where: { status: { in: ["processing", "paused", "blocked"] } },
-  });
-  const autoRemediationCapacity = options?.brandId
-    ? config.autoRemediateMaxBrands
-    : Math.max(0, activeRunCap - activeRunsBeforeAutoRemediation);
+  const activeRunsBeforeAutoRemediation = heavyMode
+    ? await prisma.catalogRun.count({
+        where: { status: { in: ["processing", "paused", "blocked"] } },
+      })
+    : 0;
+  const autoRemediationCapacity =
+    heavyMode && (options?.brandId || !options?.force)
+      ? options?.brandId
+        ? config.autoRemediateMaxBrands
+        : Math.max(0, activeRunCap - activeRunsBeforeAutoRemediation)
+      : 0;
 
-  if (!options?.brandId && !options?.force && autoRemediationCapacity > 0) {
+  if (heavyMode && !options?.brandId && !options?.force && autoRemediationCapacity > 0) {
     const autoRemediationMaxBrands = Math.max(
       0,
       Math.min(config.autoRemediateMaxBrands, autoRemediationCapacity),
@@ -2572,7 +2582,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     1,
     Number(process.env.CATALOG_REFRESH_ARCHIVE_AUTOMATION_LIMIT ?? 10),
   );
-  if (!options?.brandId && archiveAutomationEnabled) {
+  if (!options?.brandId && heavyMode && archiveAutomationEnabled) {
     archiveAutomation = await evaluateArchiveCandidates({
       dryRun: archiveAutomationDryRun,
       scope: "all",
@@ -2603,6 +2613,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   const selected = shuffled.slice(0, selectionCap);
   if (!selected.length) {
     return {
+      mode,
       status: "ok",
       processed: 0,
       selected: 0,
@@ -2767,6 +2778,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   }
 
   return {
+    mode,
     status: "ok",
     processed: results.length,
     selected: selected.length,
