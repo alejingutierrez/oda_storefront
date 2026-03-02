@@ -139,18 +139,18 @@ const remediateTailProgressPct = Math.max(
       readNumber(
         readArgValue("remediate-tail-progress-pct") ??
           process.env.CATALOG_REFRESH_STUCK_TAIL_PROGRESS_PCT,
-        99,
+        95,
       ),
     ),
   ),
 );
 const remediateTailMaxRemaining = Math.max(
-  1,
+  0,
   Math.floor(
     readNumber(
       readArgValue("remediate-tail-max-remaining") ??
         process.env.CATALOG_REFRESH_STUCK_TAIL_MAX_REMAINING,
-      20,
+      0,
     ),
   ),
 );
@@ -160,7 +160,7 @@ const remediateTailStaleMinutes = Math.max(
     readNumber(
       readArgValue("remediate-tail-stale-minutes") ??
         process.env.CATALOG_REFRESH_STUCK_TAIL_STALE_MINUTES,
-      20,
+      60,
     ),
   ),
 );
@@ -238,7 +238,7 @@ const nearCloseProgressPct = Math.max(
       readNumber(
         readArgValue("near-close-progress-pct") ??
           process.env.CATALOG_REFRESH_MONITOR_NEAR_CLOSE_PROGRESS_PCT,
-        90,
+        95,
       ),
     ),
   ),

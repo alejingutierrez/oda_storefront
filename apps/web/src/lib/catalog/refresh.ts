@@ -322,15 +322,15 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
   );
   const stuckTailProgressPct = Math.max(
     50,
-    Math.min(100, Number(process.env.CATALOG_REFRESH_STUCK_TAIL_PROGRESS_PCT ?? 99)),
+    Math.min(100, Number(process.env.CATALOG_REFRESH_STUCK_TAIL_PROGRESS_PCT ?? 95)),
   );
   const stuckTailMaxRemaining = Math.max(
-    1,
-    Number(process.env.CATALOG_REFRESH_STUCK_TAIL_MAX_REMAINING ?? 20),
+    0,
+    Number(process.env.CATALOG_REFRESH_STUCK_TAIL_MAX_REMAINING ?? 0),
   );
   const stuckTailStaleMinutes = Math.max(
     5,
-    Number(process.env.CATALOG_REFRESH_STUCK_TAIL_STALE_MINUTES ?? 20),
+    Number(process.env.CATALOG_REFRESH_STUCK_TAIL_STALE_MINUTES ?? 60),
   );
   const stuckTailForceTerminalizeRemaining =
     (process.env.CATALOG_REFRESH_STUCK_TAIL_FORCE_TERMINALIZE_REMAINING ?? "true")
@@ -2214,15 +2214,11 @@ const runAggressiveTailClose = async (options: {
     .filter((run) => {
       if (options.runId && run.runId !== options.runId) return false;
       const progressPct = computeRunProgressPct(run);
-      if (run.runnable > options.tailMaxRemaining) return false;
-      if (options.runId) {
-        // For explicit runId remediation, prioritize deterministic tail closing
-        // without waiting for the stale window to elapse.
-        return progressPct >= options.tailProgressPct;
-      }
+      if (progressPct < options.tailProgressPct) return false;
       if (run.completedRecent > 0) return false;
       if (run.updatedAt > staleCutoff) return false;
-      return progressPct >= options.tailProgressPct;
+      if (options.tailMaxRemaining > 0 && run.runnable > options.tailMaxRemaining) return false;
+      return true;
     })
     .slice(0, options.limit);
 
@@ -2388,7 +2384,7 @@ export const runCatalogRefreshStuckRemediation = async (
     Math.min(100, Math.floor(options.tailProgressPct ?? config.stuckTailProgressPct)),
   );
   const tailMaxRemaining = Math.max(
-    1,
+    0,
     Math.floor(options.tailMaxRemaining ?? config.stuckTailMaxRemaining),
   );
   const tailStaleMinutes = Math.max(

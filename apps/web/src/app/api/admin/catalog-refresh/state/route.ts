@@ -742,7 +742,7 @@ export async function GET(req: Request) {
   });
   const highProgressThreshold = Math.max(
     50,
-    Math.min(100, Number(process.env.CATALOG_ALERT_HIGH_PROGRESS_THRESHOLD ?? 99)),
+    Math.min(100, Number(process.env.CATALOG_ALERT_HIGH_PROGRESS_THRESHOLD ?? 95)),
   );
   const highProgressNoProgress = processingNoProgressSorted.filter(
     (entry) => entry.progressPct >= highProgressThreshold,
