@@ -77,7 +77,7 @@ const finalizeRunIfIdle = async (runId: string) => {
 };
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const queueConnection = { url: process.env.REDIS_URL ?? "" };
 const catalogQueueName = process.env.CATALOG_QUEUE_NAME ?? "catalog";
