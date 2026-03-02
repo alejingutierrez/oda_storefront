@@ -568,8 +568,15 @@ export async function GET(req: Request) {
   };
   const catalogBacklog = queueDrift.waiting + queueDrift.active + queueDrift.delayed;
   const heartbeatMissing = catalogBacklog > 0 && !catalogHeartbeat.online;
+  const activeZombieCriticalCount = Number(
+    (
+      queueDrift as {
+        activeZombieCriticalCount?: number;
+      }
+    ).activeZombieCriticalCount ?? queueDrift.activeZombieCount ?? 0,
+  );
   const activeHungDetected =
-    queueDrift.activeHungDetected || queueDrift.activeZombieCriticalCount > 0;
+    queueDrift.activeHungDetected || activeZombieCriticalCount > 0;
   const operational100RealSummary = computeOperational100Real({
     freshBrands: operationalFreshBrands,
     autoEligibleBrands,
@@ -586,7 +593,7 @@ export async function GET(req: Request) {
     Number(process.env.CATALOG_ALERT_TOP_BRANDS ?? 25),
   );
   const queueDriftCritical =
-    queueDrift.waitingItemNotQueued > 0 || queueDrift.activeZombieCriticalCount > 0;
+    queueDrift.waitingItemNotQueued > 0 || activeZombieCriticalCount > 0;
   const queueDriftLevel: "warning" | "danger" = queueDriftCritical ? "danger" : "warning";
   type RefreshAlert = {
     id: string;
