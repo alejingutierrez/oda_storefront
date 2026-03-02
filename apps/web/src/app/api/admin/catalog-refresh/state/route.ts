@@ -531,7 +531,7 @@ export async function GET(req: Request) {
     });
   }
 
-  const [catalogHeartbeat, enrichHeartbeat, queueDrift, processingProgress, activeRunCount] = await Promise.all([
+  const [catalogHeartbeat, enrichHeartbeat, queueDrift, processingProgress, activeRunStatusCounts] = await Promise.all([
     readHeartbeat("workers:catalog:alive"),
     readHeartbeat("workers:enrich:alive"),
     readCatalogQueueDriftSummary({
@@ -567,8 +567,10 @@ export async function GET(req: Request) {
       FROM processing_runs pr
       LEFT JOIN recent ON recent."runId" = pr.id
     `),
-    prisma.catalogRun.count({
+    prisma.catalogRun.groupBy({
+      by: ["status"],
       where: { status: { in: ["processing", "paused", "blocked"] } },
+      _count: { _all: true },
     }),
   ]);
   const processingProgressRow = processingProgress[0] ?? {
@@ -576,6 +578,14 @@ export async function GET(req: Request) {
     processingRunsWithRecentProgress: 0,
     processingRunsWithoutRecentProgress: 0,
   };
+  const processingRunCount =
+    activeRunStatusCounts.find((row) => row.status === "processing")?._count._all ?? 0;
+  const pausedRunCount =
+    activeRunStatusCounts.find((row) => row.status === "paused")?._count._all ?? 0;
+  const blockedRunCount =
+    activeRunStatusCounts.find((row) => row.status === "blocked")?._count._all ?? 0;
+  const activeRunCountTotal = processingRunCount + pausedRunCount + blockedRunCount;
+  const schedulingCapacityRemaining = Math.max(0, activeRunCap - processingRunCount);
   const catalogBacklog = queueDrift.waiting + queueDrift.active + queueDrift.delayed;
   const heartbeatMissing = catalogBacklog > 0 && !catalogHeartbeat.online;
   const activeZombieCriticalCount = Number(
@@ -730,6 +740,14 @@ export async function GET(req: Request) {
   const processingNoProgressSorted = [...processingNoProgressEntries].sort((a, b) => {
     return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
   });
+  const highProgressThreshold = Math.max(
+    50,
+    Math.min(100, Number(process.env.CATALOG_ALERT_HIGH_PROGRESS_THRESHOLD ?? 99)),
+  );
+  const highProgressNoProgress = processingNoProgressSorted.filter(
+    (entry) => entry.progressPct >= highProgressThreshold,
+  );
+  const highProgressNoProgressTop = highProgressNoProgress.slice(0, alertTopBrands);
   const processingNoProgressTop = processingNoProgressSorted.slice(0, alertTopBrands);
   const processingNoProgressOverflow = Math.max(
     0,
@@ -957,9 +975,14 @@ export async function GET(req: Request) {
       operationalStaleBrands,
       qualityStaleBrands,
       staleBreakdown,
-      activeRunCount,
+      activeRunCount: activeRunCountTotal,
+      activeRunCountTotal,
       activeRunCap,
-      activeRunCapacityRemaining: Math.max(0, activeRunCap - activeRunCount),
+      processingRunCount,
+      pausedRunCount,
+      blockedRunCount,
+      schedulingCapacityRemaining,
+      activeRunCapacityRemaining: schedulingCapacityRemaining,
       avgDiscoveryCoverage,
       avgRunSuccessRate,
       newProducts: newProducts?.count ?? 0,
@@ -984,6 +1007,8 @@ export async function GET(req: Request) {
       processingNoProgressCount: processingNoProgressSorted.length,
       processingNoProgressTop: processingNoProgressTop,
       processingNoProgressOverflow,
+      highProgressNoProgressCount: highProgressNoProgress.length,
+      highProgressNoProgressTop,
       archivedBrandsTotal,
       archivedLast24h,
       archiveCandidatesCount: archiveCandidates.length,
@@ -1011,6 +1036,11 @@ export async function GET(req: Request) {
         overflow: processingNoProgressOverflow,
         top: processingNoProgressTop,
         all: processingNoProgressSorted,
+      },
+      highProgressNoProgress: {
+        threshold: highProgressThreshold,
+        total: highProgressNoProgress.length,
+        top: highProgressNoProgressTop,
       },
     },
     brands: rowsWithOperationalStatus,

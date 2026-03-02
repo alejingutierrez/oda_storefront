@@ -1,0 +1,23 @@
+[Unit]
+Description=ODA Catalog Refresh Ops Monitor (24/7)
+After=network.target
+
+[Service]
+Type=simple
+
+# Ajusta usuario/grupo y rutas según tu VM.
+User=oda
+Group=oda
+WorkingDirectory=/opt/oda_storefront/apps/web
+
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/oda/catalog-refresh-monitor.env
+
+ExecStart=/usr/bin/node /opt/oda_storefront/apps/web/scripts/monitor-catalog-refresh-ops.mjs --base-url=${CATALOG_REFRESH_MONITOR_BASE_URL} --interval-minutes=${CATALOG_REFRESH_MONITOR_INTERVAL_MINUTES} --iterations=0 --run-cron --cron-mode=${CATALOG_REFRESH_MONITOR_CRON_MODE} --remediate-cooldown-minutes=${CATALOG_REFRESH_MONITOR_REMEDIATE_COOLDOWN_MINUTES} --remediate-limit=${CATALOG_REFRESH_MONITOR_REMEDIATE_LIMIT} --remediate-min-no-progress-minutes=${CATALOG_REFRESH_MONITOR_REMEDIATE_MIN_NO_PROGRESS_MINUTES} --remediate-pause-over-cap-target=${CATALOG_REFRESH_MONITOR_REMEDIATE_PAUSE_OVER_CAP_TARGET} --reconcile-job-scan-limit=${CATALOG_REFRESH_MONITOR_RECONCILE_JOB_SCAN_LIMIT} --reconcile-reenqueue-limit=${CATALOG_REFRESH_MONITOR_RECONCILE_REENQUEUE_LIMIT} --guardrail-consecutive-cycles=${CATALOG_REFRESH_MONITOR_GUARDRAIL_CONSECUTIVE_CYCLES} --heartbeat-guardrail-consecutive-cycles=${CATALOG_REFRESH_MONITOR_HEARTBEAT_GUARDRAIL_CONSECUTIVE_CYCLES} --guardrail-drain-limit=${CATALOG_REFRESH_MONITOR_GUARDRAIL_DRAIN_LIMIT} --guardrail-drain-max-ms=${CATALOG_REFRESH_MONITOR_GUARDRAIL_DRAIN_MAX_MS} --state-file=${CATALOG_REFRESH_MONITOR_STATE_FILE} --lock-file=${CATALOG_REFRESH_MONITOR_LOCK_FILE}
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

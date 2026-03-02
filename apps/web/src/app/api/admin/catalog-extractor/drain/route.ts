@@ -6,9 +6,12 @@ import { prisma } from "@/lib/prisma";
 import { resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
 import { drainCatalogRun } from "@/lib/catalog/processor";
 import { CATALOG_MAX_ATTEMPTS } from "@/lib/catalog/constants";
-import { finalizeRefreshForRun } from "@/lib/catalog/refresh";
+import {
+  finalizeRefreshForRun,
+  runCatalogRefreshStuckRemediation,
+} from "@/lib/catalog/refresh";
 import { isCatalogQueueEnabled } from "@/lib/catalog/queue";
-import { readHeartbeat } from "@/lib/redis";
+import { isRedisEnabled, readHeartbeat, tryAcquireLock } from "@/lib/redis";
 
 const readBrandMetadata = (brand: { metadata?: unknown }) =>
   brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
@@ -24,13 +27,15 @@ const finalizeRunIfIdle = async (runId: string) => {
     },
     select: { id: true },
   });
-  if (remaining) return;
+  if (remaining) return { finalized: false, forcedClosed: false, forcedFailedItems: 0 };
 
   const run = await prisma.catalogRun.findUnique({
     where: { id: runId },
     include: { brand: true },
   });
-  if (!run || run.status === "completed") return;
+  if (!run || run.status === "completed" || run.status === "failed") {
+    return { finalized: false, forcedClosed: false, forcedFailedItems: 0 };
+  }
 
   await prisma.catalogRun.update({
     where: { id: runId },
@@ -45,10 +50,14 @@ const finalizeRunIfIdle = async (runId: string) => {
     runId: run.id,
     startedAt: run.startedAt,
   });
-  if (failedCount > 0 || !run.brand) return;
+  if (failedCount > 0 || !run.brand) {
+    return { finalized: true, forcedClosed: true, forcedFailedItems: 0 };
+  }
 
   const metadata = readBrandMetadata(run.brand);
-  if (metadata.catalog_extract_finished) return;
+  if (metadata.catalog_extract_finished) {
+    return { finalized: true, forcedClosed: true, forcedFailedItems: 0 };
+  }
 
   const nextMetadata = { ...metadata };
   delete nextMetadata.catalog_extract;
@@ -64,6 +73,7 @@ const finalizeRunIfIdle = async (runId: string) => {
     where: { id: run.brand.id },
     data: { metadata: nextMetadata as Prisma.InputJsonValue },
   });
+  return { finalized: true, forcedClosed: true, forcedFailedItems: 0 };
 };
 
 export const runtime = "nodejs";
@@ -213,6 +223,18 @@ const allowCronRequest = (req: Request) => {
   );
 };
 
+const boolFromValue = (value: unknown, fallback = false) => {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value > 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1" || normalized === "yes") return true;
+    if (normalized === "false" || normalized === "0" || normalized === "no") return false;
+  }
+  return fallback;
+};
+
 const resolveDrainConfig = (body: unknown) => {
   const payload =
     body && typeof body === "object" ? (body as Record<string, unknown>) : ({} as Record<string, unknown>);
@@ -230,6 +252,7 @@ const resolveDrainConfig = (body: unknown) => {
     : concurrencyDefault;
   const maxMs = Number.isFinite(requestedMaxMs) ? requestedMaxMs : maxMsDefault;
   const maxRuns = Number.isFinite(requestedMaxRuns) ? requestedMaxRuns : maxRunsDefault;
+  const dryRun = boolFromValue(payload.dryRun, false);
   const queuedStaleMs = Math.max(
     0,
     Number(process.env.CATALOG_QUEUE_STALE_MINUTES ?? 15) * 60 * 1000,
@@ -238,34 +261,90 @@ const resolveDrainConfig = (body: unknown) => {
     0,
     Number(process.env.CATALOG_ITEM_STUCK_MINUTES ?? 30) * 60 * 1000,
   );
-  return { batch, concurrency, maxMs, maxRuns, queuedStaleMs, stuckMs };
+  return { batch, concurrency, maxMs, maxRuns, queuedStaleMs, stuckMs, dryRun };
 };
 
 export async function POST(req: Request) {
+  const isCron = allowCronRequest(req);
   const admin = await validateAdminRequest(req);
-  if (!admin && !allowCronRequest(req)) {
+  if (!admin && !isCron) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   const body = await req.json().catch(() => null);
-  const brandId = typeof body?.brandId === "string" ? body.brandId : null;
   const url = new URL(req.url);
+  const brandId = typeof body?.brandId === "string" ? body.brandId : url.searchParams.get("brandId");
+  const requestedRunId =
+    typeof body?.runId === "string" ? body.runId : url.searchParams.get("runId");
+  const dryRun = boolFromValue(url.searchParams.get("dryRun"), boolFromValue(body?.dryRun, false));
   const force = url.searchParams.get("force") === "true" || body?.force === true;
+  const aggressiveTailCloseEnabled = boolFromValue(body?.aggressiveTailCloseEnabled, true);
+  const tailProgressPct = Math.max(
+    50,
+    Math.min(100, Number(body?.tailProgressPct ?? process.env.CATALOG_REFRESH_STUCK_TAIL_PROGRESS_PCT ?? 99)),
+  );
+  const tailMaxRemaining = Math.max(
+    1,
+    Number(body?.tailMaxRemaining ?? process.env.CATALOG_REFRESH_STUCK_TAIL_MAX_REMAINING ?? 20),
+  );
+  const tailStaleMinutes = Math.max(
+    5,
+    Number(body?.tailStaleMinutes ?? process.env.CATALOG_REFRESH_STUCK_TAIL_STALE_MINUTES ?? 20),
+  );
+  const forceTerminalizeRemaining = boolFromValue(
+    body?.forceTerminalizeRemaining,
+    true,
+  );
   let workerGate: Record<string, unknown> | null = null;
+  let microDrainBypass = false;
 
   if (!force && isCatalogQueueEnabled()) {
     const heartbeat = await readHeartbeat("workers:catalog:alive");
     const gate = await evaluateCatalogWorkerGate(heartbeat);
     workerGate = gate.meta;
     if (gate.skipDrain) {
-      return NextResponse.json({ skipped: "worker_online", ...gate.meta });
+      if (isCron && !dryRun) {
+        microDrainBypass = true;
+        workerGate = {
+          ...(gate.meta ?? {}),
+          reason: "worker_online_cron_micro_drain",
+          microDrainBypass: true,
+        };
+      } else {
+        return NextResponse.json({ skipped: "worker_online", ...gate.meta });
+      }
     }
   }
 
-  const { batch, concurrency, maxMs, maxRuns, queuedStaleMs, stuckMs } = resolveDrainConfig(body);
+  const resolved = resolveDrainConfig(body);
+  let batch = resolved.batch;
+  let concurrency = resolved.concurrency;
+  let maxMs = resolved.maxMs;
+  let maxRuns = resolved.maxRuns;
+  const queuedStaleMs = resolved.queuedStaleMs;
+  const stuckMs = resolved.stuckMs;
+
+  if (microDrainBypass) {
+    const microBatchCap = Math.max(1, Number(process.env.CATALOG_DRAIN_CRON_MICRO_BATCH ?? 8));
+    const microConcurrencyCap = Math.max(
+      1,
+      Number(process.env.CATALOG_DRAIN_CRON_MICRO_CONCURRENCY ?? 2),
+    );
+    const microMaxRunsCap = Math.max(1, Number(process.env.CATALOG_DRAIN_CRON_MICRO_MAX_RUNS ?? 1));
+    const microMaxMsCap = Math.max(2000, Number(process.env.CATALOG_DRAIN_CRON_MICRO_MAX_MS ?? 12000));
+    batch = batch <= 0 ? microBatchCap : Math.min(Math.max(1, batch), microBatchCap);
+    concurrency = Math.min(Math.max(1, concurrency), microConcurrencyCap);
+    maxRuns = Math.min(Math.max(1, maxRuns), microMaxRunsCap);
+    maxMs = Math.min(Math.max(2000, maxMs), microMaxMsCap);
+  }
+
   const startedAt = Date.now();
   let processed = 0;
   let runsProcessed = 0;
+  let finalizedRuns = 0;
+  let forcedClosedRuns = 0;
+  let forcedFailedItems = 0;
+  let tailProcessedRuns = 0;
   let lastResult: unknown = null;
   const seenRunIds = new Set<string>();
 
@@ -274,6 +353,23 @@ export async function POST(req: Request) {
   const safeMaxMs = Math.max(2000, maxMs);
   const safeMaxRuns = Math.max(1, maxRuns);
   const deadline = startedAt + safeMaxMs;
+
+  if (!dryRun && isCatalogQueueEnabled() && isRedisEnabled()) {
+    const lockTtlMs = Math.max(5000, safeMaxMs + 5000);
+    const lockKey = `catalog:drain:route:lock:${brandId ?? "all"}`;
+    const acquired = await tryAcquireLock(lockKey, lockTtlMs);
+    if (!acquired) {
+      return NextResponse.json(
+        {
+          skipped: "drain_locked",
+          lockKey,
+          lockTtlMs,
+          workerGate,
+        },
+        { status: 409 },
+      );
+    }
+  }
 
   while (
     processed < safeBatch &&
@@ -284,37 +380,84 @@ export async function POST(req: Request) {
       where: {
         status: "processing",
         ...(brandId ? { brandId } : {}),
+        ...(requestedRunId ? { id: requestedRunId } : {}),
         ...(seenRunIds.size ? { id: { notIn: Array.from(seenRunIds) } } : {}),
       },
       orderBy: { updatedAt: "asc" },
     });
     if (!run) break;
 
-    const runId = run.id;
-    seenRunIds.add(runId);
+    const currentRunId = run.id;
+    seenRunIds.add(currentRunId);
     runsProcessed += 1;
 
-    await resetQueuedItems(runId, queuedStaleMs);
-    await resetStuckItems(runId, stuckMs);
+    if (dryRun) {
+      const remainingBatch =
+        safeBatch === Number.MAX_SAFE_INTEGER ? safeBatch : Math.max(1, safeBatch - processed);
+      lastResult = {
+        dryRun: true,
+        runId: currentRunId,
+        wouldDrainBatch: remainingBatch,
+        wouldDrainConcurrency: safeConcurrency,
+      };
+      if (brandId || requestedRunId) break;
+      continue;
+    }
+
+    await resetQueuedItems(currentRunId, queuedStaleMs);
+    await resetStuckItems(currentRunId, stuckMs);
     const remainingBatch =
       safeBatch === Number.MAX_SAFE_INTEGER ? safeBatch : Math.max(1, safeBatch - processed);
     const remainingMs = Math.max(2000, deadline - Date.now());
     lastResult = await drainCatalogRun({
-      runId,
+      runId: currentRunId,
       batch: remainingBatch,
       concurrency: safeConcurrency,
       maxMs: remainingMs,
       queuedStaleMs,
       stuckMs,
     });
-    await finalizeRunIfIdle(runId);
+    const finalized = await finalizeRunIfIdle(currentRunId);
+    if (finalized.finalized) {
+      finalizedRuns += 1;
+      if (finalized.forcedClosed) forcedClosedRuns += 1;
+      forcedFailedItems += finalized.forcedFailedItems;
+    } else if (aggressiveTailCloseEnabled) {
+      const tailResult = await runCatalogRefreshStuckRemediation({
+        dryRun: false,
+        strategy: "aggressive_tail_close",
+        limit: 1,
+        minNoProgressMinutes: tailStaleMinutes,
+        tailProgressPct,
+        tailMaxRemaining,
+        tailStaleMinutes,
+        forceTerminalizeRemaining,
+        runId: currentRunId,
+        pauseOverCapEnabled: false,
+        queueEnabled: isCatalogQueueEnabled(),
+      });
+      tailProcessedRuns += tailResult.tailProcessedRuns;
+      forcedClosedRuns += tailResult.forcedClosedRuns;
+      forcedFailedItems += tailResult.forcedFailedItems;
+    }
     processed += (lastResult as { processed?: number })?.processed ?? 0;
 
-    if (brandId) break;
+    if (brandId || requestedRunId) break;
     if (processed >= safeBatch && safeBatch !== Number.MAX_SAFE_INTEGER) break;
   }
 
-  return NextResponse.json({ processed, runsProcessed, lastResult, workerGate });
+  return NextResponse.json({
+    dryRun,
+    processed,
+    runsProcessed,
+    finalizedRuns,
+    forcedClosedRuns,
+    forcedFailedItems,
+    tailProcessedRuns,
+    microDrainBypass,
+    lastResult,
+    workerGate,
+  });
 }
 
 export async function GET(req: Request) {

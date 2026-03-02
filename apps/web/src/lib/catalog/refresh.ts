@@ -232,6 +232,10 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     5,
     Number(process.env.CATALOG_REFRESH_ENRICH_RECOVER_STUCK_MINUTES ?? 60),
   );
+  const autoFinalizeLightLimit = Math.max(
+    0,
+    Number(process.env.CATALOG_REFRESH_AUTO_FINALIZE_LIGHT_LIMIT ?? 5),
+  );
   const failedLookbackDays = Math.max(
     1,
     Number(process.env.CATALOG_REFRESH_FAILED_LOOKBACK_DAYS ?? 30),
@@ -297,6 +301,13 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     5,
     Number(process.env.CATALOG_REFRESH_STUCK_REMEDIATE_WINDOW_MINUTES ?? 30),
   );
+  const stuckRemediateStrategyRaw = (
+    process.env.CATALOG_REFRESH_STUCK_REMEDIATE_STRATEGY ?? "aggressive_tail_close"
+  )
+    .trim()
+    .toLowerCase();
+  const stuckRemediateStrategy: CatalogRefreshStuckRemediationStrategy =
+    stuckRemediateStrategyRaw === "balanced" ? "balanced" : "aggressive_tail_close";
   const stuckRemediateThreshold = Math.max(
     1,
     Number(process.env.CATALOG_REFRESH_STUCK_REMEDIATE_THRESHOLD ?? stuckRemediateLimit),
@@ -309,6 +320,22 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     1,
     Number(process.env.CATALOG_REFRESH_STUCK_PAUSE_OVER_CAP_TARGET ?? 48),
   );
+  const stuckTailProgressPct = Math.max(
+    50,
+    Math.min(100, Number(process.env.CATALOG_REFRESH_STUCK_TAIL_PROGRESS_PCT ?? 99)),
+  );
+  const stuckTailMaxRemaining = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_STUCK_TAIL_MAX_REMAINING ?? 20),
+  );
+  const stuckTailStaleMinutes = Math.max(
+    5,
+    Number(process.env.CATALOG_REFRESH_STUCK_TAIL_STALE_MINUTES ?? 20),
+  );
+  const stuckTailForceTerminalizeRemaining =
+    (process.env.CATALOG_REFRESH_STUCK_TAIL_FORCE_TERMINALIZE_REMAINING ?? "true")
+      .trim()
+      .toLowerCase() !== "false";
   const manualReviewAutoClearEnabled =
     (process.env.CATALOG_MANUAL_REVIEW_AUTOCLEAR_ENABLED ?? "true")
       .trim()
@@ -357,6 +384,7 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     recoverMaxRuns,
     recoverStuckMinutes,
     recoverEnrichmentStuckMinutes,
+    autoFinalizeLightLimit,
     failedLookbackDays,
     failedUrlLimit,
     enrichLookbackDays,
@@ -371,11 +399,16 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     autoReconcileJobScanLimit,
     autoReconcileReenqueueLimit,
     stuckRemediateEnabled,
+    stuckRemediateStrategy,
     stuckRemediateLimit,
     stuckRemediateWindowMinutes,
     stuckRemediateThreshold,
     stuckPauseOverCapEnabled,
     stuckPauseOverCapTarget,
+    stuckTailProgressPct,
+    stuckTailMaxRemaining,
+    stuckTailStaleMinutes,
+    stuckTailForceTerminalizeRemaining,
     manualReviewAutoClearEnabled,
     manualReviewAutoClearMinCompletedRuns,
     manualReviewAutoClearWindowDays,
@@ -1819,8 +1852,13 @@ type AutoFinalizeDormantRunsResult = {
   runIds: string[];
 };
 
-const autoFinalizeDormantProcessingRuns = async (): Promise<AutoFinalizeDormantRunsResult> => {
-  const limit = Math.max(0, Number(process.env.CATALOG_REFRESH_AUTO_FINALIZE_LIMIT ?? 20));
+const autoFinalizeDormantProcessingRuns = async (options?: {
+  limitOverride?: number | null;
+}): Promise<AutoFinalizeDormantRunsResult> => {
+  const envLimit = Math.max(0, Number(process.env.CATALOG_REFRESH_AUTO_FINALIZE_LIMIT ?? 20));
+  const limit = Number.isFinite(options?.limitOverride)
+    ? Math.max(0, Math.floor(Number(options?.limitOverride)))
+    : envLimit;
   if (limit <= 0) {
     return {
       examined: 0,
@@ -1956,7 +1994,7 @@ type CatalogRefreshAutoReconcileSummary = {
   result: Awaited<ReturnType<typeof reconcileCatalogQueue>> | null;
 };
 
-export type CatalogRefreshStuckRemediationStrategy = "balanced";
+export type CatalogRefreshStuckRemediationStrategy = "balanced" | "aggressive_tail_close";
 
 export type CatalogRefreshStuckRemediationResult = {
   attempted: boolean;
@@ -1965,6 +2003,10 @@ export type CatalogRefreshStuckRemediationResult = {
   limit: number;
   minNoProgressMinutes: number;
   pauseOverCapTarget: number | null;
+  tailProgressPct: number;
+  tailMaxRemaining: number;
+  tailStaleMinutes: number;
+  forceTerminalizeRemaining: boolean;
   processingRuns: number;
   processingRunsWithoutRecentProgress: number;
   processingActiveRunCount?: number;
@@ -1978,8 +2020,19 @@ export type CatalogRefreshStuckRemediationResult = {
   postReconciled?: boolean;
   postReconcileResult?: Awaited<ReturnType<typeof reconcileCatalogQueue>> | null;
   errors: number;
+  forcedClosedRuns: number;
+  forcedFailedItems: number;
+  tailCandidates: number;
+  tailProcessedRuns: number;
   runIds: string[];
   sampleRunIds: string[];
+  sampleTailRuns: Array<{
+    runId: string;
+    brandId: string;
+    progressPct: number;
+    runnableRemaining: number;
+    updatedAt: string;
+  }>;
 };
 
 type RunCatalogRefreshStuckRemediationOptions = {
@@ -1989,6 +2042,11 @@ type RunCatalogRefreshStuckRemediationOptions = {
   minNoProgressMinutes?: number;
   pauseOverCapTarget?: number | null;
   pauseOverCapEnabled?: boolean;
+  tailProgressPct?: number;
+  tailMaxRemaining?: number;
+  tailStaleMinutes?: number;
+  forceTerminalizeRemaining?: boolean;
+  runId?: string | null;
   queueEnabled?: boolean;
 };
 
@@ -1997,12 +2055,14 @@ type ProcessingRunProgress = {
   brandId: string;
   status: string;
   blockReason: string | null;
+  startedAt: Date;
   updatedAt: Date;
   totalItems: number;
   completed: number;
   completedRecent: number;
   failed: number;
   pending: number;
+  runnable: number;
 };
 
 const readProcessingRunProgress = async (
@@ -2017,6 +2077,7 @@ const readProcessingRunProgress = async (
           cr."brandId" AS "brandId",
           cr.status,
           cr."blockReason" AS "blockReason",
+          cr."startedAt" AS "startedAt",
           cr."updatedAt" AS "updatedAt",
           cr."totalItems"::int AS "totalItems"
         FROM "catalog_runs" cr
@@ -2028,7 +2089,11 @@ const readProcessingRunProgress = async (
           COUNT(*) FILTER (WHERE ci.status = 'completed')::int AS completed,
           COUNT(*) FILTER (WHERE ci.status = 'completed' AND ci."completedAt" >= ${progressCutoff})::int AS "completedRecent",
           COUNT(*) FILTER (WHERE ci.status = 'failed')::int AS failed,
-          COUNT(*) FILTER (WHERE ci.status IN ('pending', 'queued', 'in_progress'))::int AS pending
+          COUNT(*) FILTER (WHERE ci.status IN ('pending', 'queued', 'in_progress'))::int AS pending,
+          COUNT(*) FILTER (
+            WHERE ci.status IN ('pending', 'queued', 'in_progress', 'failed')
+              AND ci.attempts < ${CATALOG_MAX_ATTEMPTS}
+          )::int AS runnable
         FROM "catalog_items" ci
         WHERE ci."runId" IN (SELECT "runId" FROM processing_runs)
         GROUP BY ci."runId"
@@ -2038,12 +2103,14 @@ const readProcessingRunProgress = async (
         pr."brandId" AS "brandId",
         pr.status,
         pr."blockReason" AS "blockReason",
+        pr."startedAt" AS "startedAt",
         pr."updatedAt" AS "updatedAt",
         COALESCE(pr."totalItems", 0)::int AS "totalItems",
         COALESCE(c.completed, 0)::int AS completed,
         COALESCE(c."completedRecent", 0)::int AS "completedRecent",
         COALESCE(c.failed, 0)::int AS failed,
-        COALESCE(c.pending, 0)::int AS pending
+        COALESCE(c.pending, 0)::int AS pending,
+        COALESCE(c.runnable, 0)::int AS runnable
       FROM processing_runs pr
       LEFT JOIN counts c ON c."runId" = pr."runId"
       ORDER BY pr."updatedAt" ASC
@@ -2080,12 +2147,226 @@ const rankBalancedPauseCandidates = (runs: ProcessingRunProgress[]) => {
   });
 };
 
+const computeRunProgressPct = (run: ProcessingRunProgress) => {
+  const totalFromCounts = Math.max(0, run.completed + run.failed + run.pending);
+  const total = run.totalItems > 0 ? run.totalItems : totalFromCounts;
+  if (total <= 0) return 0;
+  return Math.round(((run.completed + run.failed) / total) * 100);
+};
+
+type AggressiveTailCloseResult = {
+  attempted: boolean;
+  tailCandidates: number;
+  tailProcessedRuns: number;
+  forcedClosedRuns: number;
+  forcedFailedItems: number;
+  errors: number;
+  runIds: string[];
+  sampleTailRuns: Array<{
+    runId: string;
+    brandId: string;
+    progressPct: number;
+    runnableRemaining: number;
+    updatedAt: string;
+  }>;
+};
+
+const terminalizeRunRemainder = async (params: {
+  runId: string;
+  reason: string;
+}) => {
+  return prisma.catalogItem.updateMany({
+    where: {
+      runId: params.runId,
+      OR: [
+        { status: { in: ["pending", "queued", "in_progress"] } },
+        { status: "failed", attempts: { lt: CATALOG_MAX_ATTEMPTS } },
+      ],
+      attempts: { lt: CATALOG_MAX_ATTEMPTS },
+    },
+    data: {
+      status: "failed",
+      attempts: CATALOG_MAX_ATTEMPTS,
+      startedAt: null,
+      lastError: params.reason,
+      updatedAt: new Date(),
+    },
+  });
+};
+
+const runAggressiveTailClose = async (options: {
+  dryRun: boolean;
+  limit: number;
+  minNoProgressMinutes: number;
+  tailProgressPct: number;
+  tailMaxRemaining: number;
+  tailStaleMinutes: number;
+  forceTerminalizeRemaining: boolean;
+  queueEnabled: boolean;
+  runId?: string | null;
+  reconcileJobScanLimit: number;
+  reconcileReenqueueLimit: number;
+}): Promise<AggressiveTailCloseResult> => {
+  const progressCutoff = new Date(Date.now() - options.minNoProgressMinutes * 60 * 1000);
+  const staleCutoff = new Date(Date.now() - options.tailStaleMinutes * 60 * 1000);
+  const processingRuns = await readProcessingRunProgress(progressCutoff, ["processing"]);
+  const candidates = processingRuns
+    .filter((run) => {
+      if (options.runId && run.runId !== options.runId) return false;
+      if (run.completedRecent > 0) return false;
+      if (run.runnable > options.tailMaxRemaining) return false;
+      if (run.updatedAt > staleCutoff) return false;
+      const progressPct = computeRunProgressPct(run);
+      return progressPct >= options.tailProgressPct;
+    })
+    .slice(0, options.limit);
+
+  if (!candidates.length) {
+    return {
+      attempted: false,
+      tailCandidates: 0,
+      tailProcessedRuns: 0,
+      forcedClosedRuns: 0,
+      forcedFailedItems: 0,
+      errors: 0,
+      runIds: [],
+      sampleTailRuns: [],
+    };
+  }
+
+  const tailDrainMaxMs = Math.max(
+    5000,
+    Number(process.env.CATALOG_REFRESH_STUCK_TAIL_DRAIN_MAX_MS ?? 15000),
+  );
+  const tailDrainBatchCap = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_STUCK_TAIL_DRAIN_BATCH_CAP ?? 40),
+  );
+  const tailDrainConcurrency = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_STUCK_TAIL_DRAIN_CONCURRENCY ?? 4),
+  );
+  let tailProcessedRuns = 0;
+  let forcedClosedRuns = 0;
+  let forcedFailedItems = 0;
+  let errors = 0;
+  const runIds: string[] = [];
+  const sampleTailRuns = candidates.map((run) => ({
+    runId: run.runId,
+    brandId: run.brandId,
+    progressPct: computeRunProgressPct(run),
+    runnableRemaining: run.runnable,
+    updatedAt: run.updatedAt.toISOString(),
+  }));
+
+  for (const run of candidates) {
+    try {
+      if (options.dryRun) {
+        tailProcessedRuns += 1;
+        runIds.push(run.runId);
+        continue;
+      }
+
+      if (options.queueEnabled) {
+        await reconcileCatalogQueue({
+          runId: run.runId,
+          dryRun: false,
+          jobScanLimit: options.reconcileJobScanLimit,
+          reenqueueLimit: options.reconcileReenqueueLimit,
+        });
+      }
+
+      await resetQueuedItemsAll(run.runId);
+      await resetStuckItemsAll(run.runId);
+      await drainCatalogRun({
+        runId: run.runId,
+        batch: Math.min(tailDrainBatchCap, Math.max(1, run.runnable)),
+        concurrency: Math.min(tailDrainConcurrency, Math.max(1, run.runnable)),
+        maxMs: tailDrainMaxMs,
+        queuedStaleMs: 0,
+        stuckMs: 0,
+      });
+
+      const [latestRun, remainingRunnable] = await Promise.all([
+        prisma.catalogRun.findUnique({
+          where: { id: run.runId },
+          select: { id: true, brandId: true, status: true, startedAt: true },
+        }),
+        prisma.catalogItem.count({
+          where: {
+            runId: run.runId,
+            status: { in: ["pending", "queued", "in_progress", "failed"] },
+            attempts: { lt: CATALOG_MAX_ATTEMPTS },
+          },
+        }),
+      ]);
+
+      if (!latestRun) {
+        tailProcessedRuns += 1;
+        continue;
+      }
+
+      if (remainingRunnable <= 0) {
+        if (latestRun.status !== "completed" && latestRun.status !== "failed") {
+          await finalizeRefreshForRun({
+            brandId: latestRun.brandId,
+            runId: latestRun.id,
+            startedAt: latestRun.startedAt,
+            lastError: latestRun.status === "processing" ? null : `run_closed_from_status:${latestRun.status}`,
+          });
+          forcedClosedRuns += 1;
+          runIds.push(run.runId);
+        }
+        tailProcessedRuns += 1;
+        continue;
+      }
+
+      if (!options.forceTerminalizeRemaining) {
+        tailProcessedRuns += 1;
+        continue;
+      }
+
+      const closeReason = "stuck_tail_terminalized_no_progress";
+      const marked = await terminalizeRunRemainder({ runId: run.runId, reason: closeReason });
+      if (marked.count > 0) {
+        forcedFailedItems += marked.count;
+      }
+      await finalizeRefreshForRun({
+        brandId: latestRun.brandId,
+        runId: latestRun.id,
+        startedAt: latestRun.startedAt,
+        lastError: closeReason,
+      });
+      forcedClosedRuns += 1;
+      runIds.push(run.runId);
+      tailProcessedRuns += 1;
+    } catch (error) {
+      errors += 1;
+      console.warn("catalog.refresh.stuck_remediation.tail_close_failed", run.runId, error);
+    }
+  }
+
+  const uniqueRunIds = Array.from(new Set(runIds));
+  return {
+    attempted: candidates.length > 0,
+    tailCandidates: candidates.length,
+    tailProcessedRuns,
+    forcedClosedRuns,
+    forcedFailedItems,
+    errors,
+    runIds: uniqueRunIds,
+    sampleTailRuns,
+  };
+};
+
 export const runCatalogRefreshStuckRemediation = async (
   options: RunCatalogRefreshStuckRemediationOptions = {},
 ): Promise<CatalogRefreshStuckRemediationResult> => {
   const config = getRefreshConfig();
   const dryRun = options.dryRun ?? false;
-  const strategy: CatalogRefreshStuckRemediationStrategy = options.strategy ?? "balanced";
+  const strategyRaw = options.strategy ?? config.stuckRemediateStrategy;
+  const strategy: CatalogRefreshStuckRemediationStrategy =
+    strategyRaw === "balanced" ? "balanced" : "aggressive_tail_close";
   const limit = Math.max(1, Math.floor(options.limit ?? config.stuckRemediateLimit));
   const minNoProgressMinutes = Math.max(
     5,
@@ -2097,6 +2378,20 @@ export const runCatalogRefreshStuckRemediation = async (
   const pauseOverCapTarget = pauseOverCapEnabled
     ? Math.max(1, Math.floor(pauseOverCapTargetRaw ?? config.stuckPauseOverCapTarget))
     : null;
+  const tailProgressPct = Math.max(
+    50,
+    Math.min(100, Math.floor(options.tailProgressPct ?? config.stuckTailProgressPct)),
+  );
+  const tailMaxRemaining = Math.max(
+    1,
+    Math.floor(options.tailMaxRemaining ?? config.stuckTailMaxRemaining),
+  );
+  const tailStaleMinutes = Math.max(
+    5,
+    Math.floor(options.tailStaleMinutes ?? config.stuckTailStaleMinutes),
+  );
+  const forceTerminalizeRemaining =
+    options.forceTerminalizeRemaining ?? config.stuckTailForceTerminalizeRemaining;
   const progressCutoff = new Date(Date.now() - minNoProgressMinutes * 60 * 1000);
 
   const activeStatuses: Array<"processing" | "paused" | "blocked"> = [
@@ -2114,8 +2409,6 @@ export const runCatalogRefreshStuckRemediation = async (
     }),
   ]);
 
-  const staleRuns = processingRuns.filter((run) => run.completedRecent <= 0);
-  const staleProcessingRuns = staleRuns.filter((run) => run.status === "processing");
   const canResumeRun = (run: ProcessingRunProgress) => {
     if (run.pending <= 0) return false;
     if (run.status !== "blocked") return true;
@@ -2131,14 +2424,21 @@ export const runCatalogRefreshStuckRemediation = async (
   let reconcileResult: Awaited<ReturnType<typeof reconcileCatalogQueue>> | null = null;
   let postReconciled = false;
   let postReconcileResult: Awaited<ReturnType<typeof reconcileCatalogQueue>> | null = null;
+  let forcedClosedRuns = 0;
+  let forcedFailedItems = 0;
+  let tailCandidates = 0;
+  let tailProcessedRuns = 0;
+  let sampleTailRuns: CatalogRefreshStuckRemediationResult["sampleTailRuns"] = [];
 
   if (queueEnabled) {
     const drift = await readCatalogQueueDriftSummary({
       sampleLimit: config.autoReconcileJobScanLimit,
+      runId: options.runId ?? undefined,
     });
     if (drift.driftDetected) {
       reconcileResult = await reconcileCatalogQueue({
         dryRun,
+        runId: options.runId ?? undefined,
         jobScanLimit: config.autoReconcileJobScanLimit,
         reenqueueLimit: config.autoReconcileReenqueueLimit,
       });
@@ -2146,8 +2446,19 @@ export const runCatalogRefreshStuckRemediation = async (
     }
   }
 
+  const scopedProcessingRuns = options.runId
+    ? processingRuns.filter((run) => run.runId === options.runId)
+    : processingRuns;
+  const scopedProcessingRunCount = scopedProcessingRuns.filter(
+    (run) => run.status === "processing",
+  ).length;
+  const staleRuns = scopedProcessingRuns.filter((run) => run.completedRecent <= 0);
+  const staleProcessingRuns = staleRuns.filter((run) => run.status === "processing");
+  const effectiveProcessingRunCount = options.runId ? scopedProcessingRunCount : processingRunCount;
   const resumeCapacityByProcessing =
-    pauseOverCapTarget !== null ? Math.max(0, pauseOverCapTarget - processingRunCount) : limit;
+    options.runId || pauseOverCapTarget === null
+      ? limit
+      : Math.max(0, pauseOverCapTarget - effectiveProcessingRunCount);
   const resumeLimit = Math.max(0, Math.min(limit, resumeCapacityByProcessing));
   const resumeCandidates = rankBalancedResumeCandidates(staleRuns.filter(canResumeRun)).slice(
     0,
@@ -2190,50 +2501,11 @@ export const runCatalogRefreshStuckRemediation = async (
     }
   }
 
-  const shouldRunPostReconcile =
-    queueEnabled && !dryRun && (resumed > 0 || paused > 0 || requeued > 0);
-  if (shouldRunPostReconcile) {
-    try {
-      const driftAfterActions = await readCatalogQueueDriftSummary({
-        sampleLimit: config.autoReconcileJobScanLimit,
-      });
-      const postActiveZombieCriticalCount = Number(
-        (
-          driftAfterActions as {
-            activeZombieCriticalCount?: number;
-            activeZombieCount?: number;
-          }
-        ).activeZombieCriticalCount ??
-          (
-            driftAfterActions as {
-              activeZombieCount?: number;
-            }
-          ).activeZombieCount ??
-          0,
-      );
-      const postDriftDetected =
-        driftAfterActions.waitingItemNotQueued > 0 ||
-        driftAfterActions.waitingRunNotProcessing > 0 ||
-        driftAfterActions.waitingMissingItem > 0 ||
-        postActiveZombieCriticalCount > 0 ||
-        driftAfterActions.runsRunnableWithoutQueueLoad > 0;
-      if (postDriftDetected) {
-        postReconcileResult = await reconcileCatalogQueue({
-          dryRun: false,
-          jobScanLimit: config.autoReconcileJobScanLimit,
-          reenqueueLimit: config.autoReconcileReenqueueLimit,
-        });
-        postReconciled = true;
-      }
-    } catch (error) {
-      errors += 1;
-      console.warn("catalog.refresh.stuck_remediation.post_reconcile_failed", error);
-    }
-  }
-
   const overCapBy =
-    pauseOverCapTarget !== null && processingRunCount > pauseOverCapTarget
-      ? processingRunCount - pauseOverCapTarget
+    options.runId || pauseOverCapTarget === null
+      ? 0
+      : effectiveProcessingRunCount > pauseOverCapTarget
+        ? effectiveProcessingRunCount - pauseOverCapTarget
       : 0;
   const pauseCandidates = overCapBy
     ? rankBalancedPauseCandidates(
@@ -2277,17 +2549,98 @@ export const runCatalogRefreshStuckRemediation = async (
     }
   }
 
+  if (strategy === "aggressive_tail_close") {
+    const tailClose = await runAggressiveTailClose({
+      dryRun,
+      limit,
+      minNoProgressMinutes,
+      tailProgressPct,
+      tailMaxRemaining,
+      tailStaleMinutes,
+      forceTerminalizeRemaining,
+      queueEnabled,
+      runId: options.runId ?? null,
+      reconcileJobScanLimit: config.autoReconcileJobScanLimit,
+      reconcileReenqueueLimit: config.autoReconcileReenqueueLimit,
+    });
+    forcedClosedRuns += tailClose.forcedClosedRuns;
+    forcedFailedItems += tailClose.forcedFailedItems;
+    tailCandidates = tailClose.tailCandidates;
+    tailProcessedRuns = tailClose.tailProcessedRuns;
+    sampleTailRuns = tailClose.sampleTailRuns;
+    errors += tailClose.errors;
+    runIds.push(...tailClose.runIds);
+  }
+
+  const shouldRunPostReconcile =
+    queueEnabled &&
+    !dryRun &&
+    (resumed > 0 ||
+      paused > 0 ||
+      requeued > 0 ||
+      forcedClosedRuns > 0 ||
+      forcedFailedItems > 0 ||
+      tailProcessedRuns > 0);
+  if (shouldRunPostReconcile) {
+    try {
+      const driftAfterActions = await readCatalogQueueDriftSummary({
+        sampleLimit: config.autoReconcileJobScanLimit,
+        runId: options.runId ?? undefined,
+      });
+      const postActiveZombieCriticalCount = Number(
+        (
+          driftAfterActions as {
+            activeZombieCriticalCount?: number;
+            activeZombieCount?: number;
+          }
+        ).activeZombieCriticalCount ??
+          (
+            driftAfterActions as {
+              activeZombieCount?: number;
+            }
+          ).activeZombieCount ??
+          0,
+      );
+      const postDriftDetected =
+        driftAfterActions.waitingItemNotQueued > 0 ||
+        driftAfterActions.waitingRunNotProcessing > 0 ||
+        driftAfterActions.waitingMissingItem > 0 ||
+        postActiveZombieCriticalCount > 0 ||
+        driftAfterActions.runsRunnableWithoutQueueLoad > 0;
+      if (postDriftDetected) {
+        postReconcileResult = await reconcileCatalogQueue({
+          dryRun: false,
+          runId: options.runId ?? undefined,
+          jobScanLimit: config.autoReconcileJobScanLimit,
+          reenqueueLimit: config.autoReconcileReenqueueLimit,
+        });
+        postReconciled = true;
+      }
+    } catch (error) {
+      errors += 1;
+      console.warn("catalog.refresh.stuck_remediation.post_reconcile_failed", error);
+    }
+  }
+
   const uniqueRunIds = Array.from(new Set(runIds));
   return {
-    attempted: resumeCandidates.length > 0 || pauseCandidates.length > 0 || reconciled,
+    attempted:
+      resumeCandidates.length > 0 ||
+      pauseCandidates.length > 0 ||
+      reconciled ||
+      tailProcessedRuns > 0,
     dryRun,
     strategy,
     limit,
     minNoProgressMinutes,
     pauseOverCapTarget,
-    processingRuns: processingRuns.length,
+    tailProgressPct,
+    tailMaxRemaining,
+    tailStaleMinutes,
+    forceTerminalizeRemaining,
+    processingRuns: scopedProcessingRuns.length,
     processingRunsWithoutRecentProgress: staleRuns.length,
-    processingActiveRunCount: processingRunCount,
+    processingActiveRunCount: effectiveProcessingRunCount,
     activeRunCount,
     activeRunCap: config.maxActiveRuns,
     resumed,
@@ -2298,8 +2651,13 @@ export const runCatalogRefreshStuckRemediation = async (
     postReconciled,
     postReconcileResult,
     errors,
+    forcedClosedRuns,
+    forcedFailedItems,
+    tailCandidates,
+    tailProcessedRuns,
     runIds: uniqueRunIds,
     sampleRunIds: uniqueRunIds.slice(0, 20),
+    sampleTailRuns,
   };
 };
 
@@ -2370,8 +2728,10 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     autoReconcile.skipped = "brand_scope";
   }
 
-  if (!options?.brandId && heavyMode) {
-    autoFinalizedRuns = await autoFinalizeDormantProcessingRuns();
+  if (!options?.brandId) {
+    autoFinalizedRuns = await autoFinalizeDormantProcessingRuns({
+      limitOverride: heavyMode ? undefined : config.autoFinalizeLightLimit,
+    });
   }
 
   if (!options?.brandId && heavyMode) {
@@ -2398,16 +2758,20 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   });
 
   const activeRunCap = config.maxActiveRuns;
-  const activeRunsBeforeAutoRemediation = heavyMode
-    ? await prisma.catalogRun.count({
+  const runStatusCountsBeforeAutoRemediation = heavyMode
+    ? await prisma.catalogRun.groupBy({
+        by: ["status"],
         where: { status: { in: ["processing", "paused", "blocked"] } },
+        _count: { _all: true },
       })
-    : 0;
+    : [];
+  const processingRunsBeforeAutoRemediation =
+    runStatusCountsBeforeAutoRemediation.find((row) => row.status === "processing")?._count._all ?? 0;
   const autoRemediationCapacity =
     heavyMode && (options?.brandId || !options?.force)
       ? options?.brandId
         ? config.autoRemediateMaxBrands
-        : Math.max(0, activeRunCap - activeRunsBeforeAutoRemediation)
+        : Math.max(0, activeRunCap - processingRunsBeforeAutoRemediation)
       : 0;
 
   if (heavyMode && !options?.brandId && !options?.force && autoRemediationCapacity > 0) {
@@ -2432,9 +2796,11 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     });
   }
 
-  const [activeRunsBefore, pausedOverCapRuns] = await Promise.all([
-    prisma.catalogRun.count({
+  const [runStatusCountsBeforeRemediation, pausedOverCapRuns] = await Promise.all([
+    prisma.catalogRun.groupBy({
+      by: ["status"],
       where: { status: { in: ["processing", "paused", "blocked"] } },
+      _count: { _all: true },
     }),
     prisma.catalogRun.count({
       where: {
@@ -2443,6 +2809,14 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       },
     }),
   ]);
+  const processingRunsBeforeRemediation =
+    runStatusCountsBeforeRemediation.find((row) => row.status === "processing")?._count._all ?? 0;
+  const pausedRunsBeforeRemediation =
+    runStatusCountsBeforeRemediation.find((row) => row.status === "paused")?._count._all ?? 0;
+  const blockedRunsBeforeRemediation =
+    runStatusCountsBeforeRemediation.find((row) => row.status === "blocked")?._count._all ?? 0;
+  const activeRunCountTotalBeforeRemediation =
+    processingRunsBeforeRemediation + pausedRunsBeforeRemediation + blockedRunsBeforeRemediation;
   const stuckProgressCutoff = new Date(
     Date.now() - config.stuckRemediateWindowMinutes * 60 * 1000,
   );
@@ -2476,14 +2850,18 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   stuckRemediation = {
     attempted: false,
     dryRun: false,
-    strategy: "balanced",
+    strategy: config.stuckRemediateStrategy,
     limit: config.stuckRemediateLimit,
     minNoProgressMinutes: config.stuckRemediateWindowMinutes,
     pauseOverCapTarget: config.stuckPauseOverCapEnabled ? config.stuckPauseOverCapTarget : null,
+    tailProgressPct: config.stuckTailProgressPct,
+    tailMaxRemaining: config.stuckTailMaxRemaining,
+    tailStaleMinutes: config.stuckTailStaleMinutes,
+    forceTerminalizeRemaining: config.stuckTailForceTerminalizeRemaining,
     processingRuns: processingRunsGate,
     processingRunsWithoutRecentProgress: processingNoProgressGate,
     processingActiveRunCount: processingRunsGate,
-    activeRunCount: activeRunsBefore,
+    activeRunCount: activeRunCountTotalBeforeRemediation,
     activeRunCap,
     resumed: 0,
     paused: 0,
@@ -2491,21 +2869,27 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     reconciled: false,
     reconcileResult: null,
     errors: 0,
+    forcedClosedRuns: 0,
+    forcedFailedItems: 0,
+    tailCandidates: 0,
+    tailProcessedRuns: 0,
     runIds: [],
     sampleRunIds: [],
+    sampleTailRuns: [],
     skipped: null,
   };
   const shouldRunStuckRemediation =
     !options?.brandId &&
     !options?.force &&
     config.stuckRemediateEnabled &&
-    activeRunsBefore > activeRunCap &&
-    (processingNoProgressGate >= config.stuckRemediateThreshold || pausedOverCapRuns > 0);
+    (processingRunsBeforeRemediation > activeRunCap ||
+      processingNoProgressGate >= config.stuckRemediateThreshold ||
+      pausedOverCapRuns > 0);
   if (shouldRunStuckRemediation) {
     try {
       const result = await runCatalogRefreshStuckRemediation({
         dryRun: false,
-        strategy: "balanced",
+        strategy: config.stuckRemediateStrategy,
         limit: config.stuckRemediateLimit,
         minNoProgressMinutes: config.stuckRemediateWindowMinutes,
         pauseOverCapTarget: config.stuckPauseOverCapTarget,
@@ -2520,14 +2904,18 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
         ...(previous ?? {
           attempted: false,
           dryRun: false,
-          strategy: "balanced" as const,
+          strategy: config.stuckRemediateStrategy,
           limit: config.stuckRemediateLimit,
           minNoProgressMinutes: config.stuckRemediateWindowMinutes,
           pauseOverCapTarget: config.stuckPauseOverCapEnabled ? config.stuckPauseOverCapTarget : null,
+          tailProgressPct: config.stuckTailProgressPct,
+          tailMaxRemaining: config.stuckTailMaxRemaining,
+          tailStaleMinutes: config.stuckTailStaleMinutes,
+          forceTerminalizeRemaining: config.stuckTailForceTerminalizeRemaining,
           processingRuns: processingRunsGate,
           processingRunsWithoutRecentProgress: processingNoProgressGate,
           processingActiveRunCount: processingRunsGate,
-          activeRunCount: activeRunsBefore,
+          activeRunCount: activeRunCountTotalBeforeRemediation,
           activeRunCap,
           resumed: 0,
           paused: 0,
@@ -2535,8 +2923,13 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
           reconciled: false,
           reconcileResult: null,
           errors: 0,
+          forcedClosedRuns: 0,
+          forcedFailedItems: 0,
+          tailCandidates: 0,
+          tailProcessedRuns: 0,
           runIds: [],
           sampleRunIds: [],
+          sampleTailRuns: [],
           skipped: null,
         }),
         attempted: true,
@@ -2551,7 +2944,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     stuckRemediation.skipped = "force_mode";
   } else if (!config.stuckRemediateEnabled) {
     stuckRemediation.skipped = "stuck_remediation_disabled";
-  } else if (activeRunsBefore <= activeRunCap) {
+  } else if (processingRunsBeforeRemediation <= activeRunCap) {
     stuckRemediation.skipped = "active_within_cap";
   } else if (
     processingNoProgressGate < config.stuckRemediateThreshold &&
@@ -2559,6 +2952,21 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   ) {
     stuckRemediation.skipped = "below_processing_no_progress_threshold";
   }
+
+  const runStatusCountsAfterRemediation = await prisma.catalogRun.groupBy({
+    by: ["status"],
+    where: { status: { in: ["processing", "paused", "blocked"] } },
+    _count: { _all: true },
+  });
+  const processingRunsAfterRemediation =
+    runStatusCountsAfterRemediation.find((row) => row.status === "processing")?._count._all ?? 0;
+  const pausedRunsAfterRemediation =
+    runStatusCountsAfterRemediation.find((row) => row.status === "paused")?._count._all ?? 0;
+  const blockedRunsAfterRemediation =
+    runStatusCountsAfterRemediation.find((row) => row.status === "blocked")?._count._all ?? 0;
+  const activeRunCountTotalAfterRemediation =
+    processingRunsAfterRemediation + pausedRunsAfterRemediation + blockedRunsAfterRemediation;
+
   const activeBrandRows = await prisma.catalogRun.findMany({
     where: { status: { in: ["processing", "paused", "blocked"] } },
     select: { brandId: true },
@@ -2567,7 +2975,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   const activeBrandIds = new Set(activeBrandRows.map((row) => row.brandId));
   const activeRunCapacityRemaining = options?.brandId
     ? activeRunCap
-    : Math.max(0, activeRunCap - activeRunsBefore);
+    : Math.max(0, activeRunCap - processingRunsAfterRemediation);
   const throttledByActiveCap = !options?.brandId && activeRunCapacityRemaining <= 0;
 
   const archiveAutomationEnabled =
@@ -2618,8 +3026,13 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       processed: 0,
       selected: 0,
       brandConcurrency: 0,
-      activeRunsBefore,
+      activeRunsBefore: activeRunCountTotalAfterRemediation,
       activeRunCap,
+      processingRunCount: processingRunsAfterRemediation,
+      pausedRunCount: pausedRunsAfterRemediation,
+      blockedRunCount: blockedRunsAfterRemediation,
+      activeRunCountTotal: activeRunCountTotalAfterRemediation,
+      schedulingCapacityRemaining: activeRunCapacityRemaining,
       activeRunCapacityRemaining,
       throttledByActiveCap,
       results,
@@ -2783,8 +3196,13 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     processed: results.length,
     selected: selected.length,
     brandConcurrency,
-    activeRunsBefore,
+    activeRunsBefore: activeRunCountTotalAfterRemediation,
     activeRunCap,
+    processingRunCount: processingRunsAfterRemediation,
+    pausedRunCount: pausedRunsAfterRemediation,
+    blockedRunCount: blockedRunsAfterRemediation,
+    activeRunCountTotal: activeRunCountTotalAfterRemediation,
+    schedulingCapacityRemaining: Math.max(0, activeRunCapacityRemaining - selected.length),
     activeRunCapacityRemaining: Math.max(0, activeRunCapacityRemaining - selected.length),
     throttledByActiveCap,
     results,
