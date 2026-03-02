@@ -2213,10 +2213,15 @@ const runAggressiveTailClose = async (options: {
   const candidates = processingRuns
     .filter((run) => {
       if (options.runId && run.runId !== options.runId) return false;
-      if (run.completedRecent > 0) return false;
-      if (run.runnable > options.tailMaxRemaining) return false;
-      if (run.updatedAt > staleCutoff) return false;
       const progressPct = computeRunProgressPct(run);
+      if (run.runnable > options.tailMaxRemaining) return false;
+      if (options.runId) {
+        // For explicit runId remediation, prioritize deterministic tail closing
+        // without waiting for the stale window to elapse.
+        return progressPct >= options.tailProgressPct;
+      }
+      if (run.completedRecent > 0) return false;
+      if (run.updatedAt > staleCutoff) return false;
       return progressPct >= options.tailProgressPct;
     })
     .slice(0, options.limit);

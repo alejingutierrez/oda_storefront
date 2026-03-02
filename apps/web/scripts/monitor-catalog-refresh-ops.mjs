@@ -60,7 +60,7 @@ const stuckThreshold = Math.max(
   Math.floor(
     readNumber(
       readArgValue("stuck-threshold") ?? process.env.CATALOG_REFRESH_STUCK_REMEDIATE_THRESHOLD,
-      30,
+      20,
     ),
   ),
 );
