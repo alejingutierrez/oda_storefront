@@ -1788,7 +1788,8 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
   - Snapshot monitor con skip por cooldown: `reports/catalog_refresh_diagnostics/2026-03-02T04-41-06-121Z-catalog-refresh-ops.json`.
   - Deploys asociados: `dpl_7djCkYbAftRrLu8iXmc9HCRs56Rs`, `dpl_FewGWfxjzb2gSWVZGGVbP2Azoc5L`, `dpl_8d6M3SxQbBdr63CTc4HBLxLuuVzd` (alias `https://oda-moda.vercel.app`).
   - Operación de cierre de incidente de deploy: se removió `apps/web/middleware.ts` y se fijaron regiones `iad1/gru1`; tras deploy final se verificó `workerAlive.catalog/enrich=true`, `waitingItemNotQueued=0` y `processingRunsWithoutRecentProgress=42`.
-- Estado: done (2026-03-02, actualizado deploy/ops).
+  - Corrección final de cap activo: `refresh.ts` tolera envs con `\\n` en `CATALOG_REFRESH_MAX_ACTIVE_RUNS`; deploy `dpl_Fki1S2234VGcmWvHfz4o1MXeLYDX` validó `activeRunCap=24` en `GET /api/admin/catalog-refresh/state` y `waitingItemNotQueued=0` tras reconcile apply.
+- Estado: done (2026-03-02, actualizado deploy/ops/cap).
 
 ---
 **Protocolo al desarrollar cualquier historia**  
