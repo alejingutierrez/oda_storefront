@@ -13,10 +13,31 @@ type RefreshSummary = {
   qualityStaleBrands: number;
   staleBreakdown: {
     processing: number;
+    paused?: number;
     failed: number;
-    no_status: number;
+    completed_stale: number;
+    unknown: number;
+    no_status?: number;
     manual_review: number;
   };
+  processingNoProgressCount?: number;
+  processingNoProgressTop?: Array<{
+    brandId: string;
+    brandName: string;
+    runId: string;
+    runStatus: string;
+    completed: number;
+    total: number;
+    completedRecent: number;
+    pending: number;
+    failed: number;
+    progressPct: number;
+    updatedAt: string;
+  }>;
+  processingNoProgressOverflow?: number;
+  activeRunCount?: number;
+  activeRunCap?: number;
+  activeRunCapacityRemaining?: number;
   avgDiscoveryCoverage: number;
   avgRunSuccessRate: number;
   newProducts: number;
@@ -206,9 +227,12 @@ type QueueHealthState = {
       hungCount?: number;
       hungThresholdMinutes?: number;
       zombieCount?: number;
+      zombieCriticalCount?: number;
+      zombieTransientCount?: number;
       zombieByReason?: Record<string, number>;
       zombieByDbState?: {
         completed?: number;
+        completed_recent?: number;
         failed_terminal?: number;
         run_not_processing?: number;
         item_not_in_progress?: number;
@@ -267,6 +291,18 @@ type ForceResponse = {
   pollUrl?: string;
 };
 
+type RemediationResponse = {
+  attempted: boolean;
+  dryRun: boolean;
+  strategy: "balanced";
+  resumed: number;
+  paused: number;
+  requeued: number;
+  reconciled: boolean;
+  errors: number;
+  runIds: string[];
+};
+
 const formatDate = (value?: string | null) => {
   if (!value) return "-";
   const date = new Date(value);
@@ -323,6 +359,7 @@ const alertLabel = (type: string) => {
   if (type === "stale_brand") return "stale brand";
   if (type === "stale_auto_recovering") return "auto recovering";
   if (type === "stale_processing_no_progress") return "sin progreso";
+  if (type === "stale_processing_no_progress_overflow") return "sin progreso (+)";
   if (type === "stale_no_refs") return "sin refs";
   if (type === "catalog_stuck") return "catalog stuck";
   if (type === "catalog_queue_drift") return "queue drift";
@@ -346,6 +383,8 @@ export default function CatalogRefreshPanel() {
   const [forcingBrands, setForcingBrands] = useState<Record<string, boolean>>({});
   const [archiveActionMode, setArchiveActionMode] = useState<"dry-run" | "apply" | null>(null);
   const [archiveMessage, setArchiveMessage] = useState<string | null>(null);
+  const [remediationRunning, setRemediationRunning] = useState(false);
+  const [remediationMessage, setRemediationMessage] = useState<string | null>(null);
   const [forceMessages, setForceMessages] = useState<
     Record<string, { level: "info" | "warning" | "danger"; message: string; at: number }>
   >({});
@@ -461,6 +500,55 @@ export default function CatalogRefreshPanel() {
     await fetchState();
   }, [fetchState]);
 
+  const triggerMassRemediation = useCallback(async () => {
+    setRemediationRunning(true);
+    setRemediationMessage(null);
+    try {
+      const dryRunRes = await fetch("/api/admin/catalog-refresh/remediate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          dryRun: true,
+          strategy: "balanced",
+        }),
+      });
+      if (!dryRunRes.ok) {
+        throw new Error("No se pudo ejecutar el dry-run de remediación.");
+      }
+      const dryRunPayload = (await dryRunRes.json()) as RemediationResponse;
+      const dryRunSummary = `Dry-run: resumed=${dryRunPayload.resumed}, paused=${dryRunPayload.paused}, requeued=${dryRunPayload.requeued}, reconciled=${dryRunPayload.reconciled ? "si" : "no"}, errors=${dryRunPayload.errors}.`;
+      setRemediationMessage(dryRunSummary);
+
+      const hasWorkToApply =
+        dryRunPayload.resumed > 0 ||
+        dryRunPayload.paused > 0 ||
+        dryRunPayload.requeued > 0 ||
+        dryRunPayload.reconciled;
+      if (hasWorkToApply) {
+        const applyRes = await fetch("/api/admin/catalog-refresh/remediate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            dryRun: false,
+            strategy: "balanced",
+          }),
+        });
+        if (!applyRes.ok) {
+          throw new Error("No se pudo aplicar la remediación masiva.");
+        }
+        const applyPayload = (await applyRes.json()) as RemediationResponse;
+        setRemediationMessage(
+          `Apply: resumed=${applyPayload.resumed}, paused=${applyPayload.paused}, requeued=${applyPayload.requeued}, reconciled=${applyPayload.reconciled ? "si" : "no"}, errors=${applyPayload.errors}.`,
+        );
+      }
+      await fetchState();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setRemediationRunning(false);
+    }
+  }, [fetchState]);
+
   const triggerArchiveCandidates = useCallback(
     async (apply: boolean) => {
       setArchiveActionMode(apply ? "apply" : "dry-run");
@@ -541,13 +629,17 @@ export default function CatalogRefreshPanel() {
           await triggerReconcile();
           return;
         }
+        if (alert.action.type === "remediate_catalog_balanced") {
+          await triggerMassRemediation();
+          return;
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error desconocido");
       } finally {
         setActionId(null);
       }
     },
-    [fetchState, triggerBrand, triggerReconcile],
+    [fetchState, triggerBrand, triggerMassRemediation, triggerReconcile],
   );
 
   useEffect(() => {
@@ -738,12 +830,24 @@ export default function CatalogRefreshPanel() {
           >
             Forzar refresh
           </button>
+          <button
+            className="rounded-full border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-800"
+            onClick={() => triggerMassRemediation()}
+            disabled={loading || remediationRunning}
+          >
+            {remediationRunning ? "Remediando..." : "Remediación masiva (balanceada)"}
+          </button>
         </div>
       </div>
 
       {error ? (
         <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
+        </div>
+      ) : null}
+      {remediationMessage ? (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          {remediationMessage}
         </div>
       ) : null}
 
@@ -763,10 +867,27 @@ export default function CatalogRefreshPanel() {
             />
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Stale: processing {summary?.staleBreakdown?.processing ?? 0} - failed{" "}
-            {summary?.staleBreakdown?.failed ?? 0} - sin estado{" "}
-            {summary?.staleBreakdown?.no_status ?? 0}
+            Stale: processing {summary?.staleBreakdown?.processing ?? 0} - paused{" "}
+            {summary?.staleBreakdown?.paused ?? 0} - failed{" "}
+            {summary?.staleBreakdown?.failed ?? 0} - completed stale{" "}
+            {summary?.staleBreakdown?.completed_stale ?? 0} - unknown{" "}
+            {summary?.staleBreakdown?.unknown ?? 0}
           </p>
+          {typeof summary?.activeRunCount === "number" && typeof summary?.activeRunCap === "number" ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Active runs: {summary.activeRunCount}/{summary.activeRunCap} · capacidad restante{" "}
+              {typeof summary.activeRunCapacityRemaining === "number"
+                ? summary.activeRunCapacityRemaining
+                : Math.max(0, summary.activeRunCap - summary.activeRunCount)}
+            </p>
+          ) : null}
+          {typeof summary?.processingNoProgressCount === "number" ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Processing sin progreso: {summary.processingNoProgressCount} · top{" "}
+              {summary.processingNoProgressTop?.length ?? 0} · overflow{" "}
+              {summary.processingNoProgressOverflow ?? 0}
+            </p>
+          ) : null}
           {summary?.operationalCoverageExact && !summary?.operationalHealthOk ? (
             <p className="mt-1 text-xs text-amber-700">
               Cobertura completa, salud operativa no OK.
@@ -1018,7 +1139,12 @@ export default function CatalogRefreshPanel() {
                   {queueHealth?.activeHang?.catalog?.driftHungCount ?? 0}
                 </p>
                 <p>
+                  critical={queueHealth?.activeHang?.catalog?.zombieCriticalCount ?? 0} · transient=
+                  {queueHealth?.activeHang?.catalog?.zombieTransientCount ?? 0}
+                </p>
+                <p>
                   completed={queueHealth?.activeHang?.catalog?.zombieByDbState?.completed ?? 0} ·
+                  completed_recent={queueHealth?.activeHang?.catalog?.zombieByDbState?.completed_recent ?? 0} ·
                   failed_terminal={queueHealth?.activeHang?.catalog?.zombieByDbState?.failed_terminal ?? 0} ·
                   run_not_processing={queueHealth?.activeHang?.catalog?.zombieByDbState?.run_not_processing ?? 0}
                 </p>

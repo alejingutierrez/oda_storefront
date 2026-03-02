@@ -320,7 +320,10 @@ export async function GET(req: Request) {
 
   const staleBreakdown = {
     processing: 0,
+    paused: 0,
     failed: 0,
+    completed_stale: 0,
+    unknown: 0,
     no_status: 0,
     manual_review: 0,
   };
@@ -331,17 +334,26 @@ export async function GET(req: Request) {
       continue;
     }
     if (isOperationalFresh(brand)) continue;
-    const status = typeof brand.refresh?.lastStatus === "string" ? brand.refresh.lastStatus : "";
+    const status = (brand.catalogStatus ?? "").toLowerCase();
     if (status === "processing") {
       staleBreakdown.processing += 1;
+      continue;
+    }
+    if (status === "paused" || status === "blocked") {
+      staleBreakdown.paused += 1;
       continue;
     }
     if (status === "failed") {
       staleBreakdown.failed += 1;
       continue;
     }
-    staleBreakdown.no_status += 1;
+    if (status === "completed") {
+      staleBreakdown.completed_stale += 1;
+      continue;
+    }
+    staleBreakdown.unknown += 1;
   }
+  staleBreakdown.no_status = staleBreakdown.completed_stale + staleBreakdown.unknown;
 
   // Metrics are aligned to the same window shown in the UI. We treat "coverage" as discovery
   // coverage (sitemap/adapter refs already present in DB pre-run), and "success" as run success
@@ -509,7 +521,7 @@ export async function GET(req: Request) {
     });
   }
 
-  const [catalogHeartbeat, enrichHeartbeat, queueDrift, processingProgress] = await Promise.all([
+  const [catalogHeartbeat, enrichHeartbeat, queueDrift, processingProgress, activeRunCount] = await Promise.all([
     readHeartbeat("workers:catalog:alive"),
     readHeartbeat("workers:enrich:alive"),
     readCatalogQueueDriftSummary({
@@ -545,6 +557,9 @@ export async function GET(req: Request) {
       FROM processing_runs pr
       LEFT JOIN recent ON recent."runId" = pr.id
     `),
+    prisma.catalogRun.count({
+      where: { status: { in: ["processing", "paused", "blocked"] } },
+    }),
   ]);
   const processingProgressRow = processingProgress[0] ?? {
     processingRuns: 0,
@@ -553,7 +568,8 @@ export async function GET(req: Request) {
   };
   const catalogBacklog = queueDrift.waiting + queueDrift.active + queueDrift.delayed;
   const heartbeatMissing = catalogBacklog > 0 && !catalogHeartbeat.online;
-  const activeHungDetected = queueDrift.activeHungDetected || queueDrift.activeZombieCount > 0;
+  const activeHungDetected =
+    queueDrift.activeHungDetected || queueDrift.activeZombieCriticalCount > 0;
   const operational100RealSummary = computeOperational100Real({
     freshBrands: operationalFreshBrands,
     autoEligibleBrands,
@@ -565,6 +581,13 @@ export async function GET(req: Request) {
   });
 
   const alertLimit = 12;
+  const alertTopBrands = Math.max(
+    1,
+    Number(process.env.CATALOG_ALERT_TOP_BRANDS ?? 25),
+  );
+  const queueDriftCritical =
+    queueDrift.waitingItemNotQueued > 0 || queueDrift.activeZombieCriticalCount > 0;
+  const queueDriftLevel: "warning" | "danger" = queueDriftCritical ? "danger" : "warning";
   type RefreshAlert = {
     id: string;
     type: string;
@@ -588,7 +611,7 @@ export async function GET(req: Request) {
     pushAlert({
       id: "catalog_queue_drift",
       type: "catalog_queue_drift",
-      level: "danger",
+      level: queueDriftLevel,
       title: "Drift detectado entre BullMQ y DB",
       detail: `waiting(sample=${queueDrift.waitingSampleSize}): non_queued=${queueDrift.waitingItemNotQueued}, run_not_processing=${queueDrift.waitingRunNotProcessing}, missing_item=${queueDrift.waitingMissingItem}. runs_without_queue_load=${queueDrift.runsRunnableWithoutQueueLoad}.`,
       action: { type: "reconcile_catalog", label: "Reconciliar cola" },
@@ -608,7 +631,7 @@ export async function GET(req: Request) {
     pushAlert({
       id: "catalog_processing_no_recent_progress",
       type: "catalog_processing_no_recent_progress",
-      level: queueDrift.driftDetected ? "danger" : "warning",
+      level: queueDriftLevel,
       title: "Runs processing sin progreso reciente",
       detail: `${processingProgressRow.processingRunsWithoutRecentProgress}/${processingProgressRow.processingRuns} sin completions en ${progressWindowMinutes} min.`,
       action: { type: "reconcile_catalog", label: "Reconciliar cola" },
@@ -617,10 +640,23 @@ export async function GET(req: Request) {
 
   const dueBrands = rowsWithOperationalStatus
     .filter((brand) => !brand.manualReview && brand.operationalOverdue);
+  const processingNoProgressEntries: Array<{
+    brandId: string;
+    brandName: string;
+    runId: string;
+    runStatus: string;
+    completed: number;
+    total: number;
+    completedRecent: number;
+    pending: number;
+    failed: number;
+    progressPct: number;
+    updatedAt: string;
+  }> = [];
   dueBrands.forEach((brand) => {
     const latestProgress = latestRunProgressByBrand.get(brand.id);
     const forceMode = brand.lastForceResult?.mode ?? null;
-    if (latestProgress && ["processing", "paused", "blocked"].includes(latestProgress.status)) {
+    if (latestProgress && latestProgress.status === "processing") {
       const hasRecentProgress = latestProgress.completedRecent > 0;
       if (latestProgress.status === "processing" && hasRecentProgress) {
         pushAlert({
@@ -634,15 +670,19 @@ export async function GET(req: Request) {
         return;
       }
 
-      pushAlert({
-        id: `stale_processing_no_progress:${brand.id}`,
-        type: "stale_processing_no_progress",
-        level: queueDrift.driftDetected ? "danger" : "warning",
-        title: `Processing sin progreso real: ${brand.name}`,
-        detail: `Run ${latestProgress.runId} · status ${latestProgress.status} · ${latestProgress.completed}/${latestProgress.total} · completions recientes=${latestProgress.completedRecent}.`,
+      processingNoProgressEntries.push({
         brandId: brand.id,
-        action: { type: "resume_catalog_strong", label: "Resume fuerte", brandId: brand.id },
-      }, { critical: true });
+        brandName: brand.name,
+        runId: latestProgress.runId,
+        runStatus: latestProgress.status,
+        completed: latestProgress.completed,
+        total: latestProgress.total,
+        completedRecent: latestProgress.completedRecent,
+        pending: latestProgress.pending,
+        failed: latestProgress.failed,
+        progressPct: latestProgress.progressPct,
+        updatedAt: latestProgress.updatedAt,
+      });
       return;
     }
 
@@ -670,6 +710,39 @@ export async function GET(req: Request) {
     });
   });
 
+  const processingNoProgressSorted = [...processingNoProgressEntries].sort((a, b) => {
+    return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+  });
+  const processingNoProgressTop = processingNoProgressSorted.slice(0, alertTopBrands);
+  const processingNoProgressOverflow = Math.max(
+    0,
+    processingNoProgressSorted.length - processingNoProgressTop.length,
+  );
+  processingNoProgressTop.forEach((entry) => {
+    pushAlert({
+      id: `stale_processing_no_progress:${entry.brandId}`,
+      type: "stale_processing_no_progress",
+      level: queueDriftLevel,
+      title: `Processing sin progreso real: ${entry.brandName}`,
+      detail: `Run ${entry.runId} · status ${entry.runStatus} · ${entry.completed}/${entry.total} · completions recientes=${entry.completedRecent}.`,
+      brandId: entry.brandId,
+      action: { type: "resume_catalog_strong", label: "Resume fuerte", brandId: entry.brandId },
+    }, { critical: true });
+  });
+  if (processingNoProgressOverflow > 0) {
+    pushAlert({
+      id: "stale_processing_no_progress:overflow",
+      type: "stale_processing_no_progress_overflow",
+      level: queueDriftLevel,
+      title: `Processing sin progreso real: +${processingNoProgressOverflow} marcas adicionales`,
+      detail: `Mostrando top ${processingNoProgressTop.length} de ${processingNoProgressSorted.length}.`,
+      action: {
+        type: "remediate_catalog_balanced",
+        label: "Remediación masiva (balanceada)",
+      },
+    }, { critical: true });
+  }
+
   const alertStuckMinutes = Math.max(
     5,
     Number(process.env.CATALOG_ALERT_STUCK_MINUTES ?? 90),
@@ -688,7 +761,7 @@ export async function GET(req: Request) {
     pushAlert({
       id: `catalog_stuck:${run.id}`,
       type: "catalog_stuck",
-      level: run.status === "processing" && queueDrift.driftDetected ? "danger" : "warning",
+      level: run.status === "processing" && queueDriftCritical ? "danger" : "warning",
       title: `Catálogo atascado: ${run.brand?.name ?? "Marca"}`,
       detail: `Status ${run.status} · Última actividad ${run.updatedAt.toISOString()}`,
       brandId: run.brandId,
@@ -867,6 +940,9 @@ export async function GET(req: Request) {
       operationalStaleBrands,
       qualityStaleBrands,
       staleBreakdown,
+      activeRunCount,
+      activeRunCap: config.maxActiveRuns,
+      activeRunCapacityRemaining: Math.max(0, config.maxActiveRuns - activeRunCount),
       avgDiscoveryCoverage,
       avgRunSuccessRate,
       newProducts: newProducts?.count ?? 0,
@@ -888,6 +964,9 @@ export async function GET(req: Request) {
       processingRunsWithRecentProgress: processingProgressRow.processingRunsWithRecentProgress,
       processingRunsWithoutRecentProgress:
         processingProgressRow.processingRunsWithoutRecentProgress,
+      processingNoProgressCount: processingNoProgressSorted.length,
+      processingNoProgressTop: processingNoProgressTop,
+      processingNoProgressOverflow,
       archivedBrandsTotal,
       archivedLast24h,
       archiveCandidatesCount: archiveCandidates.length,
@@ -907,6 +986,14 @@ export async function GET(req: Request) {
           processingProgressRow.processingRunsWithRecentProgress,
         processingRunsWithoutRecentProgress:
           processingProgressRow.processingRunsWithoutRecentProgress,
+      },
+      processingNoProgress: {
+        windowMinutes: progressWindowMinutes,
+        topLimit: alertTopBrands,
+        total: processingNoProgressSorted.length,
+        overflow: processingNoProgressOverflow,
+        top: processingNoProgressTop,
+        all: processingNoProgressSorted,
       },
     },
     brands: rowsWithOperationalStatus,
