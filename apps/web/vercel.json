@@ -1,4 +1,6 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["iad1", "gru1"],
   "crons": [
     {
       "path": "/api/admin/brands/scrape/cron",
@@ -14,6 +16,10 @@
     },
     {
       "path": "/api/admin/catalog-refresh/cron",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/admin/catalog-price-insights/cron",
       "schedule": "0 * * * *"
     },
     {
