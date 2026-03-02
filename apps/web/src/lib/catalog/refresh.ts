@@ -2132,18 +2132,12 @@ export const runCatalogRefreshStuckRemediation = async (
   if (queueEnabled) {
     const drift = await readCatalogQueueDriftSummary({
       sampleLimit: config.autoReconcileJobScanLimit,
-      activeCompletedGraceSeconds: Number(
-        process.env.CATALOG_QUEUE_ACTIVE_COMPLETED_GRACE_SECONDS ?? 180,
-      ),
     });
     if (drift.driftDetected) {
       reconcileResult = await reconcileCatalogQueue({
         dryRun,
         jobScanLimit: config.autoReconcileJobScanLimit,
         reenqueueLimit: config.autoReconcileReenqueueLimit,
-        activeCompletedGraceSeconds: Number(
-          process.env.CATALOG_QUEUE_ACTIVE_COMPLETED_GRACE_SECONDS ?? 180,
-        ),
       });
       reconciled = true;
     }
@@ -2199,9 +2193,6 @@ export const runCatalogRefreshStuckRemediation = async (
     try {
       const driftAfterActions = await readCatalogQueueDriftSummary({
         sampleLimit: config.autoReconcileJobScanLimit,
-        activeCompletedGraceSeconds: Number(
-          process.env.CATALOG_QUEUE_ACTIVE_COMPLETED_GRACE_SECONDS ?? 180,
-        ),
       });
       const postDriftDetected =
         driftAfterActions.waitingItemNotQueued > 0 ||
@@ -2214,9 +2205,6 @@ export const runCatalogRefreshStuckRemediation = async (
           dryRun: false,
           jobScanLimit: config.autoReconcileJobScanLimit,
           reenqueueLimit: config.autoReconcileReenqueueLimit,
-          activeCompletedGraceSeconds: Number(
-            process.env.CATALOG_QUEUE_ACTIVE_COMPLETED_GRACE_SECONDS ?? 180,
-          ),
         });
         postReconciled = true;
       }
