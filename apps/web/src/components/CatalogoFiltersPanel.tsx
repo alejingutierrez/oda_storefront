@@ -22,6 +22,7 @@ type Facets = {
   materials: FacetItem[];
   patterns: FacetItem[];
   occasions: FacetItem[];
+  taxonomyVersion?: number;
 };
 
 type Props = {
@@ -75,6 +76,12 @@ function isAbortError(err: unknown) {
   if (err instanceof DOMException) return err.name === "AbortError";
   if (err instanceof Error) return err.name === "AbortError";
   return false;
+}
+
+function normalizeTaxonomyVersion(input: unknown): number {
+  if (typeof input !== "number" || !Number.isFinite(input)) return 0;
+  const normalized = Math.floor(input);
+  return normalized >= 0 ? normalized : 0;
 }
 
 function readSessionJson<T>(key: string): T | null {
@@ -456,8 +463,11 @@ export default function CatalogoFiltersPanel({
     return next.toString();
   }, [currentParamsString]);
   const subcategoriesSessionKey = useMemo(
-    () => `oda_catalog_subcategories_v1:${subcategoriesFetchKey || "base"}`,
-    [subcategoriesFetchKey],
+    () =>
+      `oda_catalog_subcategories_v1:${subcategoriesFetchKey || "base"}:taxonomy-v${normalizeTaxonomyVersion(
+        facets.taxonomyVersion,
+      )}`,
+    [facets.taxonomyVersion, subcategoriesFetchKey],
   );
   const [subcategoriesResolvedKey, setSubcategoriesResolvedKey] = useState<string>(() => {
     if (subcategories.length === 0) return "";
@@ -468,9 +478,7 @@ export default function CatalogoFiltersPanel({
   const [resolvedPriceHistogram, setResolvedPriceHistogram] = useState<CatalogPriceHistogram | null>(
     priceHistogram ?? null,
   );
-  const [resolvedPriceStats, setResolvedPriceStats] = useState<CatalogPriceStats | null>(
-    priceStats ?? null,
-  );
+  const [, setResolvedPriceStats] = useState<CatalogPriceStats | null>(priceStats ?? null);
   const priceBoundsLastOkAtRef = useRef<number>(0);
   const priceBoundsLastOkKeyRef = useRef<string>("");
   const priceInsightsFullLastOkAtRef = useRef<number>(0);
@@ -661,11 +669,13 @@ export default function CatalogoFiltersPanel({
         if (!res.ok) {
           throw new Error(`http_${res.status}`);
         }
-        const payload = (await res.json()) as { items?: FacetItem[] };
+        const payload = (await res.json()) as { items?: FacetItem[]; taxonomyVersion?: number };
         const items = Array.isArray(payload?.items) ? payload.items : [];
+        const taxonomyVersion = normalizeTaxonomyVersion(payload?.taxonomyVersion ?? facets.taxonomyVersion);
+        const nextSessionKey = `oda_catalog_subcategories_v1:${subcategoriesFetchKey || "base"}:taxonomy-v${taxonomyVersion}`;
         setResolvedSubcategories(items);
-        writeSessionJson(subcategoriesSessionKey, items);
-        setSubcategoriesResolvedKey(subcategoriesSessionKey);
+        writeSessionJson(nextSessionKey, items);
+        setSubcategoriesResolvedKey(nextSessionKey);
       } catch (err) {
         if (isAbortError(err)) return;
         // Mantén el último estado válido (evita “parpadeo” al volver a una pestaña inactiva).
@@ -681,7 +691,14 @@ export default function CatalogoFiltersPanel({
       controller.abort();
       setSubcategoriesLoading(false);
     };
-  }, [isPending, resumeTick, showSubcategoriesSection, subcategoriesFetchKey, subcategoriesSessionKey]);
+  }, [
+    facets.taxonomyVersion,
+    isPending,
+    resumeTick,
+    showSubcategoriesSection,
+    subcategoriesFetchKey,
+    subcategoriesSessionKey,
+  ]);
 
   useEffect(() => {
     if (isPending) return;
@@ -1375,7 +1392,6 @@ export default function CatalogoFiltersPanel({
         <PriceRange
           bounds={resolvedPriceBounds}
           histogram={resolvedPriceHistogram}
-          stats={resolvedPriceStats}
           selectedMinRaw={selected.priceMin}
           selectedMaxRaw={selected.priceMax}
           selectedRangesRaw={selected.priceRanges}
@@ -1583,7 +1599,6 @@ export default function CatalogoFiltersPanel({
 function PriceRange({
   bounds,
   histogram,
-  stats,
   selectedMinRaw,
   selectedMaxRaw,
   selectedRangesRaw,
@@ -1595,7 +1610,6 @@ function PriceRange({
 }: {
   bounds: CatalogPriceBounds;
   histogram?: CatalogPriceHistogram | null;
-  stats?: CatalogPriceStats | null;
   selectedMinRaw?: string | null;
   selectedMaxRaw?: string | null;
   selectedRangesRaw?: string[];
@@ -2040,20 +2054,12 @@ function PriceRange({
 
   return (
     <div className="mt-4 grid gap-3">
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl border border-[color:var(--oda-border)] bg-white px-3 py-2">
-          <p className="text-[9px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">Mínimo</p>
-          <p className="mt-1 truncate text-sm font-semibold tabular-nums text-[color:var(--oda-ink)]">
-            {formatCop(liveMinValue)}
-          </p>
-        </div>
-        <div className="rounded-xl border border-[color:var(--oda-border)] bg-white px-3 py-2">
-          <p className="text-[9px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">Máximo</p>
-          <p className="mt-1 truncate text-sm font-semibold tabular-nums text-[color:var(--oda-ink)]">
-            {formatCop(liveMaxValue)}
-          </p>
-        </div>
-      </div>
+      <p className="rounded-xl border border-[color:var(--oda-border)] bg-white px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
+        Rango actual:
+        <span className="ml-2 font-semibold tabular-nums text-[color:var(--oda-ink)]">
+          {formatCop(liveMinValue)} - {formatCop(liveMaxValue)}
+        </span>
+      </p>
 
       {hasSelectedRanges ? (
         <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">

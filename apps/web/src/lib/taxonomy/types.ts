@@ -1,4 +1,5 @@
 export type TaxonomyStage = "draft" | "published";
+export type MenuGroup = "Superiores" | "Completos" | "Inferiores" | "Accesorios" | "Lifestyle";
 
 export type TaxonomyTerm = {
   key: string;
@@ -10,6 +11,7 @@ export type TaxonomyTerm = {
 };
 
 export type TaxonomyCategory = TaxonomyTerm & {
+  menuGroup?: MenuGroup | null;
   subcategories: TaxonomyTerm[];
 };
 
@@ -30,7 +32,10 @@ export type TaxonomyOptions = {
   updatedAt: string | null;
   data: TaxonomyDataV1;
   categoryLabels: Record<string, string>;
+  categoryDescriptions: Record<string, string | null>;
+  categoryMenuGroups: Record<string, MenuGroup>;
   subcategoryLabels: Record<string, string>;
+  subcategoryDescriptions: Record<string, string | null>;
   subcategoryByCategory: Record<string, string[]>;
   materialLabels: Record<string, string>;
   patternLabels: Record<string, string>;

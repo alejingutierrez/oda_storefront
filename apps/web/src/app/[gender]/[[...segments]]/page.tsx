@@ -4,6 +4,7 @@ import type { SearchParams } from "@/lib/catalog-filters";
 import { mapLegacyCategoryToCanonicalCategories, resolveSearchParams } from "@/lib/catalog-filters";
 import { safeGetPlpSeoPageByPath } from "@/lib/plp-seo/store";
 import { GENDER_ROUTE, labelize, labelizeSubcategory, normalizeGender } from "@/lib/navigation";
+import { getPublishedTaxonomyOptions } from "@/lib/taxonomy/server";
 import type { CatalogPlpContext } from "@/lib/catalog-plp";
 import CatalogoView from "@/app/catalogo/CatalogoView";
 
@@ -49,36 +50,44 @@ function isAllowedGenderSlug(value: string) {
 
 function buildFallbackMetaDescription(params: {
   genderLabel: string;
-  rawCategory?: string | null;
-  rawSubcategory?: string | null;
+  categoryLabel?: string | null;
+  subcategoryLabel?: string | null;
+  categoryDescription?: string | null;
+  subcategoryDescription?: string | null;
 }) {
   const gender = String(params.genderLabel || "").trim().toLowerCase();
-  const categoryLabel = params.rawCategory ? labelize(params.rawCategory) : null;
-  const subcategoryLabel = params.rawSubcategory ? labelizeSubcategory(params.rawSubcategory) : null;
+  const categoryLabel = params.categoryLabel?.trim() || null;
+  const subcategoryLabel = params.subcategoryLabel?.trim() || null;
+  const categoryDescription = params.categoryDescription?.trim() || null;
+  const subcategoryDescription = params.subcategoryDescription?.trim() || null;
 
   if (subcategoryLabel) {
-    return `Explora ${subcategoryLabel.toLowerCase()} en moda colombiana ${gender}: marcas locales, inventario disponible y enlaces directos a tiendas oficiales.`;
+    return `${subcategoryDescription ? `${subcategoryDescription} ` : ""}Explora ${subcategoryLabel.toLowerCase()} en moda colombiana ${gender}: marcas locales, inventario disponible y enlaces directos a tiendas oficiales.`;
   }
   if (categoryLabel) {
-    return `Explora ${categoryLabel.toLowerCase()} ${gender} de moda colombiana: marcas locales, inventario disponible y enlaces directos a tiendas oficiales.`;
+    return `${categoryDescription ? `${categoryDescription} ` : ""}Explora ${categoryLabel.toLowerCase()} ${gender} de moda colombiana: marcas locales, inventario disponible y enlaces directos a tiendas oficiales.`;
   }
   return `Explora moda colombiana ${gender}: prendas y accesorios de marcas locales, inventario disponible y enlaces directos a tiendas oficiales.`;
 }
 
 function buildFallbackSubtitle(params: {
   genderLabel: string;
-  rawCategory?: string | null;
-  rawSubcategory?: string | null;
+  categoryLabel?: string | null;
+  subcategoryLabel?: string | null;
+  categoryDescription?: string | null;
+  subcategoryDescription?: string | null;
 }) {
   const gender = String(params.genderLabel || "").trim().toLowerCase();
-  const categoryLabel = params.rawCategory ? labelize(params.rawCategory) : null;
-  const subcategoryLabel = params.rawSubcategory ? labelizeSubcategory(params.rawSubcategory) : null;
+  const categoryLabel = params.categoryLabel?.trim() || null;
+  const subcategoryLabel = params.subcategoryLabel?.trim() || null;
+  const categoryDescription = params.categoryDescription?.trim() || null;
+  const subcategoryDescription = params.subcategoryDescription?.trim() || null;
 
   if (subcategoryLabel) {
-    return `${subcategoryLabel} en moda colombiana ${gender}. Marcas locales, inventario disponible y enlaces directos a tiendas oficiales.`;
+    return `${subcategoryDescription ? `${subcategoryDescription} ` : ""}${subcategoryLabel} en moda colombiana ${gender}. Marcas locales, inventario disponible y enlaces directos a tiendas oficiales.`;
   }
   if (categoryLabel) {
-    return `${categoryLabel} en moda colombiana ${gender}. Marcas locales, inventario disponible y enlaces directos a tiendas oficiales.`;
+    return `${categoryDescription ? `${categoryDescription} ` : ""}${categoryLabel} en moda colombiana ${gender}. Marcas locales, inventario disponible y enlaces directos a tiendas oficiales.`;
   }
   return `Moda colombiana ${gender} para descubrir. Marcas locales, inventario disponible y enlaces directos a tiendas oficiales.`;
 }
@@ -137,16 +146,32 @@ export async function generateMetadata({
   const basePath = `/${GENDER_ROUTE[genderLabel]}${safeSegments.length ? `/${safeSegments.join("/")}` : ""}`;
   const canonical = basePath;
 
-  const defaultTitle = rawSubcategory
-    ? `${humanizeKey(rawSubcategory)} · ${humanizeKey(genderLabel)} | ODA`
-    : rawCategory
-      ? `${humanizeKey(rawCategory)} · ${humanizeKey(genderLabel)} | ODA`
+  const taxonomy = await getPublishedTaxonomyOptions();
+  const categoryLookupKey = (rawCategory && taxonomy.categoryLabels[rawCategory] ? rawCategory : legacy?.[0]) ?? rawCategory;
+  const resolvedCategoryLabel = categoryLookupKey
+    ? taxonomy.categoryLabels[categoryLookupKey] ?? labelize(categoryLookupKey)
+    : null;
+  const resolvedSubcategoryLabel = rawSubcategory
+    ? taxonomy.subcategoryLabels[rawSubcategory] ?? labelizeSubcategory(rawSubcategory)
+    : null;
+  const resolvedCategoryDescription = categoryLookupKey
+    ? taxonomy.categoryDescriptions?.[categoryLookupKey] ?? null
+    : null;
+  const resolvedSubcategoryDescription = rawSubcategory
+    ? taxonomy.subcategoryDescriptions?.[rawSubcategory] ?? null
+    : null;
+  const defaultTitle = resolvedSubcategoryLabel
+    ? `${resolvedSubcategoryLabel} · ${humanizeKey(genderLabel)} | ODA`
+    : resolvedCategoryLabel
+      ? `${resolvedCategoryLabel} · ${humanizeKey(genderLabel)} | ODA`
       : `Catálogo ${humanizeKey(genderLabel)} | ODA`;
 
   const defaultDescription = buildFallbackMetaDescription({
     genderLabel,
-    rawCategory,
-    rawSubcategory,
+    categoryLabel: resolvedCategoryLabel,
+    subcategoryLabel: resolvedSubcategoryLabel,
+    categoryDescription: resolvedCategoryDescription,
+    subcategoryDescription: resolvedSubcategoryDescription,
   });
 
   const seo = await safeGetPlpSeoPageByPath(basePath);
@@ -201,8 +226,16 @@ export default async function GenderCatalogPage({
     if (rawSubcategory) locked.append("subcategory", rawSubcategory);
   }
 
-  const rawCategoryLabel = rawCategory ? labelize(rawCategory) : "";
-  const rawSubcategoryLabel = rawSubcategory ? labelizeSubcategory(rawSubcategory) : "";
+  const taxonomy = await getPublishedTaxonomyOptions();
+  const categoryLookupKey = (rawCategory && taxonomy.categoryLabels[rawCategory] ? rawCategory : legacy?.[0]) ?? rawCategory;
+  const rawCategoryLabel = categoryLookupKey
+    ? taxonomy.categoryLabels[categoryLookupKey] ?? labelize(categoryLookupKey)
+    : "";
+  const rawSubcategoryLabel = rawSubcategory
+    ? taxonomy.subcategoryLabels[rawSubcategory] ?? labelizeSubcategory(rawSubcategory)
+    : "";
+  const rawCategoryDescription = categoryLookupKey ? taxonomy.categoryDescriptions?.[categoryLookupKey] ?? null : null;
+  const rawSubcategoryDescription = rawSubcategory ? taxonomy.subcategoryDescriptions?.[rawSubcategory] ?? null : null;
 
   const plpTitle = rawSubcategory
     ? `${rawSubcategoryLabel} · ${gender}`
@@ -223,8 +256,10 @@ export default async function GenderCatalogPage({
 
   const fallbackSubtitle = buildFallbackSubtitle({
     genderLabel: gender,
-    rawCategory,
-    rawSubcategory,
+    categoryLabel: rawCategoryLabel || null,
+    subcategoryLabel: rawSubcategoryLabel || null,
+    categoryDescription: rawCategoryDescription,
+    subcategoryDescription: rawSubcategoryDescription,
   });
 
   const plp: CatalogPlpContext = {

@@ -54,7 +54,7 @@ type Props = {
   }) => Promise<QueueResult>;
 };
 
-type Option = { value: string; label: string };
+type Option = { value: string; label: string; description?: string | null };
 type Scope = "filtered" | "selected";
 type Mode = "taxonomy" | "attributes" | "tags" | "notes" | "editorial";
 
@@ -63,7 +63,11 @@ const MAX_BULK_IDS = 1200;
 const buildCategoryOptions = (taxonomy: TaxonomyOptions | null): Option[] =>
   (taxonomy?.data.categories ?? [])
     .filter((entry) => entry.isActive !== false)
-    .map((entry) => ({ value: entry.key, label: entry.label ?? entry.key }));
+    .map((entry) => ({
+      value: entry.key,
+      label: entry.label ?? entry.key,
+      description: taxonomy?.categoryDescriptions?.[entry.key] ?? entry.description ?? null,
+    }));
 
 const buildSubcategoryOptionsForCategory = (taxonomy: TaxonomyOptions | null, categoryKey: string): Option[] => {
   const key = categoryKey.trim();
@@ -72,7 +76,11 @@ const buildSubcategoryOptionsForCategory = (taxonomy: TaxonomyOptions | null, ca
   const subs = category?.subcategories ?? [];
   return subs
     .filter((entry) => entry.isActive !== false)
-    .map((entry) => ({ value: entry.key, label: entry.label ?? entry.key }));
+    .map((entry) => ({
+      value: entry.key,
+      label: entry.label ?? entry.key,
+      description: taxonomy?.subcategoryDescriptions?.[entry.key] ?? entry.description ?? null,
+    }));
 };
 
 const buildGenderOptions = (): Option[] => GENDER_OPTIONS.map((entry) => ({ value: entry.value, label: entry.label }));
@@ -386,6 +394,14 @@ export default function BulkEditModal({
   const subcategoryOptions = useMemo(
     () => buildSubcategoryOptionsForCategory(taxonomyOptions, taxCategoryOp === "replace" ? taxCategory : ""),
     [taxCategory, taxCategoryOp, taxonomyOptions],
+  );
+  const selectedCategoryOption = useMemo(
+    () => categoryOptions.find((option) => option.value === taxCategory) ?? null,
+    [categoryOptions, taxCategory],
+  );
+  const selectedSubcategoryOption = useMemo(
+    () => subcategoryOptions.find((option) => option.value === taxSubcategory) ?? null,
+    [subcategoryOptions, taxSubcategory],
   );
 
   const attributeValueOptions = useMemo(() => {
@@ -786,6 +802,11 @@ export default function BulkEditModal({
                             </option>
                           ))}
                         </select>
+                        {selectedCategoryOption?.description ? (
+                          <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                            {selectedCategoryOption.description}
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
 
@@ -820,6 +841,11 @@ export default function BulkEditModal({
                             </option>
                           ))}
                         </select>
+                        {selectedSubcategoryOption?.description ? (
+                          <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                            {selectedSubcategoryOption.description}
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>

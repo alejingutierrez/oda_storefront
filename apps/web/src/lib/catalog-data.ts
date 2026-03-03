@@ -451,10 +451,21 @@ export async function getCatalogFacets(filters: CatalogFilters): Promise<Catalog
 }
 
 export async function getCatalogFacetsLite(filters: CatalogFilters): Promise<CatalogFacetsLite> {
+  const { facets } = await getCatalogFacetsLiteWithVersion(filters);
+  return facets;
+}
+
+export async function getCatalogFacetsLiteWithVersion(filters: CatalogFilters): Promise<{
+  facets: CatalogFacetsLite;
+  taxonomyVersion: number;
+}> {
   const taxonomy = await getPublishedTaxonomyOptions();
   const cacheKey = buildFacetsCacheKey(filters);
   const cached = unstable_cache(
-    async () => computeCatalogFacetsLite(filters, taxonomy),
+    async () => {
+      const facets = await computeCatalogFacetsLite(filters, taxonomy);
+      return { facets, taxonomyVersion: taxonomy.version };
+    },
     ["catalog-facets-lite", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`, cacheKey],
     buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS),
   );
@@ -463,6 +474,14 @@ export async function getCatalogFacetsLite(filters: CatalogFilters): Promise<Cat
 }
 
 export async function getCatalogFacetsStatic(): Promise<CatalogFacetsLite> {
+  const { facets } = await getCatalogFacetsStaticWithVersion();
+  return facets;
+}
+
+export async function getCatalogFacetsStaticWithVersion(): Promise<{
+  facets: CatalogFacetsLite;
+  taxonomyVersion: number;
+}> {
   const taxonomy = await getPublishedTaxonomyOptions();
   const cached = unstable_cache(
     async () => {
@@ -510,7 +529,7 @@ export async function getCatalogFacetsStatic(): Promise<CatalogFacetsLite> {
           count: 1,
         }));
 
-      return {
+      const facets = {
         categories,
         genders: (["Femenino", "Masculino", "Unisex", "Infantil"] as GenderKey[]).map((gender) => ({
           value: gender,
@@ -529,6 +548,7 @@ export async function getCatalogFacetsStatic(): Promise<CatalogFacetsLite> {
         patterns,
         occasions,
       };
+      return { facets, taxonomyVersion: taxonomy.version };
     },
     ["catalog-facets-static", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`],
     buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS),
@@ -538,13 +558,24 @@ export async function getCatalogFacetsStatic(): Promise<CatalogFacetsLite> {
 }
 
 export async function getCatalogSubcategories(filters: CatalogFilters): Promise<CatalogFacetItem[]> {
+  const { items } = await getCatalogSubcategoriesWithVersion(filters);
+  return items;
+}
+
+export async function getCatalogSubcategoriesWithVersion(filters: CatalogFilters): Promise<{
+  items: CatalogFacetItem[];
+  taxonomyVersion: number;
+}> {
   if (!filters.categories || filters.categories.length === 0) {
-    return [];
+    return { items: [], taxonomyVersion: 0 };
   }
   const taxonomy = await getPublishedTaxonomyOptions();
   const cacheKey = buildFacetsCacheKey(filters);
   const cached = unstable_cache(
-    async () => computeCatalogSubcategories(filters, taxonomy),
+    async () => {
+      const items = await computeCatalogSubcategories(filters, taxonomy);
+      return { items, taxonomyVersion: taxonomy.version };
+    },
     ["catalog-subcategories", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`, cacheKey],
     buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS),
   );

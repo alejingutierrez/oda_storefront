@@ -34,6 +34,34 @@ Flujo:
 - Al completar login redirige a `/auth/callback?next=...`, que hace el sync del usuario en Neon y luego devuelve al `next`.
 - Si Descope regresa con `?code=...`, la UI espera bootstrap de sesión y, si no hay token local, ejecuta `oauth.exchange` una sola vez por código; `E061301` se maneja como carrera recuperable (sin error visible ni botón de reintento) con polling corto y limpieza de URL. `next/returnTo` se sanitiza para impedir loops hacia `/sign-in` o `/auth/callback` con query OAuth.
 
+## Price insights precalculados para PLPs fijas
+
+- Nuevo endpoint de cron interno: `GET /api/admin/catalog-price-insights/cron`.
+- Objetivo: precalcular semanalmente insights de precio (`bounds + histogram + stats`) para PLPs fijas y así renderizar SSR sin estado inicial de "Calculando distribución...".
+- La ejecución se distribuye por slots (sharding determinista por `path`) y se ejecuta cada hora desde `vercel.json`; cada PLP queda refrescada aproximadamente una vez por semana.
+- Variables de entorno:
+  - `CATALOG_FIXED_PLP_PRICE_INSIGHTS_REVALIDATE_SECONDS` (default `604800`).
+  - `CATALOG_FIXED_PLP_PRECOMPUTE_SLOT_COUNT` (default `168`).
+  - `CATALOG_FIXED_PLP_PRECOMPUTE_MAX_PATHS_PER_RUN` (default `12`).
+- La fuente de PLPs fijas es `plp_seo_pages.path`; el cron acepta overrides opcionales por query para operación manual:
+  - `slotCount`, `slot`, `maxPaths`.
+- Respuesta base del cron:
+  - `{ ok, slot, slotCount, processed, okCount, failCount, durationMs }`.
+
+## Taxonomía publicada: consistencia global (<10s post-publish)
+
+- El flujo global de cambios de taxonomía sigue siendo `draft -> publish` desde `/admin/taxonomy`.
+- Al publicar, se invalida caché de taxonomía (tag dedicado) y también caché de catálogo/home.
+- Las categorías ahora incluyen `menuGroup` editable (valores: `Superiores`, `Completos`, `Inferiores`, `Accesorios`, `Lifestyle`), con fallback automático para snapshots antiguos sin ese campo.
+- Menú y mega menú usan taxonomía publicada como fuente de verdad para labels y agrupación por `menuGroup`.
+- Endpoints de catálogo dependientes de taxonomía devuelven versión para invalidación cliente:
+  - `GET /api/catalog/facets-lite` → incluye `taxonomyVersion`.
+  - `GET /api/catalog/subcategories` → incluye `taxonomyVersion`.
+  - `GET /api/catalog/facets-static` → incluye `taxonomyVersion`.
+- Estos endpoints usan `Cache-Control: s-maxage=5, stale-while-revalidate=30` para minimizar stale visible tras publish.
+- El cliente de catálogo versiona caché de sesión por `taxonomyVersion`; si el campo no existe, cae en compatibilidad a `0`.
+- Las descripciones de taxonomía se propagan en SEO/admin (no en labels de menú/filtros públicos).
+
 ## Descope Approved Domains
 
 Configurar hosts aprobados en Descope (Project Settings) dentro de `trustedDomains` **sin protocolo** (`https://`) y separados por coma.

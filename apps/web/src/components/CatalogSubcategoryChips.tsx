@@ -20,6 +20,12 @@ function isAbortError(err: unknown) {
   return false;
 }
 
+function normalizeTaxonomyVersion(input: unknown): number {
+  if (typeof input !== "number" || !Number.isFinite(input)) return 0;
+  const normalized = Math.floor(input);
+  return normalized >= 0 ? normalized : 0;
+}
+
 function readSessionJson<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
   try {
@@ -107,10 +113,12 @@ function RailSkeleton({ density }: { density: "desktop" | "mobile" }) {
 export default function CatalogSubcategoryChips({
   mode = "toolbar",
   paramsString,
+  taxonomyVersion = 0,
   lockedKeys: lockedKeysList = [],
 }: {
   mode?: "toolbar" | "mobile";
   paramsString?: string;
+  taxonomyVersion?: number;
   lockedKeys?: string[];
 }) {
   const params = useSearchParams();
@@ -140,9 +148,10 @@ export default function CatalogSubcategoryChips({
     if (isLockedSubcategoryRoute) return { category: "", key: "" };
     return buildCategoryAndGenderKey(paramsStringResolved);
   }, [isLockedSubcategoryRoute, paramsStringResolved]);
+  const resolvedTaxonomyVersion = normalizeTaxonomyVersion(taxonomyVersion);
   const sessionKey = useMemo(
-    () => `oda_catalog_subcategories_chips_v1:${key || "base"}`,
-    [key],
+    () => `oda_catalog_subcategories_chips_v1:${key || "base"}:taxonomy-v${resolvedTaxonomyVersion}`,
+    [key, resolvedTaxonomyVersion],
   );
 
   const selected = useMemo(() => {
@@ -190,10 +199,12 @@ export default function CatalogSubcategoryChips({
       try {
         const res = await fetch(`/api/catalog/subcategories?${key}`, { signal: controller.signal });
         if (!res.ok) throw new Error(`http_${res.status}`);
-        const payload = (await res.json()) as { items?: unknown };
+        const payload = (await res.json()) as { items?: unknown; taxonomyVersion?: number };
         const next = coerceItems(payload?.items);
+        const nextTaxonomyVersion = normalizeTaxonomyVersion(payload?.taxonomyVersion ?? resolvedTaxonomyVersion);
+        const nextSessionKey = `oda_catalog_subcategories_chips_v1:${key || "base"}:taxonomy-v${nextTaxonomyVersion}`;
         setItems(next);
-        writeSessionJson(sessionKey, next);
+        writeSessionJson(nextSessionKey, next);
       } catch (err) {
         if (isAbortError(err)) return;
         setItems((prev) => prev);
@@ -207,7 +218,7 @@ export default function CatalogSubcategoryChips({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [category, key, mode, sessionKey]);
+  }, [category, key, mode, resolvedTaxonomyVersion, sessionKey]);
 
   const applyParams = (next: URLSearchParams) => {
     next.set("page", "1");
@@ -233,9 +244,9 @@ export default function CatalogSubcategoryChips({
       .map((item) => item.trim())
       .filter((item) => item.length > 0);
     const has = current.includes(value);
-    const updated = has ? current.filter((item) => item !== value) : [...current, value];
     next.delete("subcategory");
-    for (const item of updated) next.append("subcategory", item);
+    // En esta barra la selección es exclusiva: una subcategoría activa a la vez.
+    if (!has) next.append("subcategory", value);
     applyParams(next);
   };
 

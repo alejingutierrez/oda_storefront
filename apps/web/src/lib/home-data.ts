@@ -6,6 +6,8 @@ import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { CATALOG_CACHE_TAG } from "@/lib/catalog-cache";
 import { HOME_CONFIG_DEFAULTS } from "@/lib/home-types";
+import { getPublishedTaxonomyOptions } from "@/lib/taxonomy/server";
+import { MENU_GROUP_VALUES, resolveCategoryMenuGroup } from "@/lib/taxonomy/menu-groups";
 import type {
   BrandLogo,
   CategoryHighlight,
@@ -16,12 +18,10 @@ import type {
   HomePriceDropCardData,
   HomeTrendingDailyCardData,
   MegaMenuData,
-  MenuCategory,
   ProductCard,
   StyleGroup,
 } from "@/lib/home-types";
 import {
-  CATEGORY_GROUPS,
   GenderKey,
   buildCategoryHref,
   labelize,
@@ -81,7 +81,7 @@ export const getHomeConfig = unstable_cache(
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 11;
+const HOME_CACHE_VERSION = 12;
 const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 6;
@@ -275,13 +275,26 @@ async function executeResilientSection<T>(
 }
 
 export async function getMegaMenuData(): Promise<MegaMenuData> {
+  const taxonomy = await getPublishedTaxonomyOptions();
+  const activeTaxonomyCategories = (taxonomy.data.categories ?? [])
+    .filter((category) => category && category.isActive !== false)
+    .map((category) => ({
+      key: category.key,
+      label: taxonomy.categoryLabels[category.key] ?? category.label ?? labelize(category.key),
+      menuGroup: taxonomy.categoryMenuGroups[category.key] ?? resolveCategoryMenuGroup({ categoryKey: category.key }),
+    }));
+  const inactiveTaxonomyCategories = new Set(
+    (taxonomy.data.categories ?? [])
+      .filter((category) => category && category.isActive === false)
+      .map((category) => category.key),
+  );
+
   const cached = unstable_cache(
     async () => {
       const rows = await prisma.$queryRaw<
         Array<{
           gender_bucket: GenderKey;
           category: string;
-          subcategory: string | null;
           cnt: bigint;
         }>
       >(
@@ -313,40 +326,31 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
                 when p.category='enterizos' then 'enterizos_y_overoles'
                 when p.category='accesorios' and p.subcategory='bolsos' then 'bolsos_y_marroquineria'
                 else p.category
-              end as category,
-              p.subcategory as subcategory
+              end as category
             from products p
             where p.category is not null and p.category <> ''
               and p."imageCoverUrl" is not null
               and (p."metadata" -> 'enrichment') is not null
               and p."hasInStock" = true
           )
-          select gender_bucket, category, subcategory, count(*) as cnt
+          select gender_bucket, category, count(*) as cnt
           from bucketed
-          group by 1,2,3
+          group by 1,2
           order by gender_bucket, cnt desc
         `
       );
 
-      const byGender = new Map<GenderKey, Map<string, { count: number; sub: Map<string, number> }>>();
+      const byGender = new Map<GenderKey, Map<string, number>>();
 
       for (const row of rows) {
         const gender = row.gender_bucket;
         const category = row.category;
-        const subcategory = row.subcategory ?? "";
         const count = Number(row.cnt);
         if (!byGender.has(gender)) {
           byGender.set(gender, new Map());
         }
         const catMap = byGender.get(gender)!;
-        if (!catMap.has(category)) {
-          catMap.set(category, { count: 0, sub: new Map() });
-        }
-        const entry = catMap.get(category)!;
-        entry.count += count;
-        if (subcategory) {
-          entry.sub.set(subcategory, (entry.sub.get(subcategory) ?? 0) + count);
-        }
+        catMap.set(category, (catMap.get(category) ?? 0) + count);
       }
 
       const genders: GenderKey[] = ["Femenino", "Masculino", "Unisex", "Infantil"];
@@ -354,41 +358,53 @@ export async function getMegaMenuData(): Promise<MegaMenuData> {
 
       for (const gender of genders) {
         const catMap = byGender.get(gender) ?? new Map();
-        const buildColumn = (
-          column: "Superiores" | "Completos" | "Inferiores" | "Accesorios" | "Lifestyle"
-        ): MenuCategory[] => {
-          const categories = CATEGORY_GROUPS[column];
-          const items: MenuCategory[] = [];
+        const sections: MegaMenuData[GenderKey] = {
+          Superiores: [],
+          Completos: [],
+          Inferiores: [],
+          Accesorios: [],
+          Lifestyle: [],
+        };
+        const seen = new Set<string>();
 
-          for (const category of categories) {
-            const entry = catMap.get(category);
-            if (!entry || entry.count <= 0) {
-              continue;
-            }
-
+        for (const group of MENU_GROUP_VALUES) {
+          const items = sections[group];
+          const groupCategories = activeTaxonomyCategories.filter((category) => category.menuGroup === group);
+          for (const category of groupCategories) {
+            const count = catMap.get(category.key) ?? 0;
+            if (count <= 0) continue;
             items.push({
-              key: category,
-              label: labelize(category),
-              count: entry.count,
-              href: buildCategoryHref(gender, category),
+              key: category.key,
+              label: category.label,
+              count,
+              href: buildCategoryHref(gender, category.key),
             });
+            seen.add(category.key);
           }
+        }
 
-          return items;
-        };
+        const unknownCategories = Array.from(catMap.entries())
+          .filter(
+            ([category, count]) => count > 0 && !seen.has(category) && !inactiveTaxonomyCategories.has(category),
+          )
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 
-        result[gender] = {
-          Superiores: buildColumn("Superiores"),
-          Completos:  buildColumn("Completos"),
-          Inferiores: buildColumn("Inferiores"),
-          Accesorios: buildColumn("Accesorios"),
-          Lifestyle:  buildColumn("Lifestyle"),
-        };
+        for (const [category, count] of unknownCategories) {
+          const menuGroup = resolveCategoryMenuGroup({ categoryKey: category });
+          sections[menuGroup].push({
+            key: category,
+            label: taxonomy.categoryLabels[category] ?? labelize(category),
+            count,
+            href: buildCategoryHref(gender, category),
+          });
+        }
+
+        result[gender] = sections;
       }
 
       return result;
     },
-    [`home-v${HOME_CACHE_VERSION}-mega-menu`],
+    [`home-v${HOME_CACHE_VERSION}-mega-menu-taxonomy-v${taxonomy.version}`],
     { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
@@ -1114,7 +1130,7 @@ export async function getHeroSlides(
   const pinnedProductIds = heroPins.map((p) => p.productId);
 
   // 2. Fetch pinned products if any exist
-  let pinnedProducts: ProductCard[] = [];
+  const pinnedProducts: ProductCard[] = [];
   if (pinnedProductIds.length > 0) {
     const pricingContext = await getHomePricingContext();
     const rows = await prisma.$queryRaw<HomeProductQueryRow[]>(Prisma.sql`

@@ -1,8 +1,9 @@
 import Header from "@/components/Header";
 import CatalogoClient from "@/app/catalogo/CatalogoClient";
 import {
-  getCatalogFacetsLite,
+  getCatalogFacetsLiteWithVersion,
   getCatalogPriceBounds,
+  getCatalogPriceInsightsFixedPlp,
   getCatalogProductsPage,
   type CatalogFilters,
 } from "@/lib/catalog-data";
@@ -30,6 +31,16 @@ function applyPlpLockedParams(params: URLSearchParams, plp?: CatalogPlpContext |
   return next;
 }
 
+function isFixedPlpBaseRequest(params: URLSearchParams, plp?: CatalogPlpContext | null): boolean {
+  if (!plp) return false;
+  const lockedKeys = Array.from(new Set((plp.lockedKeys ?? []).map((key) => key.trim()).filter(Boolean)));
+  const allowed = new Set<string>(["page", "sort", ...lockedKeys]);
+  for (const key of new Set(Array.from(params.keys()))) {
+    if (!allowed.has(key)) return false;
+  }
+  return true;
+}
+
 export default async function CatalogoView({
   searchParams,
   plp,
@@ -48,12 +59,28 @@ export default async function CatalogoView({
     (parsedFilters.priceRanges?.length ?? 0) > 0 ||
     parsedFilters.priceMin !== undefined ||
     parsedFilters.priceMax !== undefined;
+  const fixedPlpBaseRequest = isFixedPlpBaseRequest(params, plp);
+  const initialPriceInsightsPromise = fixedPlpBaseRequest
+    ? getCatalogPriceInsightsFixedPlp(filters).catch(async (error) => {
+        console.error("catalog.price_insights_fixed_plp_ssr_failed", {
+          error: error instanceof Error ? error.message : String(error),
+          lockedParams: plp?.lockedParams ?? "",
+        });
+        const bounds = await getCatalogPriceBounds(filters);
+        return { bounds, histogram: null, stats: null };
+      })
+    : getCatalogPriceBounds(filters).then((bounds) => ({ bounds, histogram: null, stats: null }));
 
-  const [menu, page, facets, initialPriceBounds] = await Promise.all([
+  const [menu, page, facets, initialPriceInsights] = await Promise.all([
     getMegaMenuData(),
     getCatalogProductsPage({ filters, page: 1, sort }),
-    hasPriceFilter ? Promise.resolve(null) : getCatalogFacetsLite(filters),
-    getCatalogPriceBounds(filters),
+    hasPriceFilter
+      ? Promise.resolve(null)
+      : getCatalogFacetsLiteWithVersion(filters).then((result) => ({
+          ...result.facets,
+          taxonomyVersion: result.taxonomyVersion,
+        })),
+    initialPriceInsightsPromise,
   ]);
   const searchKeyParams = new URLSearchParams(params.toString());
   searchKeyParams.delete("page");
@@ -67,7 +94,7 @@ export default async function CatalogoView({
         totalCount={null}
         initialSearchParams={searchKey}
         initialFacets={facets}
-        initialPriceInsights={{ bounds: initialPriceBounds, histogram: null, stats: null }}
+        initialPriceInsights={initialPriceInsights}
         plpContext={plp ?? null}
       />
     </main>

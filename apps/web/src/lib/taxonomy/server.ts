@@ -1,11 +1,13 @@
 import "server-only";
 
 import { Prisma } from "@prisma/client";
-import { unstable_cache } from "next/cache";
+import { revalidateTag, unstable_cache } from "next/cache";
+import { invalidateCatalogCache } from "@/lib/catalog-cache";
 import { prisma } from "@/lib/prisma";
 import { buildBaseTaxonomyDataV1 } from "./base";
-import type { StyleProfileRow, TaxonomyDataV1, TaxonomyOptions, TaxonomyStage, TaxonomyTerm } from "./types";
+import type { MenuGroup, StyleProfileRow, TaxonomyDataV1, TaxonomyOptions, TaxonomyStage, TaxonomyTerm } from "./types";
 import { parseTaxonomyDataV1 } from "./validate";
+import { resolveCategoryMenuGroup } from "./menu-groups";
 import {
   resolveCategoryPromptDescription,
   resolveSubcategoryPromptDescription,
@@ -18,14 +20,14 @@ type SnapshotMeta = {
   data: TaxonomyDataV1;
 };
 
-let cachedOptions: { value: TaxonomyOptions; expiresAt: number } | null = null;
 let taxonomySnapshotsTableState: "unknown" | "missing" | "ready" = "unknown";
 
-const TAXONOMY_OPTIONS_CACHE_VERSION = 1;
-const TAXONOMY_OPTIONS_REVALIDATE_SECONDS = 60 * 10;
+const TAXONOMY_OPTIONS_CACHE_VERSION = 2;
+const TAXONOMY_OPTIONS_REVALIDATE_SECONDS = 30;
+const TAXONOMY_OPTIONS_CACHE_TAG = "taxonomy-options";
 
 export function invalidateTaxonomyCache() {
-  cachedOptions = null;
+  revalidateTag(TAXONOMY_OPTIONS_CACHE_TAG, "max");
 }
 
 function isMissingTableError(err: unknown, tableName: string) {
@@ -99,8 +101,14 @@ function normalizeTerms<T extends TaxonomyTerm>(terms: T[]): T[] {
 function normalizeData(data: TaxonomyDataV1): TaxonomyDataV1 {
   const categories = normalizeTerms(data.categories).map((cat) => {
     const categoryLabel = cat.label ?? cat.key;
+    const menuGroup = resolveCategoryMenuGroup({
+      categoryKey: cat.key,
+      currentMenuGroup: cat.menuGroup ?? null,
+      fallback: "Lifestyle",
+    });
     return {
       ...cat,
+      menuGroup,
       description: resolveCategoryPromptDescription({
         categoryKey: cat.key,
         categoryLabel,
@@ -161,15 +169,15 @@ function mergeDraftWithBaseAdditions(params: { draft: TaxonomyDataV1; base: Taxo
   }
 
   const mergeList = (key: "materials" | "patterns" | "occasions" | "styleTags") => {
-    const existing = (next[key] ?? []) as Array<{ key: string }>;
+    const existing = [...(next[key] ?? [])];
     const existingKeys = new Set(existing.map((entry) => entry.key));
-    for (const baseEntry of (base[key] ?? []) as Array<{ key: string }>) {
+    for (const baseEntry of base[key] ?? []) {
       if (existingKeys.has(baseEntry.key)) continue;
-      (existing as any).push(cloneJson(baseEntry));
+      existing.push(cloneJson(baseEntry));
       existingKeys.add(baseEntry.key);
       changed = true;
     }
-    (next as any)[key] = existing;
+    next[key] = existing;
   };
 
   mergeList("materials");
@@ -482,6 +490,7 @@ export async function publishDraftTaxonomy(params: { adminEmail?: string | null 
   }
 
   invalidateTaxonomyCache();
+  invalidateCatalogCache();
   return { ok: true, version: nextVersion, publishedAt: now.toISOString() };
 }
 
@@ -503,20 +512,33 @@ function buildLabelMap(entries: Array<{ key: string; label: string }>) {
 
 function buildTaxonomyMaps(data: TaxonomyDataV1) {
   const categoryLabels = buildLabelMap(data.categories);
+  const categoryDescriptions: Record<string, string | null> = {};
+  const categoryMenuGroups: Record<string, MenuGroup> = {};
   const subcategoryLabels: Record<string, string> = {};
+  const subcategoryDescriptions: Record<string, string | null> = {};
   const subcategoryByCategory: Record<string, string[]> = {};
 
   for (const category of data.categories) {
+    categoryDescriptions[category.key] = category.description ?? null;
+    categoryMenuGroups[category.key] = resolveCategoryMenuGroup({
+      categoryKey: category.key,
+      currentMenuGroup: category.menuGroup ?? null,
+      fallback: "Lifestyle",
+    });
     const subs = category.subcategories ?? [];
     subcategoryByCategory[category.key] = subs.map((sub) => sub.key);
     for (const sub of subs) {
       subcategoryLabels[sub.key] = sub.label;
+      subcategoryDescriptions[sub.key] = sub.description ?? null;
     }
   }
 
   return {
     categoryLabels,
+    categoryDescriptions,
+    categoryMenuGroups,
     subcategoryLabels,
+    subcategoryDescriptions,
     subcategoryByCategory,
     materialLabels: buildLabelMap(data.materials),
     patternLabels: buildLabelMap(data.patterns),
@@ -545,14 +567,12 @@ const getPublishedTaxonomyOptionsCached = unstable_cache(
     } satisfies TaxonomyOptions;
   },
   ["taxonomy-options", `cache-v${TAXONOMY_OPTIONS_CACHE_VERSION}`],
-  { revalidate: TAXONOMY_OPTIONS_REVALIDATE_SECONDS },
+  {
+    revalidate: TAXONOMY_OPTIONS_REVALIDATE_SECONDS,
+    tags: [TAXONOMY_OPTIONS_CACHE_TAG],
+  },
 );
 
 export async function getPublishedTaxonomyOptions(): Promise<TaxonomyOptions> {
-  const now = Date.now();
-  if (cachedOptions && cachedOptions.expiresAt > now) return cachedOptions.value;
-
-  const value = await getPublishedTaxonomyOptionsCached();
-  cachedOptions = { value, expiresAt: now + 60_000 };
-  return value;
+  return getPublishedTaxonomyOptionsCached();
 }

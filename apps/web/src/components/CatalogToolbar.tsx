@@ -101,6 +101,7 @@ export default function CatalogToolbar({
   brandCount,
   searchKey,
   paramsString,
+  taxonomyVersion = 0,
   lockedKeys: lockedKeysList = [],
   filtersCollapsed = false,
   onToggleFiltersCollapsed,
@@ -109,6 +110,7 @@ export default function CatalogToolbar({
   brandCount?: number | null;
   searchKey: string;
   paramsString: string;
+  taxonomyVersion?: number;
   lockedKeys?: string[];
   filtersCollapsed?: boolean;
   onToggleFiltersCollapsed?: () => void;
@@ -353,6 +355,7 @@ export default function CatalogToolbar({
           mode="toolbar"
           paramsString={paramsString}
           lockedKeys={lockedKeysList}
+          taxonomyVersion={taxonomyVersion}
         />
       </div>
 

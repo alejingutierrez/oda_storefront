@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCatalogSubcategories } from "@/lib/catalog-data";
+import { getCatalogSubcategoriesWithVersion } from "@/lib/catalog-data";
 import { parseCatalogFiltersFromSearchParams } from "@/lib/catalog-filters";
 
 export const runtime = "nodejs";
@@ -10,14 +10,14 @@ export async function GET(req: Request) {
   const parsedFilters = parseCatalogFiltersFromSearchParams(url.searchParams, { categoryMode: "single" });
   const filters = { ...parsedFilters, inStock: true, enrichedOnly: true };
 
-  const items = await getCatalogSubcategories(filters);
+  const { items, taxonomyVersion } = await getCatalogSubcategoriesWithVersion(filters);
 
   return NextResponse.json(
-    { items },
+    { items, taxonomyVersion },
     {
       headers: {
         // Cache corto en CDN para estabilidad (pestañas inactivas / back-forward).
-        "cache-control": "public, max-age=0, s-maxage=60, stale-while-revalidate=600",
+        "cache-control": "public, max-age=0, s-maxage=5, stale-while-revalidate=30",
       },
     },
   );

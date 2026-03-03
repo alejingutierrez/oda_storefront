@@ -116,6 +116,28 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: compatibilidad retro para clientes existentes (`includeSummary` default `true`), orden determinista de cola y sin cambios en APIs públicas de catálogo.
 - Estado: **done (2026-02-25)**.
 
+### MC-150 Consistencia global de taxonomía publicada (filtros, menú, mega menú y admin)
+- Historia: Como administrador de taxonomía, quiero que cualquier cambio publicado (label, descripción y grupo de menú) se refleje de forma consistente en toda la plataforma, para evitar incoherencias entre navegación pública y herramientas de operación.
+- Alcance:
+  - Se mantiene `draft -> publish` como único gatillo global; al publicar se invalida caché de taxonomía y cachés de catálogo/home.
+  - `TaxonomyCategory` incorpora `menuGroup` editable desde `/admin/taxonomy` (5 valores fijos) con fallback para snapshots antiguos.
+  - `TaxonomyOptions` expone `categoryDescriptions`, `subcategoryDescriptions` y `categoryMenuGroups`.
+  - Menú y mega menú migran a taxonomía publicada como fuente de verdad de labels/agrupación.
+  - Endpoints `facets-lite`, `subcategories` y `facets-static` retornan `taxonomyVersion` y reducen ventana de caché (`s-maxage=5`) para SLA visual <10s post-publish.
+  - Clientes de catálogo (`CatalogoClient`, toolbar/chips y panel de filtros) versionan caché de sesión por `taxonomyVersion` y bajan frescura local de facets.
+  - Rutas dinámicas por género resuelven label/description desde taxonomía publicada para fallback SEO.
+  - Admin de curación masiva muestra descripciones contextuales de categoría/subcategoría; no se exponen descripciones en menú/filtros públicos.
+- CA:
+  - Renombrar categoría y publicar refleja cambios en filtros, menú, mega menú y admin en <10s.
+  - Cambiar `menuGroup` mueve la categoría de columna en mega menú sin hard refresh.
+  - Cambiar descripción actualiza fallback SEO en PLP dinámica y ayudas contextuales en admin.
+  - Snapshots legacy sin `menuGroup` cargan/publican sin error.
+- Datos/APIs:
+  - `TaxonomyCategory.menuGroup`, `TaxonomyOptions.categoryDescriptions/subcategoryDescriptions/categoryMenuGroups`.
+  - `GET /api/catalog/facets-lite`, `GET /api/catalog/subcategories`, `GET /api/catalog/facets-static` ahora devuelven `taxonomyVersion`.
+- NF: consistencia eventual <10s tras publish, compatibilidad retro (`taxonomyVersion` opcional en cliente => fallback `0`), sin regresión funcional en `/`, `/catalogo`, `/{gender}` y admin de taxonomía/curación.
+- Estado: **done (2026-03-02)**.
+
 ### MC-133 PLP `/catalogo`: corrección de filtro de precios (histograma + UX + performance medible)
 - Historia: Como usuario de catálogo, quiero que el filtro de precios represente productos reales, responda rápido y tenga feedback claro en desktop/mobile, para evitar resultados confusos y frustración al aplicar filtros.
 - Alcance:

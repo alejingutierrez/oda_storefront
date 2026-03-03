@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCatalogFacetsLite } from "@/lib/catalog-data";
+import { getCatalogFacetsLiteWithVersion } from "@/lib/catalog-data";
 import { parseCatalogFiltersFromSearchParams } from "@/lib/catalog-filters";
 
 export const runtime = "nodejs";
@@ -10,14 +10,14 @@ export async function GET(req: Request) {
   const parsedFilters = parseCatalogFiltersFromSearchParams(url.searchParams, { categoryMode: "single" });
   const filters = { ...parsedFilters, inStock: true, enrichedOnly: true };
 
-  const facets = await getCatalogFacetsLite(filters);
+  const { facets, taxonomyVersion } = await getCatalogFacetsLiteWithVersion(filters);
 
   return NextResponse.json(
-    { facets },
+    { facets, taxonomyVersion },
     {
       headers: {
         // Cache corto en CDN para que al volver a una pestaña inactiva no “parpadeen” los filtros.
-        "cache-control": "public, max-age=0, s-maxage=60, stale-while-revalidate=600",
+        "cache-control": "public, max-age=0, s-maxage=5, stale-while-revalidate=30",
       },
     },
   );

@@ -17,6 +17,7 @@ import {
   resolveCategoryPromptDescription,
   resolveSubcategoryPromptDescription,
 } from "@/lib/product-enrichment/taxonomy-prompt-fallbacks";
+import { resolveCategoryMenuGroup } from "./menu-groups";
 import type { TaxonomyDataV1, TaxonomyTerm } from "./types";
 
 const toTerm = (key: string, label: string, description?: string | null, sortOrder?: number): TaxonomyTerm => ({
@@ -34,6 +35,7 @@ export function buildBaseTaxonomyDataV1(): TaxonomyDataV1 {
     categories: CATEGORY_OPTIONS.map((category, categoryIndex) => ({
       key: category.value,
       label: category.label,
+      menuGroup: resolveCategoryMenuGroup({ categoryKey: category.value }),
       description: resolveCategoryPromptDescription({
         categoryKey: category.value,
         categoryLabel: category.label,

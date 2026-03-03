@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { slugify } from "@/lib/product-enrichment/utils";
+import { MENU_GROUP_OPTIONS } from "@/lib/taxonomy/menu-groups";
 import type { StyleProfileRow, TaxonomyDataV1, TaxonomyTerm } from "@/lib/taxonomy/types";
 
 type ApiTaxonomyResponse = {
@@ -18,6 +19,8 @@ type ApiStyleProfilesResponse = {
   styleProfiles: Array<StyleProfileRow & { updatedAt: string }>;
 };
 
+type ApiErrorPayload = { ok?: boolean; error?: string };
+
 type TabKey =
   | "categories"
   | "subcategories"
@@ -28,6 +31,7 @@ type TabKey =
   | "styleProfiles";
 
 type Option = { value: string; label: string };
+type TagListKey = "materials" | "patterns" | "occasions" | "styleTags";
 
 const TAB_OPTIONS: Array<{ key: TabKey; label: string; note: string }> = [
   { key: "categories", label: "Categorías", note: "Edita labels y descripciones. Llaves (slug) se mantienen." },
@@ -47,14 +51,10 @@ function normalizeUnique(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort();
 }
 
-function makeKey() {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  } catch {
-    // ignore
-  }
-  return `k_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+function getErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const error = (payload as { error?: unknown }).error;
+  return typeof error === "string" && error.trim().length > 0 ? error : null;
 }
 
 function CheckboxMultiSelect({
@@ -402,13 +402,9 @@ function AddTermCard({
   onAdd: (term: TaxonomyTerm) => void;
 }) {
   const [label, setLabel] = useState("");
+  const [manualKey, setManualKey] = useState("");
   const [keyTouched, setKeyTouched] = useState(false);
-  const [key, setKey] = useState("");
-
-  useEffect(() => {
-    if (keyTouched) return;
-    setKey(slugify(label));
-  }, [keyTouched, label]);
+  const key = keyTouched ? manualKey : slugify(label);
 
   const canAdd = useMemo(() => {
     return Boolean(label.trim()) && Boolean(key.trim());
@@ -426,8 +422,8 @@ function AddTermCard({
     };
     onAdd(term);
     setLabel("");
+    setManualKey("");
     setKeyTouched(false);
-    setKey("");
   };
 
   return (
@@ -455,7 +451,7 @@ function AddTermCard({
             value={key}
             onChange={(event) => {
               setKeyTouched(true);
-              setKey(event.target.value);
+              setManualKey(event.target.value);
             }}
             placeholder="se_genera_automatico"
             className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
@@ -510,35 +506,45 @@ export default function TaxonomyEditorPanel() {
         fetch("/api/admin/style-profiles", { cache: "no-store" }),
       ]);
 
-      const publishedPayload: ApiTaxonomyResponse = await publishedRes.json().catch(() => ({ ok: false } as any));
-      const draftPayload: ApiTaxonomyResponse = await draftRes.json().catch(() => ({ ok: false } as any));
-      const profilesPayload: ApiStyleProfilesResponse = await profilesRes.json().catch(() => ({ ok: false } as any));
+      const publishedPayload = (await publishedRes.json().catch((): ApiErrorPayload => ({ ok: false }))) as
+        | ApiTaxonomyResponse
+        | ApiErrorPayload;
+      const draftPayload = (await draftRes.json().catch((): ApiErrorPayload => ({ ok: false }))) as
+        | ApiTaxonomyResponse
+        | ApiErrorPayload;
+      const profilesPayload = (await profilesRes.json().catch((): ApiErrorPayload => ({ ok: false }))) as
+        | ApiStyleProfilesResponse
+        | ApiErrorPayload;
 
-      if (!publishedRes.ok || !publishedPayload.ok) {
-        throw new Error((publishedPayload as any)?.error ?? "No se pudo cargar taxonomía publicada.");
+      if (!publishedRes.ok || publishedPayload.ok !== true) {
+        throw new Error(getErrorMessage(publishedPayload) ?? "No se pudo cargar taxonomía publicada.");
       }
-      if (!draftRes.ok || !draftPayload.ok) {
-        throw new Error((draftPayload as any)?.error ?? "No se pudo cargar borrador de taxonomía.");
+      if (!draftRes.ok || draftPayload.ok !== true) {
+        throw new Error(getErrorMessage(draftPayload) ?? "No se pudo cargar borrador de taxonomía.");
       }
-      if (!profilesRes.ok || !profilesPayload.ok) {
-        throw new Error((profilesPayload as any)?.error ?? "No se pudieron cargar perfiles de estilo.");
+      if (!profilesRes.ok || profilesPayload.ok !== true) {
+        throw new Error(getErrorMessage(profilesPayload) ?? "No se pudieron cargar perfiles de estilo.");
       }
+
+      const safePublished = publishedPayload as ApiTaxonomyResponse;
+      const safeDraft = draftPayload as ApiTaxonomyResponse;
+      const safeProfiles = profilesPayload as ApiStyleProfilesResponse;
 
       setPublishedMeta({
-        version: publishedPayload.version,
-        updatedAt: publishedPayload.updatedAt,
-        source: publishedPayload.source,
-        data: publishedPayload.data,
+        version: safePublished.version,
+        updatedAt: safePublished.updatedAt,
+        source: safePublished.source,
+        data: safePublished.data,
       });
       setDraftMeta({
-        version: draftPayload.version,
-        updatedAt: draftPayload.updatedAt,
-        source: draftPayload.source,
-        data: draftPayload.data,
+        version: safeDraft.version,
+        updatedAt: safeDraft.updatedAt,
+        source: safeDraft.source,
+        data: safeDraft.data,
       });
-      setStyleProfiles(profilesPayload.styleProfiles ?? []);
+      setStyleProfiles(safeProfiles.styleProfiles ?? []);
 
-      const firstCategory = draftPayload.data.categories[0]?.key ?? "";
+      const firstCategory = safeDraft.data.categories[0]?.key ?? "";
       setSubcategoryCategoryKey((prev) => prev || firstCategory);
     } catch (err) {
       console.warn(err);
@@ -566,22 +572,11 @@ export default function TaxonomyEditorPanel() {
     setDraftMeta((prev) => (prev ? { ...prev, data: next } : prev));
   };
 
-  const patchCategory = (key: string, patch: Partial<TaxonomyTerm>) => {
+  const patchCategory = (key: string, patch: Partial<TaxonomyDataV1["categories"][number]>) => {
     if (!draft) return;
     updateDraft({
       ...draft,
       categories: draft.categories.map((category) => (category.key === key ? { ...category, ...patch } : category)),
-    });
-  };
-
-  const addCategory = (term: TaxonomyTerm) => {
-    if (!draft) return;
-    updateDraft({
-      ...draft,
-      categories: [
-        ...draft.categories,
-        { key: term.key, label: term.label, description: term.description ?? null, isActive: term.isActive, subcategories: [] as any },
-      ] as any,
     });
   };
 
@@ -621,20 +616,20 @@ export default function TaxonomyEditorPanel() {
     });
   };
 
-  const patchTagList = (listKey: "materials" | "patterns" | "occasions" | "styleTags", key: string, patch: Partial<TaxonomyTerm>) => {
+  const patchTagList = (listKey: TagListKey, key: string, patch: Partial<TaxonomyTerm>) => {
     if (!draft) return;
     updateDraft({
       ...draft,
-      [listKey]: (draft as any)[listKey].map((term: TaxonomyTerm) => (term.key === key ? { ...term, ...patch } : term)),
-    } as TaxonomyDataV1);
+      [listKey]: draft[listKey].map((term) => (term.key === key ? { ...term, ...patch } : term)),
+    });
   };
 
-  const addTag = (listKey: "materials" | "patterns" | "occasions" | "styleTags", term: TaxonomyTerm) => {
+  const addTag = (listKey: TagListKey, term: TaxonomyTerm) => {
     if (!draft) return;
     updateDraft({
       ...draft,
-      [listKey]: [...(draft as any)[listKey], term],
-    } as TaxonomyDataV1);
+      [listKey]: [...draft[listKey], term],
+    });
   };
 
   const handleSaveDraft = async () => {
@@ -837,6 +832,7 @@ export default function TaxonomyEditorPanel() {
                     {
                       key: safeKey,
                       label: term.label,
+                      menuGroup: "Lifestyle",
                       description: term.description ?? null,
                       synonyms: [],
                       isActive: term.isActive,
@@ -885,7 +881,7 @@ export default function TaxonomyEditorPanel() {
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  <div className="mt-4 grid gap-4 lg:grid-cols-3">
                     <div>
                       <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor={`cat_label_${category.key}`}>
                         Label
@@ -896,6 +892,27 @@ export default function TaxonomyEditorPanel() {
                         onChange={(event) => patchCategory(category.key, { label: event.target.value })}
                         className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                       />
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor={`cat_group_${category.key}`}>
+                        Grupo mega menú
+                      </label>
+                      <select
+                        id={`cat_group_${category.key}`}
+                        value={category.menuGroup ?? "Lifestyle"}
+                        onChange={(event) =>
+                          patchCategory(category.key, {
+                            menuGroup: event.target.value as TaxonomyDataV1["categories"][number]["menuGroup"],
+                          })
+                        }
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        {MENU_GROUP_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="text-xs uppercase tracking-[0.2em] text-slate-500" htmlFor={`cat_desc_${category.key}`}>

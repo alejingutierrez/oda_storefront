@@ -27,6 +27,7 @@ type FacetsLite = {
   materials: FacetItem[];
   patterns: FacetItem[];
   occasions: FacetItem[];
+  taxonomyVersion?: number;
 };
 
 type FavoriteAddedDetail = {
@@ -44,6 +45,8 @@ type UserListSummary = {
 };
 
 const FAVORITE_ADDED_EVENT = "oda:fav-added";
+const ROUTE_LOADING_START_EVENT = "oda:route-loading:start";
+const ROUTE_LOADING_STOP_EVENT = "oda:route-loading:stop";
 const MOBILE_COLUMNS_KEY = "oda_catalog_mobile_columns_v1";
 const LEGACY_MOBILE_LAYOUT_KEY = "oda_catalog_mobile_layout_v1";
 
@@ -122,6 +125,12 @@ function isValidFacetsLite(input: unknown): input is FacetsLite {
     obj.occasions,
   ];
   return arrays.every((value) => Array.isArray(value));
+}
+
+function normalizeTaxonomyVersion(input: unknown): number {
+  if (typeof input !== "number" || !Number.isFinite(input)) return 0;
+  const normalized = Math.floor(input);
+  return normalized >= 0 ? normalized : 0;
 }
 
 function isAbortError(err: unknown) {
@@ -491,6 +500,27 @@ export default function CatalogoClient({
   // mostrar productos antiguos bajo filtros nuevos.
   const navigationPending = uiSearchKey !== initialSearchKey;
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const eventName = navigationPending ? ROUTE_LOADING_START_EVENT : ROUTE_LOADING_STOP_EVENT;
+    window.dispatchEvent(
+      new CustomEvent(eventName, {
+        detail: { source: "catalog_filters" },
+      }),
+    );
+  }, [navigationPending]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window === "undefined") return;
+      window.dispatchEvent(
+        new CustomEvent(ROUTE_LOADING_STOP_EVENT, {
+          detail: { source: "catalog_filters_cleanup" },
+        }),
+      );
+    };
+  }, []);
+
   const totalCountFetchKey = useMemo(() => {
     const next = new URLSearchParams(effectiveParamsString);
     next.delete("page");
@@ -549,14 +579,16 @@ export default function CatalogoClient({
   }, [brandCountSessionKey]);
 
   const facetsFetchKey = totalCountFetchKey;
-  const facetsSessionKey = useMemo(
-    () => `oda_catalog_facets_lite_v1:${facetsFetchKey || "base"}`,
-    [facetsFetchKey],
-  );
+  const initialTaxonomyVersion = normalizeTaxonomyVersion(initialFacets?.taxonomyVersion);
   const [facets, setFacets] = useState<FacetsLite | null>(() => {
     if (isValidFacetsLite(initialFacets)) return initialFacets;
     return null;
   });
+  const currentTaxonomyVersion = normalizeTaxonomyVersion(facets?.taxonomyVersion ?? initialTaxonomyVersion);
+  const facetsSessionKey = useMemo(
+    () => `oda_catalog_facets_lite_v1:${facetsFetchKey || "base"}:taxonomy-v${currentTaxonomyVersion}`,
+    [currentTaxonomyVersion, facetsFetchKey],
+  );
   const [facetsLoading, setFacetsLoading] = useState(false);
   const facetsAbortRef = useRef<AbortController | null>(null);
   const facetsLastAttemptAtRef = useRef<number>(0);
@@ -616,7 +648,7 @@ export default function CatalogoClient({
     const isFresh =
       Boolean(facets) &&
       facetsLastOkKeyRef.current === facetsSessionKey &&
-      now - facetsLastOkAtRef.current < 60_000;
+      now - facetsLastOkAtRef.current < 8_000;
     if (isFresh) return;
     // Evita loops si focus/visibility se disparan en ráfaga.
     if (now - facetsLastAttemptAtRef.current < 800) return;
@@ -635,13 +667,19 @@ export default function CatalogoClient({
         if (!res.ok) {
           throw new Error(`http_${res.status}`);
         }
-        const payload = (await res.json()) as { facets?: FacetsLite };
+        const payload = (await res.json()) as { facets?: FacetsLite; taxonomyVersion?: number };
         const nextFacets = payload?.facets;
         if (isValidFacetsLite(nextFacets)) {
-          setFacets(nextFacets);
-          writeSessionJson(facetsSessionKey, nextFacets);
+          const taxonomyVersion = normalizeTaxonomyVersion(payload?.taxonomyVersion ?? nextFacets?.taxonomyVersion ?? 0);
+          const normalizedFacets: FacetsLite = {
+            ...nextFacets,
+            taxonomyVersion,
+          };
+          const sessionKey = `oda_catalog_facets_lite_v1:${facetsFetchKey || "base"}:taxonomy-v${taxonomyVersion}`;
+          setFacets(normalizedFacets);
+          writeSessionJson(sessionKey, normalizedFacets);
           facetsLastOkAtRef.current = Date.now();
-          facetsLastOkKeyRef.current = facetsSessionKey;
+          facetsLastOkKeyRef.current = sessionKey;
         } else {
           // Mantén el último estado válido.
           setFacets((prev) => prev);
@@ -1051,6 +1089,7 @@ export default function CatalogoClient({
                   paramsString={effectiveParamsString}
                   lockedKeys={lockedKeysList}
                   filtersCollapsed={filtersCollapsed}
+                  taxonomyVersion={normalizeTaxonomyVersion(facets?.taxonomyVersion)}
                   onToggleFiltersCollapsed={toggleFiltersCollapsed}
                 />
               </div>
@@ -1059,6 +1098,7 @@ export default function CatalogoClient({
                 mode="mobile"
                 paramsString={effectiveParamsString}
                 lockedKeys={lockedKeysList}
+                taxonomyVersion={normalizeTaxonomyVersion(facets?.taxonomyVersion)}
               />
 
               <CatalogProductsInfinite

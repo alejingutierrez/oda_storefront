@@ -20,8 +20,11 @@ const termSchema = z
   })
   .passthrough();
 
+const menuGroupSchema = z.enum(["Superiores", "Completos", "Inferiores", "Accesorios", "Lifestyle"]);
+
 const categorySchema = termSchema
   .extend({
+    menuGroup: menuGroupSchema.optional().nullable(),
     subcategories: z.array(termSchema).min(1, "subcategory_required"),
   })
   .passthrough();
