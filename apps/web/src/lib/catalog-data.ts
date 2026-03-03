@@ -40,6 +40,10 @@ const CATALOG_FIXED_PLP_PRICE_INSIGHTS_REVALIDATE_SECONDS = (() => {
 // Products can change frequently (stock/price), but we still want to avoid DB spikes on filters.
 // Keep this short so the catalog stays fresh while being resilient.
 const CATALOG_PRODUCTS_REVALIDATE_SECONDS = 60;
+const CATALOG_FACETS_LITE_TIMEOUT_MS = Math.max(
+  1_000,
+  Number(process.env.CATALOG_FACETS_LITE_TIMEOUT_MS ?? 8_000),
+);
 export const CATALOG_PAGE_SIZE = 24;
 // Bump to invalidate `unstable_cache` entries when query semantics change (e.g. category canonicalization).
 const CATALOG_CACHE_VERSION = 12;
@@ -469,8 +473,35 @@ export async function getCatalogFacetsLiteWithVersion(filters: CatalogFilters): 
     ["catalog-facets-lite", `cache-v${CATALOG_CACHE_VERSION}`, `taxonomy-v${taxonomy.version}`, cacheKey],
     buildCatalogCacheOptions(CATALOG_REVALIDATE_SECONDS),
   );
+  const facetsPromise = cached();
+  let timeoutTriggered = false;
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutFallback = new Promise<null>((resolve) => {
+    timeoutHandle = setTimeout(() => {
+      timeoutTriggered = true;
+      resolve(null);
+    }, CATALOG_FACETS_LITE_TIMEOUT_MS);
+  });
 
-  return cached();
+  try {
+    const result = await Promise.race([facetsPromise, timeoutFallback]);
+    if (result) return result;
+  } catch (error) {
+    console.warn("[catalog.facets-lite] compute failed, using static fallback", { error, cacheKey });
+    const fallback = await getCatalogFacetsStaticWithVersion();
+    return fallback;
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+
+  facetsPromise.catch((error) => {
+    console.warn("[catalog.facets-lite] timed out, late compute rejected", { error, cacheKey });
+  });
+  if (timeoutTriggered) {
+    console.warn("[catalog.facets-lite] timed out, using static fallback", { cacheKey });
+  }
+  const fallback = await getCatalogFacetsStaticWithVersion();
+  return fallback;
 }
 
 export async function getCatalogFacetsStatic(): Promise<CatalogFacetsLite> {
