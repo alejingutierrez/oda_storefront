@@ -125,6 +125,69 @@ export const taxonomyDataV1Schema: z.ZodType<TaxonomyDataV1> = z
     }
   });
 
+function repairDuplicateSubcategoryDefinitions(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+
+  const cloned = JSON.parse(JSON.stringify(value)) as {
+    categories?: Array<{
+      subcategories?: Array<Record<string, unknown>>;
+    }>;
+  };
+
+  const categories = Array.isArray(cloned.categories) ? cloned.categories : [];
+  const canonicalByKey = new Map<
+    string,
+    { label: string; description: string | null; isActive: boolean }
+  >();
+
+  for (const category of categories) {
+    if (!category || typeof category !== "object") continue;
+    const subcategories = Array.isArray(category.subcategories) ? category.subcategories : [];
+
+    for (const subcategory of subcategories) {
+      if (!subcategory || typeof subcategory !== "object") continue;
+      const key = typeof subcategory.key === "string" ? subcategory.key.trim() : "";
+      if (!key) continue;
+
+      const existing = canonicalByKey.get(key);
+      if (!existing) {
+        canonicalByKey.set(key, {
+          label:
+            typeof subcategory.label === "string" && subcategory.label.trim().length > 0
+              ? subcategory.label
+              : key,
+          description:
+            typeof subcategory.description === "string"
+              ? subcategory.description
+              : subcategory.description == null
+                ? null
+                : String(subcategory.description),
+          isActive: subcategory.isActive !== false,
+        });
+        continue;
+      }
+
+      subcategory.label = existing.label;
+      subcategory.description = existing.description;
+      subcategory.isActive = existing.isActive;
+    }
+  }
+
+  return cloned;
+}
+
 export function parseTaxonomyDataV1(value: unknown): TaxonomyDataV1 {
-  return taxonomyDataV1Schema.parse(value);
+  try {
+    return taxonomyDataV1Schema.parse(value);
+  } catch (error) {
+    if (!(error instanceof z.ZodError)) throw error;
+    const hasDuplicateDefinitions = error.issues.some(
+      (issue) =>
+        typeof issue.message === "string" &&
+        issue.message.startsWith("duplicate_subcategory_definitions:"),
+    );
+    if (!hasDuplicateDefinitions) throw error;
+    const repaired = repairDuplicateSubcategoryDefinitions(value);
+    return taxonomyDataV1Schema.parse(repaired);
+  }
 }
