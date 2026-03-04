@@ -107,6 +107,7 @@ export type ProcessCatalogItemResult = {
   createdVariants?: number;
   reason?: string;
   error?: string;
+  timingMs?: number;
 };
 
 export type ProcessCatalogItemOptions = {
@@ -220,6 +221,7 @@ export const processCatalogItemById = async (
   const displayRoundingUnitCop = getDisplayRoundingUnitCop(pricingConfig);
 
   let lastStage: string | null = null;
+  const t0 = Date.now();
   try {
     const result = await processCatalogRef({
       brand: { id: brand.id, slug: brand.slug },
@@ -287,7 +289,7 @@ export const processCatalogItemById = async (
       });
     }
 
-    return { status: "completed", created: result.created, createdVariants: result.createdVariants };
+    return { status: "completed", created: result.created, createdVariants: result.createdVariants, timingMs: Date.now() - t0 };
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : String(error);
     const message = canonicalizeCatalogItemError(rawMessage, item.url);
@@ -352,7 +354,7 @@ export const processCatalogItemById = async (
       }
     }
 
-    return { status: "failed", error: message };
+    return { status: "failed", error: message, timingMs: Date.now() - t0 };
   }
 };
 

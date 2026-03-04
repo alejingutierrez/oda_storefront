@@ -28,11 +28,16 @@ const reconcileActiveHungMinutesDefault = Math.max(
   5,
   Number(process.env.CATALOG_RECONCILE_ACTIVE_HUNG_MINUTES ?? 15),
 );
+const activeCompletedGraceSecondsDefault = Math.max(
+  0,
+  Number(process.env.CATALOG_QUEUE_ACTIVE_COMPLETED_GRACE_SECONDS ?? 180),
+);
 
 type CatalogItemLite = {
   id: string;
   status: string;
   attempts: number;
+  completedAt: Date | null;
   runId: string;
   run: { status: string; brandId: string };
 };
@@ -73,11 +78,24 @@ const loadCatalogItemsByIds = async (itemIds: string[]) => {
       id: true,
       status: true,
       attempts: true,
+      completedAt: true,
       runId: true,
       run: { select: { status: true, brandId: true } },
     },
   });
   return new Map(rows.map((row) => [row.id, row]));
+};
+
+const isCompletedWithinGraceWindow = (
+  completedAt: Date | null,
+  graceMs: number,
+  nowMs: number,
+) => {
+  if (!completedAt) return false;
+  if (graceMs <= 0) return false;
+  const completedAtMs = completedAt.getTime();
+  if (!Number.isFinite(completedAtMs)) return false;
+  return nowMs - completedAtMs <= graceMs;
 };
 
 const readRunsRunnableWithoutQueueLoad = async (filter: DriftFilter) => {
@@ -155,11 +173,14 @@ export type CatalogQueueDriftSummary = {
   activeItemNotInProgress: number;
   activeItemTerminalFailed: number;
   activeItemCompleted: number;
+  activeCompletedGraceSeconds: number;
   activeHungThresholdMinutes: number;
   activeHungCount: number;
   activeOldestActiveMs: number;
   activeOldestProcessedOn: string | null;
   activeZombieCount: number;
+  activeZombieCriticalCount: number;
+  activeZombieTransientCount: number;
   activeZombieByReason: Record<string, number>;
   activeHungDetected: boolean;
   runsRunnableWithoutQueueLoad: number;
@@ -174,6 +195,7 @@ export const readCatalogQueueDriftSummary = async (params: {
   brandId?: string | null;
   runId?: string | null;
   activeHungMinutes?: number;
+  activeCompletedGraceSeconds?: number;
 } = {}): Promise<CatalogQueueDriftSummary> => {
   if (!isRedisEnabled()) {
     return {
@@ -193,11 +215,14 @@ export const readCatalogQueueDriftSummary = async (params: {
       activeItemNotInProgress: 0,
       activeItemTerminalFailed: 0,
       activeItemCompleted: 0,
+      activeCompletedGraceSeconds: activeCompletedGraceSecondsDefault,
       activeHungThresholdMinutes: reconcileActiveHungMinutesDefault,
       activeHungCount: 0,
       activeOldestActiveMs: 0,
       activeOldestProcessedOn: null,
       activeZombieCount: 0,
+      activeZombieCriticalCount: 0,
+      activeZombieTransientCount: 0,
       activeZombieByReason: {},
       activeHungDetected: false,
       runsRunnableWithoutQueueLoad: 0,
@@ -212,7 +237,12 @@ export const readCatalogQueueDriftSummary = async (params: {
     5,
     params.activeHungMinutes ?? reconcileActiveHungMinutesDefault,
   );
+  const activeCompletedGraceSeconds = Math.max(
+    0,
+    params.activeCompletedGraceSeconds ?? activeCompletedGraceSecondsDefault,
+  );
   const activeHungThresholdMs = activeHungMinutes * 60 * 1000;
+  const activeCompletedGraceMs = activeCompletedGraceSeconds * 1000;
   const queue = getQueue();
   try {
     const counts = await queue.getJobCounts("waiting", "active", "delayed");
@@ -277,14 +307,6 @@ export const readCatalogQueueDriftSummary = async (params: {
       if (!itemId) return;
       const item = itemsById.get(itemId);
       const processedOn = typeof job.processedOn === "number" ? job.processedOn : null;
-      if (processedOn) {
-        const ageMs = Math.max(0, now - processedOn);
-        if (ageMs >= activeHungThresholdMs) activeHungCount += 1;
-        if (ageMs > activeOldestActiveMs) {
-          activeOldestActiveMs = ageMs;
-          activeOldestProcessedOn = new Date(processedOn).toISOString();
-        }
-      }
       if (!item) {
         activeMissingItem += 1;
         pushActiveZombieReason("missing_item");
@@ -294,6 +316,17 @@ export const readCatalogQueueDriftSummary = async (params: {
         activeSampleFilteredOut += 1;
         return;
       }
+      const completedWithinGrace =
+        item.status === "completed" &&
+        isCompletedWithinGraceWindow(item.completedAt, activeCompletedGraceMs, now);
+      if (processedOn) {
+        const ageMs = Math.max(0, now - processedOn);
+        if (!completedWithinGrace && ageMs >= activeHungThresholdMs) activeHungCount += 1;
+        if (ageMs > activeOldestActiveMs) {
+          activeOldestActiveMs = ageMs;
+          activeOldestProcessedOn = new Date(processedOn).toISOString();
+        }
+      }
       if (item.run.status !== "processing") {
         activeRunNotProcessing += 1;
         pushActiveZombieReason("run_not_processing");
@@ -301,7 +334,7 @@ export const readCatalogQueueDriftSummary = async (params: {
       }
       if (item.status === "completed") {
         activeItemCompleted += 1;
-        pushActiveZombieReason("item_completed");
+        pushActiveZombieReason(completedWithinGrace ? "item_completed_recent" : "item_completed");
         return;
       }
       if (item.status === "failed" && item.attempts >= CATALOG_MAX_ATTEMPTS) {
@@ -320,21 +353,27 @@ export const readCatalogQueueDriftSummary = async (params: {
       runId: params.runId,
     });
 
-    const activeZombieCount = Object.values(activeZombieByReason).reduce(
-      (acc, value) => acc + value,
-      0,
-    );
+    const activeZombieCriticalCount =
+      (activeZombieByReason.missing_item ?? 0) +
+      (activeZombieByReason.run_not_processing ?? 0) +
+      (activeZombieByReason.item_not_in_progress ?? 0) +
+      (activeZombieByReason.item_terminal_failed ?? 0) +
+      (activeZombieByReason.item_completed ?? 0);
+    const activeZombieTransientCount = activeZombieByReason.item_completed_recent ?? 0;
+    const activeZombieCount = activeZombieCriticalCount + activeZombieTransientCount;
     const activeHungDetected = activeHungCount > 0;
     let aggressiveReason: string | null = null;
-    if (activeHungDetected && activeZombieCount > 0) aggressiveReason = "active_hung_and_zombies_detected";
+    if (activeHungDetected && activeZombieCriticalCount > 0) {
+      aggressiveReason = "active_hung_and_zombies_detected";
+    }
     else if (activeHungDetected) aggressiveReason = "active_hung_detected";
-    else if (activeZombieCount > 0) aggressiveReason = "active_zombies_detected";
+    else if (activeZombieCriticalCount > 0) aggressiveReason = "active_zombies_detected";
 
     const driftDetected =
       waitingMissingItem > 0 ||
       waitingItemNotQueued > 0 ||
       waitingRunNotProcessing > 0 ||
-      activeZombieCount > 0 ||
+      activeZombieCriticalCount > 0 ||
       runsWithoutQueue.count > 0;
 
     return {
@@ -354,11 +393,14 @@ export const readCatalogQueueDriftSummary = async (params: {
       activeItemNotInProgress,
       activeItemTerminalFailed,
       activeItemCompleted,
+      activeCompletedGraceSeconds,
       activeHungThresholdMinutes: activeHungMinutes,
       activeHungCount,
       activeOldestActiveMs,
       activeOldestProcessedOn,
       activeZombieCount,
+      activeZombieCriticalCount,
+      activeZombieTransientCount,
       activeZombieByReason,
       activeHungDetected,
       runsRunnableWithoutQueueLoad: runsWithoutQueue.count,
@@ -379,6 +421,7 @@ type ReconcileParams = {
   jobScanLimit?: number;
   reenqueueLimit?: number;
   activeHungMinutes?: number;
+  activeCompletedGraceSeconds?: number;
   scanUntilMatchLimit?: number;
   includeActiveAnalysis?: boolean;
 };
@@ -396,6 +439,8 @@ export type CatalogQueueReconcileResult = {
   reenqueued: number;
   activeHungDetected: boolean;
   activeZombieCount: number;
+  activeZombieCriticalCount: number;
+  activeZombieTransientCount: number;
   aggressiveRequired: boolean;
   aggressiveReason: string | null;
   driftBefore: CatalogQueueDriftSummary | null;
@@ -419,6 +464,8 @@ export const reconcileCatalogQueue = async (
       reenqueued: 0,
       activeHungDetected: false,
       activeZombieCount: 0,
+      activeZombieCriticalCount: 0,
+      activeZombieTransientCount: 0,
       aggressiveRequired: false,
       aggressiveReason: "redis_disabled",
       driftBefore: null,
@@ -436,6 +483,11 @@ export const reconcileCatalogQueue = async (
     5,
     params.activeHungMinutes ?? reconcileActiveHungMinutesDefault,
   );
+  const activeCompletedGraceSeconds = Math.max(
+    0,
+    params.activeCompletedGraceSeconds ?? activeCompletedGraceSecondsDefault,
+  );
+  const activeCompletedGraceMs = activeCompletedGraceSeconds * 1000;
   const includeActiveAnalysis = params.includeActiveAnalysis ?? true;
   const reenqueueLimit = Math.max(10, params.reenqueueLimit ?? reconcileReenqueueLimitDefault);
   const driftBefore = await readCatalogQueueDriftSummary({
@@ -443,6 +495,7 @@ export const reconcileCatalogQueue = async (
     brandId: params.brandId,
     runId: params.runId,
     activeHungMinutes,
+    activeCompletedGraceSeconds,
   });
 
   const queue = getQueue();
@@ -498,12 +551,19 @@ export const reconcileCatalogQueue = async (
       if (!matchesFilter(item, { brandId: params.brandId, runId: params.runId })) return;
       if (state === "active") {
         const processedOn = typeof job.processedOn === "number" ? job.processedOn : null;
+        const completedWithinGrace =
+          item.status === "completed" &&
+          isCompletedWithinGraceWindow(item.completedAt, activeCompletedGraceMs, now);
         if (item.run.status !== "processing") {
           pushReason("active_run_not_processing");
           jobsToRemove.push({ jobId, state });
           return;
         }
         if (item.status === "completed") {
+          if (completedWithinGrace) {
+            pushReason("active_item_completed_recent_grace");
+            return;
+          }
           pushReason("active_item_completed");
           jobsToRemove.push({ jobId, state });
           return;
@@ -518,7 +578,11 @@ export const reconcileCatalogQueue = async (
           jobsToRemove.push({ jobId, state });
           return;
         }
-        if (processedOn && Math.max(0, now - processedOn) >= activeHungThresholdMs) {
+        if (
+          processedOn &&
+          !completedWithinGrace &&
+          Math.max(0, now - processedOn) >= activeHungThresholdMs
+        ) {
           pushReason("active_hung");
           jobsToRemove.push({ jobId, state });
         }
@@ -596,10 +660,16 @@ export const reconcileCatalogQueue = async (
       take: reenqueueLimit,
     });
 
+    // Batch check: obtener todos los job IDs en cola de una vez en lugar de O(n) queries
+    const [waitingJobIds, delayedJobIds] = await Promise.all([
+      queue.getJobIds("waiting", 0, -1).catch(() => [] as string[]),
+      queue.getJobIds("delayed", 0, -1).catch(() => [] as string[]),
+    ]);
+    const existingJobIdSet = new Set([...waitingJobIds, ...delayedJobIds]);
+
     const missingJobs: Array<{ id: string; runId: string; status: string }> = [];
     for (const candidate of runnableCandidates) {
-      const existingJob = await queue.getJob(candidate.id);
-      if (!existingJob) missingJobs.push(candidate);
+      if (!existingJobIdSet.has(candidate.id)) missingJobs.push(candidate);
     }
 
     const queuedMissingIds = missingJobs
@@ -643,9 +713,12 @@ export const reconcileCatalogQueue = async (
       brandId: params.brandId,
       runId: params.runId,
       activeHungMinutes,
+      activeCompletedGraceSeconds,
     });
 
     const activeZombieCount = driftBefore.activeZombieCount;
+    const activeZombieCriticalCount = driftBefore.activeZombieCriticalCount;
+    const activeZombieTransientCount = driftBefore.activeZombieTransientCount;
     const activeHungDetected = driftBefore.activeHungDetected;
     let aggressiveReason: string | null = null;
     if (activeRemovalBlocked > 0) aggressiveReason = "active_jobs_remove_blocked";
@@ -665,6 +738,8 @@ export const reconcileCatalogQueue = async (
       reenqueued,
       activeHungDetected,
       activeZombieCount,
+      activeZombieCriticalCount,
+      activeZombieTransientCount,
       aggressiveRequired,
       aggressiveReason,
       driftBefore,

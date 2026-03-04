@@ -3,9 +3,15 @@ import { Queue } from "bullmq";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { readCatalogQueueDriftSummary } from "@/lib/catalog/queue-drift";
-import { isRedisEnabled, readHeartbeat } from "@/lib/redis";
+import { isRedisEnabled, readHeartbeat, readJsonCache, writeJsonCache } from "@/lib/redis";
 
 export const runtime = "nodejs";
+
+const safeNum = (value: string | undefined, fallback: number, min?: number): number => {
+  const n = Number(value);
+  const result = Number.isFinite(n) ? n : fallback;
+  return min !== undefined ? Math.max(min, result) : result;
+};
 
 const connection = { url: process.env.REDIS_URL ?? "" };
 
@@ -14,18 +20,13 @@ const queueNames = {
   enrichment: process.env.PRODUCT_ENRICHMENT_QUEUE_NAME ?? "product-enrichment",
   plpSeo: process.env.PLP_SEO_QUEUE_NAME ?? "plp-seo",
 };
-const workerNoProgressSeconds = Math.max(
-  60,
-  Number(process.env.WORKER_NO_PROGRESS_SECONDS ?? 300),
-);
-const activeHungMinutes = Math.max(
-  5,
-  Number(process.env.WORKER_ACTIVE_HUNG_MINUTES ?? 15),
-);
-const activeSampleLimit = Math.max(
-  10,
-  Number(process.env.WORKER_ACTIVE_SAMPLE_LIMIT ?? 200),
-);
+const workerNoProgressSeconds = safeNum(process.env.WORKER_NO_PROGRESS_SECONDS, 300, 60);
+const activeHungMinutes = safeNum(process.env.WORKER_ACTIVE_HUNG_MINUTES, 15, 5);
+const activeSampleLimit = safeNum(process.env.WORKER_ACTIVE_SAMPLE_LIMIT, 200, 10);
+const queueHealthCacheTtlSeconds = safeNum(process.env.ADMIN_QUEUE_HEALTH_CACHE_TTL_SECONDS, 15, 1);
+const queueHealthCacheKey = "admin:queue-health:v2";
+const throughputWindowMinutes = 5;
+const throughputSlaTargetItems5m = safeNum(process.env.CATALOG_REFRESH_SPEED_SLA_ITEMS_5M, 120, 1);
 
 const readQueueCounts = async (name: string) => {
   const queue = new Queue(name, { connection });
@@ -76,11 +77,8 @@ const readActiveHang = async (name: string) => {
   }
 };
 
-const catalogMaxAttempts = Math.max(1, Number(process.env.CATALOG_MAX_ATTEMPTS ?? 3));
-const enrichmentMaxAttempts = Math.max(
-  1,
-  Number(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS ?? 5),
-);
+const catalogMaxAttempts = safeNum(process.env.CATALOG_MAX_ATTEMPTS, 3, 1);
+const enrichmentMaxAttempts = safeNum(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS, 5, 1);
 
 const readDbRunnableFlags = async () => {
   const [catalogRow, enrichRow] = await Promise.all([
@@ -132,6 +130,9 @@ const buildWorkerStatus = ({
   const backlog = (counts.waiting ?? 0) + (counts.delayed ?? 0);
   const active = counts.active ?? 0;
   const lastCompletedMs = lastCompletedAt ? Date.parse(lastCompletedAt) : Number.NaN;
+  const noProgressMinutes = Number.isFinite(lastCompletedMs)
+    ? Math.max(0, Math.floor((Date.now() - lastCompletedMs) / (60 * 1000)))
+    : null;
   const noRecentProgress =
     !Number.isFinite(lastCompletedMs) ||
     Date.now() - lastCompletedMs > workerNoProgressSeconds * 1000;
@@ -144,6 +145,7 @@ const buildWorkerStatus = ({
     backlog,
     active,
     dbRunnable,
+    noProgressMinutes,
     noRecentProgress,
     staleNoProgress,
     queueEmptyButDbRunnable,
@@ -157,8 +159,16 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const bypassCache = new URL(req.url).searchParams.get("fresh") === "true";
   const redisEnabled = isRedisEnabled();
   const now = new Date().toISOString();
+
+  if (redisEnabled && !bypassCache) {
+    const cached = await readJsonCache<Record<string, unknown>>(queueHealthCacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
+  }
 
   if (!redisEnabled) {
     return NextResponse.json({
@@ -175,11 +185,30 @@ export async function GET(req: Request) {
         queueDriftDetected: false,
         aggressiveRecoveryRequired: false,
       },
+      throughput: {
+        itemsCompleted5m: 0,
+        itemsPerMinute5m: 0,
+        catalogNoProgressMinutes: null,
+        queueBurnEstimateMinutes: null,
+        slaTargetItems5m: throughputSlaTargetItems5m,
+        slaMet: false,
+      },
       queues: null,
     });
   }
 
-  const [catalogAlive, enrichAlive, catalogCounts, enrichCounts, plpCounts, catalogHang, enrichHang, drift, dbFlags] = await Promise.all([
+  const [
+    catalogAlive,
+    enrichAlive,
+    catalogCounts,
+    enrichCounts,
+    plpCounts,
+    catalogHang,
+    enrichHang,
+    drift,
+    dbFlags,
+    itemsCompleted5m,
+  ] = await Promise.all([
     readHeartbeat("workers:catalog:alive"),
     readHeartbeat("workers:enrich:alive"),
     readQueueCounts(queueNames.catalog),
@@ -188,13 +217,16 @@ export async function GET(req: Request) {
     readActiveHang(queueNames.catalog),
     readActiveHang(queueNames.enrichment),
     readCatalogQueueDriftSummary({
-      sampleLimit: Math.max(
-        100,
-        Number(process.env.CATALOG_QUEUE_DRIFT_SAMPLE_LIMIT ?? 500),
-      ),
+      sampleLimit: safeNum(process.env.CATALOG_QUEUE_DRIFT_SAMPLE_LIMIT, 500, 100),
       activeHungMinutes,
     }),
     readDbRunnableFlags(),
+    prisma.catalogItem.count({
+      where: {
+        status: "completed",
+        completedAt: { gte: new Date(Date.now() - throughputWindowMinutes * 60 * 1000) },
+      },
+    }),
   ]);
   const workerStatus = {
     catalog: buildWorkerStatus({
@@ -218,23 +250,38 @@ export async function GET(req: Request) {
     catalogHang.hungCount > 0 ||
     enrichHang.hungCount > 0 ||
     drift.activeHungDetected ||
-    drift.activeZombieCount > 0;
+    drift.activeZombieCriticalCount > 0;
   const queueDriftDetected = drift.driftDetected;
   const aggressiveRecoveryRequired = drift.aggressiveRequired;
   const aggressiveRecoveryReason = drift.aggressiveReason;
+  const itemsPerMinute5m = itemsCompleted5m / throughputWindowMinutes;
+  const queueBurnEstimateMinutes =
+    itemsPerMinute5m > 0
+      ? Math.ceil(((catalogCounts.waiting ?? 0) + (catalogCounts.delayed ?? 0)) / itemsPerMinute5m)
+      : null;
   const zombieByDbState = {
     completed: drift.activeZombieByReason.item_completed ?? 0,
+    completed_recent: drift.activeZombieByReason.item_completed_recent ?? 0,
     failed_terminal: drift.activeZombieByReason.item_terminal_failed ?? 0,
     run_not_processing: drift.activeZombieByReason.run_not_processing ?? 0,
     item_not_in_progress: drift.activeZombieByReason.item_not_in_progress ?? 0,
     missing_item: drift.activeZombieByReason.missing_item ?? 0,
   };
 
-  return NextResponse.json({
+  const payload = {
     ok: true,
     now,
     redisEnabled: true,
     queueNames,
+    configEffective: {
+      workerNoProgressSeconds,
+      activeHungMinutes,
+      activeSampleLimit,
+      queueHealthCacheTtlSeconds,
+      throughputSlaTargetItems5m,
+      catalogMaxAttempts,
+      enrichmentMaxAttempts,
+    },
     workerAlive: { catalog: catalogAlive, enrich: enrichAlive },
     flags: {
       heartbeatMissing,
@@ -246,6 +293,8 @@ export async function GET(req: Request) {
       catalog: {
         ...catalogHang,
         zombieCount: drift.activeZombieCount,
+        zombieCriticalCount: drift.activeZombieCriticalCount,
+        zombieTransientCount: drift.activeZombieTransientCount,
         zombieByReason: drift.activeZombieByReason,
         zombieByDbState,
         driftHungCount: drift.activeHungCount,
@@ -256,10 +305,22 @@ export async function GET(req: Request) {
     },
     drift,
     workerStatus,
+    throughput: {
+      itemsCompleted5m,
+      itemsPerMinute5m,
+      catalogNoProgressMinutes: workerStatus.catalog.noProgressMinutes,
+      queueBurnEstimateMinutes,
+      slaTargetItems5m: throughputSlaTargetItems5m,
+      slaMet: itemsCompleted5m >= throughputSlaTargetItems5m,
+    },
     queues: {
       catalog: catalogCounts,
       enrichment: enrichCounts,
       plpSeo: plpCounts,
     },
-  });
+  };
+  if (redisEnabled && !bypassCache) {
+    await writeJsonCache(queueHealthCacheKey, payload, queueHealthCacheTtlSeconds);
+  }
+  return NextResponse.json(payload);
 }

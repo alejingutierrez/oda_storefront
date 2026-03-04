@@ -13,6 +13,12 @@ dotenv.config({ path: path.join(__dirname, '../../.env') });
 // Allow a local override in services/worker/.env if present.
 dotenv.config();
 
+const safeNum = (value, fallback, min) => {
+  const n = Number(value);
+  const result = Number.isFinite(n) ? n : fallback;
+  return min !== undefined ? Math.max(min, result) : result;
+};
+
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const connection = { url: redisUrl };
 
@@ -24,14 +30,8 @@ const hostname = os.hostname();
 const pid = process.pid;
 
 const heartbeatEnabled = process.env.WORKER_HEARTBEAT_DISABLED !== 'true';
-const heartbeatTtlSeconds = Math.max(
-  10,
-  Number(process.env.WORKER_HEARTBEAT_TTL_SECONDS || 60),
-);
-const heartbeatIntervalMs = Math.max(
-  5000,
-  Number(process.env.WORKER_HEARTBEAT_INTERVAL_MS || 20000),
-);
+const heartbeatTtlSeconds = safeNum(process.env.WORKER_HEARTBEAT_TTL_SECONDS, 60, 10);
+const heartbeatIntervalMs = safeNum(process.env.WORKER_HEARTBEAT_INTERVAL_MS, 20000, 5000);
 
 const catalogEnabled = process.env.CATALOG_WORKER_DISABLED !== 'true';
 const enrichEnabled = process.env.PRODUCT_ENRICHMENT_WORKER_DISABLED !== 'true';
@@ -51,13 +51,11 @@ const parseTimeoutMs = (value, fallbackMs) => {
   return Math.max(10000, parsed);
 };
 
-const activeHungMinutes = Math.max(
-  5,
-  Number(process.env.WORKER_ACTIVE_HUNG_MINUTES || 15),
-);
-const activeWatchdogMs = Math.max(
+const activeHungMinutes = safeNum(process.env.WORKER_ACTIVE_HUNG_MINUTES, 15, 5);
+const activeWatchdogMs = safeNum(
+  process.env.WORKER_ACTIVE_WATCHDOG_MS,
+  activeHungMinutes * 60 * 1000,
   60000,
-  Number(process.env.WORKER_ACTIVE_WATCHDOG_MS || activeHungMinutes * 60 * 1000),
 );
 
 const defaultFetchTimeoutMs = parseTimeoutMs(process.env.WORKER_FETCH_TIMEOUT_MS, 120000);
@@ -173,7 +171,7 @@ const getAdminJson = async (endpoint, timeoutMs) =>
   requestAdminJson({ endpoint, method: 'GET', timeoutMs });
 
 const catalogQueueName = process.env.CATALOG_QUEUE_NAME || 'catalog';
-const catalogConcurrency = Math.max(1, Number(process.env.CATALOG_WORKER_CONCURRENCY || 10));
+const catalogConcurrency = safeNum(process.env.CATALOG_WORKER_CONCURRENCY, 10, 1);
 const catalogEndpoint =
   process.env.CATALOG_WORKER_API_URL ||
   'http://localhost:3000/api/admin/catalog-extractor/process-item';
@@ -205,10 +203,7 @@ catalogWorker?.on('completed', () => {
 });
 
 const enrichmentQueueName = process.env.PRODUCT_ENRICHMENT_QUEUE_NAME || 'product-enrichment';
-const enrichmentConcurrency = Math.max(
-  1,
-  Number(process.env.PRODUCT_ENRICHMENT_WORKER_CONCURRENCY || 30),
-);
+const enrichmentConcurrency = safeNum(process.env.PRODUCT_ENRICHMENT_WORKER_CONCURRENCY, 30, 1);
 const enrichmentEndpoint =
   process.env.PRODUCT_ENRICHMENT_WORKER_API_URL ||
   'http://localhost:3000/api/admin/product-enrichment/process-item';
@@ -244,7 +239,7 @@ enrichmentWorker?.on('completed', () => {
 });
 
 const plpSeoQueueName = process.env.PLP_SEO_QUEUE_NAME || 'plp-seo';
-const plpSeoConcurrency = Math.max(1, Number(process.env.PLP_SEO_WORKER_CONCURRENCY || 5));
+const plpSeoConcurrency = safeNum(process.env.PLP_SEO_WORKER_CONCURRENCY, 5, 1);
 const plpSeoEndpoint =
   process.env.PLP_SEO_WORKER_API_URL ||
   'http://localhost:3000/api/admin/plp-seo/process-item';
@@ -276,10 +271,7 @@ const autonomousEnabled =
   process.env.WORKER_AUTONOMOUS_DISABLED !== 'true' &&
   Boolean(queueHealthEndpoint) &&
   (catalogEnabled || enrichEnabled);
-const autonomousIntervalMs = Math.max(
-  10000,
-  Number(process.env.WORKER_AUTONOMOUS_INTERVAL_MS || 30000),
-);
+const autonomousIntervalMs = safeNum(process.env.WORKER_AUTONOMOUS_INTERVAL_MS, 30000, 10000);
 const autonomousProbeTimeoutMs = parseTimeoutMs(
   process.env.WORKER_AUTONOMOUS_PROBE_TIMEOUT_MS,
   10000,
@@ -288,14 +280,8 @@ const autonomousDrainTimeoutMs = parseTimeoutMs(
   process.env.WORKER_AUTONOMOUS_DRAIN_TIMEOUT_MS,
   60000,
 );
-const autonomousDrainLimitCatalog = Math.max(
-  1,
-  Number(process.env.WORKER_AUTONOMOUS_CATALOG_LIMIT || 8),
-);
-const autonomousDrainLimitEnrich = Math.max(
-  1,
-  Number(process.env.WORKER_AUTONOMOUS_ENRICH_LIMIT || 20),
-);
+const autonomousDrainLimitCatalog = safeNum(process.env.WORKER_AUTONOMOUS_CATALOG_LIMIT, 8, 1);
+const autonomousDrainLimitEnrich = safeNum(process.env.WORKER_AUTONOMOUS_ENRICH_LIMIT, 20, 1);
 
 const plpSeoWorker = plpSeoEnabled
   ? new Worker(
@@ -322,6 +308,13 @@ plpSeoWorker?.on('ready', () => console.log('[plp-seo-worker] ready'));
 plpSeoWorker?.on('completed', () => {
   lastPlpSeoCompletedAtIso = new Date().toISOString();
 });
+
+console.log('[worker] config effective:', JSON.stringify({
+  heartbeatTtlSeconds, heartbeatIntervalMs,
+  activeHungMinutes, activeWatchdogMs,
+  catalogConcurrency, enrichmentConcurrency, plpSeoConcurrency,
+  autonomousIntervalMs, autonomousDrainLimitCatalog, autonomousDrainLimitEnrich,
+}));
 
 let autonomousTickInFlight = false;
 const runAutonomousTick = async () => {
