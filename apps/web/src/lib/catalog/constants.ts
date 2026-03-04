@@ -20,6 +20,7 @@ export const isCatalogSoftError = (message: string) => {
     normalized.includes("etimedout") ||
     normalized.includes("enotfound") ||
     normalized.includes("eai_again") ||
-    normalized.includes("socket hang up")
+    normalized.includes("socket hang up") ||
+    normalized.includes("blob_required_no_blob_images")
   );
 };

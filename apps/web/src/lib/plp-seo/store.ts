@@ -190,3 +190,43 @@ export async function safeGetPlpSeoPageByPath(path: string) {
     return null;
   }
 }
+
+export type PlpSeoPathRow = {
+  path: string;
+  genderSlug: string;
+  categoryKey: string | null;
+  subcategoryKey: string | null;
+};
+
+export async function safeListPlpSeoPaths(limit?: number): Promise<PlpSeoPathRow[]> {
+  const take =
+    typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? Math.min(5000, Math.floor(limit)) : undefined;
+  try {
+    await ensurePlpSeoTables();
+    const rows = await prisma.plpSeoPage.findMany({
+      select: {
+        path: true,
+        genderSlug: true,
+        categoryKey: true,
+        subcategoryKey: true,
+      },
+      orderBy: { path: "asc" },
+      ...(take ? { take } : {}),
+    });
+    return rows
+      .map((row) => ({
+        path: normalizePlpPath(row.path),
+        genderSlug: String(row.genderSlug || "").trim().toLowerCase(),
+        categoryKey: row.categoryKey,
+        subcategoryKey: row.subcategoryKey,
+      }))
+      .filter((row) => row.path !== "/");
+  } catch (err) {
+    if (isMissingTableError(err, "plp_seo_pages")) {
+      plpSeoTablesState = "missing";
+      return [];
+    }
+    console.warn("[plp-seo] failed to list paths", err);
+    return [];
+  }
+}

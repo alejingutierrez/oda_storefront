@@ -11,6 +11,8 @@ type RefreshSummary = {
   qualityFreshBrands: number;
   operationalStaleBrands: number;
   qualityStaleBrands: number;
+  staleOpenBrands?: number;
+  staleCompletedBrands?: number;
   staleBreakdown: {
     processing: number;
     paused?: number;
@@ -270,7 +272,8 @@ type QueueHealthState = {
   };
 };
 
-const POLL_MS = 15000;
+const LITE_POLL_MS = 15000;
+const DEEP_POLL_MS = 90000;
 const QUICK_POLL_MS = 5000;
 const QUICK_POLL_WINDOW_MS = 2 * 60 * 1000;
 
@@ -294,13 +297,16 @@ type ForceResponse = {
 type RemediationResponse = {
   attempted: boolean;
   dryRun: boolean;
-  strategy: "balanced";
+  strategy: "balanced" | "aggressive_tail_close";
   resumed: number;
   paused: number;
   requeued: number;
   reconciled: boolean;
   errors: number;
   runIds: string[];
+  skipped?: boolean;
+  skipReason?: "locked" | "cooldown" | "no_work" | null;
+  nextEligibleAt?: string | null;
 };
 
 const formatDate = (value?: string | null) => {
@@ -390,56 +396,119 @@ export default function CatalogRefreshPanel() {
   >({});
   const [runProgressFloor, setRunProgressFloor] = useState<Record<string, number>>({});
   const [quickPollUntil, setQuickPollUntil] = useState<Record<string, number>>({});
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const litePollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alertsRef = useRef<HTMLDivElement | null>(null);
+  const mergeLiteState = useCallback((prev: RefreshState | null, lite: RefreshState) => {
+    if (!prev) return lite;
+    const brandById = new Map(prev.brands.map((brand) => [brand.id, brand]));
+    const mergedBrands = lite.brands.map((brand) => {
+      const previous = brandById.get(brand.id);
+      if (!previous) return brand;
+      return {
+        ...previous,
+        ...brand,
+        refresh: { ...previous.refresh, ...brand.refresh },
+      };
+    });
+    const missingById = new Map(
+      (prev.operationalMissingBrands ?? []).map((brand) => [brand.id, brand]),
+    );
+    const mergedMissing = (lite.operationalMissingBrands ?? []).map((brand) => {
+      const previous = missingById.get(brand.id);
+      if (!previous) return brand;
+      return {
+        ...previous,
+        ...brand,
+        runProgress: brand.runProgress ?? previous.runProgress ?? null,
+      };
+    });
+    return {
+      ...prev,
+      windowStart: lite.windowStart ?? prev.windowStart,
+      summary: { ...prev.summary, ...lite.summary },
+      brands: mergedBrands,
+      archiveCandidates: lite.archiveCandidates ?? prev.archiveCandidates,
+      operationalMissingBrands: mergedMissing,
+      oldestOperationalRefresh:
+        lite.oldestOperationalRefresh ?? prev.oldestOperationalRefresh,
+    };
+  }, []);
 
-  const fetchState = useCallback(async () => {
-    setLoading(true);
+  const fetchLiteState = useCallback(async () => {
     try {
-      const [stateRes, queueRes] = await Promise.all([
-        fetch("/api/admin/catalog-refresh/state", {
-          cache: "no-store",
-          credentials: "same-origin",
-        }),
-        fetch("/api/admin/queue-health", {
-          cache: "no-store",
-          credentials: "same-origin",
-        }),
-      ]);
-
-      if (stateRes.status === 401 || queueRes.status === 401) {
+      const liteRes = await fetch("/api/admin/catalog-refresh/state-lite", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (liteRes.status === 401) {
         window.location.href = "/admin";
         return;
       }
-      if (!stateRes.ok) throw new Error("No se pudo cargar el estado de refresh.");
-
-      const payload = (await stateRes.json()) as RefreshState;
-      setState(payload);
-
-      if (queueRes.ok) {
-        const queuePayload = (await queueRes.json()) as QueueHealthState;
-        setQueueHealth(queuePayload);
-      }
-
+      if (!liteRes.ok) throw new Error("No se pudo cargar el estado lite de refresh.");
+      const payload = (await liteRes.json()) as RefreshState;
+      setState((prev) => mergeLiteState(prev, payload));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido");
-    } finally {
-      setLoading(false);
     }
-  }, []);
+  }, [mergeLiteState]);
+
+  const fetchDeepState = useCallback(
+    async (options?: { forceLoading?: boolean }) => {
+      const forceLoading = Boolean(options?.forceLoading);
+      if (forceLoading) setLoading(true);
+      try {
+        const [stateRes, queueRes] = await Promise.all([
+          fetch("/api/admin/catalog-refresh/state-deep", {
+            cache: "no-store",
+            credentials: "same-origin",
+          }),
+          fetch("/api/admin/queue-health", {
+            cache: "no-store",
+            credentials: "same-origin",
+          }),
+        ]);
+
+        if (stateRes.status === 401 || queueRes.status === 401) {
+          window.location.href = "/admin";
+          return;
+        }
+        if (!stateRes.ok) throw new Error("No se pudo cargar el estado profundo de refresh.");
+
+        const payload = (await stateRes.json()) as RefreshState;
+        setState(payload);
+
+        if (queueRes.ok) {
+          const queuePayload = (await queueRes.json()) as QueueHealthState;
+          setQueueHealth(queuePayload);
+        }
+
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error desconocido");
+      } finally {
+        if (forceLoading) setLoading(false);
+      }
+    },
+    [],
+  );
+
+  const refreshState = useCallback(async () => {
+    await fetchDeepState({ forceLoading: true });
+    await fetchLiteState();
+  }, [fetchDeepState, fetchLiteState]);
 
   const triggerBatch = useCallback(
     async (force = false) => {
       try {
         const res = await fetch(`/api/admin/catalog-refresh/cron${force ? "?force=true" : ""}`);
         if (!res.ok) throw new Error("No se pudo iniciar el refresh.");
-        await fetchState();
+        await refreshState();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error desconocido");
       }
     },
-    [fetchState],
+    [refreshState],
   );
 
   const triggerBrand = useCallback(
@@ -476,7 +545,7 @@ export default function CatalogRefreshPanel() {
             [brandId]: Date.now() + QUICK_POLL_WINDOW_MS,
           }));
         }
-        await fetchState();
+        await refreshState();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error desconocido");
       } finally {
@@ -487,7 +556,7 @@ export default function CatalogRefreshPanel() {
         });
       }
     },
-    [fetchState],
+    [refreshState],
   );
 
   const triggerReconcile = useCallback(async () => {
@@ -497,8 +566,8 @@ export default function CatalogRefreshPanel() {
       body: JSON.stringify({ dryRun: false }),
     });
     if (!res.ok) throw new Error("No se pudo reconciliar la cola.");
-    await fetchState();
-  }, [fetchState]);
+    await refreshState();
+  }, [refreshState]);
 
   const triggerMassRemediation = useCallback(async () => {
     setRemediationRunning(true);
@@ -516,6 +585,15 @@ export default function CatalogRefreshPanel() {
         throw new Error("No se pudo ejecutar el dry-run de remediación.");
       }
       const dryRunPayload = (await dryRunRes.json()) as RemediationResponse;
+      if (dryRunPayload.skipped) {
+        setRemediationMessage(
+          `Dry-run omitido por ${dryRunPayload.skipReason ?? "unknown"}${
+            dryRunPayload.nextEligibleAt ? ` · próximo intento ${formatDate(dryRunPayload.nextEligibleAt)}` : ""
+          }.`,
+        );
+        await refreshState();
+        return;
+      }
       const dryRunSummary = `Dry-run: resumed=${dryRunPayload.resumed}, paused=${dryRunPayload.paused}, requeued=${dryRunPayload.requeued}, reconciled=${dryRunPayload.reconciled ? "si" : "no"}, errors=${dryRunPayload.errors}.`;
       setRemediationMessage(dryRunSummary);
 
@@ -537,17 +615,26 @@ export default function CatalogRefreshPanel() {
           throw new Error("No se pudo aplicar la remediación masiva.");
         }
         const applyPayload = (await applyRes.json()) as RemediationResponse;
+        if (applyPayload.skipped) {
+          setRemediationMessage(
+            `Apply omitido por ${applyPayload.skipReason ?? "unknown"}${
+              applyPayload.nextEligibleAt ? ` · próximo intento ${formatDate(applyPayload.nextEligibleAt)}` : ""
+            }.`,
+          );
+          await refreshState();
+          return;
+        }
         setRemediationMessage(
           `Apply: resumed=${applyPayload.resumed}, paused=${applyPayload.paused}, requeued=${applyPayload.requeued}, reconciled=${applyPayload.reconciled ? "si" : "no"}, errors=${applyPayload.errors}.`,
         );
       }
-      await fetchState();
+      await refreshState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
       setRemediationRunning(false);
     }
-  }, [fetchState]);
+  }, [refreshState]);
 
   const triggerArchiveCandidates = useCallback(
     async (apply: boolean) => {
@@ -576,14 +663,14 @@ export default function CatalogRefreshPanel() {
             ? `Dry-run: evaluadas ${payload.evaluated}, calificadas ${payload.qualified}, omitidas ${payload.skipped}.`
             : `Apply: evaluadas ${payload.evaluated}, archivadas ${payload.archived}, calificadas ${payload.qualified}.`,
         );
-        await fetchState();
+        await refreshState();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error desconocido");
       } finally {
         setArchiveActionMode(null);
       }
     },
-    [fetchState],
+    [refreshState],
   );
 
   const handleAlertAction = useCallback(
@@ -606,7 +693,7 @@ export default function CatalogRefreshPanel() {
             }),
           });
           if (!res.ok) throw new Error("No se pudo reanudar el catalogo.");
-          await fetchState();
+          await refreshState();
           return;
         }
         if (alert.action.type === "resume_catalog_strong" && alert.action.brandId) {
@@ -622,7 +709,7 @@ export default function CatalogRefreshPanel() {
             }),
           });
           if (!res.ok) throw new Error("No se pudo ejecutar el resume fuerte.");
-          await fetchState();
+          await refreshState();
           return;
         }
         if (alert.action.type === "reconcile_catalog") {
@@ -639,27 +726,35 @@ export default function CatalogRefreshPanel() {
         setActionId(null);
       }
     },
-    [fetchState, triggerBrand, triggerMassRemediation, triggerReconcile],
+    [refreshState, triggerBrand, triggerMassRemediation, triggerReconcile],
   );
 
   useEffect(() => {
-    fetchState();
-  }, [fetchState]);
+    void fetchDeepState({ forceLoading: true });
+    void fetchLiteState();
+  }, [fetchDeepState, fetchLiteState]);
 
   useEffect(() => {
-    if (pollRef.current) clearTimeout(pollRef.current);
+    if (litePollRef.current) clearTimeout(litePollRef.current);
     const nowTs = Date.now();
     const activeQuickPollEntries = Object.entries(quickPollUntil).filter(([, expiresAt]) => expiresAt > nowTs);
     if (activeQuickPollEntries.length !== Object.keys(quickPollUntil).length) {
       const compact = Object.fromEntries(activeQuickPollEntries);
       setQuickPollUntil(compact);
     }
-    const pollMs = activeQuickPollEntries.length ? QUICK_POLL_MS : POLL_MS;
-    pollRef.current = setTimeout(fetchState, pollMs);
+    const pollMs = activeQuickPollEntries.length ? QUICK_POLL_MS : LITE_POLL_MS;
+    litePollRef.current = setTimeout(fetchLiteState, pollMs);
     return () => {
-      if (pollRef.current) clearTimeout(pollRef.current);
+      if (litePollRef.current) clearTimeout(litePollRef.current);
     };
-  }, [fetchState, state, queueHealth, quickPollUntil]);
+  }, [fetchLiteState, quickPollUntil]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void fetchDeepState();
+    }, DEEP_POLL_MS);
+    return () => clearInterval(interval);
+  }, [fetchDeepState]);
 
   useEffect(() => {
     if (!alertsOpen) return;
@@ -866,6 +961,17 @@ export default function CatalogRefreshPanel() {
               style={{ width: `${operationalCoverage.percent}%` }}
             />
           </div>
+          <p className="mt-2 text-xs text-slate-700">
+            Stale vencidas: abiertas{" "}
+            {summary?.staleOpenBrands ??
+              (summary?.staleBreakdown?.processing ?? 0) +
+                (summary?.staleBreakdown?.paused ?? 0) +
+                (summary?.staleBreakdown?.failed ?? 0)}{" "}
+            · completadas vencidas{" "}
+            {summary?.staleCompletedBrands ??
+              (summary?.staleBreakdown?.completed_stale ?? 0) +
+                (summary?.staleBreakdown?.unknown ?? 0)}
+          </p>
           <p className="mt-2 text-xs text-slate-500">
             Stale: processing {summary?.staleBreakdown?.processing ?? 0} - paused{" "}
             {summary?.staleBreakdown?.paused ?? 0} - failed{" "}

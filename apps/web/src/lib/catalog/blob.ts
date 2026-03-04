@@ -8,7 +8,7 @@ const MAX_SOURCE_IMAGE_BYTES = Math.max(
   MAX_IMAGE_BYTES,
   Number(process.env.BLOB_UPLOAD_MAX_SOURCE_IMAGE_BYTES ?? 32 * 1024 * 1024),
 );
-const DEFAULT_TIMEOUT_MS = 12000;
+const DEFAULT_TIMEOUT_MS = 45000;
 const DEFAULT_CONCURRENCY = 4;
 let blobUploadsDisabled = false;
 let blobDisableReason: string | null = null;
@@ -112,7 +112,11 @@ export const uploadImageToBlob = async (url: string, prefix: string, token: stri
   };
 };
 
-export const uploadImagesToBlob = async (urls: string[], prefix: string) => {
+export const uploadImagesToBlob = async (
+  urls: string[],
+  prefix: string,
+  preSeed?: Map<string, { url: string; optimization?: ImageOptimizationStats }>,
+) => {
   const unique = Array.from(
     new Set(
       urls
@@ -127,9 +131,14 @@ export const uploadImagesToBlob = async (urls: string[], prefix: string) => {
       url: string;
       blobPath: string;
       sourceUrl: string;
-      optimization: ImageOptimizationStats;
+      optimization?: ImageOptimizationStats;
     }
   >();
+  if (preSeed) {
+    for (const [srcUrl, entry] of preSeed) {
+      mapping.set(srcUrl, { url: entry.url, blobPath: "", sourceUrl: srcUrl, optimization: entry.optimization });
+    }
+  }
   const token = resolveBlobToken();
   if (!token) {
     blobUploadsDisabled = true;

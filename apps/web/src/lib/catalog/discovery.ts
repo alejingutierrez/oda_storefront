@@ -1,7 +1,27 @@
 import { getCatalogAdapter } from "@/lib/catalog/registry";
 import { inferCatalogPlatform } from "@/lib/catalog/platform-detect";
-import { discoverFromSitemap, isLikelyProductUrl, normalizeUrl, safeOrigin } from "@/lib/catalog/utils";
+import {
+  canonicalizeCatalogProductUrl,
+  discoverFromSitemap,
+  isLikelyProductUrl,
+  normalizeUrl,
+  safeOrigin,
+} from "@/lib/catalog/utils";
 import type { AdapterContext, ProductRef } from "@/lib/catalog/types";
+
+const canonicalizeRefs = (refs: ProductRef[]) =>
+  Array.from(
+    new Map(
+      refs
+        .map((ref) => {
+          const canonicalUrl = canonicalizeCatalogProductUrl(ref.url);
+          if (!canonicalUrl) return null;
+          return { ...ref, url: canonicalUrl };
+        })
+        .filter((ref): ref is ProductRef => Boolean(ref))
+        .map((ref) => [ref.url, ref]),
+    ).values(),
+  );
 
 const discoverRefsFromSitemap = async (
   siteUrl: string,
@@ -25,7 +45,7 @@ const discoverRefsFromSitemap = async (
     }
   });
   if (!filtered.length) return [];
-  return filtered.map((url) => ({ url }));
+  return canonicalizeRefs(filtered.map((url) => ({ url })));
 };
 
 export const discoverCatalogRefs = async ({
@@ -117,9 +137,10 @@ export const discoverCatalogRefs = async ({
     adapterRefs = await adapter.discoverProducts(ctx, discoveryLimit);
   }
   if (combineSources) {
-    refs = Array.from(new Map([...sitemapRefs, ...adapterRefs].map((ref) => [ref.url, ref])).values());
+    refs = canonicalizeRefs([...sitemapRefs, ...adapterRefs]);
   } else {
     refs = sitemapRefs.length ? sitemapRefs : adapterRefs;
+    refs = canonicalizeRefs(refs);
   }
 
   if (!refs.length && (adapter.platform === "custom" || (platformForRun ?? "").toLowerCase() === "unknown")) {
@@ -135,6 +156,7 @@ export const discoverCatalogRefs = async ({
       })
       .slice(0, discoveryLimit)
       .map((url) => ({ url }));
+    refs = canonicalizeRefs(refs);
   }
 
   return {

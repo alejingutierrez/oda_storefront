@@ -13,6 +13,8 @@ import {
   isCatalogSoftError,
 } from "@/lib/catalog/constants";
 import {
+  DEFAULT_TIMEOUT_MS,
+  canonicalizeCatalogProductUrl,
   discoverFromSitemap,
   fetchText,
   guessCurrency,
@@ -24,6 +26,7 @@ import {
   pickOption,
   safeOrigin,
 } from "@/lib/catalog/utils";
+import { acquireLock, isRedisEnabled, releaseLock } from "@/lib/redis";
 import { sanitizeCatalogPrice } from "@/lib/catalog-price";
 import {
   getBrandCurrencyOverride,
@@ -41,8 +44,22 @@ import {
 const toNumber = (value: unknown) => sanitizeCatalogPrice(parsePriceValue(value));
 const BLOB_HOST_FRAGMENT = "blob.vercel-storage.com";
 const ALLOW_EXTERNAL_MEDIA_WRITE = (process.env.ALLOW_EXTERNAL_MEDIA_WRITE ?? "").trim().toLowerCase() === "true";
-const TRACKING_QUERY_PARAM_PREFIXES = ["utm_"];
-const TRACKING_QUERY_PARAMS = new Set(["fbclid", "gclid", "mc_cid", "mc_eid", "srsltid"]);
+const LLM_PDP_HTML_TIMEOUT_MS = Math.max(
+  5000,
+  Number(process.env.CATALOG_PDP_HTML_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS),
+);
+const PRODUCT_WRITE_LOCK_TTL_MS = Math.max(
+  2000,
+  Number(process.env.CATALOG_PRODUCT_WRITE_LOCK_TTL_MS ?? 12000),
+);
+const PRODUCT_WRITE_LOCK_WAIT_MS = Math.max(
+  0,
+  Number(process.env.CATALOG_PRODUCT_WRITE_LOCK_WAIT_MS ?? 3000),
+);
+const PRODUCT_WRITE_LOCK_RETRY_MS = Math.max(
+  50,
+  Number(process.env.CATALOG_PRODUCT_WRITE_LOCK_RETRY_MS ?? 150),
+);
 
 const isBlobStorageUrl = (value: unknown) =>
   typeof value === "string" && value.includes(BLOB_HOST_FRAGMENT);
@@ -60,27 +77,7 @@ const normalizeImageList = (value: unknown): string[] => {
 };
 
 const canonicalizeSourceUrl = (value: string | null | undefined) => {
-  const normalized = normalizeUrl(value ?? "");
-  if (!normalized) return null;
-  try {
-    const url = new URL(normalized);
-    url.hash = "";
-    for (const key of Array.from(url.searchParams.keys())) {
-      const lower = key.toLowerCase();
-      if (TRACKING_QUERY_PARAM_PREFIXES.some((prefix) => lower.startsWith(prefix)) || TRACKING_QUERY_PARAMS.has(lower)) {
-        url.searchParams.delete(key);
-      }
-    }
-    // Product identity should not vary by query params (`?variant=...`, tracking, etc.).
-    url.search = "";
-    if (url.pathname.length > 1) {
-      url.pathname = url.pathname.replace(/\/+$/, "");
-      if (!url.pathname) url.pathname = "/";
-    }
-    return url.toString();
-  } catch {
-    return normalized;
-  }
+  return canonicalizeCatalogProductUrl(value);
 };
 
 const canonicalizeMediaGuardrailError = (message: string, refUrl: string) => {
@@ -136,6 +133,39 @@ const readExistingBlobImages = async (params: {
     normalizeImageList(variant.images).filter((image) => isBlobStorageUrl(image)),
   );
   return Array.from(new Set([...cover, ...variantImages]));
+};
+
+const readExistingImageUrlMap = async (params: {
+  brandId: string;
+  externalId: string | null;
+  sourceUrlCanonical: string | null;
+}): Promise<Record<string, string>> => {
+  const existing = params.sourceUrlCanonical
+    ? await prisma.product.findFirst({
+        where: { brandId: params.brandId, sourceUrl: params.sourceUrlCanonical },
+        select: { metadata: true },
+      })
+    : params.externalId
+    ? await prisma.product.findFirst({
+        where: { brandId: params.brandId, externalId: params.externalId },
+        select: { metadata: true },
+        orderBy: { updatedAt: "desc" },
+      })
+    : null;
+
+  if (!existing?.metadata || typeof existing.metadata !== "object" || Array.isArray(existing.metadata)) {
+    return {};
+  }
+  const meta = existing.metadata as Record<string, unknown>;
+  const map = meta.catalog_image_url_map;
+  if (!map || typeof map !== "object" || Array.isArray(map)) return {};
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(map as Record<string, unknown>)) {
+    if (typeof value === "string" && isBlobStorageUrl(value)) {
+      result[key] = value;
+    }
+  }
+  return result;
 };
 
 type BlobUploadMappingEntry = {
@@ -301,7 +331,27 @@ const syncRunStateItems = (
   items: CatalogRunState["items"] | undefined,
   now: string,
 ) => {
-  const nextItems: CatalogRunState["items"] = { ...(items ?? {}) };
+  const nextItems: CatalogRunState["items"] = {};
+  const rankStatus = (status: CatalogItemState["status"]) => {
+    if (status === "completed") return 4;
+    if (status === "in_progress") return 3;
+    if (status === "failed") return 2;
+    return 1;
+  };
+  Object.entries(items ?? {}).forEach(([rawUrl, entry]) => {
+    const canonicalUrl = canonicalizeCatalogProductUrl(rawUrl) ?? rawUrl;
+    const existing = nextItems[canonicalUrl];
+    if (!existing) {
+      nextItems[canonicalUrl] = { ...entry };
+      return;
+    }
+    const shouldOverride = rankStatus(entry.status) > rankStatus(existing.status);
+    nextItems[canonicalUrl] = {
+      ...(shouldOverride ? entry : existing),
+      attempts: Math.max(existing.attempts ?? 0, entry.attempts ?? 0),
+      updatedAt: existing.updatedAt ?? entry.updatedAt ?? now,
+    };
+  });
   const refSet = new Set(refs.map((ref) => ref.url));
   refs.forEach((ref) => {
     if (!nextItems[ref.url]) {
@@ -313,6 +363,20 @@ const syncRunStateItems = (
   });
   return nextItems;
 };
+
+const canonicalizeRunRefs = (refs: CatalogRunState["refs"]) =>
+  Array.from(
+    new Map(
+      refs
+        .map((ref) => {
+          const canonicalUrl = canonicalizeCatalogProductUrl(ref.url);
+          if (!canonicalUrl) return null;
+          return { ...ref, url: canonicalUrl };
+        })
+        .filter((ref): ref is CatalogRunState["refs"][number] => Boolean(ref))
+        .map((ref) => [ref.url, ref]),
+    ).values(),
+  );
 
 const findNextEligibleCursor = (
   refs: CatalogRunState["refs"],
@@ -421,7 +485,7 @@ const discoverRefsFromSitemap = async (siteUrl: string, limit: number) => {
     }
   });
   if (!filtered.length) return [];
-  return filtered.map((url) => ({ url }));
+  return canonicalizeRunRefs(filtered.map((url) => ({ url })));
 };
 
 const buildVariantSku = (variant: RawVariant, fallback: string) => {
@@ -474,6 +538,83 @@ const buildVariantImages = (
   };
 };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const toDecimalNumber = (value: unknown): number | null => {
+  const parsed = parsePriceValue(value);
+  if (typeof parsed !== "number" || !Number.isFinite(parsed)) return null;
+  return sanitizeCatalogPrice(parsed);
+};
+
+const normalizeCurrencyCode = (value: string | null | undefined) => {
+  if (!value) return null;
+  const trimmed = value.trim().toUpperCase();
+  return trimmed || null;
+};
+
+const normalizeStockStatusCode = (value: string | null | undefined) => {
+  if (!value) return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed || null;
+};
+
+const buildVariantBusinessSignature = (input: {
+  price: number | null;
+  currency: string | null;
+  stock: number | null;
+  stockStatus: string | null;
+  images: string[];
+}) => {
+  const normalizedImages = Array.from(
+    new Set(
+      (input.images ?? [])
+        .filter((image): image is string => typeof image === "string")
+        .map((image) => image.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+    ),
+  );
+  return JSON.stringify({
+    price: input.price,
+    currency: normalizeCurrencyCode(input.currency),
+    stock: typeof input.stock === "number" && Number.isFinite(input.stock) ? input.stock : null,
+    stockStatus: normalizeStockStatusCode(input.stockStatus),
+    images: normalizedImages,
+  });
+};
+
+const readVariantBusinessSignature = (metadata: unknown) => {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const raw = (metadata as Record<string, unknown>).variant_business_signature;
+  return typeof raw === "string" && raw.trim() ? raw : null;
+};
+
+const buildProductWriteLockKey = (params: {
+  brandId: string;
+  canonicalProductKey: string;
+}) => {
+  const hash = crypto
+    .createHash("sha1")
+    .update(`${params.brandId}:${params.canonicalProductKey}`)
+    .digest("hex");
+  return `catalog:product-write:${params.brandId}:${hash}`;
+};
+
+const acquireProductWriteLock = async (params: {
+  brandId: string;
+  canonicalProductKey: string;
+}) => {
+  if (!isRedisEnabled()) return null;
+  const lockKey = buildProductWriteLockKey(params);
+  const waitUntil = Date.now() + PRODUCT_WRITE_LOCK_WAIT_MS;
+  while (Date.now() <= waitUntil) {
+    const lock = await acquireLock(lockKey, PRODUCT_WRITE_LOCK_TTL_MS);
+    if (lock) return lock;
+    await sleep(PRODUCT_WRITE_LOCK_RETRY_MS);
+  }
+  return null;
+};
+
 export const processCatalogRef = async ({
   brand,
   adapter,
@@ -501,7 +642,7 @@ export const processCatalogRef = async ({
   let raw = await adapter.fetchProduct(ctx, ref);
   if (!raw && canUseLlmPdp) {
     onStage?.("llm_classify");
-    const htmlResponse = await fetchText(ref.url, { method: "GET" }, 15000);
+    const htmlResponse = await fetchText(ref.url, { method: "GET" }, LLM_PDP_HTML_TIMEOUT_MS);
     if (htmlResponse.status >= 400 || !htmlResponse.text) {
       throw new Error(`No se pudo obtener HTML (${htmlResponse.status}) para ${ref.url}`);
     }
@@ -589,11 +730,19 @@ export const processCatalogRef = async ({
     ].filter(Boolean)),
   );
   const imagePrefix = `catalog/${brand.slug}/${raw.externalId ?? "product"}`;
+  const cachedImageUrlMap = await readExistingImageUrlMap({
+    brandId: brand.id,
+    externalId: raw.externalId ?? null,
+    sourceUrlCanonical,
+  });
+  const blobPreSeed = new Map<string, BlobUploadMappingEntry>(
+    Object.entries(cachedImageUrlMap).map(([srcUrl, blobUrl]) => [srcUrl, { url: blobUrl }]),
+  );
   onStage?.("blob_upload");
   let imageMapping = new Map<string, BlobUploadMappingEntry>();
   let blobFailure: string | null = null;
   try {
-    imageMapping = await uploadImagesToBlob(allImages, imagePrefix);
+    imageMapping = await uploadImagesToBlob(allImages, imagePrefix, blobPreSeed);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (isBlobTokenError(message)) {
@@ -601,6 +750,15 @@ export const processCatalogRef = async ({
     }
     blobFailure = message;
     imageMapping = new Map();
+  }
+  // Persist sourceUrl→blobUrl map for subsequent runs to skip re-downloading
+  const imageUrlMap: Record<string, string> = {};
+  for (const srcUrl of allImages) {
+    const entry = imageMapping.get(srcUrl);
+    if (entry?.url) imageUrlMap[srcUrl] = entry.url;
+  }
+  if (Object.keys(imageUrlMap).length > 0) {
+    raw.metadata = { ...(raw.metadata ?? {}), catalog_image_url_map: imageUrlMap };
   }
   const optimizationSamples = Array.from(imageMapping.values())
     .map((entry) => entry.optimization)
@@ -669,6 +827,18 @@ export const processCatalogRef = async ({
   )) as NormalizedProduct;
 
   onStage?.("upsert");
+  const canonicalProductKey =
+    canonicalizeSourceUrl(toStringOrNull(raw.sourceUrl) ?? ref.url) ??
+    toStringOrNull(raw.externalId) ??
+    canonicalizeCatalogProductUrl(ref.url) ??
+    ref.url;
+  const productWriteLock = await acquireProductWriteLock({
+    brandId: brand.id,
+    canonicalProductKey,
+  });
+  if (isRedisEnabled() && !productWriteLock) {
+    throw new Error(`product_write_lock_timeout:${canonicalProductKey}`);
+  }
   try {
     const { product, created } = await upsertProduct(
       brand.id,
@@ -781,7 +951,10 @@ export const processCatalogRef = async ({
         }
       }
 
-      const variantResult = await upsertVariant(product.id, variantPayload);
+      const variantResult = await upsertVariant(product.id, variantPayload, {
+        brandCurrencyOverride: brandCurrencyOverride ?? null,
+        fxRatesToCop,
+      });
       if (variantResult.created) createdVariants += 1;
     }
 
@@ -800,24 +973,37 @@ export const processCatalogRef = async ({
         : "up"
       : product.priceChangeDirection;
     const nextPriceChangeAt = visiblePriceChanged ? new Date() : product.priceChangeAt;
+    const currentMinPriceCop = toDecimalNumber(product.minPriceCop ?? null);
+    const currentMaxPriceCop = toDecimalNumber(product.maxPriceCop ?? null);
+    const hasRollupChanged =
+      product.hasInStock !== hasInStock ||
+      currentMinPriceCop !== minPriceCop ||
+      currentMaxPriceCop !== maxPriceCop;
+    const hasPriceTrendChanged =
+      (product.priceChangeDirection ?? null) !== (nextPriceChangeDirection ?? null) ||
+      visiblePriceChanged;
 
-    await prisma.product.update({
-      where: { id: product.id },
-      data: {
-        hasInStock,
-        minPriceCop,
-        maxPriceCop,
-        priceRollupUpdatedAt: new Date(),
-        priceChangeDirection: nextPriceChangeDirection,
-        priceChangeAt: nextPriceChangeAt,
-      },
-    });
+    if (hasRollupChanged || hasPriceTrendChanged) {
+      await prisma.product.update({
+        where: { id: product.id },
+        data: {
+          hasInStock,
+          minPriceCop,
+          maxPriceCop,
+          priceRollupUpdatedAt: new Date(),
+          priceChangeDirection: nextPriceChangeDirection,
+          priceChangeAt: nextPriceChangeAt,
+        },
+      });
+    }
 
     return { created, createdVariants };
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : String(error);
     const message = canonicalizeMediaGuardrailError(rawMessage, ref.url);
     throw new Error(message);
+  } finally {
+    await releaseLock(productWriteLock);
   }
 };
 
@@ -963,7 +1149,14 @@ const upsertProduct = async (
   return { product, created: true };
 };
 
-const upsertVariant = async (productId: string, variant: VariantUpsertPayload) => {
+const upsertVariant = async (
+  productId: string,
+  variant: VariantUpsertPayload,
+  context: {
+    brandCurrencyOverride: string | null;
+    fxRatesToCop: Record<string, number>;
+  },
+) => {
   const sku = variant.sku;
   const existing = sku
     ? await prisma.variant.findUnique({
@@ -971,28 +1164,72 @@ const upsertVariant = async (productId: string, variant: VariantUpsertPayload) =
       })
     : null;
 
-  const now = new Date();
-  const existingPriceValue = existing?.price as unknown as { toNumber?: () => number } | null;
-  const existingPrice =
-    existingPriceValue && typeof existingPriceValue.toNumber === "function"
-      ? existingPriceValue.toNumber()
-      : existing?.price ?? null;
-  const nextPrice = variant.price ?? 0;
-  const existingStock = existing?.stock ?? null;
-  const nextStock = variant.stock ?? null;
-  const existingStatus = existing?.stockStatus ?? null;
-  const nextStatus = variant.stock_status ?? null;
-  const priceChanged = existing ? existingPrice !== nextPrice : true;
-  const stockChanged = existing ? existingStock !== nextStock : true;
-  const stockStatusChanged = existing ? existingStatus !== nextStatus : true;
-
   const existingMetadata =
     existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
       ? (existing.metadata as Record<string, unknown>)
       : {};
   const hasVariantEnrichment =
     existingMetadata.enrichment && typeof existingMetadata.enrichment === "object" && !Array.isArray(existingMetadata.enrichment);
-  const changeMetadata: Record<string, unknown> = {};
+  const existingPrice = toDecimalNumber(existing?.price ?? null);
+  const existingCurrency = normalizeCurrencyCode(existing?.currency ?? null);
+  const nextPrice = toDecimalNumber(variant.price ?? null) ?? 0;
+  const nextCurrency = normalizeCurrencyCode(variant.currency ?? null) ?? "COP";
+  const existingStock = typeof existing?.stock === "number" ? existing.stock : null;
+  const nextStock = typeof variant.stock === "number" ? variant.stock : null;
+  const existingStatus = normalizeStockStatusCode(existing?.stockStatus ?? null);
+  const nextStatus = normalizeStockStatusCode(variant.stock_status ?? null);
+  const nextImages = preferBlobImageList(existing?.images, variant.images ?? []);
+  const nextImagesNormalized = normalizeImageList(nextImages);
+  const existingImagesNormalized = normalizeImageList(existing?.images);
+  const existingSignature =
+    readVariantBusinessSignature(existingMetadata) ??
+    buildVariantBusinessSignature({
+      price: existingPrice,
+      currency: existingCurrency,
+      stock: existingStock,
+      stockStatus: existingStatus,
+      images: existingImagesNormalized,
+    });
+  const nextSignature = buildVariantBusinessSignature({
+    price: nextPrice,
+    currency: nextCurrency,
+    stock: nextStock,
+    stockStatus: nextStatus,
+    images: nextImagesNormalized,
+  });
+  const businessChanged = !existing || existingSignature !== nextSignature;
+  if (existing && !businessChanged) {
+    return { variant: existing, created: false };
+  }
+
+  const now = new Date();
+  const priceChanged = existing ? existingPrice !== nextPrice : true;
+  const stockChanged = existing ? existingStock !== nextStock : true;
+  const stockStatusChanged = existing ? existingStatus !== nextStatus : true;
+  const existingEffectivePriceCop = sanitizeCatalogPrice(
+    toCopEffective({
+      price: existingPrice,
+      currency: existingCurrency,
+      brandOverride: context.brandCurrencyOverride,
+      fxRatesToCop: context.fxRatesToCop,
+    }),
+  );
+  const nextEffectivePriceCop = sanitizeCatalogPrice(
+    toCopEffective({
+      price: nextPrice,
+      currency: nextCurrency,
+      brandOverride: context.brandCurrencyOverride,
+      fxRatesToCop: context.fxRatesToCop,
+    }),
+  );
+  const shouldWriteCanonicalPriceHistory = existing
+    ? existingEffectivePriceCop !== null && nextEffectivePriceCop !== null
+      ? existingEffectivePriceCop !== nextEffectivePriceCop
+      : priceChanged
+    : true;
+  const changeMetadata: Record<string, unknown> = {
+    variant_business_signature: nextSignature,
+  };
   if (priceChanged) changeMetadata.last_price_changed_at = now.toISOString();
   if (stockChanged) changeMetadata.last_stock_changed_at = now.toISOString();
   if (stockStatusChanged) {
@@ -1008,7 +1245,6 @@ const upsertVariant = async (productId: string, variant: VariantUpsertPayload) =
       ...changeMetadata,
     }),
   ) as Prisma.InputJsonValue;
-
   const data = {
     productId,
     sku,
@@ -1016,15 +1252,16 @@ const upsertVariant = async (productId: string, variant: VariantUpsertPayload) =
     size: chooseString(existing?.size, variant.size ?? null, false),
     fit: chooseString(existing?.fit, variant.fit ?? null, Boolean(hasVariantEnrichment)),
     material: chooseString(existing?.material, variant.material ?? null, Boolean(hasVariantEnrichment)),
-    price: variant.price ?? 0,
-    currency: variant.currency ?? "COP",
-    stock: variant.stock ?? null,
-    stockStatus: variant.stock_status ?? null,
-    images: preferBlobImageList(existing?.images, variant.images ?? []),
+    price: nextPrice,
+    currency: nextCurrency,
+    stock: nextStock,
+    stockStatus: nextStatus,
+    images: nextImagesNormalized,
     metadata: mergedVariantMetadata,
   };
-  const nextImages = Array.isArray(data.images) ? data.images : [];
-  const hasExternalImage = nextImages.some((image) => typeof image === "string" && image.trim() && !isBlobStorageUrl(image));
+  const hasExternalImage = nextImagesNormalized.some(
+    (image) => typeof image === "string" && image.trim() && !isBlobStorageUrl(image),
+  );
   if (!existing && hasExternalImage && !ALLOW_EXTERNAL_MEDIA_WRITE) {
     throw new Error(`external_media_blocked_variant_create:${productId}:${sku ?? "no-sku"}`);
   }
@@ -1032,7 +1269,7 @@ const upsertVariant = async (productId: string, variant: VariantUpsertPayload) =
   if (existing) {
     const updated = await prisma.$transaction(async (tx) => {
       const next = await tx.variant.update({ where: { id: existing.id }, data });
-      if (priceChanged) {
+      if (shouldWriteCanonicalPriceHistory) {
         await tx.priceHistory.create({
           data: {
             variantId: existing.id,
@@ -1170,8 +1407,9 @@ export const extractCatalogForBrand = async (
 
   if (existingState && existingState.status !== "completed" && existingState.refs?.length) {
     const now = new Date().toISOString();
-    const syncedItems = syncRunStateItems(existingState.refs, existingState.items, now);
-    const nextCursor = findNextEligibleCursor(existingState.refs, syncedItems, existingState.cursor ?? 0);
+    const canonicalRefs = canonicalizeRunRefs(existingState.refs);
+    const syncedItems = syncRunStateItems(canonicalRefs, existingState.items, now);
+    const nextCursor = findNextEligibleCursor(canonicalRefs, syncedItems, existingState.cursor ?? 0);
     state = {
       ...existingState,
       status:
@@ -1179,6 +1417,7 @@ export const extractCatalogForBrand = async (
           ? "processing"
           : existingState.status,
       batchSize,
+      refs: canonicalRefs,
       items: syncedItems,
       cursor: nextCursor,
       consecutiveErrors: existingState.consecutiveErrors ?? 0,
@@ -1221,6 +1460,7 @@ export const extractCatalogForBrand = async (
         .slice(0, discoveryLimit)
         .map((url) => ({ url }));
     }
+    refs = canonicalizeRunRefs(refs);
 
     const now = new Date().toISOString();
     const hasRefs = refs.length > 0;

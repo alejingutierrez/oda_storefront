@@ -1141,9 +1141,13 @@ export default function CatalogProductCard({
 
   const priceChangeChip =
     product.priceChangeDirection === "down"
-      ? "↓ Bajó de precio"
+      ? mobileCompact
+        ? "↓ Bajó"
+        : "↓ Bajó de precio"
       : product.priceChangeDirection === "up"
-        ? "↑ Subió de precio"
+        ? mobileCompact
+          ? "↑ Subió"
+          : "↑ Subió de precio"
         : null;
 
   const compared = compare?.isSelected(product.id) ?? false;
@@ -1335,7 +1339,7 @@ export default function CatalogProductCard({
             >
               {product.name}
             </h3>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className={mobileCompact ? "flex flex-col items-start gap-1" : "flex flex-wrap items-center gap-2"}>
               <p
                 className={[
                   "uppercase tracking-[0.2em] text-[color:var(--oda-ink-soft)] lg:text-xs",
@@ -1345,7 +1349,14 @@ export default function CatalogProductCard({
                 {priceLabel}
               </p>
               {priceChangeChip ? (
-                <span className="rounded-full border border-[color:var(--oda-border)] bg-white/85 px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.14em] text-[color:var(--oda-ink)]">
+                <span
+                  className={[
+                    "whitespace-nowrap rounded-full border border-[color:var(--oda-border)] bg-white/85 font-semibold uppercase text-[color:var(--oda-ink)]",
+                    mobileCompact
+                      ? "px-1.5 py-0.5 text-[7px] leading-none tracking-[0.1em]"
+                      : "px-2 py-1 text-[8px] tracking-[0.14em]",
+                  ].join(" ")}
+                >
                   {priceChangeChip}
                 </span>
               ) : null}

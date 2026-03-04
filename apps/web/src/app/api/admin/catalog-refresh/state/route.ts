@@ -9,9 +9,14 @@ import {
   deriveCatalogStatus,
   hasStatusMismatch,
 } from "@/lib/catalog/refresh-status";
-import { readHeartbeat } from "@/lib/redis";
+import { isRedisEnabled, readHeartbeat, readJsonCache, writeJsonCache } from "@/lib/redis";
 
 export const runtime = "nodejs";
+const stateDeepCacheTtlSeconds = Math.max(
+  1,
+  Number(process.env.CATALOG_REFRESH_STATE_DEEP_CACHE_TTL_SECONDS ?? 15),
+);
+const catalogMaxAttempts = Math.max(1, Number(process.env.CATALOG_MAX_ATTEMPTS ?? 3));
 
 const readMetadata = (metadata: unknown) =>
   metadata && typeof metadata === "object" && !Array.isArray(metadata)
@@ -81,7 +86,16 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const includeEnrichmentAlerts = new URL(req.url).searchParams.get("includeEnrichmentAlerts") === "true";
+  const requestUrl = new URL(req.url);
+  const includeEnrichmentAlerts = requestUrl.searchParams.get("includeEnrichmentAlerts") === "true";
+  const bypassCache = requestUrl.searchParams.get("fresh") === "true";
+  const deepCacheKey = `catalog:refresh:state-deep:v2:enrich:${includeEnrichmentAlerts ? "1" : "0"}`;
+  if (isRedisEnabled() && !bypassCache) {
+    const cached = await readJsonCache<Record<string, unknown>>(deepCacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
+  }
   const config = getRefreshConfig();
   const activeRunCap = Math.max(
     1,
@@ -364,6 +378,9 @@ export async function GET(req: Request) {
     staleBreakdown.unknown += 1;
   }
   staleBreakdown.no_status = staleBreakdown.completed_stale + staleBreakdown.unknown;
+  const staleOpenBrands =
+    staleBreakdown.processing + staleBreakdown.paused + staleBreakdown.failed;
+  const staleCompletedBrands = staleBreakdown.completed_stale + staleBreakdown.unknown;
 
   // Metrics are aligned to the same window shown in the UI. We treat "coverage" as discovery
   // coverage (sitemap/adapter refs already present in DB pre-run), and "success" as run success
@@ -441,6 +458,27 @@ export async function GET(req: Request) {
     Number(process.env.CATALOG_PROGRESS_WINDOW_MINUTES ?? 20),
   );
   const progressCutoff = new Date(Date.now() - progressWindowMinutes * 60 * 1000);
+  const throughputWindowMinutes = 5;
+  const throughputCutoff = new Date(Date.now() - throughputWindowMinutes * 60 * 1000);
+  const throughputSlaTargetItems5m = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_SPEED_SLA_ITEMS_5M ?? 120),
+  );
+  const highProgressClosableMinPct = Math.max(
+    50,
+    Math.min(100, Number(process.env.CATALOG_REFRESH_HIGH_PROGRESS_MIN_PCT ?? 95)),
+  );
+  const highProgressClosableMaxPending = Math.max(
+    0,
+    Number(process.env.CATALOG_REFRESH_HIGH_PROGRESS_MAX_PENDING ?? 10),
+  );
+  const highProgressClosableNoProgressMinutes = Math.max(
+    1,
+    Number(process.env.CATALOG_REFRESH_HIGH_PROGRESS_NO_PROGRESS_MINUTES ?? 5),
+  );
+  const highProgressClosableCutoff = new Date(
+    Date.now() - highProgressClosableNoProgressMinutes * 60 * 1000,
+  );
 
   const overdueBrandIds = rowsWithOperationalStatus
     .filter((brand) => !brand.manualReview && brand.operationalOverdue)
@@ -531,7 +569,16 @@ export async function GET(req: Request) {
     });
   }
 
-  const [catalogHeartbeat, enrichHeartbeat, queueDrift, processingProgress, activeRunStatusCounts] = await Promise.all([
+  const [
+    catalogHeartbeat,
+    enrichHeartbeat,
+    queueDrift,
+    processingProgress,
+    activeRunStatusCounts,
+    itemsCompleted5m,
+    runsClosed5m,
+    highProgressClosableRows,
+  ] = await Promise.all([
     readHeartbeat("workers:catalog:alive"),
     readHeartbeat("workers:enrich:alive"),
     readCatalogQueueDriftSummary({
@@ -572,6 +619,71 @@ export async function GET(req: Request) {
       where: { status: { in: ["processing", "paused", "blocked"] } },
       _count: { _all: true },
     }),
+    prisma.catalogItem.count({
+      where: {
+        status: "completed",
+        completedAt: { gte: throughputCutoff },
+      },
+    }),
+    prisma.catalogRun.count({
+      where: {
+        status: { in: ["completed", "failed"] },
+        finishedAt: { gte: throughputCutoff },
+      },
+    }),
+    prisma.$queryRaw<
+      Array<{
+        runId: string;
+        brandId: string;
+        updatedAt: Date;
+        totalItems: number | null;
+        completed: number;
+        failed: number;
+        pending: number;
+        runnable: number;
+        completedRecent: number;
+      }>
+    >(Prisma.sql`
+      WITH processing_runs AS (
+        SELECT
+          cr.id AS "runId",
+          cr."brandId" AS "brandId",
+          cr."updatedAt" AS "updatedAt",
+          cr."totalItems"::int AS "totalItems"
+        FROM "catalog_runs" cr
+        WHERE cr.status = 'processing'
+      ),
+      counts AS (
+        SELECT
+          ci."runId" AS "runId",
+          COUNT(*) FILTER (WHERE ci.status = 'completed')::int AS completed,
+          COUNT(*) FILTER (WHERE ci.status = 'failed')::int AS failed,
+          COUNT(*) FILTER (WHERE ci.status IN ('pending', 'queued', 'in_progress'))::int AS pending,
+          COUNT(*) FILTER (
+            WHERE ci.status IN ('pending', 'queued', 'in_progress', 'failed')
+              AND ci.attempts < ${catalogMaxAttempts}
+          )::int AS runnable,
+          COUNT(*) FILTER (
+            WHERE ci.status = 'completed'
+              AND ci."completedAt" >= ${highProgressClosableCutoff}
+          )::int AS "completedRecent"
+        FROM "catalog_items" ci
+        WHERE ci."runId" IN (SELECT "runId" FROM processing_runs)
+        GROUP BY ci."runId"
+      )
+      SELECT
+        pr."runId" AS "runId",
+        pr."brandId" AS "brandId",
+        pr."updatedAt" AS "updatedAt",
+        pr."totalItems" AS "totalItems",
+        COALESCE(c.completed, 0)::int AS completed,
+        COALESCE(c.failed, 0)::int AS failed,
+        COALESCE(c.pending, 0)::int AS pending,
+        COALESCE(c.runnable, 0)::int AS runnable,
+        COALESCE(c."completedRecent", 0)::int AS "completedRecent"
+      FROM processing_runs pr
+      LEFT JOIN counts c ON c."runId" = pr."runId"
+    `),
   ]);
   const processingProgressRow = processingProgress[0] ?? {
     processingRuns: 0,
@@ -612,6 +724,36 @@ export async function GET(req: Request) {
     1,
     Number(process.env.CATALOG_ALERT_TOP_BRANDS ?? 25),
   );
+  const itemsCompletedPerMinute5m = itemsCompleted5m / throughputWindowMinutes;
+  const throughputSlaMet = itemsCompleted5m >= throughputSlaTargetItems5m;
+  const brandNameById = new Map(brands.map((brand) => [brand.id, brand.name]));
+  const highProgressClosableCandidates = highProgressClosableRows
+    .map((row) => {
+      const totalFromCounts = Math.max(0, row.completed + row.failed + row.pending);
+      const total = row.totalItems && row.totalItems > 0 ? row.totalItems : totalFromCounts;
+      const progressPct =
+        total > 0 ? Math.round(((row.completed + row.failed) / total) * 100) : 0;
+      const updatedAtIso = new Date(row.updatedAt).toISOString();
+      return {
+        runId: row.runId,
+        brandId: row.brandId,
+        brandName: brandNameById.get(row.brandId) ?? row.brandId,
+        progressPct,
+        pending: row.pending,
+        runnable: row.runnable,
+        completedRecent: row.completedRecent,
+        updatedAt: updatedAtIso,
+      };
+    })
+    .filter((row) => row.progressPct >= highProgressClosableMinPct)
+    .filter((row) => row.pending <= highProgressClosableMaxPending)
+    .filter((row) => row.completedRecent <= 0)
+    .sort((a, b) => {
+      if (b.progressPct !== a.progressPct) return b.progressPct - a.progressPct;
+      if (a.pending !== b.pending) return a.pending - b.pending;
+      return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+    });
+  const highProgressClosableTop = highProgressClosableCandidates.slice(0, alertTopBrands);
   const queueDriftCritical =
     queueDrift.waitingItemNotQueued > 0 || activeZombieCriticalCount > 0;
   const queueDriftLevel: "warning" | "danger" = queueDriftCritical ? "danger" : "warning";
@@ -962,7 +1104,7 @@ export async function GET(req: Request) {
   const archivedBrandsTotal = archivedBrandsTotalRow[0]?.count ?? 0;
   const archivedLast24h = archivedLast24hRow[0]?.count ?? 0;
 
-  return NextResponse.json({
+  const payload = {
     config,
     windowStart: windowStart.toISOString(),
     summary: {
@@ -975,6 +1117,8 @@ export async function GET(req: Request) {
       operationalStaleBrands,
       qualityStaleBrands,
       staleBreakdown,
+      staleOpenBrands,
+      staleCompletedBrands,
       activeRunCount: activeRunCountTotal,
       activeRunCountTotal,
       activeRunCap,
@@ -1009,6 +1153,19 @@ export async function GET(req: Request) {
       processingNoProgressOverflow,
       highProgressNoProgressCount: highProgressNoProgress.length,
       highProgressNoProgressTop,
+      highProgressClosableCount: highProgressClosableCandidates.length,
+      highProgressClosableTop,
+      throughput: {
+        itemsCompleted5m,
+        itemsCompletedPerMinute5m,
+        runsClosed5m,
+        slaTargetItems5m: throughputSlaTargetItems5m,
+        slaMet: throughputSlaMet,
+      },
+      sla: {
+        targetItems5m: throughputSlaTargetItems5m,
+        met: throughputSlaMet,
+      },
       archivedBrandsTotal,
       archivedLast24h,
       archiveCandidatesCount: archiveCandidates.length,
@@ -1042,6 +1199,21 @@ export async function GET(req: Request) {
         total: highProgressNoProgress.length,
         top: highProgressNoProgressTop,
       },
+      highProgressClosable: {
+        minPct: highProgressClosableMinPct,
+        maxPending: highProgressClosableMaxPending,
+        noProgressMinutes: highProgressClosableNoProgressMinutes,
+        total: highProgressClosableCandidates.length,
+        top: highProgressClosableTop,
+      },
+      throughput: {
+        windowMinutes: throughputWindowMinutes,
+        itemsCompleted5m,
+        itemsCompletedPerMinute5m,
+        runsClosed5m,
+        slaTargetItems5m: throughputSlaTargetItems5m,
+        slaMet: throughputSlaMet,
+      },
     },
     brands: rowsWithOperationalStatus,
     operationalMissingBrands,
@@ -1057,5 +1229,9 @@ export async function GET(req: Request) {
     archiveCandidates,
     criticalOperationalAlerts: dedupedCriticalAlerts,
     alerts,
-  });
+  };
+  if (isRedisEnabled() && !bypassCache) {
+    await writeJsonCache(deepCacheKey, payload, stateDeepCacheTtlSeconds);
+  }
+  return NextResponse.json(payload);
 }

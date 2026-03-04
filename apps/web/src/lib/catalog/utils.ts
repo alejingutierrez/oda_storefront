@@ -2,7 +2,16 @@ import crypto from "node:crypto";
 import { promisify } from "node:util";
 import { gunzip } from "node:zlib";
 
-export const DEFAULT_TIMEOUT_MS = 15000;
+const parseTimeoutMs = (raw: string | undefined, fallback: number) => {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(5000, parsed);
+};
+
+const TRACKING_QUERY_PARAM_PREFIXES = ["utm_"];
+const TRACKING_QUERY_PARAMS = new Set(["fbclid", "gclid", "mc_cid", "mc_eid", "srsltid"]);
+
+export const DEFAULT_TIMEOUT_MS = parseTimeoutMs(process.env.CATALOG_HTTP_TIMEOUT_MS, 120_000);
 const gunzipAsync = promisify(gunzip);
 
 export const normalizeUrl = (value: string) => {
@@ -10,6 +19,33 @@ export const normalizeUrl = (value: string) => {
   if (!trimmed) return null;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   return `https://${trimmed.replace(/^\/+/, "")}`;
+};
+
+export const canonicalizeCatalogProductUrl = (value: string | null | undefined) => {
+  const normalized = normalizeUrl(value ?? "");
+  if (!normalized) return null;
+  try {
+    const url = new URL(normalized);
+    url.hash = "";
+    for (const key of Array.from(url.searchParams.keys())) {
+      const lower = key.toLowerCase();
+      if (
+        TRACKING_QUERY_PARAM_PREFIXES.some((prefix) => lower.startsWith(prefix)) ||
+        TRACKING_QUERY_PARAMS.has(lower)
+      ) {
+        url.searchParams.delete(key);
+      }
+    }
+    // Product identity should not vary by query params (`?variant=...`, tracking, etc.).
+    url.search = "";
+    if (url.pathname.length > 1) {
+      url.pathname = url.pathname.replace(/\/+$/, "");
+      if (!url.pathname) url.pathname = "/";
+    }
+    return url.toString();
+  } catch {
+    return normalized;
+  }
 };
 
 export const safeOrigin = (value: string) => {

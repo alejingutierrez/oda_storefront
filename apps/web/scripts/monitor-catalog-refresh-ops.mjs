@@ -171,6 +171,99 @@ const remediateForceTerminalizeRemaining =
     .toString()
     .trim()
     .toLowerCase() !== "false";
+const highProgressMinPct = Math.max(
+  50,
+  Math.min(
+    100,
+    Math.floor(
+      readNumber(
+        readArgValue("high-progress-min-pct") ??
+          process.env.CATALOG_REFRESH_HIGH_PROGRESS_MIN_PCT,
+        95,
+      ),
+    ),
+  ),
+);
+const highProgressMaxPending = Math.max(
+  0,
+  Math.floor(
+    readNumber(
+      readArgValue("high-progress-max-pending") ??
+        process.env.CATALOG_REFRESH_HIGH_PROGRESS_MAX_PENDING,
+      10,
+    ),
+  ),
+);
+const highProgressNoProgressMinutes = Math.max(
+  1,
+  Math.floor(
+    readNumber(
+      readArgValue("high-progress-no-progress-minutes") ??
+        process.env.CATALOG_REFRESH_HIGH_PROGRESS_NO_PROGRESS_MINUTES,
+      5,
+    ),
+  ),
+);
+const highProgressCloseLimitPerCycle = Math.max(
+  1,
+  Math.floor(
+    readNumber(
+      readArgValue("high-progress-close-limit-per-cycle") ??
+        process.env.CATALOG_REFRESH_MONITOR_HIGH_PROGRESS_CLOSE_LIMIT_PER_CYCLE,
+      12,
+    ),
+  ),
+);
+const highProgressCloseCooldownMinutes = Math.max(
+  1,
+  Math.floor(
+    readNumber(
+      readArgValue("high-progress-close-cooldown-minutes") ??
+        process.env.CATALOG_REFRESH_MONITOR_HIGH_PROGRESS_CLOSE_COOLDOWN_MINUTES,
+      5,
+    ),
+  ),
+);
+const speedSlaItems5m = Math.max(
+  1,
+  Math.floor(
+    readNumber(
+      readArgValue("speed-sla-items-5m") ??
+        process.env.CATALOG_REFRESH_SPEED_SLA_ITEMS_5M,
+      120,
+    ),
+  ),
+);
+const speedWarnCycles = Math.max(
+  1,
+  Math.floor(
+    readNumber(
+      readArgValue("speed-warn-cycles") ??
+        process.env.CATALOG_REFRESH_SPEED_WARN_CYCLES,
+      2,
+    ),
+  ),
+);
+const speedCriticalCycles = Math.max(
+  1,
+  Math.floor(
+    readNumber(
+      readArgValue("speed-critical-cycles") ??
+        process.env.CATALOG_REFRESH_SPEED_CRITICAL_CYCLES,
+      3,
+    ),
+  ),
+);
+const speedCriticalItems5m = Math.max(
+  1,
+  Math.floor(
+    readNumber(
+      readArgValue("speed-critical-items-5m") ??
+        process.env.CATALOG_REFRESH_SPEED_CRITICAL_ITEMS_5M,
+      60,
+    ),
+  ),
+);
 const guardrailConsecutiveCycles = Math.max(
   2,
   Math.floor(
@@ -498,6 +591,39 @@ const extractNearCloseCandidates = (entries, stuckRunStreaks) => {
   return deduped;
 };
 
+const extractHighProgressClosableCandidates = (state) => {
+  const diagnosticsTop = Array.isArray(state?.diagnostics?.highProgressClosable?.top)
+    ? state.diagnostics.highProgressClosable.top
+    : [];
+  const summaryTop = Array.isArray(state?.summary?.highProgressClosableTop)
+    ? state.summary.highProgressClosableTop
+    : [];
+  const source = diagnosticsTop.length ? diagnosticsTop : summaryTop;
+  const normalized = source
+    .map((row) => ({
+      runId: typeof row?.runId === "string" ? row.runId : null,
+      brandName: typeof row?.brandName === "string" ? row.brandName : "unknown",
+      progressPct: Number(row?.progressPct ?? 0) || 0,
+      pending: Number(row?.pending ?? 0) || 0,
+      completedRecent: Number(row?.completedRecent ?? 0) || 0,
+      updatedAt: typeof row?.updatedAt === "string" ? row.updatedAt : null,
+    }))
+    .filter((row) => row.runId)
+    .sort((a, b) => {
+      if (b.progressPct !== a.progressPct) return b.progressPct - a.progressPct;
+      if (a.pending !== b.pending) return a.pending - b.pending;
+      return String(a.updatedAt ?? "").localeCompare(String(b.updatedAt ?? ""));
+    });
+  const deduped = [];
+  const seen = new Set();
+  for (const row of normalized) {
+    if (!row.runId || seen.has(row.runId)) continue;
+    seen.add(row.runId);
+    deduped.push(row);
+  }
+  return deduped;
+};
+
 const computeNoProgressInsights = (entries, stuckRunStreaks) => {
   const buckets = {
     pct99plus: 0,
@@ -629,9 +755,12 @@ const loadState = async () => {
       return {
         lastCronAt: 0,
         lastRemediateAt: 0,
+        lastHighProgressCloseAt: 0,
         guardrailConsecutiveHits: 0,
         heartbeatMissingConsecutive: 0,
         skipRemediateCycles: 0,
+        throughputWarnConsecutive: 0,
+        throughputCriticalConsecutive: 0,
         totalTimeoutErrors: 0,
         totalDbAuthTimeouts: 0,
         totalDrainLocked: 0,
@@ -641,10 +770,13 @@ const loadState = async () => {
     return {
       lastCronAt: Number(parsed.lastCronAt ?? 0) || 0,
       lastRemediateAt: Number(parsed.lastRemediateAt ?? 0) || 0,
+      lastHighProgressCloseAt: Number(parsed.lastHighProgressCloseAt ?? 0) || 0,
       guardrailConsecutiveHits: Number(parsed.guardrailConsecutiveHits ?? 0) || 0,
       heartbeatMissingConsecutive:
         Number(parsed.heartbeatMissingConsecutive ?? 0) || 0,
       skipRemediateCycles: Number(parsed.skipRemediateCycles ?? 0) || 0,
+      throughputWarnConsecutive: Number(parsed.throughputWarnConsecutive ?? 0) || 0,
+      throughputCriticalConsecutive: Number(parsed.throughputCriticalConsecutive ?? 0) || 0,
       totalTimeoutErrors: Number(parsed.totalTimeoutErrors ?? 0) || 0,
       totalDbAuthTimeouts: Number(parsed.totalDbAuthTimeouts ?? 0) || 0,
       totalDrainLocked: Number(parsed.totalDrainLocked ?? 0) || 0,
@@ -657,9 +789,12 @@ const loadState = async () => {
     return {
       lastCronAt: 0,
       lastRemediateAt: 0,
+      lastHighProgressCloseAt: 0,
       guardrailConsecutiveHits: 0,
       heartbeatMissingConsecutive: 0,
       skipRemediateCycles: 0,
+      throughputWarnConsecutive: 0,
+      throughputCriticalConsecutive: 0,
       totalTimeoutErrors: 0,
       totalDbAuthTimeouts: 0,
       totalDrainLocked: 0,
@@ -672,9 +807,12 @@ const persistState = async () => {
   const payload = {
     lastCronAt,
     lastRemediateAt,
+    lastHighProgressCloseAt,
     guardrailConsecutiveHits,
     heartbeatMissingConsecutive,
     skipRemediateCycles,
+    throughputWarnConsecutive,
+    throughputCriticalConsecutive,
     totalTimeoutErrors,
     totalDbAuthTimeouts,
     totalDrainLocked,
@@ -687,9 +825,12 @@ const persistState = async () => {
 let previous = null;
 let lastCronAt = 0;
 let lastRemediateAt = 0;
+let lastHighProgressCloseAt = 0;
 let guardrailConsecutiveHits = 0;
 let heartbeatMissingConsecutive = 0;
 let skipRemediateCycles = 0;
+let throughputWarnConsecutive = 0;
+let throughputCriticalConsecutive = 0;
 let totalTimeoutErrors = 0;
 let totalDbAuthTimeouts = 0;
 let totalDrainLocked = 0;
@@ -697,9 +838,12 @@ let stuckRunStreaks = {};
 const persistedState = await loadState();
 lastCronAt = persistedState.lastCronAt;
 lastRemediateAt = persistedState.lastRemediateAt;
+lastHighProgressCloseAt = persistedState.lastHighProgressCloseAt;
 guardrailConsecutiveHits = persistedState.guardrailConsecutiveHits;
 heartbeatMissingConsecutive = persistedState.heartbeatMissingConsecutive;
 skipRemediateCycles = persistedState.skipRemediateCycles;
+throughputWarnConsecutive = persistedState.throughputWarnConsecutive;
+throughputCriticalConsecutive = persistedState.throughputCriticalConsecutive;
 totalTimeoutErrors = persistedState.totalTimeoutErrors;
 totalDbAuthTimeouts = persistedState.totalDbAuthTimeouts;
 totalDrainLocked = persistedState.totalDrainLocked;
@@ -783,6 +927,41 @@ try {
       }
       stuckRunStreaks = nextStreaks;
       const noProgressInsights = computeNoProgressInsights(noProgressEntries, stuckRunStreaks);
+      const throughputFromState =
+        state?.summary?.throughput ??
+        state?.diagnostics?.throughput ??
+        queueHealth?.throughput ??
+        {};
+      const itemsCompleted5m = Number(throughputFromState?.itemsCompleted5m ?? 0) || 0;
+      const itemsCompletedPerMinute5m =
+        Number(throughputFromState?.itemsCompletedPerMinute5m ?? throughputFromState?.itemsPerMinute5m ?? 0) || 0;
+      const runsClosed5m = Number(throughputFromState?.runsClosed5m ?? 0) || 0;
+      throughputWarnConsecutive =
+        itemsCompleted5m < speedSlaItems5m ? throughputWarnConsecutive + 1 : 0;
+      throughputCriticalConsecutive =
+        itemsCompleted5m < speedCriticalItems5m ? throughputCriticalConsecutive + 1 : 0;
+      if (throughputWarnConsecutive >= speedWarnCycles) {
+        actions.push({
+          type: "throughput_below_sla",
+          itemsCompleted5m,
+          itemsCompletedPerMinute5m,
+          runsClosed5m,
+          targetItems5m: speedSlaItems5m,
+          warnCycles: speedWarnCycles,
+          consecutiveCycles: throughputWarnConsecutive,
+        });
+      }
+      if (throughputCriticalConsecutive >= speedCriticalCycles) {
+        actions.push({
+          type: "throughput_critical",
+          itemsCompleted5m,
+          itemsCompletedPerMinute5m,
+          runsClosed5m,
+          criticalItems5m: speedCriticalItems5m,
+          criticalCycles: speedCriticalCycles,
+          consecutiveCycles: throughputCriticalConsecutive,
+        });
+      }
       const guardrailSignal = zombieCriticalCount > 0 || activeHungDetected;
       guardrailConsecutiveHits = guardrailSignal ? guardrailConsecutiveHits + 1 : 0;
       const guardrailTriggered = guardrailConsecutiveHits >= guardrailConsecutiveCycles;
@@ -839,7 +1018,11 @@ try {
               finalizedRuns: Number(drainAttempt.data?.finalizedRuns ?? 0),
               forcedClosedRuns: Number(drainAttempt.data?.forcedClosedRuns ?? 0),
               forcedFailedItems: Number(drainAttempt.data?.forcedFailedItems ?? 0),
-              tailProcessedRuns: Number(drainAttempt.data?.tailProcessedRuns ?? 0),
+              highProgressProcessedRuns: Number(
+                drainAttempt.data?.highProgressProcessedRuns ??
+                  drainAttempt.data?.tailProcessedRuns ??
+                  0,
+              ),
               skipped: drainAttempt.data?.skipped ?? null,
             });
           } else {
@@ -898,6 +1081,92 @@ try {
             });
           }
         }
+      }
+
+      const highProgressCandidates = extractHighProgressClosableCandidates(state)
+        .filter((row) => row.progressPct >= highProgressMinPct)
+        .filter((row) => row.pending <= highProgressMaxPending)
+        .filter((row) => row.completedRecent <= 0)
+        .slice(0, highProgressCloseLimitPerCycle);
+      const highProgressCooldownMs = highProgressCloseCooldownMinutes * 60 * 1000;
+      const highProgressOnCooldown =
+        lastHighProgressCloseAt > 0 &&
+        Date.now() - lastHighProgressCloseAt < highProgressCooldownMs;
+      if (!allowInterventions) {
+        if (highProgressCandidates.length > 0) {
+          actions.push({
+            type: "high_progress_close_skipped_observe",
+            candidates: highProgressCandidates.length,
+            reason: "intervention_mode_observe",
+          });
+        }
+      } else if (highProgressCandidates.length > 0 && highProgressOnCooldown) {
+        actions.push({
+          type: "high_progress_close_skipped_cooldown",
+          candidates: highProgressCandidates.length,
+          cooldownMinutes: highProgressCloseCooldownMinutes,
+          nextAllowedAt: new Date(lastHighProgressCloseAt + highProgressCooldownMs).toISOString(),
+        });
+      } else if (highProgressCandidates.length > 0) {
+        let highProgressProcessedRuns = 0;
+        let highProgressClosedRuns = 0;
+        let highProgressForcedFailedItems = 0;
+        let errors = 0;
+        const failedRuns = [];
+        for (const candidate of highProgressCandidates) {
+          const remediationAttempt = await requestJsonSafe("/api/admin/catalog-refresh/remediate", {
+            method: "POST",
+            body: {
+              dryRun: false,
+              strategy: "safe_fast_high_progress",
+              runId: candidate.runId,
+              limit: 1,
+              highProgressMinPct,
+              highProgressMaxPending,
+              highProgressNoProgressMinutes,
+              forceTerminalizeRemaining: remediateForceTerminalizeRemaining,
+            },
+          });
+          if (!remediationAttempt.ok) {
+            errors += 1;
+            failedRuns.push({
+              runId: candidate.runId,
+              brandName: candidate.brandName,
+              error: remediationAttempt.error,
+            });
+            continue;
+          }
+          highProgressProcessedRuns += Number(
+            remediationAttempt.data?.highProgressProcessedRuns ?? 0,
+          );
+          highProgressClosedRuns += Number(
+            remediationAttempt.data?.highProgressClosedRuns ?? 0,
+          );
+          highProgressForcedFailedItems += Number(
+            remediationAttempt.data?.highProgressForcedFailedItems ?? 0,
+          );
+          errors += Number(remediationAttempt.data?.errors ?? 0);
+        }
+        lastHighProgressCloseAt = Date.now();
+        actions.push({
+          type: "high_progress_safe_fast_close",
+          candidates: highProgressCandidates.length,
+          limitPerCycle: highProgressCloseLimitPerCycle,
+          highProgressMinPct,
+          highProgressMaxPending,
+          highProgressNoProgressMinutes,
+          highProgressProcessedRuns,
+          highProgressClosedRuns,
+          highProgressForcedFailedItems,
+          errors,
+          failedRuns,
+          sampleRuns: highProgressCandidates.map((candidate) => ({
+            runId: candidate.runId,
+            brandName: candidate.brandName,
+            progressPct: candidate.progressPct,
+            pending: candidate.pending,
+          })),
+        });
       }
 
       const remediateCooldownMs = remediateCooldownMinutes * 60 * 1000;
@@ -1129,6 +1398,15 @@ try {
           nearCloseMaxPending,
           nearCloseRunLimit,
           nearCloseMinConsecutiveCycles,
+          highProgressMinPct,
+          highProgressMaxPending,
+          highProgressNoProgressMinutes,
+          highProgressCloseLimitPerCycle,
+          highProgressCloseCooldownMinutes,
+          speedSlaItems5m,
+          speedWarnCycles,
+          speedCriticalCycles,
+          speedCriticalItems5m,
           requestTimeoutMs,
         },
         summary: {
@@ -1148,6 +1426,13 @@ try {
           highProgressNoProgressCount: Number(
             summary.highProgressNoProgressCount ?? 0,
           ),
+          highProgressClosableCount: Number(
+            summary.highProgressClosableCount ?? 0,
+          ),
+          itemsCompleted5m,
+          itemsCompletedPerMinute5m,
+          runsClosed5m,
+          throughputSlaMet: itemsCompleted5m >= speedSlaItems5m,
         },
         queue: {
           waiting: Number(queueHealth?.queues?.catalog?.waiting ?? 0),
@@ -1159,6 +1444,9 @@ try {
           activeHungDetected,
           heartbeatMissing,
           heartbeatMissingConsecutive,
+          noProgressMinutes: Number(
+            queueHealth?.workerStatus?.catalog?.noProgressMinutes ?? 0,
+          ),
         },
         rootCause,
         noProgressInsights,
@@ -1166,6 +1454,8 @@ try {
           totalTimeoutErrors,
           totalDbAuthTimeouts,
           totalDrainLocked,
+          throughputWarnConsecutive,
+          throughputCriticalConsecutive,
         },
         actions,
         cron,
@@ -1200,7 +1490,7 @@ try {
         ? `delta waiting=${snapshot.trend.waitingDelta}, fresh=${snapshot.trend.freshBrandsDelta}, stale=${snapshot.trend.staleBrandsDelta}, no_progress=${snapshot.trend.processingNoProgressDelta}`
         : "sin delta (primer ciclo)";
       process.stdout.write(
-        `[${timestamp}] mode=${interventionMode} root=${snapshot.rootCause.primary} waiting=${snapshot.queue.waiting} active=${snapshot.queue.active} delayed=${snapshot.queue.delayed} fresh=${snapshot.summary.freshBrands} stale=${snapshot.summary.staleBrands} no_progress=${snapshot.summary.processingRunsWithoutRecentProgress} actions=${actions.length} ${trendSummary}\n`,
+        `[${timestamp}] mode=${interventionMode} root=${snapshot.rootCause.primary} waiting=${snapshot.queue.waiting} active=${snapshot.queue.active} delayed=${snapshot.queue.delayed} fresh=${snapshot.summary.freshBrands} stale=${snapshot.summary.staleBrands} no_progress=${snapshot.summary.processingRunsWithoutRecentProgress} throughput5m=${snapshot.summary.itemsCompleted5m} actions=${actions.length} ${trendSummary}\n`,
       );
       process.stdout.write(`  snapshot=${reportPath}\n`);
     } catch (error) {

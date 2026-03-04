@@ -278,22 +278,45 @@ export async function POST(req: Request) {
     typeof body?.runId === "string" ? body.runId : url.searchParams.get("runId");
   const dryRun = boolFromValue(url.searchParams.get("dryRun"), boolFromValue(body?.dryRun, false));
   const force = url.searchParams.get("force") === "true" || body?.force === true;
-  const aggressiveTailCloseEnabled = boolFromValue(body?.aggressiveTailCloseEnabled, true);
-  const tailProgressPct = Math.max(
+  const highProgressCloseEnabled = boolFromValue(
+    body?.highProgressCloseEnabled ?? body?.aggressiveTailCloseEnabled,
+    true,
+  );
+  const highProgressMinPct = Math.max(
     50,
-    Math.min(100, Number(body?.tailProgressPct ?? process.env.CATALOG_REFRESH_STUCK_TAIL_PROGRESS_PCT ?? 99)),
+    Math.min(
+      100,
+      Number(
+        body?.highProgressMinPct ??
+          body?.tailProgressPct ??
+          process.env.CATALOG_REFRESH_HIGH_PROGRESS_MIN_PCT ??
+          95,
+      ),
+    ),
   );
-  const tailMaxRemaining = Math.max(
+  const highProgressMaxPending = Math.max(
+    0,
+    Number(
+      body?.highProgressMaxPending ??
+        body?.tailMaxRemaining ??
+        process.env.CATALOG_REFRESH_HIGH_PROGRESS_MAX_PENDING ??
+        10,
+    ),
+  );
+  const highProgressNoProgressMinutes = Math.max(
     1,
-    Number(body?.tailMaxRemaining ?? process.env.CATALOG_REFRESH_STUCK_TAIL_MAX_REMAINING ?? 20),
-  );
-  const tailStaleMinutes = Math.max(
-    5,
-    Number(body?.tailStaleMinutes ?? process.env.CATALOG_REFRESH_STUCK_TAIL_STALE_MINUTES ?? 20),
+    Number(
+      body?.highProgressNoProgressMinutes ??
+        body?.tailStaleMinutes ??
+        process.env.CATALOG_REFRESH_HIGH_PROGRESS_NO_PROGRESS_MINUTES ??
+        5,
+    ),
   );
   const forceTerminalizeRemaining = boolFromValue(
     body?.forceTerminalizeRemaining,
-    true,
+    (process.env.CATALOG_REFRESH_HIGH_PROGRESS_FORCE_TERMINALIZE_REMAINING ?? "true")
+      .trim()
+      .toLowerCase() !== "false",
   );
   let workerGate: Record<string, unknown> | null = null;
   let microDrainBypass = false;
@@ -344,7 +367,7 @@ export async function POST(req: Request) {
   let finalizedRuns = 0;
   let forcedClosedRuns = 0;
   let forcedFailedItems = 0;
-  let tailProcessedRuns = 0;
+  let highProgressProcessedRuns = 0;
   let lastResult: unknown = null;
   const seenRunIds = new Set<string>();
 
@@ -427,23 +450,22 @@ export async function POST(req: Request) {
       finalizedRuns += 1;
       if (finalized.forcedClosed) forcedClosedRuns += 1;
       forcedFailedItems += finalized.forcedFailedItems;
-    } else if (aggressiveTailCloseEnabled) {
-      const tailResult = await runCatalogRefreshStuckRemediation({
+    } else if (highProgressCloseEnabled) {
+      const highProgressResult = await runCatalogRefreshStuckRemediation({
         dryRun: false,
-        strategy: "aggressive_tail_close",
+        strategy: "safe_fast_high_progress",
         limit: 1,
-        minNoProgressMinutes: tailStaleMinutes,
-        tailProgressPct,
-        tailMaxRemaining,
-        tailStaleMinutes,
+        highProgressMinPct,
+        highProgressMaxPending,
+        highProgressNoProgressMinutes,
         forceTerminalizeRemaining,
         runId: currentRunId,
         pauseOverCapEnabled: false,
         queueEnabled: isCatalogQueueEnabled(),
       });
-      tailProcessedRuns += tailResult.tailProcessedRuns;
-      forcedClosedRuns += tailResult.forcedClosedRuns;
-      forcedFailedItems += tailResult.forcedFailedItems;
+      highProgressProcessedRuns += highProgressResult.highProgressProcessedRuns;
+      forcedClosedRuns += highProgressResult.highProgressClosedRuns;
+      forcedFailedItems += highProgressResult.highProgressForcedFailedItems;
     }
     processed += (lastResult as { processed?: number })?.processed ?? 0;
 
@@ -458,7 +480,7 @@ export async function POST(req: Request) {
     finalizedRuns,
     forcedClosedRuns,
     forcedFailedItems,
-    tailProcessedRuns,
+    highProgressProcessedRuns,
     microDrainBypass,
     lastResult,
     workerGate,
