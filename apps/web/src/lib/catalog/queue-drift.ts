@@ -661,11 +661,10 @@ export const reconcileCatalogQueue = async (
     });
 
     // Batch check: obtener todos los job IDs en cola de una vez en lugar de O(n) queries
-    const [waitingJobIds, delayedJobIds] = await Promise.all([
-      queue.getJobIds("waiting", 0, -1).catch(() => [] as string[]),
-      queue.getJobIds("delayed", 0, -1).catch(() => [] as string[]),
-    ]);
-    const existingJobIdSet = new Set([...waitingJobIds, ...delayedJobIds]);
+    const existingJobIds = await queue
+      .getRanges(["waiting", "delayed"], 0, -1)
+      .catch(() => [] as string[]);
+    const existingJobIdSet = new Set(existingJobIds);
 
     const missingJobs: Array<{ id: string; runId: string; status: string }> = [];
     for (const candidate of runnableCandidates) {
