@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 
 type Props = {
@@ -13,9 +13,12 @@ type Props = {
 
 export default function PdpGallery({ images, productName, productId }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const desktopImagesRef = useRef<(HTMLDivElement | null)[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [zoomOrigin, setZoomOrigin] = useState<Record<number, string>>({});
+  const [loadedImages, setLoadedImages] = useState<Set<number>>(new Set());
+  const [touchStart, setTouchStart] = useState<number | null>(null);
 
   // Deduplicate images
   const uniqueImages = useMemo(() => [...new Set(images)], [images]);
@@ -29,7 +32,15 @@ export default function PdpGallery({ images, productName, productId }: Props) {
     [uniqueImages, productId],
   );
 
-  // IntersectionObserver for active dot
+  const markLoaded = useCallback((idx: number) => {
+    setLoadedImages((prev) => {
+      const next = new Set(prev);
+      next.add(idx);
+      return next;
+    });
+  }, []);
+
+  // IntersectionObserver for active dot (mobile)
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
@@ -37,7 +48,9 @@ export default function PdpGallery({ images, productName, productId }: Props) {
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            const idx = Array.from(container.children).indexOf(entry.target as Element);
+            const idx = Array.from(container.children).indexOf(
+              entry.target as Element,
+            );
             if (idx >= 0) setActiveIndex(idx);
           }
         }
@@ -54,9 +67,13 @@ export default function PdpGallery({ images, productName, productId }: Props) {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setLightboxIndex(null);
       if (e.key === "ArrowRight")
-        setLightboxIndex((prev) => (prev !== null ? Math.min(prev + 1, proxiedImages.length - 1) : null));
+        setLightboxIndex((prev) =>
+          prev !== null ? Math.min(prev + 1, proxiedImages.length - 1) : null,
+        );
       if (e.key === "ArrowLeft")
-        setLightboxIndex((prev) => (prev !== null ? Math.max(prev - 1, 0) : null));
+        setLightboxIndex((prev) =>
+          prev !== null ? Math.max(prev - 1, 0) : null,
+        );
     }
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKey);
@@ -76,6 +93,36 @@ export default function PdpGallery({ images, productName, productId }: Props) {
     [],
   );
 
+  // Lightbox touch swipe handlers
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    setTouchStart(e.touches[0]?.clientX ?? null);
+  }, []);
+
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (touchStart === null) return;
+      const delta = (e.changedTouches[0]?.clientX ?? 0) - touchStart;
+      if (Math.abs(delta) > 50) {
+        if (delta < 0 && lightboxIndex !== null) {
+          setLightboxIndex(Math.min(lightboxIndex + 1, proxiedImages.length - 1));
+        } else if (delta > 0 && lightboxIndex !== null) {
+          setLightboxIndex(Math.max(lightboxIndex - 1, 0));
+        }
+      }
+      setTouchStart(null);
+    },
+    [touchStart, lightboxIndex, proxiedImages.length],
+  );
+
+  // Scroll to desktop image when thumbnail clicked
+  const scrollToDesktopImage = useCallback((idx: number) => {
+    desktopImagesRef.current[idx]?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    setActiveIndex(idx);
+  }, []);
+
   if (proxiedImages.length === 0) {
     return (
       <div className="flex aspect-[3/4] items-center justify-center rounded-2xl bg-[color:var(--oda-stone)]">
@@ -88,58 +135,116 @@ export default function PdpGallery({ images, productName, productId }: Props) {
 
   return (
     <>
-      {/* Desktop: Vertical image grid with zoom */}
-      <div className="hidden flex-col gap-2 lg:flex">
-        {proxiedImages.map((proxied, i) => (
-          <div
-            key={`desktop-${proxied}-${i}`}
-            className="group relative aspect-[3/4] w-full cursor-zoom-in overflow-hidden rounded-xl bg-[color:var(--oda-stone)] oda-shimmer"
-            onMouseMove={(e) => handleMouseMove(e, i)}
-            onMouseLeave={() =>
-              setZoomOrigin((prev) => {
-                const next = { ...prev };
-                delete next[i];
-                return next;
-              })
-            }
-            onClick={() => setLightboxIndex(i)}
-          >
-            <Image
-              src={proxied}
-              alt={`${productName} - imagen ${i + 1}`}
-              fill
-              quality={72}
-              sizes="(max-width: 1280px) 55vw, 50vw"
-              className="relative z-[1] object-cover transition-transform duration-300 ease-out group-hover:scale-150"
-              style={zoomOrigin[i] ? { transformOrigin: zoomOrigin[i] } : undefined}
-              priority={i === 0}
-            />
+      {/* Desktop: Thumbnails + vertical image grid with zoom */}
+      <div className="hidden lg:flex lg:gap-3">
+        {/* Thumbnail strip */}
+        {proxiedImages.length > 1 && (
+          <div className="sticky top-[calc(var(--oda-header-h,72px)+2rem)] flex h-fit flex-col gap-2 self-start">
+            {proxiedImages.map((proxied, i) => (
+              <button
+                key={`thumb-${i}`}
+                type="button"
+                onClick={() => scrollToDesktopImage(i)}
+                className={`relative h-[60px] w-[60px] shrink-0 overflow-hidden rounded-lg bg-[color:var(--oda-stone)] transition ${
+                  i === activeIndex
+                    ? "ring-2 ring-[color:var(--oda-ink)] ring-offset-1"
+                    : "opacity-60 hover:opacity-100"
+                }`}
+              >
+                <Image
+                  src={proxied}
+                  alt={`Miniatura ${i + 1}`}
+                  fill
+                  quality={30}
+                  sizes="60px"
+                  className="object-cover"
+                />
+              </button>
+            ))}
           </div>
-        ))}
-      </div>
+        )}
 
-      {/* Mobile: Horizontal carousel */}
-      <div className="lg:hidden">
-        <div
-          ref={scrollRef}
-          className="flex snap-x snap-mandatory gap-2 overflow-x-auto oda-no-scrollbar"
-        >
+        {/* Main images */}
+        <div className="flex flex-1 flex-col gap-2">
           {proxiedImages.map((proxied, i) => (
             <div
-              key={`mobile-${proxied}-${i}`}
-              className="relative aspect-[3/4] w-[85vw] shrink-0 snap-start overflow-hidden rounded-xl bg-[color:var(--oda-stone)] oda-shimmer first:ml-0 sm:w-[70vw]"
+              key={`desktop-${proxied}-${i}`}
+              ref={(el) => {
+                desktopImagesRef.current[i] = el;
+              }}
+              className="group relative aspect-[3/4] w-full cursor-zoom-in overflow-hidden rounded-xl bg-[color:var(--oda-stone)] oda-shimmer"
+              onMouseMove={(e) => handleMouseMove(e, i)}
+              onMouseLeave={() =>
+                setZoomOrigin((prev) => {
+                  const next = { ...prev };
+                  delete next[i];
+                  return next;
+                })
+              }
+              onClick={() => setLightboxIndex(i)}
             >
               <Image
                 src={proxied}
                 alt={`${productName} - imagen ${i + 1}`}
                 fill
-                quality={58}
-                sizes="85vw"
-                className="relative z-[1] object-cover"
+                quality={72}
+                sizes="(max-width: 1280px) 50vw, 45vw"
+                className={`relative z-[1] object-cover transition-all duration-300 ease-out group-hover:scale-150 ${
+                  loadedImages.has(i) ? "opacity-100" : "opacity-0"
+                }`}
+                style={
+                  zoomOrigin[i]
+                    ? { transformOrigin: zoomOrigin[i] }
+                    : undefined
+                }
                 priority={i === 0}
+                onLoad={() => markLoaded(i)}
               />
+              {/* Magnifier overlay */}
+              <div className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                <div className="rounded-full bg-black/30 p-3 backdrop-blur-sm">
+                  <Search className="h-5 w-5 text-white" />
+                </div>
+              </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Mobile: Horizontal carousel */}
+      <div className="lg:hidden">
+        <div className="relative">
+          <div
+            ref={scrollRef}
+            className="flex snap-x snap-mandatory gap-2 overflow-x-auto oda-no-scrollbar"
+          >
+            {proxiedImages.map((proxied, i) => (
+              <div
+                key={`mobile-${proxied}-${i}`}
+                className="relative aspect-[3/4] w-[85vw] shrink-0 snap-start overflow-hidden rounded-xl bg-[color:var(--oda-stone)] oda-shimmer first:ml-0 sm:w-[70vw]"
+              >
+                <Image
+                  src={proxied}
+                  alt={`${productName} - imagen ${i + 1}`}
+                  fill
+                  quality={58}
+                  sizes="85vw"
+                  className={`relative z-[1] object-cover transition-opacity duration-500 ${
+                    loadedImages.has(i) ? "opacity-100" : "opacity-0"
+                  }`}
+                  priority={i === 0}
+                  onLoad={() => markLoaded(i)}
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Image counter */}
+          {proxiedImages.length > 1 && (
+            <span className="absolute right-3 top-3 z-[2] rounded-full bg-black/40 px-2.5 py-1 text-[10px] font-medium tabular-nums text-white backdrop-blur-sm">
+              {activeIndex + 1} / {proxiedImages.length}
+            </span>
+          )}
         </div>
 
         {/* Dot indicators with active state */}
@@ -173,6 +278,8 @@ export default function PdpGallery({ images, productName, productId }: Props) {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
           onClick={() => setLightboxIndex(null)}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
         >
           {/* Close */}
           <button

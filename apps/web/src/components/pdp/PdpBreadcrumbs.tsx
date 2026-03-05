@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
 import {
   labelize,
   labelizeSubcategory,
@@ -48,11 +47,11 @@ export default function PdpBreadcrumbs({
   return (
     <nav
       aria-label="Breadcrumb"
-      className="hidden lg:flex flex-wrap items-center gap-1 py-4 text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]"
+      className="hidden lg:flex flex-wrap items-center gap-1 pt-8 pb-5 text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]"
     >
       {crumbs.map((crumb, i) => (
         <span key={i} className="flex items-center gap-1">
-          {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" aria-hidden />}
+          {i > 0 && <span className="mx-0.5 text-[color:var(--oda-taupe)]" aria-hidden>/</span>}
           {crumb.href ? (
             <Link
               href={crumb.href}
@@ -62,7 +61,7 @@ export default function PdpBreadcrumbs({
               {crumb.label}
             </Link>
           ) : (
-            <span className="text-[color:var(--oda-ink-soft)] line-clamp-1">
+            <span className="max-w-[220px] truncate text-[color:var(--oda-ink-soft)]">
               {crumb.label}
             </span>
           )}

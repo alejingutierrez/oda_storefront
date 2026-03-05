@@ -7,6 +7,25 @@ type Props = {
   brand: PdpBrand;
 };
 
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="17.5" cy="6.5" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export default function PdpBrandSection({ brand }: Props) {
   const logoSrc = proxiedImageUrl(brand.logoUrl, { kind: "logo" });
 
@@ -70,9 +89,10 @@ export default function PdpBrandSection({ brand }: Props) {
                   href={`https://instagram.com/${brand.instagram.replace(/^@/, "")}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)] underline underline-offset-4 transition hover:text-[color:var(--oda-ink)]"
+                  className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)] transition hover:text-[color:var(--oda-ink)]"
                 >
-                  Instagram
+                  <InstagramIcon className="h-3.5 w-3.5" />
+                  @{brand.instagram.replace(/^@/, "")}
                 </a>
               )}
             </div>

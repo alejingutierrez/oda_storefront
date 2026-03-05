@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useRef } from "react";
 import type { PdpColorGroup } from "@/lib/pdp-data";
 
 type Props = {
@@ -20,11 +21,43 @@ export default function PdpVariantSelector({
   const activeGroup =
     colorGroups.find((g) => g.colorKey === selectedColorKey) ?? colorGroups[0];
 
-  const hasDistinctColors =
-    colorGroups.length > 1 &&
-    !colorGroups.every((g) => g.colorName === colorGroups[0]?.colorName);
-  const showColorSelector = hasDistinctColors;
+  // Filter out "Color único" groups when real-named groups exist
+  const displayGroups = colorGroups.filter(
+    (g) =>
+      g.colorName !== "Color único" ||
+      colorGroups.every((x) => x.colorName === "Color único"),
+  );
+  const showColorSelector = displayGroups.length > 1;
   const showSizeSelector = activeGroup && activeGroup.sizes.length > 0;
+
+  const colorContainerRef = useRef<HTMLDivElement>(null);
+  const sizeContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleKeyNav = useCallback(
+    (
+      e: React.KeyboardEvent,
+      containerRef: React.RefObject<HTMLDivElement | null>,
+    ) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const container = containerRef.current;
+      if (!container) return;
+      const buttons = Array.from(
+        container.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
+      );
+      const current = buttons.indexOf(
+        document.activeElement as HTMLButtonElement,
+      );
+      if (current < 0) return;
+      const next =
+        e.key === "ArrowRight"
+          ? (current + 1) % buttons.length
+          : (current - 1 + buttons.length) % buttons.length;
+      buttons[next]?.focus();
+      buttons[next]?.click();
+    },
+    [],
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -32,15 +65,28 @@ export default function PdpVariantSelector({
       {showColorSelector && (
         <div>
           <span className="mb-2 block text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
-            Color: <span className="text-[color:var(--oda-ink)]">{activeGroup?.colorName}</span>
+            Color:{" "}
+            <span className="text-[color:var(--oda-ink)]">
+              {activeGroup?.colorName}
+            </span>
           </span>
-          <div className="flex flex-wrap gap-2">
-            {colorGroups.map((group) => {
-              const isActive = group.colorKey === (selectedColorKey ?? colorGroups[0]?.colorKey);
+          <div
+            ref={colorContainerRef}
+            role="radiogroup"
+            aria-label="Color"
+            className="flex flex-wrap gap-2"
+            onKeyDown={(e) => handleKeyNav(e, colorContainerRef)}
+          >
+            {displayGroups.map((group) => {
+              const isActive =
+                group.colorKey ===
+                (selectedColorKey ?? colorGroups[0]?.colorKey);
               return (
                 <button
                   key={group.colorKey}
                   type="button"
+                  role="radio"
+                  aria-checked={isActive}
                   onClick={() => onColorChange(group.colorKey)}
                   className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${
                     isActive
@@ -66,10 +112,21 @@ export default function PdpVariantSelector({
       {/* Size selector */}
       {showSizeSelector && (
         <div>
-          <span className="mb-2 block text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
-            Talla
-          </span>
-          <div className="flex flex-wrap gap-2">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
+              Talla
+            </span>
+            <span className="cursor-pointer text-[10px] uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] underline underline-offset-4 transition hover:text-[color:var(--oda-ink)]">
+              Guía de tallas
+            </span>
+          </div>
+          <div
+            ref={sizeContainerRef}
+            role="radiogroup"
+            aria-label="Talla"
+            className="flex flex-wrap gap-2"
+            onKeyDown={(e) => handleKeyNav(e, sizeContainerRef)}
+          >
             {activeGroup.sizes.map((sizeOpt) => {
               const isActive = sizeOpt.size === selectedSize;
               const isDisabled = !sizeOpt.inStock;
@@ -77,6 +134,8 @@ export default function PdpVariantSelector({
                 <button
                   key={sizeOpt.variantId}
                   type="button"
+                  role="radio"
+                  aria-checked={isActive}
                   disabled={isDisabled}
                   onClick={() => onSizeChange(sizeOpt.size)}
                   className={`min-w-[3rem] rounded-full border px-3 py-2 text-xs uppercase tracking-[0.1em] transition ${

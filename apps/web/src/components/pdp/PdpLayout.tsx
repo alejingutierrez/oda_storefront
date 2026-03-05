@@ -51,10 +51,6 @@ export default function PdpLayout({ product, relatedProducts }: Props) {
 
   const accordions = (
     <>
-      <PdpAccordionSection
-        title="Descripción"
-        content={product.description}
-      />
       <PdpAccordionSection title="Materiales" content={materialsText} />
       <PdpAccordionSection title="Cuidado" content={product.care} />
       <PdpAccordionSection
@@ -66,7 +62,7 @@ export default function PdpLayout({ product, relatedProducts }: Props) {
 
   return (
     <div className="bg-[color:var(--oda-cream)]">
-      <div className="oda-container">
+      <div className="oda-container pb-24 lg:pb-0">
         <PdpBreadcrumbs
           gender={product.gender}
           category={product.category}
