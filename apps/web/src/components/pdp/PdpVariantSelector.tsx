@@ -20,7 +20,10 @@ export default function PdpVariantSelector({
   const activeGroup =
     colorGroups.find((g) => g.colorKey === selectedColorKey) ?? colorGroups[0];
 
-  const showColorSelector = colorGroups.length > 1;
+  const hasDistinctColors =
+    colorGroups.length > 1 &&
+    !colorGroups.every((g) => g.colorName === colorGroups[0]?.colorName);
+  const showColorSelector = hasDistinctColors;
   const showSizeSelector = activeGroup && activeGroup.sizes.length > 0;
 
   return (

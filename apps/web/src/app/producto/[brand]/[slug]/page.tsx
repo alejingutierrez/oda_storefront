@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Header from "@/components/Header";
+import OdaFooter from "@/components/OdaFooter";
 import PdpLayout from "@/components/pdp/PdpLayout";
 import { getProductByBrandAndSlug, getRelatedProducts } from "@/lib/pdp-data";
 import { getMegaMenuData } from "@/lib/home-data";
@@ -91,6 +92,7 @@ export default async function PdpPage({
         dangerouslySetInnerHTML={{ __html: JSON.stringify(buildJsonLd(product)) }}
       />
       <PdpLayout product={product} relatedProducts={relatedProducts} />
+      <OdaFooter />
     </main>
   );
 }

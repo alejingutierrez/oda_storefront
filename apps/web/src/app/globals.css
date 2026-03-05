@@ -302,6 +302,26 @@ summary::-webkit-details-marker {
     transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
     will-change: opacity;
   }
+
+  @keyframes oda-shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .oda-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--oda-stone) 25%,
+      #f5f0ea 50%,
+      var(--oda-stone) 75%
+    );
+    background-size: 200% 100%;
+    animation: oda-shimmer 1.8s ease-in-out infinite;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

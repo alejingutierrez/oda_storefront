@@ -48,7 +48,7 @@ export default function PdpBreadcrumbs({
   return (
     <nav
       aria-label="Breadcrumb"
-      className="flex flex-wrap items-center gap-1 py-4 text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]"
+      className="hidden lg:flex flex-wrap items-center gap-1 py-4 text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]"
     >
       {crumbs.map((crumb, i) => (
         <span key={i} className="flex items-center gap-1">

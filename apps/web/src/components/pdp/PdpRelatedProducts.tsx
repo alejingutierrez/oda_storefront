@@ -54,7 +54,7 @@ export default function PdpRelatedProducts({ products }: Props) {
               className="group flex w-[44vw] shrink-0 snap-start flex-col gap-3 sm:w-[32vw] lg:w-[23vw] xl:w-[18vw]"
             >
               <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-[color:var(--oda-stone)]">
-                {imageSrc && (
+                {imageSrc ? (
                   <Image
                     src={imageSrc}
                     alt={product.name}
@@ -63,6 +63,12 @@ export default function PdpRelatedProducts({ products }: Props) {
                     sizes="(max-width: 640px) 44vw, (max-width: 1024px) 32vw, 18vw"
                     className="object-cover transition duration-700 ease-out group-hover:scale-[1.04]"
                   />
+                ) : (
+                  <div className="flex h-full items-center justify-center p-4">
+                    <span className="text-center text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
+                      {product.brandName}
+                    </span>
+                  </div>
                 )}
               </div>
               <div className="flex min-w-0 flex-col gap-1.5">

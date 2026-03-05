@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 
 type Props = {
@@ -12,8 +13,70 @@ type Props = {
 
 export default function PdpGallery({ images, productName, productId }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [zoomOrigin, setZoomOrigin] = useState<Record<number, string>>({});
 
-  if (images.length === 0) {
+  // Deduplicate images
+  const uniqueImages = useMemo(() => [...new Set(images)], [images]);
+
+  // Resolve proxied URLs once
+  const proxiedImages = useMemo(
+    () =>
+      uniqueImages
+        .map((src) => proxiedImageUrl(src, { productId, kind: "gallery" }))
+        .filter(Boolean) as string[],
+    [uniqueImages, productId],
+  );
+
+  // IntersectionObserver for active dot
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const idx = Array.from(container.children).indexOf(entry.target as Element);
+            if (idx >= 0) setActiveIndex(idx);
+          }
+        }
+      },
+      { root: container, threshold: 0.6 },
+    );
+    Array.from(container.children).forEach((child) => observer.observe(child));
+    return () => observer.disconnect();
+  }, [proxiedImages]);
+
+  // Lightbox keyboard navigation
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setLightboxIndex(null);
+      if (e.key === "ArrowRight")
+        setLightboxIndex((prev) => (prev !== null ? Math.min(prev + 1, proxiedImages.length - 1) : null));
+      if (e.key === "ArrowLeft")
+        setLightboxIndex((prev) => (prev !== null ? Math.max(prev - 1, 0) : null));
+    }
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [lightboxIndex, proxiedImages.length]);
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>, idx: number) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      setZoomOrigin((prev) => ({ ...prev, [idx]: `${x}% ${y}%` }));
+    },
+    [],
+  );
+
+  if (proxiedImages.length === 0) {
     return (
       <div className="flex aspect-[3/4] items-center justify-center rounded-2xl bg-[color:var(--oda-stone)]">
         <span className="text-sm uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">
@@ -25,31 +88,34 @@ export default function PdpGallery({ images, productName, productId }: Props) {
 
   return (
     <>
-      {/* Desktop: Vertical image grid */}
+      {/* Desktop: Vertical image grid with zoom */}
       <div className="hidden flex-col gap-2 lg:flex">
-        {images.map((src, i) => {
-          const proxied = proxiedImageUrl(src, {
-            productId,
-            kind: "gallery",
-          });
-          if (!proxied) return null;
-          return (
-            <div
-              key={`${src}-${i}`}
-              className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-[color:var(--oda-stone)]"
-            >
-              <Image
-                src={proxied}
-                alt={`${productName} - imagen ${i + 1}`}
-                fill
-                quality={72}
-                sizes="(max-width: 1280px) 55vw, 50vw"
-                className="object-cover"
-                priority={i === 0}
-              />
-            </div>
-          );
-        })}
+        {proxiedImages.map((proxied, i) => (
+          <div
+            key={`desktop-${proxied}-${i}`}
+            className="group relative aspect-[3/4] w-full cursor-zoom-in overflow-hidden rounded-xl bg-[color:var(--oda-stone)] oda-shimmer"
+            onMouseMove={(e) => handleMouseMove(e, i)}
+            onMouseLeave={() =>
+              setZoomOrigin((prev) => {
+                const next = { ...prev };
+                delete next[i];
+                return next;
+              })
+            }
+            onClick={() => setLightboxIndex(i)}
+          >
+            <Image
+              src={proxied}
+              alt={`${productName} - imagen ${i + 1}`}
+              fill
+              quality={72}
+              sizes="(max-width: 1280px) 55vw, 50vw"
+              className="relative z-[1] object-cover transition-transform duration-300 ease-out group-hover:scale-150"
+              style={zoomOrigin[i] ? { transformOrigin: zoomOrigin[i] } : undefined}
+              priority={i === 0}
+            />
+          </div>
+        ))}
       </div>
 
       {/* Mobile: Horizontal carousel */}
@@ -58,35 +124,28 @@ export default function PdpGallery({ images, productName, productId }: Props) {
           ref={scrollRef}
           className="flex snap-x snap-mandatory gap-2 overflow-x-auto oda-no-scrollbar"
         >
-          {images.map((src, i) => {
-            const proxied = proxiedImageUrl(src, {
-              productId,
-              kind: "gallery",
-            });
-            if (!proxied) return null;
-            return (
-              <div
-                key={`${src}-${i}`}
-                className="relative aspect-[3/4] w-[85vw] shrink-0 snap-start overflow-hidden rounded-xl bg-[color:var(--oda-stone)] first:ml-0 sm:w-[70vw]"
-              >
-                <Image
-                  src={proxied}
-                  alt={`${productName} - imagen ${i + 1}`}
-                  fill
-                  quality={58}
-                  sizes="85vw"
-                  className="object-cover"
-                  priority={i === 0}
-                />
-              </div>
-            );
-          })}
+          {proxiedImages.map((proxied, i) => (
+            <div
+              key={`mobile-${proxied}-${i}`}
+              className="relative aspect-[3/4] w-[85vw] shrink-0 snap-start overflow-hidden rounded-xl bg-[color:var(--oda-stone)] oda-shimmer first:ml-0 sm:w-[70vw]"
+            >
+              <Image
+                src={proxied}
+                alt={`${productName} - imagen ${i + 1}`}
+                fill
+                quality={58}
+                sizes="85vw"
+                className="relative z-[1] object-cover"
+                priority={i === 0}
+              />
+            </div>
+          ))}
         </div>
 
-        {/* Dot indicators */}
-        {images.length > 1 && (
+        {/* Dot indicators with active state */}
+        {proxiedImages.length > 1 && (
           <div className="mt-3 flex justify-center gap-1.5">
-            {images.map((_, i) => (
+            {proxiedImages.map((_, i) => (
               <button
                 key={i}
                 type="button"
@@ -98,12 +157,85 @@ export default function PdpGallery({ images, productName, productId }: Props) {
                     inline: "start",
                   });
                 }}
-                className="h-1.5 w-1.5 rounded-full bg-[color:var(--oda-taupe)] opacity-40 transition hover:opacity-100"
+                className={`rounded-full bg-[color:var(--oda-taupe)] transition-all duration-300 ${
+                  i === activeIndex
+                    ? "h-1.5 w-2.5 opacity-100"
+                    : "h-1.5 w-1.5 opacity-40 hover:opacity-70"
+                }`}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Lightbox */}
+      {lightboxIndex !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+          onClick={() => setLightboxIndex(null)}
+        >
+          {/* Close */}
+          <button
+            type="button"
+            onClick={() => setLightboxIndex(null)}
+            className="absolute right-4 top-4 z-10 rounded-full bg-white/10 p-2 text-white backdrop-blur-sm transition hover:bg-white/20"
+            aria-label="Cerrar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+          {/* Prev */}
+          {lightboxIndex > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setLightboxIndex(lightboxIndex - 1);
+              }}
+              className="absolute left-4 z-10 rounded-full bg-white/10 p-2 text-white backdrop-blur-sm transition hover:bg-white/20"
+              aria-label="Anterior"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+          )}
+
+          {/* Next */}
+          {lightboxIndex < proxiedImages.length - 1 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setLightboxIndex(lightboxIndex + 1);
+              }}
+              className="absolute right-4 z-10 rounded-full bg-white/10 p-2 text-white backdrop-blur-sm transition hover:bg-white/20"
+              aria-label="Siguiente"
+            >
+              <ChevronRight className="h-6 w-6" />
+            </button>
+          )}
+
+          {/* Image */}
+          <div
+            className="relative h-[90vh] w-[90vw] max-w-4xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Image
+              src={proxiedImages[lightboxIndex]}
+              alt={`${productName} - imagen ${lightboxIndex + 1}`}
+              fill
+              quality={90}
+              sizes="90vw"
+              className="object-contain"
+              priority
+            />
+          </div>
+
+          {/* Counter */}
+          <span className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-white/60">
+            {lightboxIndex + 1} / {proxiedImages.length}
+          </span>
+        </div>
+      )}
     </>
   );
 }

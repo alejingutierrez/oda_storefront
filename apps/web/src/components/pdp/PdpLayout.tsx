@@ -49,6 +49,21 @@ export default function PdpLayout({ product, relatedProducts }: Props) {
   const materialsText = buildMaterialsText(product);
   const seasonOccasionText = buildSeasonOccasionText(product);
 
+  const accordions = (
+    <>
+      <PdpAccordionSection
+        title="Descripción"
+        content={product.description}
+      />
+      <PdpAccordionSection title="Materiales" content={materialsText} />
+      <PdpAccordionSection title="Cuidado" content={product.care} />
+      <PdpAccordionSection
+        title="Temporada y Ocasión"
+        content={seasonOccasionText}
+      />
+    </>
+  );
+
   return (
     <div className="bg-[color:var(--oda-cream)]">
       <div className="oda-container">
@@ -59,21 +74,15 @@ export default function PdpLayout({ product, relatedProducts }: Props) {
           productName={product.name}
         />
 
-        {/* Main content: gallery + product info */}
-        <PdpInteractiveSection product={product} />
+        {/* Main content: gallery + product info (accordions in sidebar on desktop) */}
+        <PdpInteractiveSection
+          product={product}
+          accordionContent={accordions}
+        />
 
-        {/* Accordion details */}
-        <div className="mx-auto mt-10 max-w-2xl lg:mt-14">
-          <PdpAccordionSection
-            title="Descripción"
-            content={product.description}
-          />
-          <PdpAccordionSection title="Materiales" content={materialsText} />
-          <PdpAccordionSection title="Cuidado" content={product.care} />
-          <PdpAccordionSection
-            title="Temporada y Ocasión"
-            content={seasonOccasionText}
-          />
+        {/* Accordion details — mobile only (desktop shows in sidebar) */}
+        <div className="mt-8 lg:hidden">
+          {accordions}
         </div>
 
         {/* Brand section */}

@@ -11,7 +11,7 @@ export default function PdpAccordionSection({
   content,
   defaultOpen = false,
 }: Props) {
-  if (!content) return null;
+  if (!content || !content.trim()) return null;
 
   return (
     <details
