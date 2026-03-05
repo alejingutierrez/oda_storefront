@@ -160,10 +160,12 @@ export default async function HomeBelowFold({
   }
 
   const storyProductUnique = collectUniqueProducts(storyCandidatesRaw, registry, 1)[0] ?? null;
-  // Fallback: if all candidates are already used by other sections, pick any with a valid image
-  const storyProduct = storyProductUnique ?? (
-    storyCandidatesRaw.find((p) => p.imageCoverUrl && p.imageCoverUrl.trim() !== "") ?? null
-  );
+  // Fallback chain: storyCandidatesRaw (deduped) → storyCandidatesRaw (any with image) → other section pools
+  const storyProduct = storyProductUnique
+    ?? storyCandidatesRaw.find((p) => p.imageCoverUrl && p.imageCoverUrl.trim() !== "")
+    ?? [...mostFavoritedRaw, ...focusResult.items, ...newArrivalsResult.items]
+        .find((p) => p.imageCoverUrl && p.imageCoverUrl.trim() !== "")
+    ?? null;
 
   const favoritesExcludeIds = Array.from(registry.usedIds);
   const mostFavorited = collectUniqueProducts(mostFavoritedRaw, registry, 12);
