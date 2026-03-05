@@ -206,7 +206,24 @@ export default async function HomeBelowFold({
     console.info("home.section", stat);
   }
 
-  const emptyCriticalSections = criticalSectionStats.filter((stat) => stat.count === 0).map((stat) => stat.section);
+  // Sections that have their own graceful empty-state UI (e.g. HomePriceDropRail)
+  // should NOT block the build when empty — they are "soft" sections.
+  const softSections = new Set(["price_drop", "daily_trending"]);
+  const emptyCriticalSections = criticalSectionStats
+    .filter((stat) => stat.count === 0 && !softSections.has(stat.section))
+    .map((stat) => stat.section);
+  const emptySoftSections = criticalSectionStats
+    .filter((stat) => stat.count === 0 && softSections.has(stat.section))
+    .map((stat) => stat.section);
+
+  if (emptySoftSections.length > 0) {
+    console.warn("home.guard.soft_sections_empty", {
+      seed,
+      emptySoftSections,
+      productCount: coverageStats?.productCount ?? 0,
+    });
+  }
+
   if ((coverageStats?.productCount ?? 0) > 0 && emptyCriticalSections.length > 0) {
     console.error("home.guard.core_empty", {
       code: "HOME_CORE_EMPTY",
