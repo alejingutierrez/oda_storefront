@@ -372,63 +372,62 @@ export default function RealStylePanel() {
   const queueDone = !loadingQueue && items.length === 0 && !nextCursor;
 
   return (
-    <section className="space-y-6">
-      <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="space-y-3 md:space-y-4 xl:space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:p-4 xl:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Curación manual</p>
-            <h2 className="mt-1 text-lg font-semibold text-slate-900">Real Style Board</h2>
-            <p className="mt-2 hidden text-sm text-slate-600 xl:block">
+            <h2 className="text-base font-semibold text-slate-900 md:text-lg">Real Style Board</h2>
+            <p className="mt-1 hidden text-sm text-slate-600 xl:block">
               Asigna cada producto a 1 de 8 estilos. Guardado inmediato, sin autoasignación.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => void fetchQueue("reset", null)}
               disabled={loadingQueue || loadingMore}
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
+              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
             >
-              Recargar cola
+              Recargar
             </button>
             <button
               type="button"
               onClick={() => void fetchSummary()}
               disabled={loadingSummary}
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
+              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
             >
-              {loadingSummary ? "Actualizando…" : "Actualizar resumen"}
+              {loadingSummary ? "…" : "Resumen"}
             </button>
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-            <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Elegibles</p>
-            <p className="mt-1 font-semibold text-slate-900">{summary ? summary.eligibleTotal.toLocaleString("es-CO") : "—"}</p>
+        <div className="mt-2 flex gap-2 md:mt-3 md:gap-3">
+          <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs md:rounded-xl md:px-3 md:py-2 md:text-sm">
+            <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500 md:text-xs">Elegibles</p>
+            <p className="font-semibold text-slate-900">{summary ? summary.eligibleTotal.toLocaleString("es-CO") : "—"}</p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-            <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Pendientes</p>
-            <p className="mt-1 font-semibold text-slate-900">{summary ? summary.pendingCount.toLocaleString("es-CO") : "—"}</p>
+          <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs md:rounded-xl md:px-3 md:py-2 md:text-sm">
+            <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500 md:text-xs">Pendientes</p>
+            <p className="font-semibold text-slate-900">{summary ? summary.pendingCount.toLocaleString("es-CO") : "—"}</p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-            <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Completado</p>
-            <p className="mt-1 font-semibold text-slate-900">
+          <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs md:rounded-xl md:px-3 md:py-2 md:text-sm">
+            <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500 md:text-xs">Completado</p>
+            <p className="font-semibold text-slate-900">
               {summary ? `${summary.assignedCount.toLocaleString("es-CO")} (${completionPct}%)` : "—"}
             </p>
           </div>
         </div>
 
         {message ? (
-          <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{message}</p>
+          <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 md:text-sm">{message}</p>
         ) : null}
         {error ? (
-          <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
+          <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-700 md:text-sm">{error}</p>
         ) : null}
       </header>
 
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_440px]">
-        <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_260px] lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_440px]">
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:p-4 xl:space-y-4 xl:p-6">
           {loadingQueue ? (
             <div className="flex min-h-[400px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-600 xl:min-h-[560px]">
               Cargando baraja…
@@ -467,66 +466,53 @@ export default function RealStylePanel() {
                     )}
                   </div>
 
-                  <div className="space-y-2 p-4">
-                    <p className="text-[11px] uppercase tracking-[0.15em] text-slate-500">{activeItem.brandName}</p>
-                    <h3 className="line-clamp-2 text-sm font-semibold text-slate-900">{activeItem.name}</h3>
+                  <div className="space-y-1.5 p-3 xl:space-y-2 xl:p-4">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500 xl:text-[11px]">{activeItem.brandName}</p>
+                      <p className="text-[10px] text-slate-400 xl:text-xs">{formatDate(activeItem.createdAt)}</p>
+                    </div>
+                    <h3 className="line-clamp-2 text-xs font-semibold text-slate-900 xl:text-sm">{activeItem.name}</h3>
 
-                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-700">
-                      <p>
-                        <span className="font-semibold text-slate-800">Categoría:</span> {formatShort(activeItem.category)}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-slate-800">Subcategoría:</span> {formatShort(activeItem.subcategory)}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-slate-800">Style primary:</span> {formatShort(activeItem.stylePrimary)}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-slate-800">Creado:</span> {formatDate(activeItem.createdAt)}
-                      </p>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-600 xl:text-xs">
+                      <p><span className="font-semibold text-slate-700">Cat:</span> {formatShort(activeItem.category)}</p>
+                      <p><span className="font-semibold text-slate-700">Sub:</span> {formatShort(activeItem.subcategory)}</p>
+                      <p><span className="font-semibold text-slate-700">Style:</span> {formatShort(activeItem.stylePrimary)}</p>
                     </div>
 
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-700 xl:rounded-xl xl:px-3 xl:py-2 xl:text-xs">
                       <span className="font-semibold text-slate-800">Sugerido:</span>{" "}
-                      {activeItem.suggestedRealStyle ? REAL_STYLE_LABELS[activeItem.suggestedRealStyle] : "Sin sugerencia"}
-                      {activeItem.suggestedRealStyle && activeItem.suggestionSource ? (
-                        <span className="ml-2 text-slate-500">
-                          ({activeItem.suggestionSource === "style_primary" ? "stylePrimary" : "styleTags"})
-                        </span>
-                      ) : null}
+                      {activeItem.suggestedRealStyle ? REAL_STYLE_LABELS[activeItem.suggestedRealStyle] : "—"}
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSkip}
+                        disabled={assigning}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:opacity-50 xl:px-4 xl:py-2 xl:text-xs"
+                      >
+                        Saltar
+                      </button>
+
+                      {suggestedKey ? (
                         <button
                           type="button"
-                          onClick={handleSkip}
+                          onClick={() => void assignRealStyle(suggestedKey)}
                           disabled={assigning}
-                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                          className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 disabled:opacity-50 xl:px-4 xl:py-2 xl:text-xs"
                         >
-                          Saltar
+                          {assigning ? "…" : "Usar sugerido"}
                         </button>
-
-                        {suggestedKey ? (
-                          <button
-                            type="button"
-                            onClick={() => void assignRealStyle(suggestedKey)}
-                            disabled={assigning}
-                            className="rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 disabled:opacity-50"
-                          >
-                            {assigning ? "Guardando…" : "Usar sugerido"}
-                          </button>
-                        ) : null}
-                      </div>
+                      ) : null}
 
                       {activeItem.sourceUrl ? (
                         <a
                           href={activeItem.sourceUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                          className="ml-auto rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 xl:px-4 xl:py-2 xl:text-xs"
                         >
-                          Ver fuente
+                          Fuente
                         </a>
                       ) : null}
                     </div>
@@ -545,10 +531,9 @@ export default function RealStylePanel() {
           )}
         </div>
 
-        <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <aside className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:space-y-3 xl:space-y-4 xl:p-5">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Cajas de clasificación</p>
-            <p className="mt-1 text-sm text-slate-600">Haz clic en una caja o usa teclas 1–8 para guardar inmediatamente.</p>
+            <p className="text-xs font-semibold text-slate-700">Clasificar como:</p>
           </div>
 
           <div className="grid gap-2 xl:gap-3">
