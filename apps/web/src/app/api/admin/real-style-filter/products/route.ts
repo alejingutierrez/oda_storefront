@@ -78,7 +78,7 @@ export async function GET(req: Request) {
         p."imageCoverUrl",
         b.name AS "brandName",
         p.category,
-        p."realStyle",
+        p."real_style" AS "realStyle",
         p."editorialFavoriteRank",
         p."editorialTopPickRank",
         p."sourceUrl",
@@ -96,7 +96,7 @@ export async function GET(req: Request) {
         (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') AS "brandOverrideUsd"
       FROM products p
       JOIN brands b ON b.id = p."brandId"
-      WHERE p."realStyle" = ${realStyle}
+      WHERE p."real_style" = ${realStyle}
         AND p."hasInStock" = true
         AND p."imageCoverUrl" IS NOT NULL
         ${searchCondition}
@@ -111,7 +111,7 @@ export async function GET(req: Request) {
       SELECT count(*) AS total
       FROM products p
       JOIN brands b ON b.id = p."brandId"
-      WHERE p."realStyle" = ${realStyle}
+      WHERE p."real_style" = ${realStyle}
         AND p."hasInStock" = true
         AND p."imageCoverUrl" IS NOT NULL
         ${searchCondition}
