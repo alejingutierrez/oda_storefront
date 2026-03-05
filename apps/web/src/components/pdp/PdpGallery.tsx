@@ -13,7 +13,6 @@ type Props = {
 
 export default function PdpGallery({ images, productName, productId }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const desktopImagesRef = useRef<(HTMLDivElement | null)[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [zoomOrigin, setZoomOrigin] = useState<Record<number, string>>({});
@@ -114,15 +113,6 @@ export default function PdpGallery({ images, productName, productId }: Props) {
     [touchStart, lightboxIndex, proxiedImages.length],
   );
 
-  // Scroll to desktop image when thumbnail clicked
-  const scrollToDesktopImage = useCallback((idx: number) => {
-    desktopImagesRef.current[idx]?.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
-    });
-    setActiveIndex(idx);
-  }, []);
-
   if (proxiedImages.length === 0) {
     return (
       <div className="flex aspect-[3/4] items-center justify-center rounded-2xl bg-[color:var(--oda-stone)]">
@@ -135,43 +125,12 @@ export default function PdpGallery({ images, productName, productId }: Props) {
 
   return (
     <>
-      {/* Desktop: Thumbnails + vertical image grid with zoom */}
-      <div className="hidden lg:flex lg:gap-3">
-        {/* Thumbnail strip */}
-        {proxiedImages.length > 1 && (
-          <div className="sticky top-[calc(var(--oda-header-h,72px)+2rem)] flex h-fit flex-col gap-2 self-start">
-            {proxiedImages.map((proxied, i) => (
-              <button
-                key={`thumb-${i}`}
-                type="button"
-                onClick={() => scrollToDesktopImage(i)}
-                className={`relative h-[60px] w-[60px] shrink-0 overflow-hidden rounded-lg bg-[color:var(--oda-stone)] transition ${
-                  i === activeIndex
-                    ? "ring-2 ring-[color:var(--oda-ink)] ring-offset-1"
-                    : "opacity-60 hover:opacity-100"
-                }`}
-              >
-                <Image
-                  src={proxied}
-                  alt={`Miniatura ${i + 1}`}
-                  fill
-                  quality={30}
-                  sizes="60px"
-                  className="object-cover"
-                />
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Main images */}
-        <div className="flex flex-1 flex-col gap-2">
+      {/* Desktop: vertical image grid with zoom */}
+      <div className="hidden lg:block">
+        <div className="flex flex-col gap-2">
           {proxiedImages.map((proxied, i) => (
             <div
               key={`desktop-${proxied}-${i}`}
-              ref={(el) => {
-                desktopImagesRef.current[i] = el;
-              }}
               className="group relative aspect-[3/4] w-full cursor-zoom-in overflow-hidden rounded-xl bg-[color:var(--oda-stone)] oda-shimmer"
               onMouseMove={(e) => handleMouseMove(e, i)}
               onMouseLeave={() =>

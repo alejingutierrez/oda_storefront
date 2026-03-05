@@ -143,20 +143,6 @@ export default function PdpInteractiveSection({
               </p>
             )}
 
-            {/* SEO Tags as non-clickable chips */}
-            {product.seoTags.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {product.seoTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full bg-[color:var(--oda-stone)] px-3 py-1 text-[11px] tracking-[0.1em] text-[color:var(--oda-taupe)]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-
             {/* Availability badge */}
             {!product.hasInStock && (
               <span className="mt-3 inline-block rounded-full bg-[color:var(--oda-stone)] px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-[color:var(--oda-taupe)]">
@@ -220,8 +206,22 @@ export default function PdpInteractiveSection({
 
             {/* Accordions (desktop only — mobile rendered by PdpLayout) */}
             {accordionContent && (
-              <div className="mt-4 hidden border-t border-[color:var(--oda-border)] pt-2 lg:block">
+              <div className="mt-4 hidden pt-2 lg:block">
                 {accordionContent}
+              </div>
+            )}
+
+            {/* SEO Tags as non-clickable chips (max 5, below accordions) */}
+            {product.seoTags.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {product.seoTags.slice(0, 5).map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full bg-[color:var(--oda-stone)] px-3 py-1 text-[11px] tracking-[0.1em] text-[color:var(--oda-taupe)]"
+                  >
+                    {tag}
+                  </span>
+                ))}
               </div>
             )}
 

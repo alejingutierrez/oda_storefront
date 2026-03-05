@@ -112,14 +112,9 @@ export default function PdpVariantSelector({
       {/* Size selector */}
       {showSizeSelector && (
         <div>
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
-              Talla
-            </span>
-            <span className="cursor-pointer text-[10px] uppercase tracking-[0.14em] text-[color:var(--oda-taupe)] underline underline-offset-4 transition hover:text-[color:var(--oda-ink)]">
-              Guía de tallas
-            </span>
-          </div>
+          <span className="mb-2 block text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
+            Talla
+          </span>
           <div
             ref={sizeContainerRef}
             role="radiogroup"
