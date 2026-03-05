@@ -26,18 +26,18 @@ export default function AdminShell({ title, active, children }: AdminShellProps)
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <div className="flex min-h-screen flex-col lg:flex-row">
-        <aside className="w-full border-b border-slate-200 bg-white/95 px-6 py-6 shadow-sm lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r lg:px-5">
-          <div className="space-y-6">
-            <div>
+        <aside className="w-full border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm md:py-2 lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r lg:px-5 lg:py-6">
+          <div className="md:flex md:items-center md:gap-4 md:space-y-0 lg:block lg:space-y-6">
+            <div className="md:shrink-0">
               <p className="text-xs uppercase tracking-[0.2em] text-indigo-500">ODA Admin</p>
-              <p className="mt-2 text-sm text-slate-500">Consola operativa</p>
+              <p className="mt-2 hidden text-sm text-slate-500 lg:block">Consola operativa</p>
             </div>
-            <nav className="grid gap-2 text-sm">
+            <nav className="mt-3 flex gap-2 overflow-x-auto text-sm md:mt-0 md:flex-nowrap lg:mt-0 lg:grid lg:overflow-visible">
               {navItems.map((item) => (
                 <Link
                   key={item.key}
                   href={item.href}
-                  className={`flex items-center justify-between rounded-xl px-4 py-2 font-semibold transition ${
+                  className={`flex shrink-0 items-center justify-between whitespace-nowrap rounded-xl px-4 py-2 font-semibold transition ${
                     active === item.key
                       ? "bg-slate-900 text-white"
                       : "border border-slate-200 bg-white text-slate-600"

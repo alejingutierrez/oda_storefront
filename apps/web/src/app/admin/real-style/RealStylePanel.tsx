@@ -378,7 +378,7 @@ export default function RealStylePanel() {
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Curación manual</p>
             <h2 className="mt-1 text-lg font-semibold text-slate-900">Real Style Board</h2>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 hidden text-sm text-slate-600 xl:block">
               Asigna cada producto a 1 de 8 estilos. Guardado inmediato, sin autoasignación.
             </p>
           </div>
@@ -427,26 +427,26 @@ export default function RealStylePanel() {
         ) : null}
       </header>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_440px]">
         <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           {loadingQueue ? (
-            <div className="flex min-h-[560px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-600">
+            <div className="flex min-h-[400px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-600 xl:min-h-[560px]">
               Cargando baraja…
             </div>
           ) : queueDone ? (
-            <div className="flex min-h-[560px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-center">
+            <div className="flex min-h-[400px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-center xl:min-h-[560px]">
               <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Completado</p>
               <h3 className="mt-2 text-2xl font-semibold text-slate-900">No hay más pendientes</h3>
               <p className="mt-2 text-sm text-slate-600">Ya clasificaste todos los productos pendientes de esta cola.</p>
             </div>
           ) : activeItem ? (
             <>
-              <div className="relative mx-auto mt-2 h-[560px] w-full max-w-[360px]">
+              <div className="relative mx-auto mt-2 h-[400px] w-full max-w-[280px] md:max-w-none lg:h-[480px] xl:h-[560px] xl:max-w-[360px]">
                 {previewItems[1] ? (
-                  <div className="absolute inset-x-8 top-10 h-[480px] rounded-3xl border border-slate-200 bg-slate-100/60 shadow-inner" />
+                  <div className="absolute inset-x-8 top-10 h-[340px] rounded-3xl border border-slate-200 bg-slate-100/60 shadow-inner lg:h-[420px] xl:h-[480px]" />
                 ) : null}
                 {previewItems[0] ? (
-                  <div className="absolute inset-x-5 top-6 h-[500px] rounded-3xl border border-slate-200 bg-slate-100/80 shadow-inner" />
+                  <div className="absolute inset-x-5 top-6 h-[360px] rounded-3xl border border-slate-200 bg-slate-100/80 shadow-inner lg:h-[440px] xl:h-[500px]" />
                 ) : null}
 
                 <article className="absolute inset-x-0 top-0 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
@@ -534,12 +534,12 @@ export default function RealStylePanel() {
                 </article>
               </div>
 
-              <p className="text-center text-xs text-slate-500">
+              <p className="hidden text-center text-xs text-slate-500 xl:block">
                 Atajos: teclas <span className="font-semibold text-slate-700">1–8</span> para asignar rápido.
               </p>
             </>
           ) : (
-            <div className="flex min-h-[560px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-600">
+            <div className="flex min-h-[400px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-600 xl:min-h-[560px]">
               Preparando siguiente producto…
             </div>
           )}
@@ -551,7 +551,7 @@ export default function RealStylePanel() {
             <p className="mt-1 text-sm text-slate-600">Haz clic en una caja o usa teclas 1–8 para guardar inmediatamente.</p>
           </div>
 
-          <div className="grid gap-3">
+          <div className="grid gap-2 xl:gap-3">
             {REAL_STYLE_OPTIONS.map((option, index) => {
               const count = summary?.byRealStyle.find((row) => row.key === option.key)?.count ?? 0;
               const suggested = activeItem?.suggestedRealStyle === option.key;
@@ -563,19 +563,19 @@ export default function RealStylePanel() {
                   onClick={() => void assignRealStyle(option.key)}
                   disabled={!activeItem || assigning}
                   className={classNames(
-                    "w-full rounded-2xl border px-4 py-3 text-left transition disabled:opacity-50",
+                    "w-full min-h-[44px] rounded-xl border px-3 py-2 text-left transition disabled:opacity-50 xl:rounded-2xl xl:px-4 xl:py-3",
                     suggested
                       ? "border-emerald-300 bg-emerald-50"
                       : "border-slate-200 bg-white hover:bg-slate-50",
                   )}
                 >
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center justify-between gap-2">
                     <div>
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Caja {index + 1}</p>
-                      <p className="mt-1 text-sm font-semibold text-slate-900">{option.label}</p>
-                      <p className="mt-1 text-[11px] text-slate-500">{option.key}</p>
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 xl:text-[11px]">Caja {index + 1}</p>
+                      <p className="mt-0.5 text-xs font-semibold text-slate-900 xl:mt-1 xl:text-sm">{option.label}</p>
+                      <p className="mt-0.5 hidden text-[11px] text-slate-500 xl:block">{option.key}</p>
                     </div>
-                    <div className="text-right">
+                    <div className="hidden text-right lg:block">
                       <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Asignados</p>
                       <p className="mt-1 text-base font-semibold text-slate-900">{count.toLocaleString("es-CO")}</p>
                     </div>
