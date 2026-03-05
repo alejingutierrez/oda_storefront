@@ -2,6 +2,19 @@ import { Prisma } from "@prisma/client";
 import { type GenderKey } from "@/lib/navigation";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
 
+/**
+ * Build a tsquery string from user input for prefix matching.
+ * "cami blus" → "cami:* & blus:*"
+ */
+export function buildSearchTsQuery(input: string): string {
+  const words = input
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length >= 2);
+  if (words.length === 0) return "";
+  return words.map((w) => `${w}:*`).join(" & ");
+}
+
 export type CatalogFilters = {
   q?: string;
   categories?: string[];
@@ -190,7 +203,6 @@ function buildCategoryFilterCondition(categories: string[]): Prisma.Sql {
 }
 
 export function buildProductConditions(filters: CatalogFilters): Prisma.Sql[] {
-  const q = filters.q ? `%${filters.q}%` : null;
   const conditions: Prisma.Sql[] = [Prisma.sql`p."imageCoverUrl" is not null`];
 
   if (filters.enrichedOnly) {
@@ -233,14 +245,25 @@ export function buildProductConditions(filters: CatalogFilters): Prisma.Sql[] {
   if (filters.seasons && filters.seasons.length > 0) {
     conditions.push(Prisma.sql`p.season in (${Prisma.join(filters.seasons)})`);
   }
-  if (q) {
-    conditions.push(Prisma.sql`
-      (
-        p.name ilike ${q}
-        or b.name ilike ${q}
-        or p."seoTags"::text ilike ${q}
-      )
-    `);
+  if (filters.q) {
+    const tsQuery = buildSearchTsQuery(filters.q);
+    if (tsQuery) {
+      conditions.push(Prisma.sql`
+        (
+          p.search_vector @@ to_tsquery('spanish', ${tsQuery})
+          OR p.name % ${filters.q}
+        )
+      `);
+    } else {
+      // Fallback for very short queries (< 2 chars after splitting)
+      const like = `%${filters.q}%`;
+      conditions.push(Prisma.sql`
+        (
+          p.name ilike ${like}
+          or b.name ilike ${like}
+        )
+      `);
+    }
   }
 
   return conditions;
@@ -353,7 +376,6 @@ export function buildWhere(filters: CatalogFilters, pricing: PricingSqlContext):
 }
 
 export function buildOrderBy(sort: string, filters: CatalogFilters | undefined, pricing: PricingSqlContext): Prisma.Sql {
-  const q = filters?.q ? `%${filters.q}%` : null;
   const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
   switch (sort) {
     case "price_asc":
@@ -361,12 +383,24 @@ export function buildOrderBy(sort: string, filters: CatalogFilters | undefined, 
     case "price_desc":
       return Prisma.sql`order by max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) desc nulls last, p."createdAt" desc, p.id desc`;
     case "relevancia":
-      if (q) {
+      if (filters?.q) {
+        const tsQuery = buildSearchTsQuery(filters.q);
+        if (tsQuery) {
+          return Prisma.sql`
+            order by
+              ts_rank_cd(p.search_vector, to_tsquery('spanish', ${tsQuery}), 32) desc,
+              similarity(p.name, ${filters.q}) desc,
+              p."createdAt" desc,
+              p.id desc
+          `;
+        }
+        // Fallback for very short queries
+        const like = `%${filters.q}%`;
         return Prisma.sql`
           order by
             case
-              when p.name ilike ${q} then 0
-              when b.name ilike ${q} then 1
+              when p.name ilike ${like} then 0
+              when b.name ilike ${like} then 1
               else 2
             end asc,
             p."createdAt" desc,

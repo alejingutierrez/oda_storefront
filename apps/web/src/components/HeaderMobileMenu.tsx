@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import AccountLink from "@/components/AccountLink";
+import { SearchTriggerMobile } from "@/components/SearchTrigger";
 import type { MegaMenuData } from "@/lib/home-types";
 import { logExperienceEvent } from "@/lib/experience-events";
 import { GENDER_ROUTE, type GenderKey } from "@/lib/navigation";
@@ -161,14 +162,7 @@ export default function HeaderMobileMenu({ menu }: { menu: MegaMenuData }) {
                 <div ref={scrollRef} className="flex-1 overflow-auto overscroll-contain">
                   <div className="px-5 pb-8 pt-5">
                     {/* Search input */}
-                    <div className="flex items-center rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-3">
-                      <input
-                        type="text"
-                        placeholder="Buscar"
-                        // iOS: >= 16px evita el zoom automático al focus.
-                        className="w-full bg-transparent text-base uppercase tracking-[0.2em] text-[color:var(--oda-ink)] placeholder:text-[color:var(--oda-taupe)] focus:outline-none"
-                      />
-                    </div>
+                    <SearchTriggerMobile onBeforeOpen={closeMenu} />
 
                     {/* Quick links */}
                     <div className="mt-6 grid grid-cols-3 gap-2">

@@ -210,6 +210,7 @@ model Product {
   listItems             UserListItem[]
   enrichmentItems       ProductEnrichmentItem[]
   taxonomyRemapReviews  TaxonomyRemapReview[]
+  searchVector          Unsupported("tsvector")?  @map("search_vector")
 
   @@index([brandId])
   @@index([externalId])

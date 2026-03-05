@@ -2,6 +2,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import HeaderHeightSync from "@/components/HeaderHeightSync";
 import MegaMenu from "@/components/MegaMenu";
+import { SearchTriggerDesktop } from "@/components/SearchTrigger";
 import type { MegaMenuData } from "@/lib/home-types";
 
 const HeaderMobileMenu = dynamic(() => import("@/components/HeaderMobileMenu"), {
@@ -57,29 +58,7 @@ export default function Header({ menu }: { menu: MegaMenuData }) {
           <HeaderMobileMenu menu={menu} />
         </div>
         <div className="hidden shrink-0 items-center gap-4 lg:flex lg:justify-self-end">
-          <form
-            action="/buscar"
-            method="GET"
-            className="flex items-center gap-2 rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-4 py-2"
-          >
-            <label htmlFor="oda-header-search" className="sr-only">
-              Buscar en catalogo
-            </label>
-            <input
-              id="oda-header-search"
-              name="q"
-              autoComplete="off"
-              type="text"
-              placeholder="Buscar"
-              className="w-[clamp(12rem,18vw,20rem)] bg-transparent text-xs uppercase tracking-[0.2em] text-[color:var(--oda-ink)] placeholder:text-[color:var(--oda-taupe)] focus:outline-none"
-            />
-            <button
-              type="submit"
-              className="rounded-full border border-[color:var(--oda-border)] bg-white px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-stone)]"
-            >
-              Ir
-            </button>
-          </form>
+          <SearchTriggerDesktop />
           <Link
             prefetch={false}
             href="/buscar"
