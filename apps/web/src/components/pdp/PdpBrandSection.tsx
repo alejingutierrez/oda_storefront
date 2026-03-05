@@ -26,8 +26,21 @@ function InstagramIcon({ className }: { className?: string }) {
   );
 }
 
+/** Extract clean handle from a full Instagram URL or @handle */
+function extractInstagramHandle(raw: string): string {
+  // Strip protocol + domain if present (handles both instagram.com and www.instagram.com)
+  const cleaned = raw
+    .replace(/^https?:\/\/(www\.)?instagram\.com\//i, "")
+    .replace(/\/+$/, "") // trailing slashes
+    .replace(/^@/, ""); // leading @
+  return cleaned;
+}
+
 export default function PdpBrandSection({ brand }: Props) {
   const logoSrc = proxiedImageUrl(brand.logoUrl, { kind: "logo" });
+  const igHandle = brand.instagram
+    ? extractInstagramHandle(brand.instagram)
+    : null;
 
   return (
     <section className="mt-12 lg:mt-16">
@@ -84,15 +97,15 @@ export default function PdpBrandSection({ brand }: Props) {
               >
                 Ver marca
               </Link>
-              {brand.instagram && (
+              {igHandle && (
                 <a
-                  href={`https://instagram.com/${brand.instagram.replace(/^@/, "")}`}
+                  href={`https://instagram.com/${igHandle}`}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)] transition hover:text-[color:var(--oda-ink)]"
                 >
                   <InstagramIcon className="h-3.5 w-3.5" />
-                  @{brand.instagram.replace(/^@/, "")}
+                  @{igHandle}
                 </a>
               )}
             </div>
