@@ -82,6 +82,8 @@ export type PdpProduct = {
   seoTitle: string | null;
   seoDescription: string | null;
   seoTags: string[];
+  createdAt: string | null;
+  updatedAt: string | null;
   brand: PdpBrand;
   variants: PdpVariant[];
   colorGroups: PdpColorGroup[];
@@ -255,6 +257,8 @@ export async function getProductByBrandAndSlug(
         seoTitle: product.seoTitle,
         seoDescription: product.seoDescription,
         seoTags: product.seoTags,
+        createdAt: product.createdAt?.toISOString() ?? null,
+        updatedAt: product.updatedAt?.toISOString() ?? null,
         brand,
         variants,
         colorGroups,

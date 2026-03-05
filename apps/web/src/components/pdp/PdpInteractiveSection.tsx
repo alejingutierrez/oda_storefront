@@ -1,14 +1,14 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import PdpGallery from "@/components/pdp/PdpGallery";
 import PdpVariantSelector from "@/components/pdp/PdpVariantSelector";
 import PdpPriceDisplay from "@/components/pdp/PdpPriceDisplay";
 import PdpCtaButton from "@/components/pdp/PdpCtaButton";
+import PdpShareMenu from "@/components/pdp/PdpShareMenu";
 import FavoriteToggle from "@/components/FavoriteToggle";
 import Link from "next/link";
-import { Share2, Check } from "lucide-react";
 import type { PdpProduct } from "@/lib/pdp-data";
 import { stripHtml } from "@/lib/utils";
 
@@ -30,6 +30,22 @@ function formatPriceCop(amount: string | null, currency: string) {
   }
 }
 
+function timeAgoLabel(isoDate: string | null): string | null {
+  if (!isoDate) return null;
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  if (hours < 1) return "hace menos de 1 hora";
+  if (hours < 24) return `hace ${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "hace 1 día";
+  if (days < 30) return `hace ${days} días`;
+  const months = Math.floor(days / 30);
+  if (months === 1) return "hace 1 mes";
+  return `hace ${months} meses`;
+}
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
 export default function PdpInteractiveSection({
   product,
   accordionContent,
@@ -41,7 +57,6 @@ export default function PdpInteractiveSection({
     defaultColorKey,
   );
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const activeColorGroup = useMemo(
     () =>
@@ -80,14 +95,13 @@ export default function PdpInteractiveSection({
   // Format price for mobile sticky bar
   const mobilePriceText = formatPriceCop(displayPrice, displayCurrency);
 
-  const handleShare = useCallback(() => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      });
-    }
-  }, []);
+  // Badge "Nuevo" — product created within last 30 days
+  const isNew = product.createdAt
+    ? Date.now() - new Date(product.createdAt).getTime() < THIRTY_DAYS_MS
+    : false;
+
+  // "Actualizado hace X días"
+  const updatedLabel = timeAgoLabel(product.updatedAt);
 
   return (
     <>
@@ -121,6 +135,13 @@ export default function PdpInteractiveSection({
               {product.brand.name}
             </Link>
 
+            {/* Badge "Nuevo" */}
+            {isNew && (
+              <span className="ml-2 inline-block rounded-full bg-[color:var(--oda-ink)] px-2.5 py-0.5 text-[10px] uppercase tracking-[0.16em] text-[color:var(--oda-cream)]">
+                Nuevo
+              </span>
+            )}
+
             {/* Product name */}
             <h1 className="mt-2 font-[family-name:var(--font-display)] text-xl leading-snug text-[color:var(--oda-ink)] sm:text-2xl">
               {product.name}
@@ -135,6 +156,13 @@ export default function PdpInteractiveSection({
                 priceChangeDirection={product.priceChangeDirection}
               />
             </div>
+
+            {/* Last updated */}
+            {updatedLabel && (
+              <p className="mt-1.5 text-[11px] tracking-[0.08em] text-[color:var(--oda-taupe)]">
+                Actualizado {updatedLabel}
+              </p>
+            )}
 
             {/* Short description (SEO) */}
             {displayDescription && (
@@ -181,19 +209,10 @@ export default function PdpInteractiveSection({
                 productName={product.name}
                 className="shrink-0"
               />
-              <button
-                type="button"
-                onClick={handleShare}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[color:var(--oda-border)] text-[color:var(--oda-taupe)] transition hover:border-[color:var(--oda-ink)] hover:text-[color:var(--oda-ink)]"
-                aria-label="Compartir"
-                title="Copiar enlace"
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-green-600" />
-                ) : (
-                  <Share2 className="h-4 w-4" />
-                )}
-              </button>
+              <PdpShareMenu
+                productName={product.name}
+                brandName={product.brand.name}
+              />
             </div>
 
             {/* SEO Title before accordions (if different from product name) */}

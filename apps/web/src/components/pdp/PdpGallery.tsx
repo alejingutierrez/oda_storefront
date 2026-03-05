@@ -131,7 +131,9 @@ export default function PdpGallery({ images, productName, productId }: Props) {
           {proxiedImages.map((proxied, i) => (
             <div
               key={`desktop-${proxied}-${i}`}
-              className="group relative aspect-[3/4] w-full cursor-zoom-in overflow-hidden rounded-xl bg-[color:var(--oda-stone)] oda-shimmer"
+              className={`group relative w-full cursor-zoom-in overflow-hidden rounded-xl bg-[color:var(--oda-stone)] oda-shimmer ${
+                i === 0 ? "aspect-[4/5]" : "aspect-[3/4]"
+              }`}
               onMouseMove={(e) => handleMouseMove(e, i)}
               onMouseLeave={() =>
                 setZoomOrigin((prev) => {
@@ -165,6 +167,12 @@ export default function PdpGallery({ images, productName, productId }: Props) {
                   <Search className="h-5 w-5 text-white" />
                 </div>
               </div>
+              {/* More photos indicator on first image */}
+              {i === 0 && proxiedImages.length > 1 && (
+                <span className="absolute bottom-3 right-3 z-[2] rounded-full bg-black/40 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
+                  +{proxiedImages.length - 1} fotos
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -180,14 +188,17 @@ export default function PdpGallery({ images, productName, productId }: Props) {
             {proxiedImages.map((proxied, i) => (
               <div
                 key={`mobile-${proxied}-${i}`}
-                className="relative aspect-[3/4] w-[85vw] shrink-0 snap-start overflow-hidden rounded-xl bg-[color:var(--oda-stone)] oda-shimmer first:ml-0 sm:w-[70vw]"
+                className={`relative shrink-0 snap-start cursor-zoom-in overflow-hidden rounded-xl bg-[color:var(--oda-stone)] oda-shimmer first:ml-0 ${
+                  i === 0 ? "aspect-[4/5]" : "aspect-[3/4]"
+                } w-[75vw] sm:w-[65vw]`}
+                onClick={() => setLightboxIndex(i)}
               >
                 <Image
                   src={proxied}
                   alt={`${productName} - imagen ${i + 1}`}
                   fill
                   quality={58}
-                  sizes="85vw"
+                  sizes="75vw"
                   className={`relative z-[1] object-cover transition-opacity duration-500 ${
                     loadedImages.has(i) ? "opacity-100" : "opacity-0"
                   }`}

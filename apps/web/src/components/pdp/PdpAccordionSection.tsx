@@ -1,12 +1,13 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { stripHtml } from "@/lib/utils";
 
 type Props = {
   title: string;
-  content: string | null | undefined;
+  content: ReactNode;
   defaultOpen?: boolean;
 };
 
@@ -15,10 +16,13 @@ export default function PdpAccordionSection({
   content,
   defaultOpen = false,
 }: Props) {
-  const cleanContent = stripHtml(content);
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
-  if (!cleanContent) return null;
+  // If content is a string, strip HTML and treat empty as null
+  const isString = typeof content === "string";
+  const displayContent = isString ? stripHtml(content) : content;
+
+  if (!displayContent) return null;
 
   return (
     <div className="border-t border-[color:var(--oda-border)]">
@@ -42,8 +46,8 @@ export default function PdpAccordionSection({
         }`}
       >
         <div className="overflow-hidden">
-          <div className="pb-5 text-sm leading-relaxed text-[color:var(--oda-ink-soft)] whitespace-pre-line">
-            {cleanContent}
+          <div className={`pb-5 ${isString ? "text-sm leading-relaxed text-[color:var(--oda-ink-soft)] whitespace-pre-line" : ""}`}>
+            {displayContent}
           </div>
         </div>
       </div>
