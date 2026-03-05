@@ -98,7 +98,7 @@ export default function CategoryGallery({ categories }: { categories: CategoryHi
             }
           }}
         >
-          <div className="grid grid-flow-col grid-rows-1 gap-4 pb-2 pr-6 md:auto-cols-[280px] md:grid-rows-2 lg:auto-cols-[300px]">
+          <div className="grid grid-flow-col grid-rows-1 gap-4 pb-2 pr-6 md:auto-cols-[210px] md:grid-rows-2 lg:auto-cols-[225px]">
             {categories.map((category) => {
               const imageSrc = proxiedImageUrl(category.imageCoverUrl, { kind: "cover" });
               return (
@@ -106,16 +106,16 @@ export default function CategoryGallery({ categories }: { categories: CategoryHi
                   key={`${category.category}-${category.href}`}
                   href={category.href}
                   prefetch={false}
-                  className="group relative min-w-[78vw] overflow-hidden rounded-[1.15rem] bg-[color:var(--oda-stone)] sm:min-w-[52vw] md:min-w-0"
+                  className="group relative min-w-[56vw] overflow-hidden rounded-[1.15rem] bg-[color:var(--oda-stone)] sm:min-w-[38vw] md:min-w-0"
                 >
-                  <div className="relative h-[180px] w-full md:h-[170px] lg:h-[182px]">
+                  <div className="relative h-[155px] w-full md:h-[145px] lg:h-[156px]">
                     {imageSrc ? (
                       <Image
                         src={imageSrc}
                         alt={category.label}
                         fill
                         quality={58}
-                        sizes="(max-width: 768px) 80vw, (max-width: 1280px) 280px, 300px"
+                        sizes="(max-width: 768px) 58vw, (max-width: 1280px) 210px, 225px"
                         className="object-cover saturate-[0.72] transition duration-700 ease-out group-hover:scale-[1.04] group-hover:saturate-100 group-focus-visible:scale-[1.04] group-focus-visible:saturate-100"
                       />
                     ) : null}

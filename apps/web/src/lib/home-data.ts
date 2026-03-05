@@ -26,6 +26,7 @@ import {
   buildCategoryHref,
   labelize,
 } from "@/lib/navigation";
+import { REAL_STYLE_LABELS, type RealStyleKey } from "@/lib/real-style/constants";
 import { buildEffectiveVariantPriceCopExpr } from "@/lib/catalog-query";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
 import {
@@ -81,7 +82,7 @@ export const getHomeConfig = unstable_cache(
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 12;
+const HOME_CACHE_VERSION = 13;
 const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 6;
@@ -699,11 +700,25 @@ async function getCategoryHighlightsFallback(
   return cached();
 }
 
-export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGroup[]> {
+export async function getStyleGroups(seed: number, limit = 3, config?: HomeConfigMap): Promise<StyleGroup[]> {
+  // Read admin-selected real styles
+  const configuredStylesRaw = config?.["section.curated_looks.real_styles"];
+  let configuredStyles: string[] = [];
+  if (configuredStylesRaw) {
+    try {
+      configuredStyles = JSON.parse(configuredStylesRaw);
+      if (!Array.isArray(configuredStyles)) configuredStyles = [];
+    } catch { configuredStyles = []; }
+  }
+
+  const cacheKey = `home-v${HOME_CACHE_VERSION}-styles-realstyle-${seed}-${limit}-${configuredStyles.join(",")}`;
+
   const cached = unstable_cache(
     async () => {
       const pricingContext = await getHomePricingContext();
       const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricingContext.pricing);
+
+      const hasConfigured = configuredStyles.length > 0;
 
       const rows = await prisma.$queryRaw<
         Array<
@@ -718,17 +733,27 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
       >(
         Prisma.sql`
           with style_counts as (
-            select p."stylePrimary" as style_key, count(*)::int as cnt
+            select p.real_style as style_key, count(*)::int as cnt
             from products p
-            where p."stylePrimary" is not null and p."stylePrimary" <> ''
+            where p.real_style is not null and p.real_style <> ''
             group by 1
           ),
           top_styles as (
             select
               sc.style_key,
-              row_number() over (order by sc.cnt desc, sc.style_key asc) as style_order
+              ${hasConfigured
+                ? Prisma.sql`array_position(array[${Prisma.join(configuredStyles)}]::text[], sc.style_key)::int as style_order`
+                : Prisma.sql`(row_number() over (order by sc.cnt desc, sc.style_key asc))::int as style_order`
+              }
             from style_counts sc
-            order by sc.cnt desc, sc.style_key asc
+            ${hasConfigured
+              ? Prisma.sql`where sc.style_key = any(array[${Prisma.join(configuredStyles)}]::text[])`
+              : Prisma.empty
+            }
+            order by ${hasConfigured
+              ? Prisma.sql`array_position(array[${Prisma.join(configuredStyles)}]::text[], sc.style_key) asc nulls last`
+              : Prisma.sql`sc.cnt desc, sc.style_key asc`
+            }
             limit ${limit}
           ),
           ranked as (
@@ -751,10 +776,14 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
               (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
               row_number() over (
                 partition by ts.style_key
-                order by md5(concat(p.id::text, ${seed}::text, ts.style_key::text))
+                order by
+                  case when p."editorialTopPickRank" is not null or p."editorialFavoriteRank" is not null then 0 else 1 end asc,
+                  coalesce(p."editorialTopPickRank", 999999) asc,
+                  coalesce(p."editorialFavoriteRank", 999999) asc,
+                  md5(concat(p.id::text, ${seed}::text, ts.style_key::text))
               ) as "rowRank"
             from top_styles ts
-            join products p on p."stylePrimary" = ts.style_key and p."imageCoverUrl" is not null
+            join products p on p.real_style = ts.style_key and p."imageCoverUrl" is not null
             join brands b on b.id = p."brandId"
           )
           select
@@ -818,11 +847,11 @@ export async function getStyleGroups(seed: number, limit = 3): Promise<StyleGrou
         .sort((a, b) => a[1].styleOrder - b[1].styleOrder)
         .map(([styleKey, value]) => ({
           styleKey,
-          label: labelize(styleKey),
+          label: (REAL_STYLE_LABELS as Record<string, string>)[styleKey] ?? labelize(styleKey),
           products: value.products,
         }));
     },
-    [`home-v${HOME_CACHE_VERSION}-styles-${seed}-${limit}`],
+    [cacheKey],
     { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] }
   );
 
@@ -937,6 +966,8 @@ export async function getBrandLogos(seed: number, limit = 24): Promise<BrandLogo
           join brand_metrics m on m.brand_id = b.id
           left join brand_cover c on c.brand_id = b.id
           where b."logoUrl" is not null
+            and trim(b."logoUrl") <> ''
+            and b."logoUrl" ~ '^https?://'
             and b.slug is not null
             and b.slug <> ''
             and b."isActive" = true
@@ -1349,6 +1380,7 @@ export async function getPriceDropPicks(
             and r."previousPrice" > r."minPrice"
             and r."dropPercent" >= ${minDropPercent}
           order by
+            r."priceChangedAt" desc nulls last,
             r."dropPercent" desc nulls last,
             md5(concat(r.id::text, ${seed}::text, 'price-drop'))
           limit ${limit}
@@ -1902,34 +1934,34 @@ export async function getResilientPriceDropPicks(
   const excludeIds = options?.excludeIds ?? [];
   return executeResilientSection("price_drop", [
     {
-      source: "price_drop_7d_5pct",
+      source: "price_drop_14d_3pct",
       fetch: () =>
         getPriceDropPicks(seed, {
           limit,
-          days: 7,
-          minDropPercent: 5,
+          days: 14,
+          minDropPercent: 3,
           excludeIds,
         }),
       minItems: 1,
     },
     {
-      source: "price_drop_20d_5pct",
+      source: "price_drop_30d_3pct",
       fetch: () =>
         getPriceDropPicks(seed + 1, {
           limit,
-          days: 20,
-          minDropPercent: 5,
+          days: 30,
+          minDropPercent: 3,
           excludeIds,
         }),
       minItems: 1,
     },
     {
-      source: "price_drop_20d_2pct",
+      source: "price_drop_30d_1pct",
       fetch: () =>
         getPriceDropPicks(seed + 2, {
           limit,
-          days: 20,
-          minDropPercent: 2,
+          days: 30,
+          minDropPercent: 1,
           excludeIds,
         }),
       minItems: 1,
@@ -1939,7 +1971,7 @@ export async function getResilientPriceDropPicks(
       fetch: () =>
         getPriceDropSignalFallback(seed + 3, {
           limit,
-          days: 20,
+          days: 30,
           minDropPercent: 0,
           excludeIds,
         }),

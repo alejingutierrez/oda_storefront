@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { HOME_CONFIG_DEFAULTS, type HomeConfigMap, type HomeHeroSlide } from "@/lib/home-types";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 
@@ -88,6 +89,7 @@ export default function HomeHeroImmersive({
 }) {
   const prefersReducedMotion = usePrefersReducedMotion();
   const [activeIndex, setActiveIndex] = useState(0);
+  const swipeRef = useRef<{ startX: number; startTime: number } | null>(null);
 
   useEffect(() => {
     if (prefersReducedMotion || slides.length <= 1) return;
@@ -110,7 +112,26 @@ export default function HomeHeroImmersive({
   }, [activeSlide?.category, activeSlide?.subcategory]);
 
   return (
-    <section className="relative isolate min-h-[64svh] overflow-hidden border-b border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)] lg:min-h-[74svh]">
+    <section
+      className="relative isolate min-h-[64svh] overflow-hidden border-b border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)] lg:min-h-[74svh]"
+      onPointerDown={(event) => {
+        if (event.pointerType === "mouse" || slides.length <= 1) return;
+        swipeRef.current = { startX: event.clientX, startTime: Date.now() };
+      }}
+      onPointerUp={(event) => {
+        if (!swipeRef.current || slides.length <= 1) return;
+        const deltaX = event.clientX - swipeRef.current.startX;
+        const elapsed = Date.now() - swipeRef.current.startTime;
+        swipeRef.current = null;
+        if (Math.abs(deltaX) < 40 || elapsed > 500) return;
+        if (deltaX < 0) {
+          setActiveIndex((current) => (current + 1) % slides.length);
+        } else {
+          setActiveIndex((current) => (current - 1 + slides.length) % slides.length);
+        }
+      }}
+      onPointerCancel={() => { swipeRef.current = null; }}
+    >
       <div className="home-parallax-media absolute inset-0">
         {slides.length > 0 ? (
           slides.map((slide, index) => {
@@ -167,7 +188,7 @@ export default function HomeHeroImmersive({
         )}
       </div>
 
-      <div className="absolute inset-0 bg-[linear-gradient(100deg,rgba(10,10,10,0.84)_8%,rgba(10,10,10,0.46)_50%,rgba(10,10,10,0.7)_100%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(100deg,rgba(10,10,10,0.38)_8%,rgba(10,10,10,0.12)_50%,rgba(10,10,10,0.28)_100%)]" />
 
       <div className="oda-container relative flex min-h-[64svh] flex-col justify-end gap-4 py-7 sm:min-h-[68svh] sm:gap-6 sm:py-10 lg:min-h-[74svh] lg:gap-7 lg:py-14">
         <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-end">
@@ -221,51 +242,46 @@ export default function HomeHeroImmersive({
           >
             {cfgVal(config, "hero.cta_secondary_label")}
           </Link>
-
-          <div className="ml-auto hidden rounded-full border border-white/25 bg-black/20 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white/80 md:flex md:items-center md:gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--oda-gold)]" />
-            Selección actualizada constantemente
-          </div>
         </div>
 
         {slides.length > 1 ? (
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              {slides.map((slide, index) => (
-                <button
-                  key={slide.id}
-                  type="button"
-                  onClick={() => setActiveIndex(index)}
-                  aria-label={`Ir al slide ${index + 1}`}
-                  aria-current={safeActiveIndex === index}
-                  className={`h-2.5 rounded-full transition ${
-                    safeActiveIndex === index ? "w-8 bg-white" : "w-2.5 bg-white/45 hover:bg-white/70"
-                  }`}
-                />
-              ))}
-            </div>
-
-            <div className="hidden items-center gap-2 sm:flex">
+          <div className="flex items-center gap-2">
+            {slides.map((slide, index) => (
               <button
+                key={slide.id}
                 type="button"
-                onClick={() => setActiveIndex((current) => (current - 1 + slides.length) % slides.length)}
-                className="rounded-full border border-white/35 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-white transition hover:bg-white/10"
-                aria-label="Slide anterior"
-              >
-                Anterior
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveIndex((current) => (current + 1) % slides.length)}
-                className="rounded-full border border-white/35 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-white transition hover:bg-white/10"
-                aria-label="Siguiente slide"
-              >
-                Siguiente
-              </button>
-            </div>
+                onClick={() => setActiveIndex(index)}
+                aria-label={`Ir al slide ${index + 1}`}
+                aria-current={safeActiveIndex === index}
+                className={`h-2.5 rounded-full transition ${
+                  safeActiveIndex === index ? "w-8 bg-white" : "w-2.5 bg-white/45 hover:bg-white/70"
+                }`}
+              />
+            ))}
           </div>
         ) : null}
       </div>
+
+      {slides.length > 1 ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setActiveIndex((current) => (current - 1 + slides.length) % slides.length)}
+            className="absolute left-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-white/30 bg-black/20 p-2.5 text-white backdrop-blur-sm transition hover:bg-white/15 sm:block"
+            aria-label="Slide anterior"
+          >
+            <ChevronLeft className="h-5 w-5" strokeWidth={1.8} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveIndex((current) => (current + 1) % slides.length)}
+            className="absolute right-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-white/30 bg-black/20 p-2.5 text-white backdrop-blur-sm transition hover:bg-white/15 sm:block"
+            aria-label="Siguiente slide"
+          >
+            <ChevronRight className="h-5 w-5" strokeWidth={1.8} />
+          </button>
+        </>
+      ) : null}
     </section>
   );
 }

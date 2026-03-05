@@ -100,7 +100,7 @@ export default async function HomeBelowFold({
         subcategoryLimit: 12,
         excludeIds: initialExcludeIds,
       }),
-    withTimeout(getStyleGroups(seed, 2), []),
+    withTimeout(getStyleGroups(seed, 2, config), []),
     getResilientPriceDropPicks(seed, {
         limit: priceDropsLimit,
         excludeIds: initialExcludeIds,
@@ -109,7 +109,7 @@ export default async function HomeBelowFold({
         limit: dailyTrendingLimit,
         excludeIds: initialExcludeIds,
       }),
-    withTimeout(getTrendingPicks(seed + 19, 24), []),
+    withTimeout(getTrendingPicks(seed + 19, 48), []),
     withTimeout(
       getMostFavoritedPicks(seed, {
         windowDays: 30,
@@ -159,7 +159,11 @@ export default async function HomeBelowFold({
     }
   }
 
-  const storyProduct = collectUniqueProducts(storyCandidatesRaw, registry, 1)[0] ?? null;
+  const storyProductUnique = collectUniqueProducts(storyCandidatesRaw, registry, 1)[0] ?? null;
+  // Fallback: if all candidates are already used by other sections, pick any with a valid image
+  const storyProduct = storyProductUnique ?? (
+    storyCandidatesRaw.find((p) => p.imageCoverUrl && p.imageCoverUrl.trim() !== "") ?? null
+  );
 
   const favoritesExcludeIds = Array.from(registry.usedIds);
   const mostFavorited = collectUniqueProducts(mostFavoritedRaw, registry, 12);

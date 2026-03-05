@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { proxiedImageUrl } from "@/lib/image-proxy";
+import { REAL_STYLE_OPTIONS } from "@/lib/real-style/constants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -732,11 +733,147 @@ function TrendingTab({ config, onSaveConfig }: { config: ConfigMap; onSaveConfig
   );
 }
 
+// ─── Tab: Looks curados ──────────────────────────────────────────────────────
+
+function CuratedStylesTab({
+  config,
+  onSaveConfig,
+}: {
+  config: ConfigMap;
+  onSaveConfig: (patch: ConfigMap) => Promise<void>;
+}) {
+  const configKey = "section.curated_looks.real_styles";
+  const currentRaw = config[configKey];
+  let currentStyles: string[] = [];
+  try {
+    currentStyles = currentRaw ? JSON.parse(currentRaw) : [];
+    if (!Array.isArray(currentStyles)) currentStyles = [];
+  } catch { currentStyles = []; }
+
+  const [selected, setSelected] = useState<string[]>(currentStyles);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const dirty = JSON.stringify(selected) !== JSON.stringify(currentStyles);
+
+  const handleToggle = (key: string) => {
+    setSelected((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+    setSaved(false);
+  };
+
+  const handleMove = (key: string, dir: -1 | 1) => {
+    setSelected((prev) => {
+      const idx = prev.indexOf(key);
+      if (idx < 0) return prev;
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx]!, next[newIdx]!] = [next[newIdx]!, next[idx]!];
+      return next;
+    });
+    setSaved(false);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSaveConfig({ [configKey]: JSON.stringify(selected) });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 4000);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+          Estilos reales para &quot;Looks curados para ti&quot;
+        </h3>
+        <p className="mb-4 text-xs text-slate-400">
+          Selecciona los estilos que quieres mostrar en el home. Si no seleccionas ninguno, se mostrarán los más populares automáticamente.
+          Los estilos seleccionados se muestran en el orden de abajo — usa las flechas para reordenar.
+        </p>
+
+        <div className="space-y-2">
+          {REAL_STYLE_OPTIONS.map((option) => {
+            const isSelected = selected.includes(option.key);
+            const selectedIdx = selected.indexOf(option.key);
+            return (
+              <div
+                key={option.key}
+                className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition ${
+                  isSelected ? "border-indigo-200 bg-indigo-50" : "border-slate-100 bg-white"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleToggle(option.key)}
+                  className={`h-5 w-5 flex-shrink-0 rounded border-2 transition ${
+                    isSelected
+                      ? "border-indigo-500 bg-indigo-500"
+                      : "border-slate-300 bg-white hover:border-slate-400"
+                  }`}
+                  aria-label={isSelected ? `Quitar ${option.label}` : `Agregar ${option.label}`}
+                >
+                  {isSelected && (
+                    <svg viewBox="0 0 16 16" className="h-full w-full text-white" fill="currentColor">
+                      <path d="M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z" />
+                    </svg>
+                  )}
+                </button>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-slate-800">{option.label}</p>
+                  <p className="text-[11px] text-slate-400">{option.key}</p>
+                </div>
+
+                {isSelected && (
+                  <div className="flex items-center gap-1">
+                    <span className="mr-2 text-xs font-semibold text-indigo-600">#{selectedIdx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleMove(option.key, -1)}
+                      disabled={selectedIdx <= 0}
+                      className="rounded p-1 text-[11px] text-slate-400 hover:bg-slate-100 disabled:opacity-30"
+                      aria-label="Subir"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMove(option.key, 1)}
+                      disabled={selectedIdx >= selected.length - 1}
+                      className="rounded p-1 text-[11px] text-slate-400 hover:bg-slate-100 disabled:opacity-30"
+                      aria-label="Bajar"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <SaveBar
+        dirty={dirty}
+        saving={saving}
+        saved={saved}
+        onSave={handleSave}
+        onReset={() => { setSelected(currentStyles); setSaved(false); }}
+      />
+    </div>
+  );
+}
+
 // ─── Root panel ───────────────────────────────────────────────────────────────
 
 const TABS = [
   { key: "textos", label: "Textos" },
   { key: "pins", label: "Hero pins" },
+  { key: "curated", label: "Looks curados" },
   { key: "trending", label: "Trending" },
   { key: "condiciones", label: "Condiciones" },
 ] as const;
@@ -808,6 +945,7 @@ export default function HomeManagementPanel({ initialConfig }: { initialConfig: 
       {/* Tab content */}
       {activeTab === "textos" && <TextosTab config={config} onSaveConfig={handleSaveConfig} />}
       {activeTab === "pins" && <HeroPinsTab />}
+      {activeTab === "curated" && <CuratedStylesTab config={config} onSaveConfig={handleSaveConfig} />}
       {activeTab === "trending" && <TrendingTab config={config} onSaveConfig={handleSaveConfig} />}
       {activeTab === "condiciones" && <CondicionesTab config={config} onSaveConfig={handleSaveConfig} />}
     </div>

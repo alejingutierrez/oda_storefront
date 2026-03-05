@@ -70,8 +70,10 @@ export default function CuratedStickyEdit({ styleGroups }: { styleGroups: StyleG
 
   const safeIndex = Math.min(activeIndex, Math.max(displayedGroups.length - 1, 0));
   const activeGroup = displayedGroups[safeIndex] ?? groups[0];
-  const activeImage = proxiedImageUrl(activeGroup.products[0]?.imageCoverUrl ?? null, {
-    productId: activeGroup.products[0]?.id ?? null,
+  // Use 2nd product as cover for visual variety (1st product is shown in the card grid below)
+  const coverProduct = activeGroup.products[1] ?? activeGroup.products[0] ?? null;
+  const activeImage = proxiedImageUrl(coverProduct?.imageCoverUrl ?? null, {
+    productId: coverProduct?.id ?? null,
     kind: "cover",
   });
   const activeImageProxy = Boolean(activeImage?.startsWith("/api/image-proxy"));

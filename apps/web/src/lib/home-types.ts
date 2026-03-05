@@ -27,6 +27,7 @@ export const HOME_CONFIG_DEFAULTS: Record<string, string> = {
     "Combinamos marcas colombianas, estilos y precio para ayudarte a decidir rápido y comprar mejor.",
   "section.story.cta_label": "Ir al catálogo completo",
   "section.story.cta_href": "/unisex",
+  "section.curated_looks.real_styles": "",
 };
 
 export type MenuSubcategory = {
