@@ -33,15 +33,19 @@ export default function HomeProductCard({
   sizes?: string;
   surface?: string;
 }) {
-  const href = product.sourceUrl ?? "#";
+  const hasPdpLink = product.brandSlug && product.slug;
+  const href = hasPdpLink
+    ? `/producto/${product.brandSlug}/${product.slug}`
+    : (product.sourceUrl ?? "#");
+  const isExternal = !hasPdpLink && !!product.sourceUrl;
   const imageSrc = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
 
   return (
     <Link
       href={href}
       prefetch={false}
-      target={product.sourceUrl ? "_blank" : undefined}
-      rel={product.sourceUrl ? "noreferrer" : undefined}
+      target={isExternal ? "_blank" : undefined}
+      rel={isExternal ? "noreferrer" : undefined}
       onClick={() => {
         logExperienceEvent({
           type: "product_click",

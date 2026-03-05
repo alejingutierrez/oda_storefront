@@ -220,8 +220,11 @@ export default function CatalogProductCard({
   const instanceId = useId();
   const mobileCandidateId = useMemo(() => `${product.id}:${instanceId}`, [product.id, instanceId]);
 
-  const href = product.sourceUrl ?? "#";
-  const openInNewTab = href !== "#";
+  const hasPdpLink = product.brandSlug && product.slug;
+  const href = hasPdpLink
+    ? `/producto/${product.brandSlug}/${product.slug}`
+    : (product.sourceUrl ?? "#");
+  const openInNewTab = !hasPdpLink && href !== "#";
   const coverUrl = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
 
   const mountedRef = useRef(true);

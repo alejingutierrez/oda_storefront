@@ -120,8 +120,10 @@ export type { CatalogFilters };
 export type CatalogProduct = {
   id: string;
   name: string;
+  slug: string | null;
   imageCoverUrl: string | null;
   brandName: string;
+  brandSlug: string | null;
   sourceUrl: string | null;
   minPrice: string | null;
   maxPrice: string | null;
@@ -2197,6 +2199,8 @@ async function computeCatalogProductsPage(params: {
     minPrice: string | null;
     maxPrice: string | null;
     currency: string | null;
+    slug: string | null;
+    brandSlug: string | null;
     brandOverrideUsd: boolean;
     priceChangeDirection: string | null;
   }> = await (async () => {
@@ -2215,6 +2219,8 @@ async function computeCatalogProductsPage(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          slug: string | null;
+          brandSlug: string | null;
           brandOverrideUsd: boolean;
           priceChangeDirection: string | null;
         }>
@@ -2225,6 +2231,8 @@ async function computeCatalogProductsPage(params: {
             p.name,
             p."imageCoverUrl",
             b.name as "brandName",
+            b.slug as "brandSlug",
+            p.slug,
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
@@ -2254,6 +2262,8 @@ async function computeCatalogProductsPage(params: {
               minPrice: string | null;
               maxPrice: string | null;
               currency: string | null;
+              slug: string | null;
+              brandSlug: string | null;
               brandOverrideUsd: boolean;
               priceChangeDirection: string | null;
             }>
@@ -2264,6 +2274,8 @@ async function computeCatalogProductsPage(params: {
             p.name,
             p."imageCoverUrl",
             b.name as "brandName",
+            b.slug as "brandSlug",
+            p.slug,
             p."sourceUrl",
             min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
             max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
@@ -2308,6 +2320,8 @@ async function computeCatalogProductsPage(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          slug: string | null;
+          brandSlug: string | null;
           brandOverrideUsd: boolean;
           priceChangeDirection: string | null;
         }>
@@ -2355,6 +2369,8 @@ async function computeCatalogProductsPage(params: {
             p.name,
             p."imageCoverUrl",
             b.name as "brandName",
+            b.slug as "brandSlug",
+            p.slug,
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
@@ -2394,6 +2410,8 @@ async function computeCatalogProductsPage(params: {
         minPrice: string | null;
         maxPrice: string | null;
         currency: string | null;
+        slug: string | null;
+        brandSlug: string | null;
         brandOverrideUsd: boolean;
         priceChangeDirection: string | null;
       }>
@@ -2441,6 +2459,8 @@ async function computeCatalogProductsPage(params: {
           p.name,
           p."imageCoverUrl",
           b.name as "brandName",
+          b.slug as "brandSlug",
+          p.slug,
           p."sourceUrl",
           vagg."minPrice",
           vagg."maxPrice",
@@ -2481,8 +2501,10 @@ async function computeCatalogProductsPage(params: {
   return rows.map((item) => ({
     id: item.id,
     name: item.name,
+    slug: item.slug ?? null,
     imageCoverUrl: item.imageCoverUrl,
     brandName: item.brandName,
+    brandSlug: item.brandSlug ?? null,
     sourceUrl: item.sourceUrl,
     minPrice: toCopDisplayString({
       value: item.minPrice,
@@ -2573,6 +2595,8 @@ async function computeCatalogProducts(params: {
       minPrice: string | null;
       maxPrice: string | null;
       currency: string | null;
+      slug: string | null;
+      brandSlug: string | null;
       brandOverrideUsd: boolean;
       priceChangeDirection: string | null;
     }>
@@ -2592,6 +2616,8 @@ async function computeCatalogProducts(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          slug: string | null;
+          brandSlug: string | null;
           brandOverrideUsd: boolean;
           priceChangeDirection: string | null;
         }>
@@ -2602,6 +2628,8 @@ async function computeCatalogProducts(params: {
             p.name,
             p."imageCoverUrl",
             b.name as "brandName",
+            b.slug as "brandSlug",
+            p.slug,
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
@@ -2631,6 +2659,8 @@ async function computeCatalogProducts(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          slug: string | null;
+          brandSlug: string | null;
           brandOverrideUsd: boolean;
           priceChangeDirection: string | null;
         }>
@@ -2641,6 +2671,8 @@ async function computeCatalogProducts(params: {
             p.name,
             p."imageCoverUrl",
             b.name as "brandName",
+            b.slug as "brandSlug",
+            p.slug,
             p."sourceUrl",
             min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "minPrice",
             max(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end) as "maxPrice",
@@ -2685,6 +2717,8 @@ async function computeCatalogProducts(params: {
           minPrice: string | null;
           maxPrice: string | null;
           currency: string | null;
+          slug: string | null;
+          brandSlug: string | null;
           brandOverrideUsd: boolean;
           priceChangeDirection: string | null;
         }>
@@ -2732,6 +2766,8 @@ async function computeCatalogProducts(params: {
             p.name,
             p."imageCoverUrl",
             b.name as "brandName",
+            b.slug as "brandSlug",
+            p.slug,
             p."sourceUrl",
             case when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop" end as "minPrice",
             case when p."maxPriceCop" > 0 and p."maxPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."maxPriceCop" end as "maxPrice",
@@ -2771,6 +2807,8 @@ async function computeCatalogProducts(params: {
         minPrice: string | null;
         maxPrice: string | null;
         currency: string | null;
+        slug: string | null;
+        brandSlug: string | null;
         brandOverrideUsd: boolean;
         priceChangeDirection: string | null;
       }>
@@ -2818,6 +2856,8 @@ async function computeCatalogProducts(params: {
           p.name,
           p."imageCoverUrl",
           b.name as "brandName",
+          b.slug as "brandSlug",
+          p.slug,
           p."sourceUrl",
           vagg."minPrice",
           vagg."maxPrice",
@@ -2863,8 +2903,10 @@ async function computeCatalogProducts(params: {
     items: items.map((item) => ({
       id: item.id,
       name: item.name,
+      slug: item.slug ?? null,
       imageCoverUrl: item.imageCoverUrl,
       brandName: item.brandName,
+      brandSlug: item.brandSlug ?? null,
       sourceUrl: item.sourceUrl,
       minPrice: toCopDisplayString({
         value: item.minPrice,

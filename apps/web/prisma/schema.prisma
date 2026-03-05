@@ -195,6 +195,7 @@ model Product {
   priceRollupUpdatedAt  DateTime?
   priceChangeDirection  String? // down | up
   priceChangeAt         DateTime?
+  slug                  String?
   sourceUrl             String?
   imageCoverUrl         String?
   metadata              Json?
@@ -219,6 +220,8 @@ model Product {
   @@index([realStyle], map: "products_real_style_idx")
   @@index([hasInStock, imageCoverUrl, updatedAt])
   @@index([priceChangeDirection, priceChangeAt])
+  @@unique([brandId, slug])
+  @@index([slug])
   @@map("products")
 }
 

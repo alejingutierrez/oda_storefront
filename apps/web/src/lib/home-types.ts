@@ -59,8 +59,10 @@ export type MegaMenuData = Record<
 export type HomeProductCardData = {
   id: string;
   name: string;
+  slug: string | null;
   imageCoverUrl: string;
   brandName: string;
+  brandSlug: string | null;
   category: string | null;
   subcategory: string | null;
   minPrice: string | null;
