@@ -427,6 +427,14 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
   )
     ? Math.max(0, Math.min(1, manualReviewAutoClearRelaxedMaxFailedRateRaw))
     : 0.10;
+  const smartPrioritizationEnabled =
+    (process.env.CATALOG_REFRESH_SMART_PRIORITIZATION ?? "true")
+      .trim()
+      .toLowerCase() === "true";
+  const autoManualReviewThreshold = Math.max(
+    0,
+    Number(process.env.CATALOG_REFRESH_AUTO_MANUAL_REVIEW_THRESHOLD ?? 8),
+  );
   return {
     intervalDays,
     jitterHours,
@@ -485,6 +493,8 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     manualReviewAutoClearRelaxedMinCompletedRuns,
     manualReviewAutoClearRelaxedWindowDays,
     manualReviewAutoClearRelaxedMaxFailedRate,
+    smartPrioritizationEnabled,
+    autoManualReviewThreshold,
   };
 };
 
@@ -1218,16 +1228,22 @@ const autoRemediateOperationalStaleBrands = async (params: {
       const refresh = readRefreshMeta(metadata);
       const lastOperationalAt = parseDate(refresh.lastFinishedAt) ?? parseDate(refresh.lastCompletedAt);
       const lastForceAttemptAt = parseDate(refresh.lastForceAttemptAt);
+      const consecutiveFailedRuns = readNonNegativeInt(refresh.consecutiveFailedRuns);
       return {
         brandId: brand.id,
         lastOperationalAt,
         lastForceAttemptAt,
+        consecutiveFailedRuns,
       };
     })
     .filter((brand) => !brand.lastOperationalAt || brand.lastOperationalAt < staleWindowStart)
     .filter(
       (brand) =>
         !brand.lastForceAttemptAt || now.getTime() - brand.lastForceAttemptAt.getTime() >= cooldownMs,
+    )
+    .filter((brand) =>
+      config.autoManualReviewThreshold <= 0 ||
+      brand.consecutiveFailedRuns < config.autoManualReviewThreshold,
     )
     .sort((a, b) => {
       if (!a.lastOperationalAt && !b.lastOperationalAt) return a.brandId.localeCompare(b.brandId);
@@ -1327,10 +1343,24 @@ export const markRefreshCompleted = async (params: {
     lastRunDurationMs: params.runDurationMs,
     lastError: params.lastError ?? null,
   });
+  const shouldAutoManualReview =
+    config.autoManualReviewThreshold > 0 &&
+    params.status === "failed" &&
+    (previousFailedRuns + 1) >= config.autoManualReviewThreshold;
+
   await prisma.brand.update({
     where: { id: params.brandId },
-    data: { metadata: nextMetadata as Prisma.InputJsonValue },
+    data: {
+      metadata: nextMetadata as Prisma.InputJsonValue,
+      ...(shouldAutoManualReview ? { manualReview: true } : {}),
+    },
   });
+
+  if (shouldAutoManualReview) {
+    console.log(
+      `[catalog-refresh] auto_manual_review brandId=${params.brandId} consecutiveFailedRuns=${previousFailedRuns + 1} threshold=${config.autoManualReviewThreshold}`,
+    );
+  }
 };
 
 const computeRefreshMetrics = async (brandId: string, startedAt: Date) => {
@@ -3239,6 +3269,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       manualReview: true,
       metadata: true,
       ecommercePlatform: true,
+      _count: { select: { products: true } },
     },
   });
 
@@ -3557,9 +3588,21 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       });
 
   const shuffledDueCandidates = [...dueCandidates];
-  for (let i = shuffledDueCandidates.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffledDueCandidates[i], shuffledDueCandidates[j]] = [shuffledDueCandidates[j], shuffledDueCandidates[i]];
+  if (config.smartPrioritizationEnabled) {
+    // Sort by estimated catalog size: smallest brands first → faster slot turnover
+    shuffledDueCandidates.sort((a, b) => {
+      const aMeta = readRefreshMeta(readMetadata(a.metadata));
+      const bMeta = readRefreshMeta(readMetadata(b.metadata));
+      const aSize = aMeta.lastRunTotalItems ?? a._count?.products ?? Infinity;
+      const bSize = bMeta.lastRunTotalItems ?? b._count?.products ?? Infinity;
+      if (aSize !== bSize) return aSize - bSize;
+      return Math.random() - 0.5;
+    });
+  } else {
+    for (let i = shuffledDueCandidates.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffledDueCandidates[i], shuffledDueCandidates[j]] = [shuffledDueCandidates[j], shuffledDueCandidates[i]];
+    }
   }
 
   let prioritizedCandidates = [...shuffledDueCandidates];
