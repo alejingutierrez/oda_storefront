@@ -11,6 +11,7 @@ import {
   buildEffectiveVariantPriceCopExpr,
   buildOrderBy,
   buildProductConditions,
+  buildSearchTsQuery,
   buildVariantConditions,
   buildWhere,
   type CatalogFilters,
@@ -2304,8 +2305,8 @@ async function computeCatalogProductsPage(params: {
       );
     }
 
-    const q = filters.q ? `%${filters.q}%` : null;
-    const isRelevancia = sortKey === "relevancia" && Boolean(q);
+    const tsQuery = filters.q ? buildSearchTsQuery(filters.q) : "";
+    const isRelevancia = sortKey === "relevancia" && Boolean(tsQuery);
     const isTopPicks = sortKey === "top_picks";
     const isEditorialFavorites = sortKey === "editorial_favorites";
 
@@ -2335,11 +2336,7 @@ async function computeCatalogProductsPage(params: {
               p."editorialFavoriteRank" as editorial_favorite_rank
               ${isRelevancia
                 ? Prisma.sql`,
-                  case
-                    when p.name ilike ${q} then 0
-                    when b.name ilike ${q} then 1
-                    else 2
-                  end as rank`
+                  ts_rank_cd('{0.05, 0.15, 0.4, 1.0}', p.search_vector, to_tsquery('spanish', ${tsQuery}), 32) as rank`
                 : Prisma.empty}
             from products p
             join brands b on b.id = p."brandId"
@@ -2358,7 +2355,7 @@ async function computeCatalogProductsPage(params: {
                   p."editorialFavoriteRank" asc nulls last,
                 `
                 : Prisma.empty}
-              ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
+              ${isRelevancia ? Prisma.sql`rank desc,` : Prisma.empty}
               p."createdAt" desc,
               p.id desc
             limit ${CATALOG_PAGE_SIZE}
@@ -2393,7 +2390,7 @@ async function computeCatalogProductsPage(params: {
                 ids.editorial_favorite_rank asc nulls last,
               `
               : Prisma.empty}
-            ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
+            ${isRelevancia ? Prisma.sql`ids.rank desc,` : Prisma.empty}
             ids.created_at desc,
             ids.id desc
         `,
@@ -2425,11 +2422,7 @@ async function computeCatalogProductsPage(params: {
             p."editorialFavoriteRank" as editorial_favorite_rank
             ${isRelevancia
               ? Prisma.sql`,
-                case
-                  when p.name ilike ${q} then 0
-                  when b.name ilike ${q} then 1
-                  else 2
-                end as rank`
+                ts_rank_cd('{0.05, 0.15, 0.4, 1.0}', p.search_vector, to_tsquery('spanish', ${tsQuery}), 32) as rank`
               : Prisma.empty}
           from products p
           join brands b on b.id = p."brandId"
@@ -2448,7 +2441,7 @@ async function computeCatalogProductsPage(params: {
                 p."editorialFavoriteRank" asc nulls last,
               `
               : Prisma.empty}
-            ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
+            ${isRelevancia ? Prisma.sql`rank desc,` : Prisma.empty}
             p."createdAt" desc,
             p.id desc
           limit ${CATALOG_PAGE_SIZE}
@@ -2491,7 +2484,7 @@ async function computeCatalogProductsPage(params: {
               ids.editorial_favorite_rank asc nulls last,
             `
             : Prisma.empty}
-          ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
+          ${isRelevancia ? Prisma.sql`ids.rank desc,` : Prisma.empty}
           ids.created_at desc,
           ids.id desc
       `,
@@ -2701,8 +2694,8 @@ async function computeCatalogProducts(params: {
       );
     }
 
-    const q = filters.q ? `%${filters.q}%` : null;
-    const isRelevancia = sortKey === "relevancia" && Boolean(q);
+    const tsQuery = filters.q ? buildSearchTsQuery(filters.q) : "";
+    const isRelevancia = sortKey === "relevancia" && Boolean(tsQuery);
     const isTopPicks = sortKey === "top_picks";
     const isEditorialFavorites = sortKey === "editorial_favorites";
 
@@ -2732,11 +2725,7 @@ async function computeCatalogProducts(params: {
               p."editorialFavoriteRank" as editorial_favorite_rank
               ${isRelevancia
                 ? Prisma.sql`,
-                  case
-                    when p.name ilike ${q} then 0
-                    when b.name ilike ${q} then 1
-                    else 2
-                  end as rank`
+                  ts_rank_cd('{0.05, 0.15, 0.4, 1.0}', p.search_vector, to_tsquery('spanish', ${tsQuery}), 32) as rank`
                 : Prisma.empty}
             from products p
             join brands b on b.id = p."brandId"
@@ -2755,7 +2744,7 @@ async function computeCatalogProducts(params: {
                   p."editorialFavoriteRank" asc nulls last,
                 `
                 : Prisma.empty}
-              ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
+              ${isRelevancia ? Prisma.sql`rank desc,` : Prisma.empty}
               p."createdAt" desc,
               p.id desc
             limit ${CATALOG_PAGE_SIZE}
@@ -2790,7 +2779,7 @@ async function computeCatalogProducts(params: {
                 ids.editorial_favorite_rank asc nulls last,
               `
               : Prisma.empty}
-            ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
+            ${isRelevancia ? Prisma.sql`ids.rank desc,` : Prisma.empty}
             ids.created_at desc,
             ids.id desc
         `,
@@ -2822,11 +2811,7 @@ async function computeCatalogProducts(params: {
             p."editorialFavoriteRank" as editorial_favorite_rank
             ${isRelevancia
               ? Prisma.sql`,
-                case
-                  when p.name ilike ${q} then 0
-                  when b.name ilike ${q} then 1
-                  else 2
-                end as rank`
+                ts_rank_cd('{0.05, 0.15, 0.4, 1.0}', p.search_vector, to_tsquery('spanish', ${tsQuery}), 32) as rank`
               : Prisma.empty}
           from products p
           join brands b on b.id = p."brandId"
@@ -2845,7 +2830,7 @@ async function computeCatalogProducts(params: {
                 p."editorialFavoriteRank" asc nulls last,
               `
               : Prisma.empty}
-            ${isRelevancia ? Prisma.sql`rank asc,` : Prisma.empty}
+            ${isRelevancia ? Prisma.sql`rank desc,` : Prisma.empty}
             p."createdAt" desc,
             p.id desc
           limit ${CATALOG_PAGE_SIZE}
@@ -2888,7 +2873,7 @@ async function computeCatalogProducts(params: {
               ids.editorial_favorite_rank asc nulls last,
             `
             : Prisma.empty}
-          ${isRelevancia ? Prisma.sql`ids.rank asc,` : Prisma.empty}
+          ${isRelevancia ? Prisma.sql`ids.rank desc,` : Prisma.empty}
           ids.created_at desc,
           ids.id desc
       `,

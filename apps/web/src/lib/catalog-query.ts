@@ -388,7 +388,7 @@ export function buildOrderBy(sort: string, filters: CatalogFilters | undefined, 
         if (tsQuery) {
           return Prisma.sql`
             order by
-              ts_rank_cd(p.search_vector, to_tsquery('spanish', ${tsQuery}), 32) desc,
+              ts_rank_cd('{0.05, 0.15, 0.4, 1.0}', p.search_vector, to_tsquery('spanish', ${tsQuery}), 32) desc,
               similarity(p.name, ${filters.q}) desc,
               p."createdAt" desc,
               p.id desc

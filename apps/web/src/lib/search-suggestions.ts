@@ -228,9 +228,9 @@ async function searchProducts(query: string, limit: number): Promise<SuggestionP
         OR p.name % ${query}
       )
     ORDER BY
-      ts_rank_cd(p.search_vector, to_tsquery('spanish', ${tsQuery}), 32) * 2.0
-      + similarity(p.name, ${query})
-      + CASE WHEN p."editorialFavoriteRank" IS NOT NULL THEN 0.2 ELSE 0.0 END
+      ts_rank_cd('{0.05, 0.15, 0.4, 1.0}', p.search_vector, to_tsquery('spanish', ${tsQuery}), 32) * 3.0
+      + similarity(p.name, ${query}) * 1.5
+      + CASE WHEN p."editorialFavoriteRank" IS NOT NULL THEN 0.15 ELSE 0.0 END
       DESC,
       p."createdAt" DESC
     LIMIT ${limit}
