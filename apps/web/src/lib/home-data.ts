@@ -33,7 +33,7 @@ import {
   buildCategoryHref,
   labelize,
 } from "@/lib/navigation";
-import { REAL_STYLE_LABELS, type RealStyleKey } from "@/lib/real-style/constants";
+import { REAL_STYLE_KEYS, REAL_STYLE_LABELS, type RealStyleKey } from "@/lib/real-style/constants";
 import { buildEffectiveVariantPriceCopExpr } from "@/lib/catalog-query";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
 import {
@@ -96,7 +96,7 @@ export const getHomeConfig = unstable_cache(
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 17;
+const HOME_CACHE_VERSION = 18;
 const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 8;
@@ -2508,7 +2508,7 @@ export async function getStyleSpotlights(
         Prisma.sql`
           with style_base as (
             select
-              coalesce(nullif(p.real_style, ''), nullif(p."stylePrimary", '')) as style_key,
+              p.real_style as style_key,
               p.id,
               p.name,
               p.slug,
@@ -2527,14 +2527,16 @@ export async function getStyleSpotlights(
               p."brandId" as brand_id,
               p."updatedAt" as updated_at,
               p."hasInStock" as has_stock,
-              case when p.real_style is not null and p.real_style <> '' then 1 else 0 end as real_style_priority,
+              1 as real_style_priority,
               p."editorialTopPickRank",
               p."editorialFavoriteRank",
               p."random_sort_key"
             from products p
             join brands b on b.id = p."brandId"
             where ${sqlIsPublishedCatalogProduct()}
-              and coalesce(nullif(p.real_style, ''), nullif(p."stylePrimary", '')) is not null
+              and p.real_style is not null
+              and p.real_style <> ''
+              and p.real_style = any(array[${Prisma.join(REAL_STYLE_KEYS)}]::text[])
           ),
           style_stats as (
             select
