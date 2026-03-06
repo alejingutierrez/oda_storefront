@@ -4,12 +4,11 @@ import BrandMarquee from "@/components/home/BrandMarquee";
 import CategoryGallery from "@/components/home/CategoryGallery";
 import ColorSwatchPalette from "@/components/home/ColorSwatchPalette";
 import ConversionCoverageBlock from "@/components/home/ConversionCoverageBlock";
-import CuratedStickyEdit from "@/components/home/CuratedStickyEdit";
-import HomeDailyTrendingRail from "@/components/home/HomeDailyTrendingRail";
-import HomeFavoritesRail from "@/components/home/HomeFavoritesRail";
-import HomePriceDropRail from "@/components/home/HomePriceDropRail";
+import CuratedStyleShowcase from "@/components/home/CuratedStyleShowcase";
+import HomeSmartPicks from "@/components/home/HomeSmartPicks";
 import HomeTrendingGrid from "@/components/home/HomeTrendingGrid";
 import ProductCarousel from "@/components/home/ProductCarousel";
+import StyleQuickNav from "@/components/home/StyleQuickNav";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 import {
   collectUniqueProducts,
@@ -100,7 +99,7 @@ export default async function HomeBelowFold({
         subcategoryLimit: 12,
         excludeIds: initialExcludeIds,
       }),
-    withTimeout(getStyleGroups(seed, 2, config), []),
+    withTimeout(getStyleGroups(seed, 3, config), []),
     getResilientPriceDropPicks(seed, {
         limit: priceDropsLimit,
         excludeIds: initialExcludeIds,
@@ -160,7 +159,6 @@ export default async function HomeBelowFold({
   }
 
   const storyProductUnique = collectUniqueProducts(storyCandidatesRaw, registry, 1)[0] ?? null;
-  // Fallback chain: storyCandidatesRaw (deduped) → storyCandidatesRaw (any with image) → other section pools
   const storyProduct = storyProductUnique
     ?? storyCandidatesRaw.find((p) => p.imageCoverUrl && p.imageCoverUrl.trim() !== "")
     ?? [...mostFavoritedRaw, ...focusResult.items, ...newArrivalsResult.items]
@@ -212,8 +210,6 @@ export default async function HomeBelowFold({
     console.info("home.section", stat);
   }
 
-  // Sections that have their own graceful empty-state UI (e.g. HomePriceDropRail)
-  // should NOT block the build when empty — they are "soft" sections.
   const softSections = new Set(["price_drop", "daily_trending"]);
   const emptyCriticalSections = criticalSectionStats
     .filter((stat) => stat.count === 0 && !softSections.has(stat.section))
@@ -246,9 +242,34 @@ export default async function HomeBelowFold({
     kind: "cover",
   });
 
+  /*
+   * REDESIGNED SECTION ORDER:
+   *
+   * 1. StyleQuickNav — horizontal style pill navigation (sticky feel)
+   * 2. CuratedStyleShowcase — full-width immersive Real Style (hero prominence)
+   * 3. New Arrivals carousel
+   * 4. Category Gallery
+   * 5. Brand Marquee
+   * 6. Trending Grid (Focus Picks)
+   * 7. Smart Picks — tabbed: Price Drops | Trending | Favorites
+   * 8. Color Swatches
+   * 9. Coverage/Conversion Block
+   * 10. Story/Inspirational Block
+   *
+   * Consolidation: Price Drops, Daily Trending, and Favorites merged into SmartPicks.
+   * Real Style moved from position 3 to position 1-2 (right after hero).
+   */
+
   return (
     <>
-      <section className={`oda-container py-12 sm:py-16 ${FOLD_SECTION_CLASS}`}>
+      {/* 1. Style Quick Nav — lets users jump into styles immediately */}
+      <StyleQuickNav styleGroups={styleGroups} />
+
+      {/* 2. Real Style Showcase — full-width immersive, hero-level prominence */}
+      <CuratedStyleShowcase styleGroups={styleGroups} />
+
+      {/* 3. New Arrivals */}
+      <section className={`oda-container py-14 sm:py-18 ${FOLD_SECTION_CLASS}`}>
         <ProductCarousel
           title={cfgVal(config, "section.new_arrivals.heading")}
           subtitle={cfgVal(config, "section.new_arrivals.subheading")}
@@ -260,42 +281,42 @@ export default async function HomeBelowFold({
         />
       </section>
 
+      {/* 4. Category Gallery */}
       <section className={`oda-container pb-14 sm:pb-18 ${FOLD_SECTION_CLASS}`}>
         <CategoryGallery categories={categoryHighlights} />
       </section>
 
-      <section className={`oda-container pb-14 sm:pb-20 ${FOLD_SECTION_CLASS}`}>
-        <CuratedStickyEdit styleGroups={styleGroups} />
-      </section>
-
-      <section className={`oda-container pb-14 sm:pb-20 ${FOLD_SECTION_CLASS}`}>
-        <ColorSwatchPalette colorCombos={colorCombos} />
-      </section>
-
+      {/* 5. Brands */}
       <section className={`oda-container pb-14 sm:pb-20 ${FOLD_SECTION_CLASS}`}>
         <BrandMarquee brands={brandLogos} />
       </section>
 
+      {/* 6. Focus Picks / Trending Grid */}
       <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
         <HomeTrendingGrid products={focusProducts} />
       </section>
 
+      {/* 7. Smart Picks — unified tab: Price Drops | Trending Today | Favorites */}
+      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
+        <HomeSmartPicks
+          priceDrops={priceDrop}
+          dailyTrending={dailyTrending}
+          initialFavorites={mostFavorited}
+          favoritesExcludeIds={favoritesExcludeIds}
+        />
+      </section>
+
+      {/* 8. Color Swatches */}
+      <section className={`oda-container pb-14 sm:pb-20 ${FOLD_SECTION_CLASS}`}>
+        <ColorSwatchPalette colorCombos={colorCombos} />
+      </section>
+
+      {/* 9. Coverage/Conversion Block */}
       <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
         <ConversionCoverageBlock stats={coverageStats} seed={seed} />
       </section>
 
-      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <HomePriceDropRail products={priceDrop} />
-      </section>
-
-      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <HomeFavoritesRail initialProducts={mostFavorited} excludeIds={favoritesExcludeIds} />
-      </section>
-
-      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <HomeDailyTrendingRail products={dailyTrending} />
-      </section>
-
+      {/* 10. Story/Inspirational Block */}
       <section className={`border-y border-[color:var(--oda-border)] bg-white ${FOLD_SECTION_CLASS}`}>
         <div className="oda-container grid gap-8 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
           <div className="flex flex-col gap-4 lg:pr-8">
