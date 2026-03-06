@@ -1,24 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import HomeProductCard from "@/components/home/HomeProductCard";
-import type { HomeProductCardData, HomePriceDropCardData, HomeTrendingDailyCardData } from "@/lib/home-types";
+import type { HomePriceDropCardData, HomeTrendingDailyCardData, HomeUtilityTab } from "@/lib/home-types";
 import { logExperienceEvent } from "@/lib/experience-events";
 import { proxiedImageUrl } from "@/lib/image-proxy";
-
-type UserFavoritesResponse = {
-  products?: HomeProductCardData[];
-};
-
-type Tab = "price_drops" | "favorites" | "trending";
-
-const TAB_CONFIG: Array<{ key: Tab; label: string }> = [
-  { key: "price_drops", label: "Rebajas" },
-  { key: "favorites", label: "Favoritos" },
-  { key: "trending", label: "Tendencia hoy" },
-];
 
 function formatPrice(amount: string | null, currency: string | null) {
   if (!amount || Number(amount) <= 0) return "Consultar";
@@ -48,19 +36,23 @@ function formatSnapshot(value: string | null) {
 function PriceDropCard({ product }: { product: HomePriceDropCardData }) {
   const imageSrc = proxiedImageUrl(product.imageCoverUrl, { productId: product.id, kind: "cover" });
   const dropLabel = product.dropPercent ? `-${Math.round(product.dropPercent)}%` : null;
+  const href = product.brandSlug && product.slug
+    ? `/producto/${product.brandSlug}/${product.slug}`
+    : (product.sourceUrl ?? "#");
+  const isExternal = !(product.brandSlug && product.slug) && !!product.sourceUrl;
 
   return (
     <Link
-      href={product.sourceUrl ?? "#"}
-      target={product.sourceUrl ? "_blank" : undefined}
-      rel={product.sourceUrl ? "noreferrer" : undefined}
+      href={href}
+      target={isExternal ? "_blank" : undefined}
+      rel={isExternal ? "noreferrer" : undefined}
       prefetch={false}
       onClick={() => {
         logExperienceEvent({
           type: "product_click",
           productId: product.id,
           path: typeof window !== "undefined" ? window.location.pathname : "/",
-          properties: { surface: "home_smart_rails_price_drop" },
+          properties: { surface: "home_utility_price_drop" },
         });
       }}
       className="group flex min-w-0 flex-col gap-3"
@@ -102,96 +94,67 @@ function PriceDropCard({ product }: { product: HomePriceDropCardData }) {
   );
 }
 
-function TrendingCard({ product }: { product: HomeTrendingDailyCardData }) {
+function MomentumCard({
+  product,
+  behaviorQualified,
+}: {
+  product: HomeTrendingDailyCardData;
+  behaviorQualified: boolean;
+}) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <span className="rounded-full border border-[color:var(--oda-border)] bg-white px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-[color:var(--oda-ink-soft)]">
-          {product.clickCount > 0 ? `${new Intl.NumberFormat("es-CO").format(product.clickCount)} clics` : "Tendencia"}
+          {behaviorQualified && product.clickCount > 0
+            ? `${new Intl.NumberFormat("es-CO").format(product.clickCount)} clics`
+            : "Descubriendo"}
         </span>
       </div>
       <HomeProductCard
         product={product}
-        surface="home_smart_rails_trending"
+        surface={behaviorQualified ? "home_utility_momentum_live" : "home_utility_momentum_fallback"}
         sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 24vw"
       />
     </div>
   );
 }
 
+type UtilityTabKey = HomeUtilityTab["key"];
+
 export default function SmartRails({
-  priceDropProducts,
-  initialFavorites,
-  dailyTrendingProducts,
-  favoritesExcludeIds,
+  tabs,
   defaultTab = "price_drops",
 }: {
-  priceDropProducts: HomePriceDropCardData[];
-  initialFavorites: HomeProductCardData[];
-  dailyTrendingProducts: HomeTrendingDailyCardData[];
-  favoritesExcludeIds: string[];
+  tabs: HomeUtilityTab[];
   defaultTab?: string;
 }) {
-  const [activeTab, setActiveTab] = useState<Tab>((defaultTab as Tab) || "price_drops");
-  const [favorites, setFavorites] = useState<HomeProductCardData[]>(initialFavorites);
-  const [favoritesMode, setFavoritesMode] = useState<"anon" | "user">("anon");
+  const availableTabs = tabs.filter((tab) => tab.products.length > 0);
+  const fallbackKey = availableTabs[0]?.key ?? "price_drops";
+  const initialTab = (availableTabs.find((tab) => tab.key === defaultTab)?.key ?? fallbackKey) as UtilityTabKey;
+  const [activeTab, setActiveTab] = useState<UtilityTabKey>(initialTab);
 
-  const excludeParam = useMemo(
-    () => (favoritesExcludeIds.length ? favoritesExcludeIds.join(",") : ""),
-    [favoritesExcludeIds],
+  const currentTab = useMemo(
+    () => availableTabs.find((tab) => tab.key === activeTab) ?? availableTabs[0] ?? null,
+    [activeTab, availableTabs],
   );
 
-  // Fetch user favorites on mount (same pattern as HomeFavoritesRail)
-  useEffect(() => {
-    let cancelled = false;
+  if (!currentTab) return null;
 
-    const load = async () => {
-      try {
-        const qs = new URLSearchParams();
-        qs.set("limit", "12");
-        if (excludeParam) qs.set("excludeIds", excludeParam);
-
-        const res = await fetch(`/api/home/user-favorites?${qs.toString()}`, {
-          method: "GET",
-          credentials: "include",
-          headers: { "cache-control": "no-store" },
-        });
-
-        if (!res.ok) return;
-        const payload = (await res.json()) as UserFavoritesResponse;
-        const next = Array.isArray(payload.products) ? payload.products : [];
-        if (cancelled || next.length === 0) return;
-        setFavorites(next);
-        setFavoritesMode("user");
-      } catch {
-        // Baseline anon stays when no session or fetch fails.
-      }
-    };
-
-    void load();
-    return () => { cancelled = true; };
-  }, [excludeParam]);
-
-  const snapshotDate = useMemo(() => {
-    const first = dailyTrendingProducts.find((p) => p.snapshotDate);
-    return formatSnapshot(first?.snapshotDate ?? null);
-  }, [dailyTrendingProducts]);
-
-  // Determine if we have any content to show
-  const hasContent = priceDropProducts.length > 0 || favorites.length > 0 || dailyTrendingProducts.length > 0;
-  if (!hasContent) return null;
+  const snapshotDate =
+    currentTab.key === "momentum" ? formatSnapshot(currentTab.snapshotDate) : null;
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-2">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Para ti</p>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Para ti hoy</p>
           <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
-            {activeTab === "price_drops" && "Bajaron de precio esta semana"}
-            {activeTab === "favorites" && (favoritesMode === "user" ? "Tus favoritos recientes" : "Lo más guardado por la comunidad")}
-            {activeTab === "trending" && "Lo que más está gustando hoy"}
+            {currentTab.heading}
           </h2>
-          {activeTab === "trending" && snapshotDate ? (
+          <p className="max-w-2xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
+            {currentTab.description}
+          </p>
+          {snapshotDate ? (
             <p className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
               Actualizado {snapshotDate}
             </p>
@@ -199,53 +162,46 @@ export default function SmartRails({
         </div>
       </div>
 
-      {/* Tab bar */}
       <div className="home-hide-scroll flex gap-2 overflow-x-auto pb-1">
-        {TAB_CONFIG.map((tab) => {
-          const count =
-            tab.key === "price_drops"
-              ? priceDropProducts.length
-              : tab.key === "favorites"
-                ? favorites.length
-                : dailyTrendingProducts.length;
-          if (count === 0) return null;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setActiveTab(tab.key)}
-              className={`shrink-0 rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.2em] transition ${
-                activeTab === tab.key
-                  ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
-                  : "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink-soft)] hover:border-[color:var(--oda-ink-soft)]"
-              }`}
-            >
-              {tab.label} ({count})
-            </button>
-          );
-        })}
+        {availableTabs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={`shrink-0 rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.2em] transition ${
+              currentTab.key === tab.key
+                ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                : "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink-soft)] hover:border-[color:var(--oda-ink-soft)]"
+            }`}
+          >
+            {tab.label} ({tab.products.length})
+          </button>
+        ))}
       </div>
 
-      {/* Tab content */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-        {activeTab === "price_drops" &&
-          priceDropProducts.slice(0, 8).map((product) => (
+        {currentTab.kind === "price_drop" &&
+          currentTab.products.slice(0, 8).map((product) => (
             <PriceDropCard key={product.id} product={product} />
           ))}
 
-        {activeTab === "favorites" &&
-          favorites.slice(0, 8).map((product) => (
+        {currentTab.kind === "product" &&
+          currentTab.products.slice(0, 8).map((product) => (
             <HomeProductCard
-              key={`fav-${product.id}`}
+              key={product.id}
               product={product}
-              surface={favoritesMode === "user" ? "home_smart_rails_favorites_user" : "home_smart_rails_favorites_top"}
+              surface="home_utility_new_with_stock"
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 24vw"
             />
           ))}
 
-        {activeTab === "trending" &&
-          dailyTrendingProducts.slice(0, 8).map((product) => (
-            <TrendingCard key={`trending-${product.id}`} product={product} />
+        {currentTab.kind === "momentum" &&
+          currentTab.products.slice(0, 8).map((product) => (
+            <MomentumCard
+              key={product.id}
+              product={product}
+              behaviorQualified={currentTab.behaviorQualified}
+            />
           ))}
       </div>
     </div>

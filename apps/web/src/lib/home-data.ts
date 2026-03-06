@@ -12,11 +12,18 @@ import type {
   BrandLogo,
   CategoryHighlight,
   ColorCombo,
+  HomeActionableColorEntry,
+  HomeBrandFeature,
   HomeCoverageStats,
   HomeConfigMap,
   HomeHeroSlide,
+  HomePagePayload,
   HomePriceDropCardData,
+  HomeQuickDiscoveryCard,
+  HomeStyleSpotlight,
+  HomeTrustStrip,
   HomeTrendingDailyCardData,
+  HomeUtilityTab,
   MegaMenuData,
   ProductCard,
   StyleGroup,
@@ -38,15 +45,22 @@ import {
 import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
 
 export type {
+  HomeActionableColorEntry,
+  HomeBrandFeature,
   BrandLogo,
   CategoryHighlight,
   ColorCombo,
   HomeCoverageStats,
   HomeHeroSlide,
+  HomePagePayload,
   HomePriceDropCardData,
+  HomeQuickDiscoveryCard,
+  HomeStyleSpotlight,
+  HomeTrustStrip,
   HomeTrendingDailyCardData,
   HomeProductCardData,
   HomeConfigMap,
+  HomeUtilityTab,
   MegaMenuData,
   MenuCategory,
   MenuSubcategory,
@@ -82,10 +96,12 @@ export const getHomeConfig = unstable_cache(
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 15;
+const HOME_CACHE_VERSION = 16;
 const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 8;
+const HOME_STYLE_SPOTLIGHT_PRODUCT_LIMIT = 4;
+const HOME_UTILITY_TAB_PRODUCT_LIMIT = 8;
 const HOME_HERO_IMAGE_POOL_LIMIT = 8;
 
 type HomePricingContext = {
@@ -146,6 +162,14 @@ function sqlIsActiveCatalogProduct() {
   `;
 }
 
+function sqlIsPublishedCatalogProduct() {
+  return Prisma.sql`
+    p."imageCoverUrl" is not null
+    and b."isActive" = true
+    and (p.status is null or lower(p.status) <> 'archived')
+  `;
+}
+
 function sqlHomeCategoryCase() {
   return Prisma.sql`
     case
@@ -199,6 +223,58 @@ export function collectUniqueProducts<T extends { id: string }>(
     if (next.length >= limit) break;
   }
   return next;
+}
+
+function clamp01(value: number | null | undefined) {
+  if (!Number.isFinite(value ?? NaN)) return 0;
+  return Math.min(Math.max(Number(value), 0), 1);
+}
+
+function formatHomeCount(value: number) {
+  return new Intl.NumberFormat("es-CO").format(Math.max(0, Math.round(value)));
+}
+
+function ratioToPct(value: number | null | undefined) {
+  return Math.round(clamp01(value) * 100);
+}
+
+function withTimeout<T>(promise: Promise<T>, fallback: T, timeoutMs = HOME_SECTION_TIMEOUT_MS): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve(fallback), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  });
+}
+
+function limitItemsPerBrand<T extends { brandName: string }>(
+  items: T[],
+  limit: number,
+  maxPerBrand: number,
+): T[] {
+  const counts = new Map<string, number>();
+  const next: T[] = [];
+  for (const item of items) {
+    const brandKey = item.brandName.trim().toLowerCase();
+    const seen = counts.get(brandKey) ?? 0;
+    if (seen >= maxPerBrand) continue;
+    counts.set(brandKey, seen + 1);
+    next.push(item);
+    if (next.length >= limit) break;
+  }
+  return next;
+}
+
+function buildCatalogHref(params: Record<string, string | null | undefined>) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (!value) continue;
+    search.set(key, value);
+  }
+  const query = search.toString();
+  return query ? `/catalogo?${query}` : "/catalogo";
 }
 
 async function getHomePricingContext(): Promise<HomePricingContext> {
@@ -1070,13 +1146,22 @@ function mapHomeProductRows(
   rows: HomeProductQueryRow[],
   pricingContext: HomePricingContext,
 ): ProductCard[] {
-  return rows.map(({ sourceCurrency, brandOverrideUsd, ...row }) => ({
-    ...row,
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    slug: row.slug ?? null,
+    imageCoverUrl: row.imageCoverUrl,
+    brandName: row.brandName,
+    brandSlug: row.brandSlug ?? null,
+    category: row.category,
+    subcategory: row.subcategory,
+    sourceUrl: row.sourceUrl,
+    realStyle: row.realStyle ?? null,
     minPrice: toCopDisplayString({
       value: row.minPrice,
       unitCop: pricingContext.displayUnitCop,
-      sourceCurrency,
-      brandOverrideUsd,
+      sourceCurrency: row.sourceCurrency,
+      brandOverrideUsd: row.brandOverrideUsd,
     }),
     currency: "COP",
   }));
@@ -2083,4 +2168,1072 @@ export async function getResilientDailyTrendingPicks(
       timeoutMs: 10_000,
     },
   ]);
+}
+
+type HomeBehaviorSignals = {
+  productClicks7d: number;
+  clickedProducts7d: number;
+  favorites30d: number;
+  favoritedProducts30d: number;
+};
+
+type QuickDiscoveryDefinition = {
+  key: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  ctaLabel: string;
+  hrefParams: Record<string, string>;
+  where: Prisma.Sql;
+};
+
+const QUICK_DISCOVERY_DEFINITIONS: QuickDiscoveryDefinition[] = [
+  {
+    key: "rebajas_reales",
+    eyebrow: "Descubrir rápido",
+    title: "Rebajas con stock",
+    description: "Piezas que bajaron de precio y todavía están disponibles para comprar hoy.",
+    ctaLabel: "Ver ahora",
+    hrefParams: { price_change: "down", in_stock: "true" },
+    where: Prisma.sql`p."priceChangeDirection" = 'down'`,
+  },
+  {
+    key: "oficina_sin_rodeo",
+    eyebrow: "Descubrir rápido",
+    title: "Oficina sin rodeo",
+    description: "Selección para trabajo y reuniones sin tener que descifrar la taxonomía.",
+    ctaLabel: "Explorar selección",
+    hrefParams: { occasion: "oficina_business_casual", in_stock: "true" },
+    where: Prisma.sql`coalesce(p."occasionTags", array[]::text[]) && array['oficina_business_casual']::text[]`,
+  },
+  {
+    key: "maleta_de_viaje",
+    eyebrow: "Descubrir rápido",
+    title: "Maleta de viaje",
+    description: "Piezas ligeras para calor, escapadas y playa con salida directa a producto.",
+    ctaLabel: "Comprar esta edición",
+    hrefParams: { occasion: "vacaciones_viaje", in_stock: "true" },
+    where: Prisma.sql`coalesce(p."occasionTags", array[]::text[]) && array['vacaciones_viaje','playa_piscina']::text[]`,
+  },
+  {
+    key: "algodon_que_resuelve",
+    eyebrow: "Descubrir rápido",
+    title: "Algodón que resuelve",
+    description: "Básicos cómodos y repetibles para el día a día, respaldados por volumen real.",
+    ctaLabel: "Ver ahora",
+    hrefParams: { material: "algodon", in_stock: "true" },
+    where: Prisma.sql`coalesce(p."materialTags", array[]::text[]) && array['algodon']::text[]`,
+  },
+  {
+    key: "accesorios_para_regalar",
+    eyebrow: "Descubrir rápido",
+    title: "Accesorios para regalar",
+    description: "Una entrada rápida a joyas y detalles con alta variedad de marcas.",
+    ctaLabel: "Explorar selección",
+    hrefParams: { category: "joyeria_y_bisuteria", in_stock: "true" },
+    where: Prisma.sql`${sqlHomeCategoryCase()} = 'joyeria_y_bisuteria'`,
+  },
+  {
+    key: "movimiento_funcional",
+    eyebrow: "Descubrir rápido",
+    title: "Movimiento funcional",
+    description: "Opciones listas para entrenar, moverte y repetir sin perder utilidad.",
+    ctaLabel: "Ver ahora",
+    hrefParams: { occasion: "deportivo_gym", in_stock: "true" },
+    where: Prisma.sql`
+      coalesce(p."occasionTags", array[]::text[]) && array['deportivo_gym','running_entrenamiento']::text[]
+      or p."stylePrimary" in ('21_gym_funcional','22_athleisure_premium')
+    `,
+  },
+];
+
+type QuickDiscoveryCandidateRow = HomeProductQueryRow & {
+  productCount: number | bigint;
+  brandCount: number | bigint;
+  priceCoverage: number | string | null;
+  inventoryRatio: number | string | null;
+  freshnessRatio: number | string | null;
+  rowRank: number | bigint;
+};
+
+function scoreQuickDiscoveryCandidate(input: {
+  brandCount: number;
+  inventoryRatio: number;
+  freshnessRatio: number;
+  priceCoverage: number;
+}) {
+  return (
+    clamp01(input.inventoryRatio) * 0.35
+    + clamp01(input.freshnessRatio) * 0.25
+    + clamp01(input.brandCount / 28) * 0.2
+    + clamp01(input.priceCoverage) * 0.2
+  );
+}
+
+async function getHomeBehaviorSignals(): Promise<HomeBehaviorSignals> {
+  const cached = unstable_cache(
+    async () => {
+      const rows = await prisma.$queryRaw<
+        Array<{
+          productClicks7d: number | bigint;
+          clickedProducts7d: number | bigint;
+          favorites30d: number | bigint;
+          favoritedProducts30d: number | bigint;
+        }>
+      >(Prisma.sql`
+        with click_stats as (
+          select
+            count(*)::bigint as "productClicks7d",
+            count(distinct ee."productId")::bigint as "clickedProducts7d"
+          from "experience_events" ee
+          where ee.type = 'product_click'
+            and ee."productId" is not null
+            and ee."createdAt" >= (now() - interval '7 days')
+        ),
+        favorite_stats as (
+          select
+            count(*)::bigint as "favorites30d",
+            count(distinct uf."productId")::bigint as "favoritedProducts30d"
+          from "user_favorites" uf
+          where uf."createdAt" >= (now() - interval '30 days')
+        )
+        select
+          cs."productClicks7d",
+          cs."clickedProducts7d",
+          fs."favorites30d",
+          fs."favoritedProducts30d"
+        from click_stats cs
+        cross join favorite_stats fs
+      `);
+
+      const row = rows[0];
+      return {
+        productClicks7d: Number(row?.productClicks7d ?? 0),
+        clickedProducts7d: Number(row?.clickedProducts7d ?? 0),
+        favorites30d: Number(row?.favorites30d ?? 0),
+        favoritedProducts30d: Number(row?.favoritedProducts30d ?? 0),
+      };
+    },
+    [`home-v${HOME_CACHE_VERSION}-behavior-signals`],
+    { revalidate: 60 * 15, tags: [CATALOG_CACHE_TAG] },
+  );
+
+  return cached();
+}
+
+async function getQuickDiscoveryCandidate(
+  definition: QuickDiscoveryDefinition,
+  seed: number,
+  excludeIds: string[] = [],
+): Promise<(HomeQuickDiscoveryCard & { score: number }) | null> {
+  const cached = unstable_cache(
+    async () => {
+      const pricingContext = await getHomePricingContext();
+      const rows = await prisma.$queryRaw<QuickDiscoveryCandidateRow[]>(
+        Prisma.sql`
+          with matched as (
+            select
+              p.id,
+              p.name,
+              p."imageCoverUrl",
+              b.name as "brandName",
+              b.slug as "brandSlug",
+              p.slug,
+              p.category,
+              p.subcategory,
+              p."sourceUrl",
+              coalesce(nullif(p.real_style, ''), nullif(p."stylePrimary", '')) as "realStyle",
+              case
+                when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
+                else null
+              end as "minPrice",
+              p.currency as "sourceCurrency",
+              (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
+              p."brandId" as brand_id,
+              p."updatedAt" as updated_at,
+              p."hasInStock" as has_stock
+            from products p
+            join brands b on b.id = p."brandId"
+            where ${sqlIsPublishedCatalogProduct()}
+              and (${definition.where})
+              ${sqlExcludeProductIds(excludeIds)}
+          ),
+          stats as (
+            select
+              count(*)::int as "productCount",
+              count(distinct brand_id)::int as "brandCount",
+              avg(case when "minPrice" is not null then 1 else 0 end)::numeric as "priceCoverage",
+              avg(case when has_stock then 1 else 0 end)::numeric as "inventoryRatio",
+              avg(case when updated_at >= (now() - interval '45 days') then 1 else 0 end)::numeric as "freshnessRatio"
+            from matched
+          ),
+          ranked as (
+            select
+              m.*,
+              row_number() over (
+                order by
+                  case when m.has_stock then 0 else 1 end asc,
+                  case when m."minPrice" is null then 1 else 0 end asc,
+                  m.updated_at desc nulls last,
+                  hashtext(m.id::text || ${seed}::text)
+              ) as "rowRank"
+            from matched m
+          )
+          select
+            r.id,
+            r.name,
+            r.slug,
+            r."imageCoverUrl",
+            r."brandName",
+            r."brandSlug",
+            r.category,
+            r.subcategory,
+            r."sourceUrl",
+            r."realStyle",
+            r."minPrice",
+            r."sourceCurrency",
+            r."brandOverrideUsd",
+            s."productCount",
+            s."brandCount",
+            s."priceCoverage",
+            s."inventoryRatio",
+            s."freshnessRatio",
+            r."rowRank",
+            'COP' as currency
+          from ranked r
+          cross join stats s
+          where s."productCount" >= 500
+          order by r."rowRank" asc
+          limit 3
+        `,
+      );
+
+      if (rows.length === 0) return null;
+      const productCount = Number(rows[0]?.productCount ?? 0);
+      const brandCount = Number(rows[0]?.brandCount ?? 0);
+      if (productCount < 500 || brandCount < 3) return null;
+
+      const priceCoverage = clamp01(toFiniteNumber(rows[0]?.priceCoverage));
+      const inventoryRatio = clamp01(toFiniteNumber(rows[0]?.inventoryRatio));
+      const freshnessRatio = clamp01(toFiniteNumber(rows[0]?.freshnessRatio));
+      if (priceCoverage < 0.55) return null;
+
+      const products = mapHomeProductRows(rows, pricingContext);
+      return {
+        key: definition.key,
+        eyebrow: definition.eyebrow,
+        title: definition.title,
+        description: definition.description,
+        href: buildCatalogHref(definition.hrefParams),
+        ctaLabel: definition.ctaLabel,
+        productCount,
+        brandCount,
+        products,
+        score: scoreQuickDiscoveryCandidate({
+          brandCount,
+          inventoryRatio,
+          freshnessRatio,
+          priceCoverage,
+        }),
+      };
+    },
+    [`home-v${HOME_CACHE_VERSION}-quick-discovery-${definition.key}-${seed}-${excludeIds.join(",")}`],
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
+  );
+
+  return cached();
+}
+
+export async function getQuickDiscoveryCards(
+  seed: number,
+  options?: {
+    limit?: number;
+    excludeIds?: string[];
+  },
+): Promise<HomeQuickDiscoveryCard[]> {
+  const limit = options?.limit ?? 4;
+  const excludeIds = options?.excludeIds ?? [];
+  const cards = await Promise.all(
+    QUICK_DISCOVERY_DEFINITIONS.map((definition) =>
+      getQuickDiscoveryCandidate(definition, seed, excludeIds),
+    ),
+  );
+
+  return cards
+    .filter((card): card is HomeQuickDiscoveryCard & { score: number } => Boolean(card))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((card) => {
+      const next = { ...card } as HomeQuickDiscoveryCard & { score?: number };
+      delete next.score;
+      return next;
+    });
+}
+
+type StyleSpotlightQueryRow = HomeProductQueryRow & {
+  styleKey: string;
+  styleOrder: number | bigint;
+  productCount: number | bigint;
+  brandCount: number | bigint;
+  priceCoverage: number | string | null;
+  availabilityRatio: number | string | null;
+  freshnessRatio: number | string | null;
+  rowRank: number | bigint;
+};
+
+export async function getStyleSpotlights(
+  seed: number,
+  limit = 8,
+  config?: HomeConfigMap,
+): Promise<HomeStyleSpotlight[]> {
+  const configuredStylesRaw = config?.["section.curated_looks.real_styles"];
+  let configuredStyles: string[] = [];
+  if (configuredStylesRaw) {
+    try {
+      configuredStyles = JSON.parse(configuredStylesRaw);
+      if (!Array.isArray(configuredStyles)) configuredStyles = [];
+    } catch {
+      configuredStyles = [];
+    }
+  }
+
+  const cacheKey = `home-v${HOME_CACHE_VERSION}-style-spotlights-${seed}-${limit}-${configuredStyles.join(",")}`;
+  const cached = unstable_cache(
+    async () => {
+      const [pricingContext, taxonomy] = await Promise.all([
+        getHomePricingContext(),
+        getPublishedTaxonomyOptions(),
+      ]);
+      const rows = await prisma.$queryRaw<StyleSpotlightQueryRow[]>(
+        Prisma.sql`
+          with style_base as (
+            select
+              coalesce(nullif(p.real_style, ''), nullif(p."stylePrimary", '')) as style_key,
+              p.id,
+              p.name,
+              p.slug,
+              p."imageCoverUrl",
+              b.name as "brandName",
+              b.slug as "brandSlug",
+              p.category,
+              p.subcategory,
+              p."sourceUrl",
+              case
+                when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
+                else null
+              end as "minPrice",
+              p.currency as "sourceCurrency",
+              (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
+              p."brandId" as brand_id,
+              p."updatedAt" as updated_at,
+              p."hasInStock" as has_stock,
+              case when p.real_style is not null and p.real_style <> '' then 1 else 0 end as real_style_priority,
+              p."editorialTopPickRank",
+              p."editorialFavoriteRank",
+              p."random_sort_key"
+            from products p
+            join brands b on b.id = p."brandId"
+            where ${sqlIsPublishedCatalogProduct()}
+              and coalesce(nullif(p.real_style, ''), nullif(p."stylePrimary", '')) is not null
+          ),
+          style_stats as (
+            select
+              style_key,
+              count(*)::int as "productCount",
+              count(distinct brand_id)::int as "brandCount",
+              avg(case when "minPrice" is not null then 1 else 0 end)::numeric as "priceCoverage",
+              avg(case when has_stock then 1 else 0 end)::numeric as "availabilityRatio",
+              avg(case when updated_at >= (now() - interval '45 days') then 1 else 0 end)::numeric as "freshnessRatio"
+            from style_base
+            group by style_key
+            having count(*) >= 60
+              and count(distinct brand_id) >= 3
+              and avg(case when "minPrice" is not null then 1 else 0 end) >= 0.7
+          ),
+          ranked_styles as (
+            select
+              ss.style_key,
+              ss."productCount",
+              ss."brandCount",
+              ss."priceCoverage",
+              ss."availabilityRatio",
+              ss."freshnessRatio",
+              row_number() over (
+                order by
+                  ${
+                    configuredStyles.length > 0
+                      ? Prisma.sql`case when ss.style_key = any(array[${Prisma.join(configuredStyles)}]::text[]) then 0 else 1 end asc,`
+                      : Prisma.empty
+                  }
+                  (
+                    (coalesce(ss."freshnessRatio", 0) * 0.35) +
+                    (least(ss."brandCount"::numeric / 18.0, 1) * 0.30) +
+                    (coalesce(ss."availabilityRatio", 0) * 0.20) +
+                    (coalesce(ss."priceCoverage", 0) * 0.15)
+                  ) desc,
+                  ss."productCount" desc,
+                  ss.style_key asc
+              ) as style_order
+            from style_stats ss
+          ),
+          ranked_products as (
+            select
+              rs.style_key as "styleKey",
+              rs.style_order as "styleOrder",
+              rs."productCount",
+              rs."brandCount",
+              rs."priceCoverage",
+              rs."availabilityRatio",
+              rs."freshnessRatio",
+              sb.id,
+              sb.name,
+              sb.slug,
+              sb."imageCoverUrl",
+              sb."brandName",
+              sb."brandSlug",
+              sb.category,
+              sb.subcategory,
+              sb."sourceUrl",
+              sb.style_key as "realStyle",
+              sb."minPrice",
+              sb."sourceCurrency",
+              sb."brandOverrideUsd",
+              row_number() over (
+                partition by rs.style_key
+                order by
+                  sb.real_style_priority desc,
+                  case when sb.has_stock then 0 else 1 end asc,
+                  case when sb."editorialTopPickRank" is not null or sb."editorialFavoriteRank" is not null then 0 else 1 end asc,
+                  coalesce(sb."editorialTopPickRank", 999999) asc,
+                  coalesce(sb."editorialFavoriteRank", 999999) asc,
+                  sb.updated_at desc nulls last,
+                  ((sb."random_sort_key" * 1000000 + ${seed + 913})::bigint % 1000000)
+              ) as "rowRank"
+            from ranked_styles rs
+            join style_base sb on sb.style_key = rs.style_key
+            where rs.style_order <= ${limit}
+          )
+          select
+            rp."styleKey",
+            rp."styleOrder",
+            rp."productCount",
+            rp."brandCount",
+            rp."priceCoverage",
+            rp."availabilityRatio",
+            rp."freshnessRatio",
+            rp.id,
+            rp.name,
+            rp.slug,
+            rp."imageCoverUrl",
+            rp."brandName",
+            rp."brandSlug",
+            rp.category,
+            rp.subcategory,
+            rp."sourceUrl",
+            rp."realStyle",
+            rp."minPrice",
+            rp."sourceCurrency",
+            rp."brandOverrideUsd",
+            rp."rowRank",
+            'COP' as currency
+          from ranked_products rp
+          where rp."rowRank" <= ${HOME_STYLE_SPOTLIGHT_PRODUCT_LIMIT}
+          order by rp."styleOrder" asc, rp."rowRank" asc
+        `,
+      );
+
+      const grouped = new Map<
+        string,
+        {
+          styleOrder: number;
+          productCount: number;
+          brandCount: number;
+          priceCoverage: number;
+          availabilityRatio: number;
+          freshnessRatio: number;
+          products: ProductCard[];
+        }
+      >();
+
+      for (const row of rows) {
+        const styleKey = row.styleKey;
+        const product = mapHomeProductRows([row], pricingContext)[0];
+        if (!product) continue;
+
+        const bucket = grouped.get(styleKey);
+        if (!bucket) {
+          grouped.set(styleKey, {
+            styleOrder: Number(row.styleOrder ?? 0),
+            productCount: Number(row.productCount ?? 0),
+            brandCount: Number(row.brandCount ?? 0),
+            priceCoverage: clamp01(toFiniteNumber(row.priceCoverage)),
+            availabilityRatio: clamp01(toFiniteNumber(row.availabilityRatio)),
+            freshnessRatio: clamp01(toFiniteNumber(row.freshnessRatio)),
+            products: [{ ...product, realStyle: styleKey }],
+          });
+          continue;
+        }
+        bucket.products.push({ ...product, realStyle: styleKey });
+      }
+
+      return Array.from(grouped.entries())
+        .sort((a, b) => a[1].styleOrder - b[1].styleOrder)
+        .map(([styleKey, bucket]) => ({
+          styleKey,
+          label:
+            REAL_STYLE_LABELS[styleKey as RealStyleKey]
+            ?? taxonomy.styleProfileLabels[styleKey]
+            ?? labelize(styleKey),
+          href: buildCatalogHref({ style: styleKey, in_stock: "true" }),
+          description: `${formatHomeCount(bucket.productCount)} productos con ${ratioToPct(bucket.priceCoverage)}% de precio visible y mezcla real de marcas.`,
+          productCount: bucket.productCount,
+          brandCount: bucket.brandCount,
+          priceCoverage: bucket.priceCoverage,
+          availabilityRatio: bucket.availabilityRatio,
+          freshnessRatio: bucket.freshnessRatio,
+          products: bucket.products.slice(0, HOME_STYLE_SPOTLIGHT_PRODUCT_LIMIT),
+        }));
+    },
+    [cacheKey],
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
+  );
+
+  return cached();
+}
+
+type HomeActionableColorQueryRow = {
+  colorId: string;
+  family: string;
+  label: string;
+  hex: string;
+  productCount: number | bigint;
+  brandCount: number | bigint;
+  priceCoverage: number | string | null;
+  freshnessRatio: number | string | null;
+  imageCoverUrl: string;
+};
+
+export async function getActionableColorEntries(
+  seed: number,
+  limit = 4,
+): Promise<HomeActionableColorEntry[]> {
+  const cached = unstable_cache(
+    async () => {
+      const rows = await prisma.$queryRaw<HomeActionableColorQueryRow[]>(
+        Prisma.sql`
+          with color_products as (
+            select distinct on (sc.id, p.id)
+              sc.id as "colorId",
+              sc.family,
+              sc.name as label,
+              sc.hex,
+              p.id as product_id,
+              p."brandId" as brand_id,
+              p."imageCoverUrl",
+              p."updatedAt" as updated_at,
+              case
+                when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then 1
+                else 0
+              end as has_price
+            from standard_colors sc
+            join variants v on v."standardColorId" = sc.id
+            join products p on p.id = v."productId"
+            join brands b on b.id = p."brandId"
+            where ${sqlIsPublishedCatalogProduct()}
+              and v."standardColorId" is not null
+            order by sc.id, p.id, p."updatedAt" desc nulls last
+          ),
+          color_stats as (
+            select
+              cp."colorId",
+              count(*)::int as "productCount",
+              count(distinct cp.brand_id)::int as "brandCount",
+              avg(cp.has_price)::numeric as "priceCoverage",
+              avg(case when cp.updated_at >= (now() - interval '45 days') then 1 else 0 end)::numeric as "freshnessRatio"
+            from color_products cp
+            group by cp."colorId"
+            having count(*) >= 500 and count(distinct cp.brand_id) >= 5
+          ),
+          ranked_colors as (
+            select
+              cs."colorId",
+              row_number() over (
+                order by
+                  (
+                    least(cs."productCount"::numeric / 2200.0, 1) * 0.45 +
+                    least(cs."brandCount"::numeric / 30.0, 1) * 0.25 +
+                    coalesce(cs."priceCoverage", 0) * 0.15 +
+                    coalesce(cs."freshnessRatio", 0) * 0.15
+                  ) desc,
+                  cs."productCount" desc,
+                  cs."colorId" asc
+              ) as color_order
+            from color_stats cs
+          ),
+          hero as (
+            select
+              cp."colorId",
+              cp.family,
+              cp.label,
+              cp.hex,
+              cp."imageCoverUrl",
+              row_number() over (
+                partition by cp."colorId"
+                order by cp.updated_at desc nulls last, hashtext(cp.product_id::text || ${seed}::text)
+              ) as hero_rank
+            from color_products cp
+            join ranked_colors rc on rc."colorId" = cp."colorId"
+            where rc.color_order <= ${limit}
+          )
+          select
+            h."colorId",
+            h.family,
+            h.label,
+            h.hex,
+            cs."productCount",
+            cs."brandCount",
+            cs."priceCoverage",
+            cs."freshnessRatio",
+            h."imageCoverUrl",
+            rc.color_order
+          from hero h
+          join color_stats cs on cs."colorId" = h."colorId"
+          join ranked_colors rc on rc."colorId" = h."colorId"
+          where h.hero_rank = 1
+          order by rc.color_order asc
+        `,
+      );
+
+      return rows.map((row) => ({
+        colorId: row.colorId,
+        family: row.family,
+        label: row.label,
+        hex: row.hex,
+        productCount: Number(row.productCount ?? 0),
+        brandCount: Number(row.brandCount ?? 0),
+        href: buildCatalogHref({ color: row.colorId, in_stock: "true" }),
+        imageCoverUrl: row.imageCoverUrl,
+      }));
+    },
+    [`home-v${HOME_CACHE_VERSION}-actionable-colors-${seed}-${limit}`],
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
+  );
+
+  return cached();
+}
+
+type BrandFeatureQueryRow = {
+  id: string;
+  slug: string;
+  name: string;
+  logoUrl: string;
+  heroImageUrl: string | null;
+  productCount: number | bigint;
+  categoryCount: number | bigint;
+  priceCoverage: number | string | null;
+  dropShare: number | string | null;
+  freshnessRatio: number | string | null;
+};
+
+type HomeBrandFeatureSet = {
+  spotlight: HomeBrandFeature | null;
+  features: HomeBrandFeature[];
+};
+
+function toBrandFeature(row: BrandFeatureQueryRow, badge: string, blurb: string): HomeBrandFeature {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    logoUrl: row.logoUrl,
+    heroImageUrl: row.heroImageUrl ?? null,
+    productCount: Number(row.productCount ?? 0),
+    categoryCount: Number(row.categoryCount ?? 0),
+    badge,
+    blurb,
+  };
+}
+
+async function getHomeBrandFeatures(seed: number, limit = 3): Promise<HomeBrandFeatureSet> {
+  const cached = unstable_cache(
+    async () => {
+      const rows = await prisma.$queryRaw<BrandFeatureQueryRow[]>(
+        Prisma.sql`
+          with brand_base as (
+            select
+              b.id,
+              b.slug,
+              b.name,
+              b."logoUrl",
+              p.id as product_id,
+              p.category,
+              p."imageCoverUrl",
+              p."updatedAt" as updated_at,
+              case
+                when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then 1
+                else 0
+              end as has_price,
+              case when p."priceChangeDirection" = 'down' then 1 else 0 end as has_drop
+            from brands b
+            join products p on p."brandId" = b.id
+            where ${sqlIsPublishedCatalogProduct()}
+              and b."logoUrl" is not null
+              and trim(b."logoUrl") <> ''
+              and b.slug is not null
+              and b.slug <> ''
+          ),
+          brand_stats as (
+            select
+              bb.id,
+              bb.slug,
+              bb.name,
+              bb."logoUrl",
+              count(distinct bb.product_id)::int as "productCount",
+              count(distinct case when bb.category is not null and bb.category <> '' then bb.category end)::int as "categoryCount",
+              avg(bb.has_price)::numeric as "priceCoverage",
+              avg(bb.has_drop)::numeric as "dropShare",
+              avg(case when bb.updated_at >= (now() - interval '45 days') then 1 else 0 end)::numeric as "freshnessRatio"
+            from brand_base bb
+            group by bb.id, bb.slug, bb.name, bb."logoUrl"
+            having count(distinct bb.product_id) >= 30
+          ),
+          brand_hero as (
+            select
+              bb.id,
+              bb."imageCoverUrl" as "heroImageUrl",
+              row_number() over (
+                partition by bb.id
+                order by bb.updated_at desc nulls last, hashtext(bb.product_id::text || ${seed}::text)
+              ) as hero_rank
+            from brand_base bb
+          )
+          select
+            bs.id,
+            bs.slug,
+            bs.name,
+            bs."logoUrl",
+            bh."heroImageUrl",
+            bs."productCount",
+            bs."categoryCount",
+            bs."priceCoverage",
+            bs."dropShare",
+            bs."freshnessRatio"
+          from brand_stats bs
+          left join brand_hero bh on bh.id = bs.id and bh.hero_rank = 1
+        `,
+      );
+
+      if (rows.length === 0) {
+        return { spotlight: null, features: [] };
+      }
+
+      const spotlightSorted = [...rows].sort((a, b) => {
+        const scoreA =
+          clamp01(Number(a.productCount ?? 0) / 500) * 0.35
+          + clamp01(Number(a.categoryCount ?? 0) / 10) * 0.25
+          + clamp01(toFiniteNumber(a.priceCoverage)) * 0.2
+          + clamp01(toFiniteNumber(a.freshnessRatio)) * 0.2;
+        const scoreB =
+          clamp01(Number(b.productCount ?? 0) / 500) * 0.35
+          + clamp01(Number(b.categoryCount ?? 0) / 10) * 0.25
+          + clamp01(toFiniteNumber(b.priceCoverage)) * 0.2
+          + clamp01(toFiniteNumber(b.freshnessRatio)) * 0.2;
+        return scoreB - scoreA;
+      });
+
+      const spotlightRow = spotlightSorted[0] ?? null;
+      const spotlight = spotlightRow
+        ? toBrandFeature(
+            spotlightRow,
+            "Marca destacada",
+            `${formatHomeCount(Number(spotlightRow.productCount ?? 0))} productos y ${formatHomeCount(Number(spotlightRow.categoryCount ?? 0))} categorías activas.`,
+          )
+        : null;
+
+      const used = new Set<string>(spotlightRow ? [spotlightRow.id] : []);
+      const features: HomeBrandFeature[] = [];
+      const pick = (
+        source: BrandFeatureQueryRow[],
+        badge: string,
+        blurbFactory: (row: BrandFeatureQueryRow) => string,
+      ) => {
+        const row = source.find((candidate) => !used.has(candidate.id));
+        if (!row) return;
+        used.add(row.id);
+        features.push(toBrandFeature(row, badge, blurbFactory(row)));
+      };
+
+      pick(
+        [...rows].sort((a, b) => clamp01(toFiniteNumber(b.dropShare)) - clamp01(toFiniteNumber(a.dropShare))),
+        "En rebaja",
+        (row) => `${Math.round(clamp01(toFiniteNumber(row.dropShare)) * 100)}% del mix reciente con descuentos activos.`,
+      );
+      pick(
+        [...rows].sort((a, b) => Number(b.categoryCount ?? 0) - Number(a.categoryCount ?? 0)),
+        "Más variedad",
+        (row) => `${formatHomeCount(Number(row.categoryCount ?? 0))} categorías para entrar por intención y no por logo.`,
+      );
+      pick(
+        [...rows].sort((a, b) => clamp01(toFiniteNumber(b.priceCoverage)) - clamp01(toFiniteNumber(a.priceCoverage))),
+        "Cobertura fuerte",
+        (row) => `${Math.round(clamp01(toFiniteNumber(row.priceCoverage)) * 100)}% de precio visible sobre el catálogo elegible.`,
+      );
+      pick(
+        [...rows].sort((a, b) => clamp01(toFiniteNumber(b.freshnessRatio)) - clamp01(toFiniteNumber(a.freshnessRatio))),
+        "Nueva energía",
+        (row) => `${Math.round(clamp01(toFiniteNumber(row.freshnessRatio)) * 100)}% del catálogo actualizado en las últimas semanas.`,
+      );
+
+      return {
+        spotlight,
+        features: features.slice(0, limit),
+      };
+    },
+    [`home-v${HOME_CACHE_VERSION}-brand-features-${seed}-${limit}`],
+    { revalidate: HOME_REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
+  );
+
+  return cached();
+}
+
+function buildHomeTrustStrip(stats: HomeCoverageStats | null): HomeTrustStrip {
+  const safeStats: HomeCoverageStats = {
+    productCount: stats?.productCount ?? 0,
+    brandCount: stats?.brandCount ?? 0,
+    categoryCount: stats?.categoryCount ?? 0,
+    lastUpdatedAt: stats?.lastUpdatedAt ?? null,
+  };
+
+  const lastUpdated = safeStats.lastUpdatedAt
+    ? new Intl.DateTimeFormat("es-CO", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }).format(new Date(safeStats.lastUpdatedAt))
+    : null;
+
+  return {
+    eyebrow: "Confianza ODA",
+    badge: lastUpdated ? `Actualizado ${lastUpdated}` : "Catálogo vivo",
+    items: [
+      {
+        label: "Productos activos",
+        value: formatHomeCount(safeStats.productCount),
+        hint: "Con salida a tienda oficial",
+      },
+      {
+        label: "Marcas colombianas",
+        value: formatHomeCount(safeStats.brandCount),
+        hint: "Catálogo agregado en un solo lugar",
+      },
+      {
+        label: "Categorías navegables",
+        value: formatHomeCount(safeStats.categoryCount),
+        hint: "Exploración útil antes que decoración",
+      },
+    ],
+  };
+}
+
+function normalizeUtilityDefaultTab(value: string | null | undefined): HomeUtilityTab["key"] {
+  if (value === "favorites" || value === "new_with_stock") return "new_with_stock";
+  if (value === "trending" || value === "momentum") return "momentum";
+  return "price_drops";
+}
+
+function toMomentumCards(products: ProductCard[]): HomeTrendingDailyCardData[] {
+  return products.map((product) => ({
+    ...product,
+    clickCount: 0,
+    snapshotDate: null,
+  }));
+}
+
+export async function getHomePagePayload(input: {
+  seed: number;
+  heroIds?: string[];
+  config?: HomeConfigMap;
+}): Promise<HomePagePayload> {
+  const { seed, heroIds = [], config } = input;
+  const registry = createHomeSelectionRegistry(heroIds);
+  const newArrivalsLimit = getHomeConfigInt(config ?? {}, "section.new_arrivals.limit");
+
+  const [
+    categoryHighlightsResult,
+    coverageStats,
+    newArrivalsResult,
+    priceDropResult,
+    dailyTrendingResult,
+    mostFavoritedRaw,
+    quickDiscoveryRaw,
+    styleSpotlightsRaw,
+    actionableColorsRaw,
+    brandFeatureSet,
+    storyPoolRaw,
+    behaviorSignals,
+  ] = await Promise.all([
+    getResilientCategoryHighlights(seed, { limit: 6, preferBlob: true }),
+    withTimeout(getHomeCoverageStats(), null),
+    getResilientNewArrivals(seed, { limit: Math.max(18, newArrivalsLimit * 2) }),
+    getResilientPriceDropPicks(seed, {
+      limit: HOME_UTILITY_TAB_PRODUCT_LIMIT * 12,
+      excludeIds: Array.from(registry.usedIds),
+    }),
+    getResilientDailyTrendingPicks(seed, {
+      limit: HOME_UTILITY_TAB_PRODUCT_LIMIT * 2,
+      excludeIds: Array.from(registry.usedIds),
+    }),
+    withTimeout(
+      getMostFavoritedPicks(seed, {
+        windowDays: 30,
+        limit: HOME_UTILITY_TAB_PRODUCT_LIMIT * 2,
+        excludeIds: Array.from(registry.usedIds),
+      }),
+      [],
+    ),
+    getQuickDiscoveryCards(seed, { limit: 4, excludeIds: Array.from(registry.usedIds) }),
+    getStyleSpotlights(seed, 8, config),
+    withTimeout(getActionableColorEntries(seed, 4), []),
+    withTimeout(getHomeBrandFeatures(seed, 3), { spotlight: null, features: [] }),
+    withTimeout(getTrendingPicks(seed + 19, 24), []),
+    withTimeout(getHomeBehaviorSignals(), {
+      productClicks7d: 0,
+      clickedProducts7d: 0,
+      favorites30d: 0,
+      favoritedProducts30d: 0,
+    }),
+  ]);
+
+  const quickDiscovery = quickDiscoveryRaw
+    .map((card) => ({
+      ...card,
+      products: collectUniqueProducts(card.products, registry, 3),
+    }))
+    .filter((card) => card.products.length >= 2);
+
+  const utilityRegistry = createHomeSelectionRegistry();
+  const priceDropProducts = limitItemsPerBrand(priceDropResult.items, HOME_UTILITY_TAB_PRODUCT_LIMIT, 2);
+  const priceDropTabProducts = collectUniqueProducts(
+    priceDropProducts,
+    utilityRegistry,
+    HOME_UTILITY_TAB_PRODUCT_LIMIT,
+  );
+
+  const newWithStockPool = newArrivalsResult.items.filter((item) => item.minPrice && Number(item.minPrice) > 0);
+  const newWithStockProducts = collectUniqueProducts(
+    newWithStockPool,
+    utilityRegistry,
+    HOME_UTILITY_TAB_PRODUCT_LIMIT,
+  );
+
+  const behaviorQualified =
+    behaviorSignals.productClicks7d >= 100 && behaviorSignals.clickedProducts7d >= 60;
+  const momentumPool = behaviorQualified
+    ? dailyTrendingResult.items
+    : toMomentumCards(
+        collectUniqueProducts(
+          [
+            ...mostFavoritedRaw,
+            ...newArrivalsResult.items,
+            ...storyPoolRaw,
+          ],
+          createHomeSelectionRegistry(Array.from(utilityRegistry.usedIds)),
+          HOME_UTILITY_TAB_PRODUCT_LIMIT * 2,
+        ),
+      );
+
+  const momentumProducts = collectUniqueProducts(
+    behaviorQualified ? dailyTrendingResult.items : momentumPool,
+    utilityRegistry,
+    HOME_UTILITY_TAB_PRODUCT_LIMIT,
+  );
+  const momentumSnapshotDate = behaviorQualified
+    ? momentumProducts.find((item) => item.snapshotDate)?.snapshotDate ?? null
+    : null;
+
+  const utilityTabsBase: HomeUtilityTab[] = [
+    {
+      key: "price_drops",
+      label: "Rebajas reales",
+      heading: "Rebajas reales",
+      description: "Descuentos con mezcla de marcas, no una sola marca repitiéndose en fila.",
+      kind: "price_drop",
+      products: priceDropTabProducts,
+    },
+    {
+      key: "new_with_stock",
+      label: "Nuevos con stock",
+      heading: "Nuevos con stock",
+      description: "Lo más reciente que ya puedes comprar sin encontrar producto agotado.",
+      kind: "product",
+      products: newWithStockProducts,
+    },
+    {
+      key: "momentum",
+      label: behaviorQualified ? "Moviéndose hoy" : "Descubriendo ahora",
+      heading: behaviorQualified ? "Moviéndose hoy" : "Descubriendo ahora",
+      description: behaviorQualified
+        ? "Lectura real de movimiento reciente con suficiente señal conductual."
+        : "Mezcla útil de frescura, guardados y variedad mientras la señal social crece.",
+      kind: "momentum",
+      products: momentumProducts,
+      behaviorQualified,
+      snapshotDate: momentumSnapshotDate,
+    },
+  ];
+  const utilityTabs = utilityTabsBase.filter((tab) => tab.products.length > 0);
+  for (const tab of utilityTabs) {
+    for (const product of tab.products) {
+      if (product?.id) registry.usedIds.add(product.id);
+    }
+  }
+
+  const newArrivals = collectUniqueProducts(newArrivalsResult.items, registry, newArrivalsLimit);
+
+  const styleSpotlights = styleSpotlightsRaw
+    .map((spotlight) => ({
+      ...spotlight,
+      products: collectUniqueProducts(spotlight.products, registry, HOME_STYLE_SPOTLIGHT_PRODUCT_LIMIT),
+    }))
+    .filter((spotlight) => spotlight.products.length > 0);
+
+  const storyProduct =
+    collectUniqueProducts(
+      [...storyPoolRaw, ...mostFavoritedRaw, ...newArrivalsResult.items],
+      registry,
+      1,
+    )[0]
+    ?? null;
+
+  const criticalSections = {
+    quickDiscovery: quickDiscovery.length,
+    utilityTabs: utilityTabs.length,
+    newArrivals: newArrivals.length,
+  };
+
+  if ((coverageStats?.productCount ?? 0) > 0 && Object.values(criticalSections).some((count) => count === 0)) {
+    console.error("home.guard.redesign_core_empty", {
+      seed,
+      coverage: coverageStats?.productCount ?? 0,
+      criticalSections,
+    });
+    throw new Error("HOME_REDESIGN_CORE_EMPTY");
+  }
+
+  return {
+    quickDiscovery,
+    utilityTabs,
+    defaultUtilityTab: normalizeUtilityDefaultTab(
+      config?.["section.smart_rails.default_tab"] ?? HOME_CONFIG_DEFAULTS["section.smart_rails.default_tab"],
+    ),
+    newArrivals,
+    categories: categoryHighlightsResult.items.slice(0, 6),
+    colors: actionableColorsRaw,
+    brandSpotlight: brandFeatureSet.spotlight,
+    brandFeatures: brandFeatureSet.features,
+    styleSpotlights,
+    trustStrip: buildHomeTrustStrip(coverageStats),
+    storyProduct,
+    coverageStats,
+  };
 }

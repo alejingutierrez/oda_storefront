@@ -4,9 +4,9 @@ export type HomeConfigMap = Record<string, string>;
 
 export const HOME_CONFIG_DEFAULTS: Record<string, string> = {
   "hero.eyebrow": "Moda colombiana para ti",
-  "hero.title": "Encuentra tu próximo look colombiano",
+  "hero.title": "Encuentra producto colombiano sin perder tiempo",
   "hero.subtitle":
-    "Explora prendas por estilo, compara precios en segundos y compra directo en la tienda oficial.",
+    "Compara precio, stock y estilo en un solo lugar para decidir rápido y comprar directo en la tienda oficial.",
   "hero.cta_primary_label": "Descubrir productos",
   "hero.cta_primary_href": "/buscar",
   "hero.cta_secondary_label": "Ver novedades",
@@ -117,6 +117,70 @@ export type ColorCombo = {
   }>;
 };
 
+export type HomeQuickDiscoveryCard = {
+  key: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  href: string;
+  ctaLabel: string;
+  productCount: number;
+  brandCount: number;
+  products: HomeProductCardData[];
+};
+
+export type HomeUtilityTab =
+  | {
+      key: "price_drops";
+      label: string;
+      heading: string;
+      description: string;
+      kind: "price_drop";
+      products: HomePriceDropCardData[];
+    }
+  | {
+      key: "new_with_stock";
+      label: string;
+      heading: string;
+      description: string;
+      kind: "product";
+      products: HomeProductCardData[];
+    }
+  | {
+      key: "momentum";
+      label: string;
+      heading: string;
+      description: string;
+      kind: "momentum";
+      products: HomeTrendingDailyCardData[];
+      behaviorQualified: boolean;
+      snapshotDate: string | null;
+    };
+
+export type HomeStyleSpotlight = {
+  styleKey: string;
+  label: string;
+  href: string;
+  description: string;
+  productCount: number;
+  brandCount: number;
+  priceCoverage: number;
+  availabilityRatio: number;
+  freshnessRatio: number;
+  products: HomeProductCardData[];
+};
+
+export type HomeActionableColorEntry = {
+  colorId: string;
+  label: string;
+  family: string;
+  hex: string;
+  productCount: number;
+  brandCount: number;
+  href: string;
+  imageCoverUrl: string;
+};
+
 export type BrandLogo = {
   id: string;
   slug: string;
@@ -127,9 +191,46 @@ export type BrandLogo = {
   heroImageUrl: string | null;
 };
 
+export type HomeBrandFeature = {
+  id: string;
+  slug: string;
+  name: string;
+  logoUrl: string;
+  heroImageUrl: string | null;
+  productCount: number;
+  categoryCount: number;
+  badge: string;
+  blurb: string;
+};
+
 export type HomeCoverageStats = {
   productCount: number;
   brandCount: number;
   categoryCount: number;
   lastUpdatedAt: string | null;
+};
+
+export type HomeTrustStrip = {
+  eyebrow: string;
+  badge: string;
+  items: Array<{
+    label: string;
+    value: string;
+    hint?: string;
+  }>;
+};
+
+export type HomePagePayload = {
+  quickDiscovery: HomeQuickDiscoveryCard[];
+  utilityTabs: HomeUtilityTab[];
+  defaultUtilityTab: string;
+  newArrivals: HomeProductCardData[];
+  categories: CategoryHighlight[];
+  colors: HomeActionableColorEntry[];
+  brandSpotlight: HomeBrandFeature | null;
+  brandFeatures: HomeBrandFeature[];
+  styleSpotlights: HomeStyleSpotlight[];
+  trustStrip: HomeTrustStrip;
+  storyProduct: HomeProductCardData | null;
+  coverageStats: HomeCoverageStats | null;
 };

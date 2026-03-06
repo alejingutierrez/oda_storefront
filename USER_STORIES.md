@@ -138,6 +138,33 @@ Formato por historia: contexto/rol, alcance/flujo, criterios de aceptación (CA)
 - NF: consistencia eventual <10s tras publish, compatibilidad retro (`taxonomyVersion` opcional en cliente => fallback `0`), sin regresión funcional en `/`, `/catalogo`, `/{gender}` y admin de taxonomía/curación.
 - Estado: **done (2026-03-02)**.
 
+### MC-151 Home productivo rediseñado para descubrimiento accionable
+- Historia: Como visitante anónimo del home, quiero llegar a producto útil desde el primer scroll y medio, para descubrir moda sin atravesar un muro editorial ni promesas de personalización débiles.
+- Alcance:
+  - Reordenar `/` para que la secuencia principal sea: hero funcional -> `Descubrir rápido` -> `Para ti hoy` -> `Novedades` -> `Estilos ODA` compacto -> `Categorías, color y marcas` accionable -> `trust strip` -> story.
+  - Crear compositor server-side único `getHomePagePayload()` que reúna la data principal del home y reduzca dependencias entre módulos sueltos.
+  - Agregar tipos internos del compositor: `HomeQuickDiscoveryCard`, `HomeUtilityTab`, `HomeStyleSpotlight`, `HomeActionableColorEntry`, `HomeTrustStrip` y `HomePagePayload`.
+  - Reemplazar el protagonismo editorial por bloques orientados a intención:
+    - `Descubrir rápido`: 4 entradas grandes con 3 productos cada una, derivadas de atributos reales (`occasionTags`, `materialTags`, categoría, price drop, stock), con volumen mínimo y CTA a PLP.
+    - `Para ti hoy`: tabs fijas `Rebajas reales`, `Nuevos con stock` y `Moviéndose hoy`; si la señal conductual no alcanza `>=100` clicks de producto en 7 días y `>=60` productos distintos, se renombra a `Descubriendo ahora`.
+    - `Estilos ODA`: un solo spotlight activo, fila compacta de chips y máximo `4` productos; la fuente usa `coalesce(real_style, stylePrimary)` con thresholds de elegibilidad (`>=60` productos, `>=3` marcas, `>=70%` cobertura de precio visible).
+    - `Color`: dejar de mostrar paleta decorativa y convertirla en entradas reales a listado filtrado por color estándar.
+  - Rehacer la sección mixta de exploración (`EditorialMosaic`) para que marcas y colores tengan propuesta concreta y salida a producto/listado.
+  - Reemplazar la tarjeta grande de métricas por un `trust strip` compacto.
+- CA:
+  - El primer bloque útil después del hero es `Descubrir rápido`.
+  - `Para ti hoy` no usa labels de popularidad fuerte cuando la señal conductual no cumple el umbral mínimo.
+  - `Estilos ODA` no depende exclusivamente de `real_style` y no renderiza estilos por debajo de los thresholds definidos.
+  - Cada entrada de color abre una ruta accionable de catálogo; no existe paleta decorativa sin salida.
+  - `Rebajas reales` limita repetición de marca en los primeros productos visibles.
+- Datos:
+  - `products.real_style`, `products.stylePrimary`, `products.occasionTags`, `products.materialTags`, `products.priceChangeDirection`, `products.hasInStock`, `products.minPriceCop`, `variants.standardColorId`, `standard_colors`, `experience_events`, `user_favorites`.
+- NF:
+  - Sin cambios breaking en APIs públicas.
+  - El home mantiene SSR/ISR y streaming del below-the-fold.
+  - El payload inicial del home debe poder resolver el primer bloque útil sin depender de módulos editoriales lentos.
+- Estado: **done (2026-03-06)**.
+
 ### MC-133 PLP `/catalogo`: corrección de filtro de precios (histograma + UX + performance medible)
 - Historia: Como usuario de catálogo, quiero que el filtro de precios represente productos reales, responda rápido y tenga feedback claro en desktop/mobile, para evitar resultados confusos y frustración al aplicar filtros.
 - Alcance:

@@ -372,6 +372,15 @@ Servicios sin Docker: ejecutar `web`, `worker` y `scraper` como procesos Node lo
   - Dedupe global de productos entre hero/novedades/foco/curated/price-drop/favoritos/tendencia/story mediante `HomeSelectionRegistry` + `collectUniqueProducts`.
   - Tendencia diaria soportada por snapshot interno (`HomeTrendingDaily`) y cron `POST /api/admin/home-trending/cron` (programado en `vercel.json`).
   - Robustez de imágenes/logos: `image-proxy` endurecido, fallback visual seguro para logos en `BrandMarquee`, y endpoint `GET /api/home/user-favorites` con fallback anónimo `200` (sin ruido `401` en home cacheable).
+- Home rediseñada para descubrimiento accionable (MC-151, 2026-03-06):
+  - Nueva jerarquía real de `/`: hero funcional -> `HomeQuickDiscovery` -> `SmartRails` utilitario -> `ProductCarousel` de novedades -> `StyleSpotlight` compacto -> `EditorialMosaic` accionable -> `ConversionCoverageBlock` compacto -> bloque story.
+  - Nuevo compositor server `getHomePagePayload()` en `src/lib/home-data.ts` para reunir el payload principal de home en una sola resolución y evitar módulos desconectados.
+  - Tipos internos nuevos para la composición: `HomeQuickDiscoveryCard`, `HomeUtilityTab`, `HomeStyleSpotlight`, `HomeActionableColorEntry`, `HomeTrustStrip` y `HomePagePayload`.
+  - `Descubrir rápido` arma 4 accesos anónimos-first desde señales de producto (`occasionTags`, `materialTags`, categoría, precio en baja, stock) con thresholds de volumen (`>=500` productos, `>=3` marcas, cobertura mínima de precio).
+  - `Para ti hoy` deja de prometer personalización fuerte: usa tabs fijas `Rebajas reales`, `Nuevos con stock` y `Moviéndose hoy` solo cuando la señal conductual cumple `>=100` clicks de producto en 7 días y `>=60` productos distintos; si no, renombra a `Descubriendo ahora`.
+  - `Estilos ODA` deja de depender solo de `real_style`: usa `coalesce(real_style, stylePrimary)` y exige umbrales antes de renderizar un estilo (`>=60` productos, `>=3` marcas, `>=70%` de cobertura de precio visible), con spotlight compacto de hasta `4` productos.
+  - La sección mixta `Categorías, color y marcas` ahora es accionable: color sale desde `standard_colors`/`variants.standardColorId`, muestra conteo + hero image y enlaza a `/catalogo?color=<id>&in_stock=true`; marcas pasan de logo-wall a spotlight + tarjetas con propuesta concreta.
+  - El bloque de métricas intermedio se reemplaza por un `trust strip` compacto (`ConversionCoverageBlock`) para no romper la secuencia de descubrimiento.
 - Header + mega menu (actualización 2026-02-18):
   - Desktop: layout del header en grid (`auto | minmax(0,1fr) | auto`), input de búsqueda responsivo (`w-[clamp(12rem,18vw,20rem)]`) y panel de megamenu compartido a ancho completo del container.
   - Desktop (ajuste UX): menor densidad vertical en líneas del panel para una lectura más compacta.
@@ -552,6 +561,25 @@ Al abordar una historia: (0) pedir credenciales/definiciones faltantes, (1) leva
   - Nueva migración `apps/web/prisma/migrations/20260224164500_home_core_resilience_indexes/migration.sql` (índice parcial feed home + compuestos para `products/price_history/experience_events`).
   - `schema.prisma` actualizado con índices compuestos de soporte.
   - Script de smoke `apps/web/scripts/smoke-home-core-sections.mjs` + `npm -C apps/web run smoke:home:core`.
+
+## Actualización 2026-03-06 (Home rediseñada para descubrimiento accionable)
+- Se reemplazó la jerarquía editorial-first del home por una secuencia orientada a decisión:
+  - `Hero` mantiene presencia visual, pero con copy más funcional.
+  - El primer bloque útil después del hero ahora es `Descubrir rápido`.
+  - `Para ti hoy` pasa a utilidad real (`Rebajas reales`, `Nuevos con stock`, `Moviéndose hoy/Descubriendo ahora`).
+  - `Novedades` queda antes del bloque de estilos.
+- Composición server-side:
+  - `apps/web/src/lib/home-data.ts` agrega `getHomePagePayload()` para centralizar la composición del home en un payload único.
+  - Se añade guard `HOME_REDESIGN_CORE_EMPTY` para no publicar un home sin bloques core cuando sí existe cobertura de catálogo.
+- Datos y reglas que gobiernan la UI:
+  - `Descubrir rápido` filtra candidatos por intención y umbrales mínimos de volumen/diversidad/cobertura.
+  - `Estilos ODA` rankea spotlight por frescura, diversidad de marcas, disponibilidad y cobertura de precio; el estilo usa fallback `real_style -> stylePrimary`.
+  - `Color` deja de ser decorativo y se vuelve una puerta real a PLP filtrada.
+  - `Rebajas reales` limita repetición por marca en los primeros productos para evitar rieles dominados por una sola marca.
+- Validación local de esta corrida:
+  - `npx eslint src/app/page.tsx src/components/home/HomeBelowFold.tsx src/components/home/HomeQuickDiscovery.tsx src/components/home/SmartRails.tsx src/components/home/StyleSpotlight.tsx src/components/home/EditorialMosaic.tsx src/components/home/ConversionCoverageBlock.tsx src/lib/home-data.ts src/lib/home-types.ts`
+  - `npm -C apps/web run build`
+  - `PORT=3001 npm -C apps/web run start` + revisión Playwright sobre `http://localhost:3001/`
 
 ## Próximos pasos sugeridos
 - MC-009–017 (F1): taxonomía, búsqueda+pgvector, observabilidad scraping v1, admin mínimo, anuncios básicos, 10–20 marcas, emails/plantillas, ISR/cache y gestión de secrets.

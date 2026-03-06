@@ -2,60 +2,19 @@ import Image from "next/image";
 import Link from "next/link";
 import ConversionCoverageBlock from "@/components/home/ConversionCoverageBlock";
 import EditorialMosaic from "@/components/home/EditorialMosaic";
-import HomeTrendingGrid from "@/components/home/HomeTrendingGrid";
+import HomeQuickDiscovery from "@/components/home/HomeQuickDiscovery";
 import ProductCarousel from "@/components/home/ProductCarousel";
 import SmartRails from "@/components/home/SmartRails";
-import StyleShowcase from "@/components/home/StyleShowcase";
+import StyleSpotlight from "@/components/home/StyleSpotlight";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 import {
-  collectUniqueProducts,
-  createHomeSelectionRegistry,
-  getBrandLogos,
-  getColorCombos,
-  getHomeCoverageStats,
-  getMostFavoritedPicks,
-  getResilientCategoryHighlights,
-  getResilientDailyTrendingPicks,
-  getResilientFocusPicks,
-  getResilientNewArrivals,
-  getResilientPriceDropPicks,
-  getStyleGroups,
-  getTrendingPicks,
-  HOME_CONFIG_DEFAULTS,
+  getHomeConfigInt,
+  getHomePagePayload,
+  getHomeConfigValue,
   type HomeConfigMap,
 } from "@/lib/home-data";
-import type { HomeCoverageStats } from "@/lib/home-types";
-
-function cfgVal(config: HomeConfigMap | undefined, key: string): string {
-  return (config?.[key] ?? HOME_CONFIG_DEFAULTS[key]) as string;
-}
-
-function cfgInt(config: HomeConfigMap | undefined, key: string): number {
-  const raw = config?.[key] ?? HOME_CONFIG_DEFAULTS[key];
-  const parsed = parseInt(raw ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : parseInt(HOME_CONFIG_DEFAULTS[key] ?? "0", 10);
-}
 
 const FOLD_SECTION_CLASS = "[content-visibility:auto] [contain-intrinsic-size:960px]";
-const HOME_FETCH_TIMEOUT_MS = 24_000;
-
-function withTimeout<T>(promise: Promise<T>, fallback: T, timeoutMs = HOME_FETCH_TIMEOUT_MS): Promise<T> {
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<T>((resolve) => {
-    timeoutHandle = setTimeout(() => resolve(fallback), timeoutMs);
-  });
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeoutHandle) clearTimeout(timeoutHandle);
-  });
-}
-
-const DEFAULT_COVERAGE_STATS: HomeCoverageStats = {
-  productCount: 0,
-  brandCount: 0,
-  categoryCount: 0,
-  lastUpdatedAt: null,
-};
 
 export default async function HomeBelowFold({
   seed,
@@ -66,251 +25,77 @@ export default async function HomeBelowFold({
   heroIds: string[];
   config?: HomeConfigMap;
 }) {
-  const registry = createHomeSelectionRegistry(heroIds);
-  const initialExcludeIds = Array.from(registry.usedIds);
+  const payload = await getHomePagePayload({ seed, heroIds, config });
+  const newArrivalsLimit = getHomeConfigInt(config ?? {}, "section.new_arrivals.limit");
 
-  const newArrivalsLimit = cfgInt(config, "section.new_arrivals.limit");
-  const priceDropsLimit = cfgInt(config, "section.price_drops.limit");
-  const dailyTrendingLimit = cfgInt(config, "section.daily_trending.limit");
-  const styleShowcaseExpandedCount = cfgInt(config, "section.style_showcase.expanded_count");
-  const smartRailsDefaultTab = cfgVal(config, "section.smart_rails.default_tab");
-
-  const [
-    categoryHighlightsResult,
-    colorCombos,
-    brandLogos,
-    coverageStats,
-    newArrivalsResult,
-    focusResult,
-    styleGroupsRaw,
-    priceDropResult,
-    dailyTrendingResult,
-    storyCandidatesRaw,
-    mostFavoritedRaw,
-  ] = await Promise.all([
-    getResilientCategoryHighlights(seed, { limit: 24, preferBlob: true }),
-    withTimeout(getColorCombos(seed, 3), []),
-    withTimeout(getBrandLogos(seed, 12), []),
-    withTimeout(getHomeCoverageStats(), DEFAULT_COVERAGE_STATS),
-    getResilientNewArrivals(seed, { limit: Math.max(18, newArrivalsLimit * 2) }),
-    getResilientFocusPicks(seed, {
-        limit: 24,
-        subcategoryLimit: 12,
-        excludeIds: initialExcludeIds,
-      }),
-    withTimeout(getStyleGroups(seed, 8, config), []),
-    getResilientPriceDropPicks(seed, {
-        limit: priceDropsLimit,
-        excludeIds: initialExcludeIds,
-      }),
-    getResilientDailyTrendingPicks(seed, {
-        limit: dailyTrendingLimit,
-        excludeIds: initialExcludeIds,
-      }),
-    withTimeout(getTrendingPicks(seed + 19, 48), []),
-    withTimeout(
-      getMostFavoritedPicks(seed, {
-        windowDays: 30,
-        limit: 12,
-        excludeIds: initialExcludeIds,
-      }),
-      [],
-    ),
-  ]);
-
-  const categoryHighlights = categoryHighlightsResult.items;
-
-  const newArrivals = collectUniqueProducts(newArrivalsResult.items, registry, newArrivalsLimit);
-
-  const focusProducts = collectUniqueProducts(focusResult.items, registry, 24);
-
-  const styleGroups = styleGroupsRaw
-    .map((group) => ({
-      ...group,
-      products: collectUniqueProducts(group.products, registry, group.products.length),
-    }))
-    .filter((group) => group.products.length > 0);
-
-  const priceDrop = collectUniqueProducts(priceDropResult.items, registry, 12);
-
-  let dailyTrending = collectUniqueProducts(dailyTrendingResult.items, registry, 12);
-  let dailyTrendingSource = dailyTrendingResult.source;
-  let dailyTrendingDegraded = dailyTrendingResult.degraded;
-  let dailyTrendingDurationMs = dailyTrendingResult.durationMs;
-
-  if (dailyTrending.length === 0) {
-    const localFallbackPool = [
-      ...mostFavoritedRaw,
-      ...focusResult.items,
-      ...newArrivalsResult.items,
-    ];
-    const localFallback = collectUniqueProducts(localFallbackPool, registry, 12).map((item) => ({
-      ...item,
-      clickCount: 0,
-      snapshotDate: null,
-    }));
-    if (localFallback.length > 0) {
-      dailyTrending = localFallback;
-      dailyTrendingSource = "home_local_pool";
-      dailyTrendingDegraded = true;
-      dailyTrendingDurationMs = dailyTrendingResult.durationMs;
-    }
-  }
-
-  const storyProductUnique = collectUniqueProducts(storyCandidatesRaw, registry, 1)[0] ?? null;
-  const storyProduct = storyProductUnique
-    ?? storyCandidatesRaw.find((p) => p.imageCoverUrl && p.imageCoverUrl.trim() !== "")
-    ?? [...mostFavoritedRaw, ...focusResult.items, ...newArrivalsResult.items]
-        .find((p) => p.imageCoverUrl && p.imageCoverUrl.trim() !== "")
-    ?? null;
-
-  const favoritesExcludeIds = Array.from(registry.usedIds);
-  const mostFavorited = collectUniqueProducts(mostFavoritedRaw, registry, 12);
-
-  const criticalSectionStats = [
-    {
-      section: "new_arrivals",
-      source: newArrivalsResult.source,
-      degraded: newArrivalsResult.degraded,
-      durationMs: newArrivalsResult.durationMs,
-      count: newArrivals.length,
-    },
-    {
-      section: "categories",
-      source: categoryHighlightsResult.source,
-      degraded: categoryHighlightsResult.degraded,
-      durationMs: categoryHighlightsResult.durationMs,
-      count: categoryHighlights.length,
-    },
-    {
-      section: "focus",
-      source: focusResult.source,
-      degraded: focusResult.degraded,
-      durationMs: focusResult.durationMs,
-      count: focusProducts.length,
-    },
-    {
-      section: "price_drop",
-      source: priceDropResult.source,
-      degraded: priceDropResult.degraded,
-      durationMs: priceDropResult.durationMs,
-      count: priceDrop.length,
-    },
-    {
-      section: "daily_trending",
-      source: dailyTrendingSource,
-      degraded: dailyTrendingDegraded,
-      durationMs: dailyTrendingDurationMs,
-      count: dailyTrending.length,
-    },
-  ];
-
-  for (const stat of criticalSectionStats) {
-    console.info("home.section", stat);
-  }
-
-  const softSections = new Set(["price_drop", "daily_trending"]);
-  const emptyCriticalSections = criticalSectionStats
-    .filter((stat) => stat.count === 0 && !softSections.has(stat.section))
-    .map((stat) => stat.section);
-  const emptySoftSections = criticalSectionStats
-    .filter((stat) => stat.count === 0 && softSections.has(stat.section))
-    .map((stat) => stat.section);
-
-  if (emptySoftSections.length > 0) {
-    console.warn("home.guard.soft_sections_empty", {
-      seed,
-      emptySoftSections,
-      productCount: coverageStats?.productCount ?? 0,
-    });
-  }
-
-  if ((coverageStats?.productCount ?? 0) > 0 && emptyCriticalSections.length > 0) {
-    console.error("home.guard.core_empty", {
-      code: "HOME_CORE_EMPTY",
-      seed,
-      productCount: coverageStats?.productCount ?? 0,
-      emptySections: emptyCriticalSections,
-      criticalSectionStats,
-    });
-    throw new Error(`HOME_CORE_EMPTY:${emptyCriticalSections.join(",")}`);
-  }
-
-  const storyImageSrc = proxiedImageUrl(storyProduct?.imageCoverUrl ?? null, {
-    productId: storyProduct?.id ?? null,
+  const storyImageSrc = proxiedImageUrl(payload.storyProduct?.imageCoverUrl ?? null, {
+    productId: payload.storyProduct?.id ?? null,
     kind: "cover",
   });
 
   return (
     <>
-      {/* 1. StyleShowcase - full-width immersive style sections */}
-      {styleGroups.length > 0 ? (
-        <StyleShowcase
-          styleGroups={styleGroups}
-          expandedCount={styleShowcaseExpandedCount || 3}
-        />
+      <section className={`oda-container py-12 sm:py-16 ${FOLD_SECTION_CLASS}`}>
+        <HomeQuickDiscovery cards={payload.quickDiscovery} />
+      </section>
+
+      {payload.utilityTabs.length > 0 ? (
+        <section className={`oda-container pb-14 sm:pb-18 ${FOLD_SECTION_CLASS}`}>
+          <SmartRails tabs={payload.utilityTabs} defaultTab={payload.defaultUtilityTab} />
+        </section>
       ) : null}
 
-      {/* 2. New Arrivals carousel */}
-      <section className={`oda-container py-12 sm:py-16 ${FOLD_SECTION_CLASS}`}>
-        <ProductCarousel
-          title={cfgVal(config, "section.new_arrivals.heading")}
-          subtitle={cfgVal(config, "section.new_arrivals.subheading")}
-          ctaHref={cfgVal(config, "section.new_arrivals.cta_href")}
-          ctaLabel={cfgVal(config, "section.new_arrivals.cta_label")}
-          products={newArrivals}
-          ariaLabel="Carrusel de novedades"
-          surface="home_new_arrivals"
-        />
-      </section>
+      {payload.newArrivals.length > 0 ? (
+        <section className={`oda-container pb-14 sm:pb-18 ${FOLD_SECTION_CLASS}`}>
+          <ProductCarousel
+            title={getHomeConfigValue(config ?? {}, "section.new_arrivals.heading")}
+            subtitle={getHomeConfigValue(config ?? {}, "section.new_arrivals.subheading")}
+            ctaHref={getHomeConfigValue(config ?? {}, "section.new_arrivals.cta_href")}
+            ctaLabel={getHomeConfigValue(config ?? {}, "section.new_arrivals.cta_label")}
+            products={payload.newArrivals.slice(0, Math.max(8, newArrivalsLimit))}
+            ariaLabel="Carrusel de novedades"
+            surface="home_new_arrivals"
+          />
+        </section>
+      ) : null}
 
-      {/* 3. EditorialMosaic - categories + colors + brands */}
-      <section className={`oda-container pb-14 sm:pb-20 ${FOLD_SECTION_CLASS}`}>
+      {payload.styleSpotlights.length > 0 ? (
+        <section className={`oda-container pb-14 sm:pb-18 ${FOLD_SECTION_CLASS}`}>
+          <StyleSpotlight spotlights={payload.styleSpotlights} />
+        </section>
+      ) : null}
+
+      <section className={`oda-container pb-14 sm:pb-18 ${FOLD_SECTION_CLASS}`}>
         <EditorialMosaic
-          categories={categoryHighlights}
-          colorCombos={colorCombos}
-          brands={brandLogos}
+          categories={payload.categories}
+          colors={payload.colors}
+          brandSpotlight={payload.brandSpotlight}
+          brands={payload.brandFeatures}
         />
       </section>
 
-      {/* 4. Trending Grid */}
-      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <HomeTrendingGrid products={focusProducts} />
+      <section className={`oda-container pb-14 sm:pb-18 ${FOLD_SECTION_CLASS}`}>
+        <ConversionCoverageBlock trustStrip={payload.trustStrip} />
       </section>
 
-      {/* 5. SmartRails - price drops + favorites + daily trending */}
-      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <SmartRails
-          priceDropProducts={priceDrop}
-          initialFavorites={mostFavorited}
-          dailyTrendingProducts={dailyTrending}
-          favoritesExcludeIds={favoritesExcludeIds}
-          defaultTab={smartRailsDefaultTab}
-        />
-      </section>
-
-      {/* 6. ConversionCoverageBlock - simplified */}
-      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <ConversionCoverageBlock stats={coverageStats} />
-      </section>
-
-      {/* 7. Story Section */}
       <section className={`border-y border-[color:var(--oda-border)] bg-white ${FOLD_SECTION_CLASS}`}>
         <div className="oda-container grid gap-8 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
           <div className="flex flex-col gap-4 lg:pr-8">
-            <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">{cfgVal(config, "section.story.eyebrow")}</p>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+              {getHomeConfigValue(config ?? {}, "section.story.eyebrow")}
+            </p>
             <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
-              {cfgVal(config, "section.story.heading")}
+              {getHomeConfigValue(config ?? {}, "section.story.heading")}
             </h2>
             <p className="max-w-xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
-              {cfgVal(config, "section.story.body")}
+              {getHomeConfigValue(config ?? {}, "section.story.body")}
             </p>
             <Link
-              href={cfgVal(config, "section.story.cta_href")}
+              href={getHomeConfigValue(config ?? {}, "section.story.cta_href")}
               prefetch={false}
               className="mt-2 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)]"
             >
-              {cfgVal(config, "section.story.cta_label")}
+              {getHomeConfigValue(config ?? {}, "section.story.cta_label")}
             </Link>
           </div>
 
@@ -319,7 +104,7 @@ export default async function HomeBelowFold({
               {storyImageSrc ? (
                 <Image
                   src={storyImageSrc}
-                  alt={storyProduct?.name ?? "Producto curado"}
+                  alt={payload.storyProduct?.name ?? "Producto curado"}
                   fill
                   quality={58}
                   sizes="(max-width: 1024px) 80vw, 42vw"
