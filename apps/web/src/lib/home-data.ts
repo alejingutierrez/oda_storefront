@@ -96,7 +96,7 @@ export const getHomeConfig = unstable_cache(
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 19;
+const HOME_CACHE_VERSION = 20;
 const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 8;
@@ -2563,9 +2563,8 @@ export async function getStyleSpotlights(
               avg(case when updated_at >= (now() - interval '45 days') then 1 else 0 end)::numeric as "freshnessRatio"
             from style_base
             group by style_key
-            having count(*) >= 60
-              and count(distinct brand_id) >= 3
-              and avg(case when "minPrice" is not null then 1 else 0 end) >= 0.7
+            having count(*) >= ${HOME_STYLE_SPOTLIGHT_PRODUCT_LIMIT}
+              and count(distinct brand_id) >= 2
           ),
           ranked_styles as (
             select
