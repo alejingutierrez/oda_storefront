@@ -3,9 +3,7 @@ import Header from "@/components/Header";
 import OdaFooter from "@/components/OdaFooter";
 import HomeBelowFold from "@/components/home/HomeBelowFold";
 import HomeHeroImmersive from "@/components/home/HomeHeroImmersive";
-import StyleNavigator from "@/components/home/StyleNavigator";
 import { getHeroSlides, getHomeConfig, getMegaMenuData, getRotationSeed } from "@/lib/home-data";
-import { REAL_STYLE_OPTIONS } from "@/lib/real-style/constants";
 
 export const revalidate = 3600;
 
@@ -22,8 +20,6 @@ export default async function Home() {
       <Header menu={menu} />
 
       <HomeHeroImmersive slides={heroSlides} config={homeConfig} />
-
-      <StyleNavigator styles={REAL_STYLE_OPTIONS} />
 
       <Suspense
         fallback={
