@@ -117,26 +117,25 @@ CREATE TRIGGER variants_color_search_trigger
 -- ---------------------------------------------------------------------------
 -- 5. Backfill all products with new weighted search_vector
 -- ---------------------------------------------------------------------------
-UPDATE products p SET search_vector =
-  setweight(to_tsvector('spanish', coalesce(p.name, '')), 'A') ||
-  setweight(to_tsvector('spanish', coalesce(p.description, '')), 'B') ||
-  setweight(to_tsvector('spanish', array_to_string(p."seoTags", ' ')), 'B') ||
-  setweight(to_tsvector('spanish', coalesce(p.category, '')), 'C') ||
-  setweight(to_tsvector('spanish', coalesce(p.subcategory, '')), 'C') ||
+UPDATE products SET search_vector =
+  setweight(to_tsvector('spanish', coalesce(products.name, '')), 'A') ||
+  setweight(to_tsvector('spanish', coalesce(products.description, '')), 'B') ||
+  setweight(to_tsvector('spanish', array_to_string(products."seoTags", ' ')), 'B') ||
+  setweight(to_tsvector('spanish', coalesce(products.category, '')), 'C') ||
+  setweight(to_tsvector('spanish', coalesce(products.subcategory, '')), 'C') ||
   setweight(to_tsvector('spanish', coalesce(b.name, '')), 'C') ||
-  setweight(to_tsvector('spanish', coalesce(cv.color_names, '')), 'C') ||
-  setweight(to_tsvector('spanish', coalesce(p.gender, '')), 'D') ||
-  setweight(to_tsvector('spanish', coalesce(p.real_style, '')), 'D') ||
-  setweight(to_tsvector('spanish', coalesce(p."stylePrimary", '')), 'D') ||
-  setweight(to_tsvector('spanish', array_to_string(p."materialTags", ' ')), 'D') ||
-  setweight(to_tsvector('spanish', array_to_string(p."patternTags", ' ')), 'D') ||
-  setweight(to_tsvector('spanish', array_to_string(p."occasionTags", ' ')), 'D') ||
-  setweight(to_tsvector('spanish', array_to_string(p."styleTags", ' ')), 'D')
+  setweight(to_tsvector('spanish', coalesce((
+    SELECT string_agg(DISTINCT sc.name || ' ' || sc.family, ' ')
+    FROM variants v
+    JOIN standard_colors sc ON sc.id = v."standardColorId"
+    WHERE v."productId" = products.id
+  ), '')), 'C') ||
+  setweight(to_tsvector('spanish', coalesce(products.gender, '')), 'D') ||
+  setweight(to_tsvector('spanish', coalesce(products.real_style, '')), 'D') ||
+  setweight(to_tsvector('spanish', coalesce(products."stylePrimary", '')), 'D') ||
+  setweight(to_tsvector('spanish', array_to_string(products."materialTags", ' ')), 'D') ||
+  setweight(to_tsvector('spanish', array_to_string(products."patternTags", ' ')), 'D') ||
+  setweight(to_tsvector('spanish', array_to_string(products."occasionTags", ' ')), 'D') ||
+  setweight(to_tsvector('spanish', array_to_string(products."styleTags", ' ')), 'D')
 FROM brands b
-LEFT JOIN LATERAL (
-  SELECT string_agg(DISTINCT sc.name || ' ' || sc.family, ' ') AS color_names
-  FROM variants v
-  JOIN standard_colors sc ON sc.id = v."standardColorId"
-  WHERE v."productId" = p.id
-) cv ON true
-WHERE b.id = p."brandId";
+WHERE b.id = products."brandId";

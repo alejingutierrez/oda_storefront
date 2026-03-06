@@ -35,6 +35,7 @@ import {
   productEnrichmentProvider,
   productEnrichmentSchemaVersion,
 } from "@/lib/product-enrichment/openai";
+import { isRedisEnabled, readJsonCache, writeJsonCache } from "@/lib/redis";
 
 export type OnboardingStepKey =
   | "brand_enrich"
@@ -869,17 +870,28 @@ const refreshEnrichmentSummary = async (
     }
   }
 
-  const [counts] = await prisma.$queryRaw<{ total: number; enriched: number }[]>(
-    Prisma.sql`
-      SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE ("metadata" -> 'enrichment') IS NOT NULL)::int AS enriched
-      FROM "products"
-      WHERE "brandId" = ${brandId}
-    `,
-  );
-  const total = counts?.total ?? 0;
-  const enriched = counts?.enriched ?? 0;
+  // RC-7: Cache enrichment counts in Redis (TTL 60s)
+  const enrichCacheKey = `enrich:stats:${brandId}`;
+  type BrandEnrichCounts = { total: number; enriched: number };
+  let counts: BrandEnrichCounts | null = null;
+  if (isRedisEnabled()) {
+    counts = await readJsonCache<BrandEnrichCounts>(enrichCacheKey);
+  }
+  if (!counts) {
+    const [row] = await prisma.$queryRaw<BrandEnrichCounts[]>(
+      Prisma.sql`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE ("metadata" -> 'enrichment') IS NOT NULL)::int AS enriched
+        FROM "products"
+        WHERE "brandId" = ${brandId}
+      `,
+    );
+    counts = row ?? { total: 0, enriched: 0 };
+    await writeJsonCache(enrichCacheKey, counts, 60);
+  }
+  const total = counts.total;
+  const enriched = counts.enriched;
   const remaining = Math.max(0, total - enriched);
   progress.productEnrichment = {
     ...(progress.productEnrichment ?? {}),

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { head, list, put } from "@vercel/blob";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isRedisEnabled, readJsonCache, writeJsonCache } from "@/lib/redis";
 import {
   optimizeBeforeBlob,
   summarizeImageOptimization,
@@ -155,6 +156,8 @@ const fetchWithTimeout = async (url: string, timeoutMs: number, headers?: Record
   }
 };
 
+const REDIS_BLOB_TTL_SECONDS = BLOB_CACHE_MAX_AGE_SECONDS;
+
 const cacheToBlob = async (sourceUrl: string, token: string): Promise<BlobCacheEntry> => {
   const cached = resolvedCache.get(sourceUrl);
   if (cached) return cached;
@@ -163,10 +166,21 @@ const cacheToBlob = async (sourceUrl: string, token: string): Promise<BlobCacheE
   const baseKey = `image-proxy/${hash}`;
   const defaultPath = `${baseKey}${extensionFromUrl(sourceUrl)}`;
 
+  // RC-2a: Check Redis before hitting Blob head() API
+  const redisCacheKey = `blob:img:${hash}`;
+  if (isRedisEnabled()) {
+    const redisHit = await readJsonCache<BlobCacheEntry>(redisCacheKey);
+    if (redisHit) {
+      resolvedCache.set(sourceUrl, redisHit);
+      return redisHit;
+    }
+  }
+
   const hitByHead = await resolveExistingBlobByHead(defaultPath, token);
   if (hitByHead) {
     const entry = { url: hitByHead, optimization: null };
     resolvedCache.set(sourceUrl, entry);
+    await writeJsonCache(redisCacheKey, entry, REDIS_BLOB_TTL_SECONDS);
     return entry;
   }
 
@@ -174,6 +188,7 @@ const cacheToBlob = async (sourceUrl: string, token: string): Promise<BlobCacheE
   if (hitByListFallback) {
     const entry = { url: hitByListFallback, optimization: null };
     resolvedCache.set(sourceUrl, entry);
+    await writeJsonCache(redisCacheKey, entry, REDIS_BLOB_TTL_SECONDS);
     return entry;
   }
 
@@ -224,6 +239,7 @@ const cacheToBlob = async (sourceUrl: string, token: string): Promise<BlobCacheE
     if (hitByTypedHead) {
       const entry = { url: hitByTypedHead, optimization: null };
       resolvedCache.set(sourceUrl, entry);
+      await writeJsonCache(redisCacheKey, entry, REDIS_BLOB_TTL_SECONDS);
       return entry;
     }
   }
@@ -237,6 +253,7 @@ const cacheToBlob = async (sourceUrl: string, token: string): Promise<BlobCacheE
   });
   const entry = { url: blob.url, optimization: optimized.stats };
   resolvedCache.set(sourceUrl, entry);
+  await writeJsonCache(redisCacheKey, entry, REDIS_BLOB_TTL_SECONDS);
   return entry;
 };
 

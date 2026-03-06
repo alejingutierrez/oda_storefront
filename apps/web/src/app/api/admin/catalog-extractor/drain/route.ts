@@ -318,6 +318,16 @@ export async function POST(req: Request) {
       .trim()
       .toLowerCase() !== "false",
   );
+  // RC-8: Early exit when no processing runs exist (saves Redis/BullMQ/Prisma probes)
+  if (isCron && !force && !dryRun) {
+    const processingCount = await prisma.catalogRun.count({
+      where: { status: "processing" },
+    });
+    if (processingCount === 0) {
+      return NextResponse.json({ skipped: "no_processing_runs", processingCount: 0 });
+    }
+  }
+
   let workerGate: Record<string, unknown> | null = null;
   let microDrainBypass = false;
 

@@ -62,7 +62,7 @@ async function rebuildDailyTrending(limit: number) {
       "productId",
       "clickCount"
     from ranked
-    order by "clickCount" desc, md5(concat("productId"::text, ${snapshotDate.toISOString()}))
+    order by "clickCount" desc, hashtext("productId"::text || ${snapshotDate.toISOString()})
     limit ${limit}
   `);
 

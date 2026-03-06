@@ -163,7 +163,22 @@ export const processEnrichmentItemById = async (
 ): Promise<ProcessEnrichmentItemResult> => {
   const item = await prisma.productEnrichmentItem.findUnique({
     where: { id: itemId },
-    include: { run: true, product: { include: { variants: true, brand: true } } },
+    include: {
+      run: {
+        select: {
+          id: true,
+          status: true,
+          consecutiveErrors: true,
+          blockReason: true,
+        },
+      },
+      product: {
+        include: {
+          variants: true,
+          brand: { select: { name: true } },
+        },
+      },
+    },
   });
 
   if (!item) return { status: "not_found" };

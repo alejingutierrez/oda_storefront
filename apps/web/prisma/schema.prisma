@@ -199,6 +199,7 @@ model Product {
   sourceUrl             String?
   imageCoverUrl         String?
   metadata              Json?
+  randomSortKey         Float?                  @default(dbgenerated("random()")) @map("random_sort_key")
   createdAt             DateTime                @default(now())
   updatedAt             DateTime                @updatedAt
   variants              Variant[]
@@ -222,6 +223,7 @@ model Product {
   @@index([priceChangeDirection, priceChangeAt])
   @@unique([brandId, slug])
   @@index([slug])
+  @@index([randomSortKey], map: "products_random_sort_key_idx")
   @@map("products")
 }
 

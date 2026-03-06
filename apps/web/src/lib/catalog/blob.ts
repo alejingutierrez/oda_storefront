@@ -1,5 +1,6 @@
 import { put } from "@vercel/blob";
 import { hashBuffer } from "@/lib/catalog/utils";
+import { isRedisEnabled, readJsonCache, writeJsonCache } from "@/lib/redis";
 import { optimizeBeforeBlob } from "@/lib/media/optimize-before-blob";
 import type { ImageOptimizationStats } from "@/lib/media/optimize-before-blob";
 
@@ -10,6 +11,7 @@ const MAX_SOURCE_IMAGE_BYTES = Math.max(
 );
 const DEFAULT_TIMEOUT_MS = 45000;
 const DEFAULT_CONCURRENCY = 4;
+const REDIS_BLOB_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 let blobUploadsDisabled = false;
 let blobDisableReason: string | null = null;
 
@@ -97,6 +99,20 @@ export const uploadImageToBlob = async (url: string, prefix: string, token: stri
   const ext = optimized.extension;
   const key = buildBlobKey(prefix, hash, ext);
 
+  // RC-2b: Check Redis to skip redundant put() for already-uploaded content
+  const redisCacheKey = `blob:cat:${hash}${ext}`;
+  if (isRedisEnabled()) {
+    const redisHit = await readJsonCache<{ url: string; blobPath: string }>(redisCacheKey);
+    if (redisHit) {
+      return {
+        url: redisHit.url,
+        blobPath: redisHit.blobPath,
+        sourceUrl: normalizedUrl,
+        optimization: optimized.stats,
+      };
+    }
+  }
+
   const blob = await put(key, optimized.buffer, {
     access: "public",
     contentType: optimized.contentType ?? contentType ?? undefined,
@@ -104,12 +120,14 @@ export const uploadImageToBlob = async (url: string, prefix: string, token: stri
     addRandomSuffix: false,
   });
 
-  return {
+  const result = {
     url: blob.url,
     blobPath: blob.pathname ?? key,
     sourceUrl: normalizedUrl,
     optimization: optimized.stats,
   };
+  await writeJsonCache(redisCacheKey, { url: result.url, blobPath: result.blobPath }, REDIS_BLOB_TTL_SECONDS);
+  return result;
 };
 
 export const uploadImagesToBlob = async (

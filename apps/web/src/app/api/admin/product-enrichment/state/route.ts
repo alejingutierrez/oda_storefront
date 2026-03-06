@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isRedisEnabled, readJsonCache, writeJsonCache } from "@/lib/redis";
 import { findLatestRun, summarizeRun } from "@/lib/product-enrichment/run-store";
 import { finalizeRunIfDone } from "@/lib/product-enrichment/processor";
 
@@ -46,35 +47,44 @@ export async function GET(req: Request) {
     map.total = total;
     itemCounts = map;
   }
-  const filters: Prisma.Sql[] = [];
-  if (scope === "brand" && brandId) {
-    filters.push(Prisma.sql`"brandId" = ${brandId}`);
+  // RC-7: Cache enrichment stats in Redis (TTL 60s) to avoid full table scans
+  const statsCacheKey = `enrich:stats:${scope === "brand" && brandId ? brandId : "all"}`;
+  type EnrichmentStats = { total: number; enriched: number; low_confidence: number; review_required: number };
+  let counts: EnrichmentStats | null = null;
+  if (isRedisEnabled()) {
+    counts = await readJsonCache<EnrichmentStats>(statsCacheKey);
   }
-  const where = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}` : Prisma.sql``;
-  const [counts] = await prisma.$queryRaw<
-    Array<{ total: number; enriched: number; low_confidence: number; review_required: number }>
-  >(
-    Prisma.sql`
-      SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE ("metadata" -> 'enrichment') IS NOT NULL)::int AS enriched,
-        COUNT(*) FILTER (
-          WHERE ("metadata" -> 'enrichment' ->> 'review_required') = 'true'
-        )::int AS review_required,
-        COUNT(*) FILTER (
-          WHERE
-            ("metadata" -> 'enrichment' -> 'confidence' ->> 'overall') ~ '^[0-9]+(\\.[0-9]+)?$'
-            AND (("metadata" -> 'enrichment' -> 'confidence' ->> 'overall')::double precision) < 0.70
-        )::int AS low_confidence
-      FROM "products"
-      ${where}
-    `,
-  );
-  const total = counts?.total ?? 0;
-  const enriched = counts?.enriched ?? 0;
+  if (!counts) {
+    const filters: Prisma.Sql[] = [];
+    if (scope === "brand" && brandId) {
+      filters.push(Prisma.sql`"brandId" = ${brandId}`);
+    }
+    const where = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}` : Prisma.sql``;
+    const [row] = await prisma.$queryRaw<EnrichmentStats[]>(
+      Prisma.sql`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE ("metadata" -> 'enrichment') IS NOT NULL)::int AS enriched,
+          COUNT(*) FILTER (
+            WHERE ("metadata" -> 'enrichment' ->> 'review_required') = 'true'
+          )::int AS review_required,
+          COUNT(*) FILTER (
+            WHERE
+              ("metadata" -> 'enrichment' -> 'confidence' ->> 'overall') ~ '^[0-9]+(\\.[0-9]+)?$'
+              AND (("metadata" -> 'enrichment' -> 'confidence' ->> 'overall')::double precision) < 0.70
+          )::int AS low_confidence
+        FROM "products"
+        ${where}
+      `,
+    );
+    counts = row ?? { total: 0, enriched: 0, low_confidence: 0, review_required: 0 };
+    await writeJsonCache(statsCacheKey, counts, 60);
+  }
+  const total = counts.total;
+  const enriched = counts.enriched;
   const remaining = Math.max(0, total - enriched);
-  const lowConfidence = counts?.low_confidence ?? 0;
-  const reviewRequired = counts?.review_required ?? 0;
+  const lowConfidence = counts.low_confidence;
+  const reviewRequired = counts.review_required;
 
   return NextResponse.json({
     summary,

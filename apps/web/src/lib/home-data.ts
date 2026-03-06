@@ -82,7 +82,7 @@ export const getHomeConfig = unstable_cache(
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 13;
+const HOME_CACHE_VERSION = 14;
 const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 6;
@@ -442,7 +442,7 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
           from products p
           join brands b on b.id = p."brandId"
           where p."imageCoverUrl" is not null
-          order by md5(concat(p.id::text, ${seed}::text))
+          order by ((p."random_sort_key" * 1000000 + ${seed})::bigint % 1000000)
           limit 1
         `
       );
@@ -496,7 +496,7 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
           from products p
           join brands b on b.id = p."brandId"
           where ${sqlIsActiveCatalogProduct()}
-          order by md5(concat(p.id::text, ${seed}::text, 'new'))
+          order by ((p."random_sort_key" * 1000000 + ${seed + 1001})::bigint % 1000000)
           limit ${limit}
         `
       );
@@ -548,7 +548,7 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
           from products p
           join brands b on b.id = p."brandId"
           where ${sqlIsActiveCatalogProduct()}
-          order by md5(concat(p.id::text, ${seed}::text, 'picks'))
+          order by ((p."random_sort_key" * 1000000 + ${seed + 2003})::bigint % 1000000)
           limit ${limit}
         `
       );
@@ -587,6 +587,7 @@ export async function getCategoryHighlights(
             select
               p.id,
               p."imageCoverUrl",
+              p."random_sort_key",
               ${sqlHomeCategoryCase()} as category
             from products p
             join brands b on b.id = p."brandId"
@@ -601,7 +602,7 @@ export async function getCategoryHighlights(
               count(*) over (partition by n.category) as category_count,
               row_number() over (
                 partition by n.category
-                order by md5(concat(n.id::text, ${seed}::text, n.category::text))
+                order by ((n."random_sort_key" * 1000000 + ${seed + 3007})::bigint % 1000000)
               ) as image_rank
             from normalized n
           ),
@@ -788,7 +789,7 @@ export async function getStyleGroups(seed: number, limit = 3, config?: HomeConfi
                   case when p."editorialTopPickRank" is not null or p."editorialFavoriteRank" is not null then 0 else 1 end asc,
                   coalesce(p."editorialTopPickRank", 999999) asc,
                   coalesce(p."editorialFavoriteRank", 999999) asc,
-                  md5(concat(p.id::text, ${seed}::text, ts.style_key::text))
+                  ((p."random_sort_key" * 1000000 + ${seed + 4001})::bigint % 1000000)
               ) as "rowRank"
             from top_styles ts
             join products p on p.real_style = ts.style_key and p."imageCoverUrl" is not null
@@ -887,7 +888,7 @@ export async function getColorCombos(seed: number, limit = 6): Promise<ColorComb
             c."colorsJson"
           from color_combinations c
           where c."colorsJson" is not null
-          order by md5(concat(c.id::text, ${seed}::text, 'colors'))
+          order by hashtext(c.id::text || ${seed}::text)
           limit ${limit}
         `
       );
@@ -954,7 +955,7 @@ export async function getBrandLogos(seed: number, limit = 24): Promise<BrandLogo
                 p."imageCoverUrl",
                 row_number() over (
                   partition by p."brandId"
-                  order by md5(concat(p.id::text, ${seed}::text, 'brand-cover'))
+                  order by ((p."random_sort_key" * 1000000 + ${seed + 5003})::bigint % 1000000)
                 ) as rn
               from products p
               join brands b on b.id = p."brandId"
@@ -981,7 +982,7 @@ export async function getBrandLogos(seed: number, limit = 24): Promise<BrandLogo
             and b.slug is not null
             and b.slug <> ''
             and b."isActive" = true
-          order by md5(concat(b.id::text, ${seed}::text, 'brands'))
+          order by hashtext(b.id::text || ${seed}::text)
           limit ${limit}
         `
       );
@@ -1402,7 +1403,7 @@ export async function getPriceDropPicks(
           order by
             r."priceChangedAt" desc nulls last,
             r."dropPercent" desc nulls last,
-            md5(concat(r.id::text, ${seed}::text, 'price-drop'))
+            hashtext(r.id::text || ${seed}::text)
           limit ${limit}
         `
       );
@@ -1487,7 +1488,7 @@ export async function getMostFavoritedPicks(
           where p."imageCoverUrl" is not null
             and p."hasInStock" = true
             ${sqlExcludeProductIds(excludeIds)}
-          order by fr.favorite_count desc, md5(concat(p.id::text, ${seed}::text, 'favorites'))
+          order by fr.favorite_count desc, ((p."random_sort_key" * 1000000 + ${seed + 7001})::bigint % 1000000)
           limit ${limit}
         `
       );
@@ -1674,7 +1675,7 @@ export async function getDailyTrendingPicks(
             from clicks c
             join products p on p.id = c.product_id
             join brands b on b.id = p."brandId"
-            order by c.click_count desc, md5(concat(p.id::text, ${seed}::text, 'daily-live'))
+            order by c.click_count desc, ((p."random_sort_key" * 1000000 + ${seed + 8003})::bigint % 1000000)
             limit ${limit}
           `,
         );
@@ -1794,7 +1795,7 @@ async function getPriceDropSignalFallback(
             and ((c."previousPrice" - c."minPrice") / nullif(c."previousPrice", 0)) * 100 >= ${minDropPercent}
           )
         )
-      order by c."priceChangedAt" desc nulls last, md5(concat(c.id::text, ${seed}::text, 'price-drop-signal'))
+      order by c."priceChangedAt" desc nulls last, hashtext(c.id::text || ${seed}::text)
       limit ${limit}
     `,
   );
@@ -1856,7 +1857,7 @@ async function getFastEditorialPicks(
       join brands b on b.id = p."brandId"
       where ${sqlIsActiveCatalogProduct()}
         ${sqlExcludeProductIds(excludeIds)}
-      order by p."updatedAt" desc nulls last, md5(concat(p.id::text, ${seed}::text, 'fast-home-pool'))
+      order by p."updatedAt" desc nulls last, ((p."random_sort_key" * 1000000 + ${seed + 10007})::bigint % 1000000)
       limit ${limit}
     `,
   );

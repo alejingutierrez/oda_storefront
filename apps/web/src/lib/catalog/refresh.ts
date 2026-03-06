@@ -1396,7 +1396,7 @@ const computeRefreshMetrics = async (brandId: string, startedAt: Date) => {
       FROM "variants" v
       INNER JOIN "products" p ON p.id = v."productId"
       WHERE p."brandId" = ${brandId}
-        AND (v."metadata" ->> 'last_stock_status_changed_at')::timestamptz >= ${startedAt}
+        AND immutable_iso_to_timestamp(v."metadata" ->> 'last_stock_status_changed_at') >= ${startedAt}::timestamp
     `,
   );
 

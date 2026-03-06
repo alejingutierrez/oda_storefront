@@ -138,7 +138,7 @@ export async function GET(req: Request) {
     Prisma.sql`
       SELECT COUNT(*)::int AS count
       FROM \"variants\"
-      WHERE (\"metadata\" ->> 'last_stock_status_changed_at')::timestamptz >= ${windowStart}
+      WHERE immutable_iso_to_timestamp(\"metadata\" ->> 'last_stock_status_changed_at') >= ${windowStart}::timestamp
     `,
   );
 
