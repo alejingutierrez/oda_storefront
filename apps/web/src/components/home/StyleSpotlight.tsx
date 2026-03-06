@@ -4,9 +4,21 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import HomeProductCard from "@/components/home/HomeProductCard";
 import type { HomeStyleSpotlight } from "@/lib/home-types";
+import type { RealStyleKey } from "@/lib/real-style/constants";
 
-function pct(value: number) {
-  return `${Math.round(value * 100)}%`;
+const STYLE_SHORT_NAMES: Partial<Record<RealStyleKey, string>> = {
+  "01_minimalismo_neutro_pulido": "Minimal",
+  "17_street_clean": "Street",
+  "30_tropi_boho_playa": "Boho",
+  "21_gym_funcional": "Sporty",
+  "15_invitado_evento": "Glam",
+  "28_artesanal_contemporaneo": "Artsy",
+  "09_coastal_preppy": "Preppy",
+  "50_cozy_homewear": "Comfy",
+};
+
+function shortName(spotlight: HomeStyleSpotlight): string {
+  return STYLE_SHORT_NAMES[spotlight.styleKey as RealStyleKey] ?? spotlight.label;
 }
 
 export default function StyleSpotlight({
@@ -17,7 +29,7 @@ export default function StyleSpotlight({
   const [activeKey, setActiveKey] = useState(spotlights[0]?.styleKey ?? "");
 
   const active = useMemo(
-    () => spotlights.find((item) => item.styleKey === activeKey) ?? spotlights[0] ?? null,
+    () => spotlights.find((s) => s.styleKey === activeKey) ?? spotlights[0] ?? null,
     [activeKey, spotlights],
   );
 
@@ -25,95 +37,63 @@ export default function StyleSpotlight({
 
   return (
     <div className="flex flex-col gap-6 rounded-[1.7rem] border border-[color:var(--oda-border)] bg-white p-5 shadow-[0_24px_80px_rgba(23,21,19,0.08)] sm:p-7">
+      {/* Header */}
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-2">
-            <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">Estilos ODA</p>
-            <h2 className="font-display text-4xl leading-none text-[color:var(--oda-ink)] sm:text-5xl">
-              Un acceso compacto, no una pared de vitrinas
-            </h2>
-            <p className="max-w-2xl text-sm leading-relaxed text-[color:var(--oda-ink-soft)] sm:text-base">
-              El spotlight mezcla curación manual con estilos inferidos del catálogo para no depender de una cobertura mínima.
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
+              Estilos ODA
             </p>
+            <h2 className="font-display text-3xl leading-none text-[color:var(--oda-ink)] sm:text-4xl">
+              Tu estilo, una palabra
+            </h2>
           </div>
           <Link
             href={active.href}
             prefetch={false}
-            className="w-fit rounded-full border border-[color:var(--oda-ink)] px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-ink)] hover:text-[color:var(--oda-cream)]"
+            className="w-fit shrink-0 rounded-full border border-[color:var(--oda-ink)] px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-[color:var(--oda-ink)] transition hover:bg-[color:var(--oda-ink)] hover:text-[color:var(--oda-cream)]"
           >
-            Explorar {active.label}
+            Explorar {shortName(active)}
           </Link>
         </div>
 
+        {/* Style pills */}
         <div className="home-hide-scroll flex gap-2 overflow-x-auto pb-1">
-          {spotlights.slice(0, 8).map((spotlight) => (
+          {spotlights.slice(0, 8).map((s) => (
             <button
-              key={spotlight.styleKey}
+              key={s.styleKey}
               type="button"
-              onClick={() => setActiveKey(spotlight.styleKey)}
-              className={`shrink-0 rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.2em] transition ${
-                spotlight.styleKey === active.styleKey
+              onClick={() => setActiveKey(s.styleKey)}
+              className={`shrink-0 rounded-full border px-4 py-2 text-[11px] uppercase tracking-[0.2em] transition ${
+                s.styleKey === active.styleKey
                   ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
                   : "border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] text-[color:var(--oda-ink-soft)] hover:border-[color:var(--oda-ink-soft)]"
               }`}
             >
-              {spotlight.label}
+              {shortName(s)}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(280px,0.84fr)_minmax(0,1.16fr)] lg:items-start">
-        <div className="rounded-[1.4rem] bg-[linear-gradient(160deg,#f4eee5_0%,#fbf8f2_100%)] p-5 sm:p-6">
-          <div className="flex flex-col gap-4">
-            <div className="space-y-2">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--oda-taupe)]">Spotlight activo</p>
-              <h3 className="font-display text-3xl leading-none text-[color:var(--oda-ink)] sm:text-4xl">
-                {active.label}
-              </h3>
-              <p className="text-sm leading-relaxed text-[color:var(--oda-ink-soft)]">{active.description}</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-[1rem] border border-[color:var(--oda-border)] bg-white px-4 py-3">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">Productos</p>
-                <p className="mt-1 font-display text-2xl leading-none text-[color:var(--oda-ink)]">
-                  {new Intl.NumberFormat("es-CO").format(active.productCount)}
-                </p>
-              </div>
-              <div className="rounded-[1rem] border border-[color:var(--oda-border)] bg-white px-4 py-3">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">Marcas</p>
-                <p className="mt-1 font-display text-2xl leading-none text-[color:var(--oda-ink)]">
-                  {new Intl.NumberFormat("es-CO").format(active.brandCount)}
-                </p>
-              </div>
-              <div className="rounded-[1rem] border border-[color:var(--oda-border)] bg-white px-4 py-3">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">Precio visible</p>
-                <p className="mt-1 font-display text-2xl leading-none text-[color:var(--oda-ink)]">
-                  {pct(active.priceCoverage)}
-                </p>
-              </div>
-              <div className="rounded-[1rem] border border-[color:var(--oda-border)] bg-white px-4 py-3">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">Disponibilidad</p>
-                <p className="mt-1 font-display text-2xl leading-none text-[color:var(--oda-ink)]">
-                  {pct(active.availabilityRatio)}
-                </p>
-              </div>
-            </div>
-
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--oda-ink-soft)]">
-              Frescura reciente: {pct(active.freshnessRatio)}
-            </p>
-          </div>
+      {/* Stats + Product grid */}
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--oda-ink-soft)]">
+          <span className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-1.5">
+            {new Intl.NumberFormat("es-CO").format(active.productCount)} productos
+          </span>
+          <span className="rounded-full border border-[color:var(--oda-border)] bg-[color:var(--oda-cream)] px-3 py-1.5">
+            {new Intl.NumberFormat("es-CO").format(active.brandCount)} marcas
+          </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          {active.products.slice(0, 4).map((product) => (
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+          {active.products.slice(0, 8).map((product) => (
             <HomeProductCard
               key={`${active.styleKey}-${product.id}`}
               product={product}
               surface={`home_style_spotlight_${active.styleKey}`}
-              sizes="(max-width: 767px) 46vw, (max-width: 1279px) 28vw, 16vw"
+              sizes="(max-width: 639px) 44vw, (max-width: 1023px) 30vw, 22vw"
             />
           ))}
         </div>

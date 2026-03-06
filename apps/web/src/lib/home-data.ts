@@ -96,11 +96,11 @@ export const getHomeConfig = unstable_cache(
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 16;
+const HOME_CACHE_VERSION = 17;
 const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 8;
-const HOME_STYLE_SPOTLIGHT_PRODUCT_LIMIT = 4;
+const HOME_STYLE_SPOTLIGHT_PRODUCT_LIMIT = 8;
 const HOME_UTILITY_TAB_PRODUCT_LIMIT = 8;
 const HOME_HERO_IMAGE_POOL_LIMIT = 8;
 
@@ -2648,9 +2648,6 @@ export async function getStyleSpotlights(
           styleOrder: number;
           productCount: number;
           brandCount: number;
-          priceCoverage: number;
-          availabilityRatio: number;
-          freshnessRatio: number;
           products: ProductCard[];
         }
       >();
@@ -2666,9 +2663,6 @@ export async function getStyleSpotlights(
             styleOrder: Number(row.styleOrder ?? 0),
             productCount: Number(row.productCount ?? 0),
             brandCount: Number(row.brandCount ?? 0),
-            priceCoverage: clamp01(toFiniteNumber(row.priceCoverage)),
-            availabilityRatio: clamp01(toFiniteNumber(row.availabilityRatio)),
-            freshnessRatio: clamp01(toFiniteNumber(row.freshnessRatio)),
             products: [{ ...product, realStyle: styleKey }],
           });
           continue;
@@ -2685,12 +2679,9 @@ export async function getStyleSpotlights(
             ?? taxonomy.styleProfileLabels[styleKey]
             ?? labelize(styleKey),
           href: buildCatalogHref({ style: styleKey, in_stock: "true" }),
-          description: `${formatHomeCount(bucket.productCount)} productos con ${ratioToPct(bucket.priceCoverage)}% de precio visible y mezcla real de marcas.`,
+          description: `${formatHomeCount(bucket.productCount)} productos de ${bucket.brandCount} marcas`,
           productCount: bucket.productCount,
           brandCount: bucket.brandCount,
-          priceCoverage: bucket.priceCoverage,
-          availabilityRatio: bucket.availabilityRatio,
-          freshnessRatio: bucket.freshnessRatio,
           products: bucket.products.slice(0, HOME_STYLE_SPOTLIGHT_PRODUCT_LIMIT),
         }));
     },

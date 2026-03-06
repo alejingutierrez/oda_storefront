@@ -164,9 +164,6 @@ export type HomeStyleSpotlight = {
   description: string;
   productCount: number;
   brandCount: number;
-  priceCoverage: number;
-  availabilityRatio: number;
-  freshnessRatio: number;
   products: HomeProductCardData[];
 };
 
