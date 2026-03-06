@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { HomeProductCardData } from "@/lib/home-types";
+import { REAL_STYLE_LABELS, type RealStyleKey, isRealStyleKey } from "@/lib/real-style/constants";
 import { logExperienceEvent } from "@/lib/experience-events";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 
@@ -78,10 +79,29 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
       }));
   }, [products]);
 
+  const styleFilterOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const product of products) {
+      const style = product.realStyle;
+      if (!style || !isRealStyleKey(style)) continue;
+      counts.set(style, (counts.get(style) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([value, count]) => ({
+        value: `style:${value}`,
+        label: REAL_STYLE_LABELS[value as RealStyleKey],
+        count,
+      }));
+  }, [products]);
+
   const filteredProducts =
     activeFilter === "todo"
       ? products
-      : products.filter((product) => (product.subcategory || product.category || "").trim() === activeFilter);
+      : activeFilter.startsWith("style:")
+        ? products.filter((product) => product.realStyle === activeFilter.replace("style:", ""))
+        : products.filter((product) => (product.subcategory || product.category || "").trim() === activeFilter);
 
   const visibleProducts = filteredProducts.slice(0, visibleCount);
 
@@ -154,6 +174,29 @@ export default function HomeTrendingGrid({ products }: { products: HomeProductCa
               {option.label} ({option.count})
             </button>
           ))}
+
+          {styleFilterOptions.length > 0 ? (
+            <>
+              <span className="mx-1 text-[color:var(--oda-border)]">|</span>
+              {styleFilterOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    setActiveFilter(option.value);
+                    setVisibleCount(isDesktop ? DESKTOP_INITIAL_VISIBLE : MOBILE_INITIAL_VISIBLE);
+                  }}
+                  className={`rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.2em] transition ${
+                    activeFilter === option.value
+                      ? "border-[color:var(--oda-ink)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)]"
+                      : "border-[color:var(--oda-border)] bg-white text-[color:var(--oda-ink-soft)] hover:border-[color:var(--oda-ink-soft)]"
+                  }`}
+                >
+                  {option.label} ({option.count})
+                </button>
+              ))}
+            </>
+          ) : null}
         </div>
       </div>
 

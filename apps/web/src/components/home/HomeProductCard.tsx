@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { HomeProductCardData } from "@/lib/home-types";
+import { REAL_STYLE_LABELS, type RealStyleKey, isRealStyleKey } from "@/lib/real-style/constants";
 import { logExperienceEvent } from "@/lib/experience-events";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 
@@ -27,11 +28,13 @@ export default function HomeProductCard({
   className,
   sizes = "(max-width: 640px) 68vw, (max-width: 1024px) 40vw, 24vw",
   surface = "home_product_card",
+  showStyleBadge = false,
 }: {
   product: HomeProductCardData;
   className?: string;
   sizes?: string;
   surface?: string;
+  showStyleBadge?: boolean;
 }) {
   const hasPdpLink = product.brandSlug && product.slug;
   const href = hasPdpLink
@@ -75,6 +78,11 @@ export default function HomeProductCard({
         <span className="truncate text-[11px] uppercase tracking-[0.22em] text-[color:var(--oda-taupe)]">
           {product.brandName}
         </span>
+        {showStyleBadge && product.realStyle && isRealStyleKey(product.realStyle) ? (
+          <span className="text-[9px] uppercase tracking-[0.18em] text-[color:var(--oda-taupe)]">
+            {REAL_STYLE_LABELS[product.realStyle as RealStyleKey]}
+          </span>
+        ) : null}
         <span className="line-clamp-2 text-sm leading-snug text-[color:var(--oda-ink)] sm:text-[15px]">
           {product.name}
         </span>
