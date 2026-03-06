@@ -19,7 +19,6 @@ export default function ConversionCoverageBlock({
   stats,
 }: {
   stats: HomeCoverageStats | null;
-  seed: number;
 }) {
   const safeStats: HomeCoverageStats = {
     productCount: stats?.productCount ?? 0,

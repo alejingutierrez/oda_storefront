@@ -291,7 +291,7 @@ export default async function HomeBelowFold({
 
       {/* 6. ConversionCoverageBlock - simplified */}
       <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <ConversionCoverageBlock stats={coverageStats} seed={seed} />
+        <ConversionCoverageBlock stats={coverageStats} />
       </section>
 
       {/* 7. Story Section */}
