@@ -28,6 +28,10 @@ export const HOME_CONFIG_DEFAULTS: Record<string, string> = {
   "section.story.cta_label": "Ir al catálogo completo",
   "section.story.cta_href": "/unisex",
   "section.curated_looks.real_styles": "",
+  "section.style_showcase.heading": "Tu estilo, tus reglas",
+  "section.style_showcase.subheading": "Looks curados",
+  "section.style_showcase.expanded_count": "3",
+  "section.smart_rails.default_tab": "price_drops",
 };
 
 export type MenuSubcategory = {
@@ -68,6 +72,7 @@ export type HomeProductCardData = {
   minPrice: string | null;
   currency: string | null;
   sourceUrl: string | null;
+  realStyle?: string | null;
 };
 
 export type ProductCard = HomeProductCardData;

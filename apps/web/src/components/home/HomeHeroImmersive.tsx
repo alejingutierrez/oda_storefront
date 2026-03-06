@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { HOME_CONFIG_DEFAULTS, type HomeConfigMap, type HomeHeroSlide } from "@/lib/home-types";
+import { REAL_STYLE_LABELS, type RealStyleKey, isRealStyleKey } from "@/lib/real-style/constants";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 
 function cfgVal(config: HomeConfigMap | undefined, key: string): string {
@@ -113,7 +114,7 @@ export default function HomeHeroImmersive({
 
   return (
     <section
-      className="relative isolate min-h-[64svh] overflow-hidden border-b border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)] lg:min-h-[74svh]"
+      className="relative isolate min-h-[58svh] overflow-hidden border-b border-[color:var(--oda-border)] bg-[color:var(--oda-ink)] text-[color:var(--oda-cream)] lg:min-h-[68svh]"
       onPointerDown={(event) => {
         if (event.pointerType === "mouse" || slides.length <= 1) return;
         swipeRef.current = { startX: event.clientX, startTime: Date.now() };
@@ -190,7 +191,7 @@ export default function HomeHeroImmersive({
 
       <div className="absolute inset-0 bg-[linear-gradient(100deg,rgba(10,10,10,0.38)_8%,rgba(10,10,10,0.12)_50%,rgba(10,10,10,0.28)_100%)]" />
 
-      <div className="oda-container relative flex min-h-[64svh] flex-col justify-end gap-4 py-7 sm:min-h-[68svh] sm:gap-6 sm:py-10 lg:min-h-[74svh] lg:gap-7 lg:py-14">
+      <div className="oda-container relative flex min-h-[58svh] flex-col justify-end gap-4 py-7 sm:min-h-[62svh] sm:gap-6 sm:py-10 lg:min-h-[68svh] lg:gap-7 lg:py-14">
         <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-end">
           <div className="max-w-[58rem] space-y-4 sm:space-y-5">
             <div className="flex flex-wrap items-center gap-3">
@@ -198,6 +199,15 @@ export default function HomeHeroImmersive({
               <span className="rounded-full border border-white/30 bg-black/25 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/88">
                 {contextualBadge}
               </span>
+              {activeSlide?.realStyle && isRealStyleKey(activeSlide.realStyle) ? (
+                <Link
+                  href={`/estilo/${encodeURIComponent(activeSlide.realStyle)}`}
+                  prefetch={false}
+                  className="rounded-full border border-white/30 bg-black/25 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/88 transition hover:bg-white/15"
+                >
+                  {REAL_STYLE_LABELS[activeSlide.realStyle as RealStyleKey]}
+                </Link>
+              ) : null}
             </div>
 
             <h1 className="font-display text-[2.75rem] leading-[0.92] sm:text-[4.2rem] lg:text-[6.6rem]">
@@ -244,22 +254,26 @@ export default function HomeHeroImmersive({
           </Link>
         </div>
 
-        {slides.length > 1 ? (
-          <div className="flex items-center gap-2">
-            {slides.map((slide, index) => (
-              <button
-                key={slide.id}
-                type="button"
-                onClick={() => setActiveIndex(index)}
-                aria-label={`Ir al slide ${index + 1}`}
-                aria-current={safeActiveIndex === index}
-                className={`h-2.5 rounded-full transition ${
-                  safeActiveIndex === index ? "w-8 bg-white" : "w-2.5 bg-white/45 hover:bg-white/70"
-                }`}
-              />
-            ))}
-          </div>
-        ) : null}
+        <div className="flex items-center justify-between">
+          {slides.length > 1 ? (
+            <div className="flex items-center gap-2">
+              {slides.map((slide, index) => (
+                <button
+                  key={slide.id}
+                  type="button"
+                  onClick={() => setActiveIndex(index)}
+                  aria-label={`Ir al slide ${index + 1}`}
+                  aria-current={safeActiveIndex === index}
+                  className={`h-2.5 rounded-full transition ${
+                    safeActiveIndex === index ? "w-8 bg-white" : "w-2.5 bg-white/45 hover:bg-white/70"
+                  }`}
+                />
+              ))}
+            </div>
+          ) : <div />}
+
+          <ChevronDown className="h-5 w-5 animate-bounce text-white/60" strokeWidth={1.5} />
+        </div>
       </div>
 
       {slides.length > 1 ? (

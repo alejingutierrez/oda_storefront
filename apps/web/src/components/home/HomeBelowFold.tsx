@@ -1,15 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
-import BrandMarquee from "@/components/home/BrandMarquee";
-import CategoryGallery from "@/components/home/CategoryGallery";
-import ColorSwatchPalette from "@/components/home/ColorSwatchPalette";
 import ConversionCoverageBlock from "@/components/home/ConversionCoverageBlock";
-import CuratedStickyEdit from "@/components/home/CuratedStickyEdit";
-import HomeDailyTrendingRail from "@/components/home/HomeDailyTrendingRail";
-import HomeFavoritesRail from "@/components/home/HomeFavoritesRail";
-import HomePriceDropRail from "@/components/home/HomePriceDropRail";
+import EditorialMosaic from "@/components/home/EditorialMosaic";
 import HomeTrendingGrid from "@/components/home/HomeTrendingGrid";
 import ProductCarousel from "@/components/home/ProductCarousel";
+import SmartRails from "@/components/home/SmartRails";
+import StyleShowcase from "@/components/home/StyleShowcase";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 import {
   collectUniqueProducts,
@@ -76,6 +72,8 @@ export default async function HomeBelowFold({
   const newArrivalsLimit = cfgInt(config, "section.new_arrivals.limit");
   const priceDropsLimit = cfgInt(config, "section.price_drops.limit");
   const dailyTrendingLimit = cfgInt(config, "section.daily_trending.limit");
+  const styleShowcaseExpandedCount = cfgInt(config, "section.style_showcase.expanded_count");
+  const smartRailsDefaultTab = cfgVal(config, "section.smart_rails.default_tab");
 
   const [
     categoryHighlightsResult,
@@ -100,7 +98,7 @@ export default async function HomeBelowFold({
         subcategoryLimit: 12,
         excludeIds: initialExcludeIds,
       }),
-    withTimeout(getStyleGroups(seed, 2, config), []),
+    withTimeout(getStyleGroups(seed, 8, config), []),
     getResilientPriceDropPicks(seed, {
         limit: priceDropsLimit,
         excludeIds: initialExcludeIds,
@@ -160,7 +158,6 @@ export default async function HomeBelowFold({
   }
 
   const storyProductUnique = collectUniqueProducts(storyCandidatesRaw, registry, 1)[0] ?? null;
-  // Fallback chain: storyCandidatesRaw (deduped) → storyCandidatesRaw (any with image) → other section pools
   const storyProduct = storyProductUnique
     ?? storyCandidatesRaw.find((p) => p.imageCoverUrl && p.imageCoverUrl.trim() !== "")
     ?? [...mostFavoritedRaw, ...focusResult.items, ...newArrivalsResult.items]
@@ -212,8 +209,6 @@ export default async function HomeBelowFold({
     console.info("home.section", stat);
   }
 
-  // Sections that have their own graceful empty-state UI (e.g. HomePriceDropRail)
-  // should NOT block the build when empty — they are "soft" sections.
   const softSections = new Set(["price_drop", "daily_trending"]);
   const emptyCriticalSections = criticalSectionStats
     .filter((stat) => stat.count === 0 && !softSections.has(stat.section))
@@ -248,6 +243,15 @@ export default async function HomeBelowFold({
 
   return (
     <>
+      {/* 1. StyleShowcase - full-width immersive style sections */}
+      {styleGroups.length > 0 ? (
+        <StyleShowcase
+          styleGroups={styleGroups}
+          expandedCount={styleShowcaseExpandedCount || 3}
+        />
+      ) : null}
+
+      {/* 2. New Arrivals carousel */}
       <section className={`oda-container py-12 sm:py-16 ${FOLD_SECTION_CLASS}`}>
         <ProductCarousel
           title={cfgVal(config, "section.new_arrivals.heading")}
@@ -260,42 +264,37 @@ export default async function HomeBelowFold({
         />
       </section>
 
-      <section className={`oda-container pb-14 sm:pb-18 ${FOLD_SECTION_CLASS}`}>
-        <CategoryGallery categories={categoryHighlights} />
-      </section>
-
+      {/* 3. EditorialMosaic - categories + colors + brands */}
       <section className={`oda-container pb-14 sm:pb-20 ${FOLD_SECTION_CLASS}`}>
-        <CuratedStickyEdit styleGroups={styleGroups} />
+        <EditorialMosaic
+          categories={categoryHighlights}
+          colorCombos={colorCombos}
+          brands={brandLogos}
+        />
       </section>
 
-      <section className={`oda-container pb-14 sm:pb-20 ${FOLD_SECTION_CLASS}`}>
-        <ColorSwatchPalette colorCombos={colorCombos} />
-      </section>
-
-      <section className={`oda-container pb-14 sm:pb-20 ${FOLD_SECTION_CLASS}`}>
-        <BrandMarquee brands={brandLogos} />
-      </section>
-
+      {/* 4. Trending Grid */}
       <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
         <HomeTrendingGrid products={focusProducts} />
       </section>
 
+      {/* 5. SmartRails - price drops + favorites + daily trending */}
       <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <ConversionCoverageBlock stats={coverageStats} seed={seed} />
+        <SmartRails
+          priceDropProducts={priceDrop}
+          initialFavorites={mostFavorited}
+          dailyTrendingProducts={dailyTrending}
+          favoritesExcludeIds={favoritesExcludeIds}
+          defaultTab={smartRailsDefaultTab}
+        />
       </section>
 
+      {/* 6. ConversionCoverageBlock - simplified */}
       <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <HomePriceDropRail products={priceDrop} />
+        <ConversionCoverageBlock stats={coverageStats} />
       </section>
 
-      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <HomeFavoritesRail initialProducts={mostFavorited} excludeIds={favoritesExcludeIds} />
-      </section>
-
-      <section className={`oda-container pb-16 sm:pb-22 ${FOLD_SECTION_CLASS}`}>
-        <HomeDailyTrendingRail products={dailyTrending} />
-      </section>
-
+      {/* 7. Story Section */}
       <section className={`border-y border-[color:var(--oda-border)] bg-white ${FOLD_SECTION_CLASS}`}>
         <div className="oda-container grid gap-8 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
           <div className="flex flex-col gap-4 lg:pr-8">

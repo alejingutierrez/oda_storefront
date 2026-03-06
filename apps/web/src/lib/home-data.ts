@@ -82,10 +82,10 @@ export const getHomeConfig = unstable_cache(
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 14;
+const HOME_CACHE_VERSION = 15;
 const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
-const HOME_STYLE_PRODUCTS_LIMIT = 6;
+const HOME_STYLE_PRODUCTS_LIMIT = 8;
 const HOME_HERO_IMAGE_POOL_LIMIT = 8;
 
 type HomePricingContext = {
@@ -431,6 +431,7 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
             p.category,
             p.subcategory,
             p."sourceUrl",
+            p.real_style as "realStyle",
             (
               select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
               from variants v
@@ -486,6 +487,7 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
             p.category,
             p.subcategory,
             p."sourceUrl",
+            p.real_style as "realStyle",
             case
               when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
               else null
@@ -538,6 +540,7 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
             p.category,
             p.subcategory,
             p."sourceUrl",
+            p.real_style as "realStyle",
             case
               when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
               else null
@@ -801,11 +804,14 @@ export async function getStyleGroups(seed: number, limit = 3, config?: HomeConfi
             "rowRank",
             id,
             name,
+            slug,
             "imageCoverUrl",
             "brandName",
+            "brandSlug",
             category,
             subcategory,
             "sourceUrl",
+            "styleKey" as "realStyle",
             "minPrice",
             "sourceCurrency",
             "brandOverrideUsd",
@@ -837,6 +843,7 @@ export async function getStyleGroups(seed: number, limit = 3, config?: HomeConfi
           category: row.category,
           subcategory: row.subcategory,
           sourceUrl: row.sourceUrl,
+          realStyle: row.styleKey ?? null,
           minPrice: toCopDisplayString({
             value: row.minPrice,
             unitCop: pricingContext.displayUnitCop,
@@ -1186,6 +1193,7 @@ export async function getHeroSlides(
         p.category,
         p.subcategory,
         p."sourceUrl",
+        p.real_style as "realStyle",
         p.currency as "sourceCurrency",
         coalesce(b."metadata"->>'overrideAllPricesToUsd', 'false')::boolean as "brandOverrideUsd",
         ${buildEffectiveVariantPriceCopExpr(pricingContext.pricing)} as "minPrice"
@@ -1214,6 +1222,7 @@ export async function getHeroSlides(
         category: row.category,
         subcategory: row.subcategory,
         sourceUrl: row.sourceUrl,
+        realStyle: row.realStyle ?? null,
         minPrice: toCopDisplayString({
           value: row.minPrice,
           unitCop: pricingContext.displayUnitCop,
@@ -1329,6 +1338,7 @@ export async function getPriceDropPicks(
               p.category,
               p.subcategory,
               p."sourceUrl",
+              p.real_style as "realStyle",
               p.currency as "sourceCurrency",
               (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
               p."minPriceCop" as current_price,
@@ -1363,6 +1373,7 @@ export async function getPriceDropPicks(
               c.category,
               c.subcategory,
               c."sourceUrl",
+              c."realStyle",
               case
                 when c.current_price > 0 and c.current_price <= ${CATALOG_MAX_VALID_PRICE} then c.current_price
                 else null
@@ -1388,6 +1399,7 @@ export async function getPriceDropPicks(
             r.category,
             r.subcategory,
             r."sourceUrl",
+            r."realStyle",
             r."minPrice",
             r."sourceCurrency",
             r."brandOverrideUsd",
@@ -1474,6 +1486,7 @@ export async function getMostFavoritedPicks(
             p.category,
             p.subcategory,
             p."sourceUrl",
+            p.real_style as "realStyle",
             (
               select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
               from variants v
@@ -1533,6 +1546,7 @@ export async function getUserFavoritePicks(
             p.category,
             p.subcategory,
             p."sourceUrl",
+            p.real_style as "realStyle",
             (
               select min(case when ${priceCopExpr} > 0 and ${priceCopExpr} <= ${CATALOG_MAX_VALID_PRICE} then ${priceCopExpr} end)
               from variants v
@@ -1602,6 +1616,7 @@ export async function getDailyTrendingPicks(
               p.category,
               p.subcategory,
               p."sourceUrl",
+              p.real_style as "realStyle",
               case
                 when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
                 else null
@@ -1663,6 +1678,7 @@ export async function getDailyTrendingPicks(
               p.category,
               p.subcategory,
               p."sourceUrl",
+              p.real_style as "realStyle",
               case
                 when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
                 else null
@@ -1748,6 +1764,7 @@ async function getPriceDropSignalFallback(
           p.category,
           p.subcategory,
           p."sourceUrl",
+          p.real_style as "realStyle",
           p.currency as "sourceCurrency",
           (upper(coalesce(b.metadata -> 'pricing' ->> 'currency_override', '')) = 'USD') as "brandOverrideUsd",
           case
@@ -1776,6 +1793,7 @@ async function getPriceDropSignalFallback(
         c.category,
         c.subcategory,
         c."sourceUrl",
+        c."realStyle",
         c."minPrice",
         c."sourceCurrency",
         c."brandOverrideUsd",
@@ -1846,6 +1864,7 @@ async function getFastEditorialPicks(
         p.category,
         p.subcategory,
         p."sourceUrl",
+        p.real_style as "realStyle",
         case
           when p."minPriceCop" > 0 and p."minPriceCop" <= ${CATALOG_MAX_VALID_PRICE} then p."minPriceCop"
           else null
