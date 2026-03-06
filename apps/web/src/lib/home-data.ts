@@ -96,7 +96,7 @@ export const getHomeConfig = unstable_cache(
 
 const HOME_REVALIDATE_SECONDS = 60 * 60;
 // Bump to invalidate `unstable_cache` entries when the home queries/semantics change.
-const HOME_CACHE_VERSION = 18;
+const HOME_CACHE_VERSION = 19;
 const HOME_SECTION_TIMEOUT_MS = 12_000;
 const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 const HOME_STYLE_PRODUCTS_LIMIT = 8;
@@ -151,6 +151,18 @@ function toCopDisplayString(input: {
 function sqlExcludeProductIds(ids: string[]) {
   if (!ids.length) return Prisma.empty;
   return Prisma.sql`and p.id not in (${Prisma.join(ids)})`;
+}
+
+/**
+ * Convert a seed + section offset into a value in [0, 1) for range-based
+ * random selection.  Instead of sorting ALL products via a computed expression
+ * (which forces a full table scan + sort), we pick a starting point on the
+ * pre-indexed random_sort_key range and scan forward — turning a 183 s
+ * Seq Scan into a <2 ms Index Scan.
+ */
+function seedToSortOffset(seed: number, sectionOffset: number): number {
+  const combined = seed * 7919 + sectionOffset * 104729;
+  return (((combined % 1000000) + 1000000) % 1000000) / 1000000;
 }
 
 function sqlIsActiveCatalogProduct() {
@@ -518,8 +530,9 @@ export async function getHeroProduct(seed: number): Promise<ProductCard | null> 
             'COP' as currency
           from products p
           join brands b on b.id = p."brandId"
-          where p."imageCoverUrl" is not null
-          order by ((p."random_sort_key" * 1000000 + ${seed})::bigint % 1000000)
+          where ${sqlIsActiveCatalogProduct()}
+            and p."random_sort_key" >= ${seedToSortOffset(seed, 0)}
+          order by p."random_sort_key"
           limit 1
         `
       );
@@ -574,7 +587,8 @@ export async function getNewArrivals(seed: number, limit = 8): Promise<ProductCa
           from products p
           join brands b on b.id = p."brandId"
           where ${sqlIsActiveCatalogProduct()}
-          order by ((p."random_sort_key" * 1000000 + ${seed + 1001})::bigint % 1000000)
+            and p."random_sort_key" >= ${seedToSortOffset(seed, 1001)}
+          order by p."random_sort_key"
           limit ${limit}
         `
       );
@@ -627,7 +641,8 @@ export async function getTrendingPicks(seed: number, limit = 8): Promise<Product
           from products p
           join brands b on b.id = p."brandId"
           where ${sqlIsActiveCatalogProduct()}
-          order by ((p."random_sort_key" * 1000000 + ${seed + 2003})::bigint % 1000000)
+            and p."random_sort_key" >= ${seedToSortOffset(seed, 2003)}
+          order by p."random_sort_key"
           limit ${limit}
         `
       );
@@ -681,7 +696,7 @@ export async function getCategoryHighlights(
               count(*) over (partition by n.category) as category_count,
               row_number() over (
                 partition by n.category
-                order by ((n."random_sort_key" * 1000000 + ${seed + 3007})::bigint % 1000000)
+                order by n."random_sort_key"
               ) as image_rank
             from normalized n
           ),
@@ -868,7 +883,7 @@ export async function getStyleGroups(seed: number, limit = 3, config?: HomeConfi
                   case when p."editorialTopPickRank" is not null or p."editorialFavoriteRank" is not null then 0 else 1 end asc,
                   coalesce(p."editorialTopPickRank", 999999) asc,
                   coalesce(p."editorialFavoriteRank", 999999) asc,
-                  ((p."random_sort_key" * 1000000 + ${seed + 4001})::bigint % 1000000)
+                  p."random_sort_key"
               ) as "rowRank"
             from top_styles ts
             join products p on p.real_style = ts.style_key and p."imageCoverUrl" is not null
@@ -1038,7 +1053,7 @@ export async function getBrandLogos(seed: number, limit = 24): Promise<BrandLogo
                 p."imageCoverUrl",
                 row_number() over (
                   partition by p."brandId"
-                  order by ((p."random_sort_key" * 1000000 + ${seed + 5003})::bigint % 1000000)
+                  order by p."random_sort_key"
                 ) as rn
               from products p
               join brands b on b.id = p."brandId"
@@ -1586,7 +1601,7 @@ export async function getMostFavoritedPicks(
           where p."imageCoverUrl" is not null
             and p."hasInStock" = true
             ${sqlExcludeProductIds(excludeIds)}
-          order by fr.favorite_count desc, ((p."random_sort_key" * 1000000 + ${seed + 7001})::bigint % 1000000)
+          order by fr.favorite_count desc, p."random_sort_key"
           limit ${limit}
         `
       );
@@ -1776,7 +1791,7 @@ export async function getDailyTrendingPicks(
             from clicks c
             join products p on p.id = c.product_id
             join brands b on b.id = p."brandId"
-            order by c.click_count desc, ((p."random_sort_key" * 1000000 + ${seed + 8003})::bigint % 1000000)
+            order by c.click_count desc, p."random_sort_key"
             limit ${limit}
           `,
         );
@@ -1961,7 +1976,7 @@ async function getFastEditorialPicks(
       join brands b on b.id = p."brandId"
       where ${sqlIsActiveCatalogProduct()}
         ${sqlExcludeProductIds(excludeIds)}
-      order by p."updatedAt" desc nulls last, ((p."random_sort_key" * 1000000 + ${seed + 10007})::bigint % 1000000)
+      order by p."updatedAt" desc nulls last, p."random_sort_key"
       limit ${limit}
     `,
   );
@@ -2609,7 +2624,7 @@ export async function getStyleSpotlights(
                   coalesce(sb."editorialTopPickRank", 999999) asc,
                   coalesce(sb."editorialFavoriteRank", 999999) asc,
                   sb.updated_at desc nulls last,
-                  ((sb."random_sort_key" * 1000000 + ${seed + 913})::bigint % 1000000)
+                  sb."random_sort_key"
               ) as "rowRank"
             from ranked_styles rs
             join style_base sb on sb.style_key = rs.style_key
