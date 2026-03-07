@@ -238,9 +238,37 @@ export const validateAndAutofixEnrichment = (params: {
   const BABY_CATEGORIES = new Set(["ropa_de_bebe_0_24_meses"]);
   const GENDER_NEUTRAL_CATS = new Set(["hogar_y_lifestyle", "gafas_y_optica", "tarjeta_regalo"]);
 
+  // Subcategory-level gender hints: some subcategories within neutral categories have implicit gender
+  const SUBCATEGORY_GENDER_HINTS: Record<string, string> = {
+    corbatas: "masculino",
+    pajaritas_monos: "masculino",
+    tirantes: "masculino",
+    panuelo_de_bolsillo: "masculino",
+    boxer_clasico: "masculino",
+    boxer_largo_long_leg: "masculino",
+    brief: "masculino",
+    brasier: "femenino",
+    bralette: "femenino",
+    panty_trusa: "femenino",
+    brasilera: "femenino",
+    tanga_hilo: "femenino",
+    babydoll: "femenino",
+    body_lencero: "femenino",
+    corset_corse: "femenino",
+    liguero: "femenino",
+  };
+  const subcatGenderHint = SUBCATEGORY_GENDER_HINTS[working.subcategory];
+
   if (BABY_CATEGORIES.has(working.category) && working.gender !== "infantil") {
     applyAutoFix(working, autoFixes, "gender", "infantil");
-  } else if (GENDER_NEUTRAL_CATS.has(working.category) && working.gender !== "no_binario_unisex") {
+  } else if (
+    subcatGenderHint &&
+    working.gender !== subcatGenderHint &&
+    !BABY_CATEGORIES.has(working.category)
+  ) {
+    // Subcategory gender hint overrides neutral category defaults
+    applyAutoFix(working, autoFixes, "gender", subcatGenderHint);
+  } else if (GENDER_NEUTRAL_CATS.has(working.category) && working.gender !== "no_binario_unisex" && !subcatGenderHint) {
     applyAutoFix(working, autoFixes, "gender", "no_binario_unisex");
   } else if (
     FEMALE_IMPLICIT_CATEGORIES.has(working.category) &&
@@ -273,7 +301,11 @@ export const validateAndAutofixEnrichment = (params: {
   const inferredMaterials = normalizeEnumArray(signals.inferredMaterials, taxonomy.materialTags);
   if (inferredMaterials.length) {
     const normalizedCurrent = normalizeEnumArray(working.materialTags, taxonomy.materialTags);
-    const overlap = normalizedCurrent.filter((tag) => inferredMaterials.includes(tag));
+    // Allow parent-child refinements as overlap (e.g. "algodon" matches "algodon_pima")
+    const overlap = normalizedCurrent.filter((tag) =>
+      inferredMaterials.includes(tag) ||
+      inferredMaterials.some((inf) => tag.startsWith(inf + "_") || inf.startsWith(tag + "_"))
+    );
     if (!overlap.length) {
       const next = dedupe([...inferredMaterials, ...normalizedCurrent]).slice(0, 3);
       const before = normalizedCurrent.join(",");
@@ -335,8 +367,11 @@ export const validateAndAutofixEnrichment = (params: {
   }
 
   if (inferredMaterials.length) {
-    const overlap = working.materialTags.filter((tag) => inferredMaterials.includes(tag));
-    if (!overlap.length) {
+    const materialOverlap = working.materialTags.filter((tag) =>
+      inferredMaterials.includes(tag) ||
+      inferredMaterials.some((inf) => tag.startsWith(inf + "_") || inf.startsWith(tag + "_"))
+    );
+    if (!materialOverlap.length) {
       issues.push({
         field: "materialTags",
         severity: "warning",

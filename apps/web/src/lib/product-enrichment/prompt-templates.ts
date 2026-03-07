@@ -145,6 +145,18 @@ Debes devolver SOLO JSON valido con el siguiente esquema:
 - "chaleco" sin evidencia de camisa = chaleco (buzos_hoodies_y_sueteres). "chaleco camisa" = (camisas_y_blusas) solo si hay botones/cuello.
 - "lenceria" en SEO de marca no implica necesariamente lenceria_y_fajas_shapewear; puede ser ropa_interior_basica.
 - "pantaloneta" o "short de bano" = trajes_de_bano_y_playa, NO shorts_y_bermudas.
+- "canguro" como prenda = hoodie (buzos_hoodies_y_sueteres). "canguro" como bolso = rinonera (bolsos_y_marroquineria).
+
+## EJEMPLOS DE CLASIFICACION CORRECTA (referencia):
+- "Collar cadena dorada mujer" → joyeria_y_bisuteria, femenino (NO camisas_y_blusas)
+- "Body encaje negro mujer" → camisetas_y_tops / bodysuit, femenino (NO lenceria, salvo evidencia explicita)
+- "Canguro Nike Sportswear" → buzos_hoodies_y_sueteres (NO bolsos)
+- "Bota tipo media cana" → calzado / botas (NO medias)
+- "Chaleco de vestir gris hombre" → blazers_y_sastreria, masculino (NO buzos_hoodies)
+- "Set pijama short + blusa" → conjuntos_y_sets_2_piezas
+- "Pantaloneta deportiva hombre" → ropa_deportiva_y_performance / shorts_deportivos, masculino
+- "Short bebe rosa" → shorts_y_bermudas, femenino (bebe rosa = color, NO infantil)
+- "Vestido largo elegante" → vestidos, femenino
 
 Reglas estrictas de formato:
 - description debe ser texto plano (sin HTML).

@@ -333,6 +333,16 @@ const CATEGORY_MOVE_REQUIRED_EVIDENCE: Partial<Record<string, string[]>> = {
 
 const canMoveToCategory = (category: string | null, evidenceText: string) => {
   if (!category) return false;
+
+  // "body" is ambiguous: bodysuit (apparel) vs body cream/lotion (cosmetics).
+  // If evidence text has "body" followed by a cosmetic word, skip camisetas_y_tops remap.
+  if (
+    category === "camisetas_y_tops" &&
+    /\bbody\s+(lotion|cream|splash|wash|mist|oil|butter|scrub|spray|milk|gel)\b/i.test(evidenceText)
+  ) {
+    return false;
+  }
+
   if (
     category === "calzado" &&
     hasAnyKeyword(evidenceText, ["arete", "aretes", "earring", "earrings", "topos", "pendiente", "pendientes"])
@@ -444,26 +454,24 @@ const canMoveToCategory = (category: string | null, evidenceText: string) => {
   }
   if (
     category === "buzos_hoodies_y_sueteres" &&
-    hasAnyKeyword(evidenceText, ["canguro"]) &&
-    hasAnyKeyword(evidenceText, [
-      "rinonera",
-      "riñonera",
-      "waist bag",
-      "belt bag",
-      "bolso",
-      "bolsos",
-      "bag",
-      "bags",
-      "cartera",
-      "mochila",
-      "morral",
-      "bandolera",
-      "crossbody",
-    ]) &&
-    !hasAnyKeyword(evidenceText, ["buzo", "hoodie", "sudadera", "sweatshirt", "sueter", "suéter", "sweater"])
+    hasAnyKeyword(evidenceText, ["canguro"])
   ) {
-    // "Canguro" is ambiguous in CO (hoodie vs riñonera). If it looks like a bag, don't move into sweaters/hoodies.
-    return false;
+    // "Canguro" is ambiguous in CO: can mean hoodie or riñonera/fanny pack.
+    const hasBagEvidence = hasAnyKeyword(evidenceText, [
+      "rinonera", "riñonera", "waist bag", "belt bag",
+      "bolso", "bolsos", "bag", "bags", "cartera",
+      "mochila", "morral", "bandolera", "crossbody",
+    ]);
+    const hasBuzoEvidence = hasAnyKeyword(evidenceText, [
+      "buzo", "hoodie", "sudadera", "sweatshirt",
+      "sueter", "suéter", "sweater", "capucha",
+    ]);
+    // If bag evidence without buzo evidence → don't move to hoodies
+    if (hasBagEvidence && !hasBuzoEvidence) return false;
+    // If both bag and buzo evidence → ambiguous, skip remap to avoid errors
+    if (hasBagEvidence && hasBuzoEvidence) return false;
+    // If no buzo evidence and no bag evidence → "canguro" alone defaults to hoodie in CO
+    // Allow move but only if other hoodie-related required evidence exists
   }
   if (
     category === "ropa_deportiva_y_performance" &&
