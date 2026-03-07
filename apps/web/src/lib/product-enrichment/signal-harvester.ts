@@ -364,11 +364,12 @@ const inferGenderSignal = (params: {
     { key: "name", text: params.nameText, weight: 2.1 },
     { key: "description", text: params.descriptionText, weight: 1.7 },
     { key: "vendor_tags", text: params.vendorTagText, weight: 1.05 },
-    // SEO signals are useful as weak hints, but should never dominate gender inference.
-    { key: "seo_tags", text: params.seoTagText, weight: 0.22 },
-    { key: "seo_title", text: params.seoTitleText, weight: 0.24 },
-    { key: "seo_description", text: params.seoDescriptionText, weight: 0.18 },
-    { key: "url", text: params.urlText, weight: 0.72 },
+    // SEO signals in Colombian fashion stores often contain explicit gender info
+    // (e.g. "Ropa mujer", "Colección hombre"). Weight raised to reflect reliability.
+    { key: "seo_tags", text: params.seoTagText, weight: 0.65 },
+    { key: "seo_title", text: params.seoTitleText, weight: 0.7 },
+    { key: "seo_description", text: params.seoDescriptionText, weight: 0.5 },
+    { key: "url", text: params.urlText, weight: 0.85 },
   ];
 
   let hasExplicitUnisex = false;
