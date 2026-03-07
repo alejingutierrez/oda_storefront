@@ -122,29 +122,30 @@ const normalizeKeywordKey = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+// Build a set of ALL taxonomy slugs (category + subcategory values) so we can detect
+// enrichment-injected tags that would create self-reinforcing remap evidence.
+const ALL_TAXONOMY_SLUGS = new Set<string>([
+  ...CATEGORY_VALUES.map((v) => normalizeKeywordKey(v)),
+  ...Object.values(SUBCATEGORY_BY_CATEGORY).flat().map((v) => normalizeKeywordKey(v)),
+]);
+
 const sanitizeSeoTags = (params: {
   seoTags: string[];
   currentCategory: string | null;
   currentSubcategory: string | null;
 }) => {
   if (!params.seoTags.length) return [];
-  const toKey = (value: string | null) => (value ? normalizeKeywordKey(value) : "");
-  const currentKeySet = new Set<string>();
-  const currentCategoryKey = toKey(params.currentCategory);
-  const currentSubcategoryKey = toKey(params.currentSubcategory);
-  if (currentCategoryKey) currentKeySet.add(currentCategoryKey);
-  if (currentSubcategoryKey) currentKeySet.add(currentSubcategoryKey);
 
   // Historical enrichment injected taxonomy slugs into `seoTags` as fallback
   // (e.g. `camisetas_y_tops`, `crop_top`), which creates self-reinforcing remaps.
-  // For remap evidence, drop anything equal to current category/subcategory.
+  // Drop ANY tag that exactly matches a taxonomy slug, not just the current one.
   return params.seoTags
     .map((value) => String(value ?? "").trim())
     .filter(Boolean)
     .filter((value) => {
       const key = normalizeKeywordKey(value);
       if (!key) return false;
-      if (currentKeySet.has(key)) return false;
+      if (ALL_TAXONOMY_SLUGS.has(key)) return false;
       return true;
     });
 };
@@ -332,6 +333,16 @@ const CATEGORY_MOVE_REQUIRED_EVIDENCE: Partial<Record<string, string[]>> = {
 
 const canMoveToCategory = (category: string | null, evidenceText: string) => {
   if (!category) return false;
+
+  // "body" is ambiguous: bodysuit (apparel) vs body cream/lotion (cosmetics).
+  // If evidence text has "body" followed by a cosmetic word, skip camisetas_y_tops remap.
+  if (
+    category === "camisetas_y_tops" &&
+    /\bbody\s+(lotion|cream|splash|wash|mist|oil|butter|scrub|spray|milk|gel)\b/i.test(evidenceText)
+  ) {
+    return false;
+  }
+
   if (
     category === "calzado" &&
     hasAnyKeyword(evidenceText, ["arete", "aretes", "earring", "earrings", "topos", "pendiente", "pendientes"])
@@ -443,26 +454,24 @@ const canMoveToCategory = (category: string | null, evidenceText: string) => {
   }
   if (
     category === "buzos_hoodies_y_sueteres" &&
-    hasAnyKeyword(evidenceText, ["canguro"]) &&
-    hasAnyKeyword(evidenceText, [
-      "rinonera",
-      "riñonera",
-      "waist bag",
-      "belt bag",
-      "bolso",
-      "bolsos",
-      "bag",
-      "bags",
-      "cartera",
-      "mochila",
-      "morral",
-      "bandolera",
-      "crossbody",
-    ]) &&
-    !hasAnyKeyword(evidenceText, ["buzo", "hoodie", "sudadera", "sweatshirt", "sueter", "suéter", "sweater"])
+    hasAnyKeyword(evidenceText, ["canguro"])
   ) {
-    // "Canguro" is ambiguous in CO (hoodie vs riñonera). If it looks like a bag, don't move into sweaters/hoodies.
-    return false;
+    // "Canguro" is ambiguous in CO: can mean hoodie or riñonera/fanny pack.
+    const hasBagEvidence = hasAnyKeyword(evidenceText, [
+      "rinonera", "riñonera", "waist bag", "belt bag",
+      "bolso", "bolsos", "bag", "bags", "cartera",
+      "mochila", "morral", "bandolera", "crossbody",
+    ]);
+    const hasBuzoEvidence = hasAnyKeyword(evidenceText, [
+      "buzo", "hoodie", "sudadera", "sweatshirt",
+      "sueter", "suéter", "sweater", "capucha",
+    ]);
+    // If bag evidence without buzo evidence → don't move to hoodies
+    if (hasBagEvidence && !hasBuzoEvidence) return false;
+    // If both bag and buzo evidence → ambiguous, skip remap to avoid errors
+    if (hasBagEvidence && hasBuzoEvidence) return false;
+    // If no buzo evidence and no bag evidence → "canguro" alone defaults to hoodie in CO
+    // Allow move but only if other hoodie-related required evidence exists
   }
   if (
     category === "ropa_deportiva_y_performance" &&
@@ -1601,13 +1610,103 @@ export const runTaxonomyAutoReseedBatch = async (params: {
         });
       }
 
+      // Gender-category coherence: infer gender from product type when signals are missing or weak.
+      // Categories/subcategories that are implicitly gendered should override "no_binario_unisex"
+      // defaults that were likely assigned by a high-temperature LLM pass.
+      const resolvedCategory = categoryCandidate ?? currentCategory;
+      const resolvedSubcategory = nextSubcategory ?? currentSubcategory;
+      const FEMALE_IMPLICIT_CATS = new Set(["vestidos", "faldas"]);
+      const FEMALE_IMPLICIT_SUBS = new Set([
+        "brasier", "bralette", "panty_trusa", "brasilera", "tanga_hilo",
+        "bikini", "trikini", "tankini", "babydoll", "body_lencero",
+        "corset_corse", "liguero", "falda_mini", "falda_midi", "falda_maxi",
+        "falda_lapiz", "falda_plisada", "falda_short_skort",
+      ]);
+      const MALE_IMPLICIT_SUBS = new Set([
+        "corbatas", "pajaritas_monos", "tirantes",
+        "boxer_clasico", "boxer_largo_long_leg", "brief",
+      ]);
+      const BABY_CATS = new Set(["ropa_de_bebe_0_24_meses"]);
+
+      if (
+        resolvedCategory &&
+        BABY_CATS.has(resolvedCategory) &&
+        currentGender !== "infantil"
+      ) {
+        nextGender = "infantil";
+        genderConfidence = Math.max(genderConfidence, 0.93);
+        genderSupport = Math.max(genderSupport, 2);
+        genderMargin = Math.max(genderMargin, 2.0);
+        reasons.push("coherence:baby_category_forces_infantil");
+      } else if (
+        resolvedCategory &&
+        GENDER_NEUTRAL_CATEGORY_SET.has(resolvedCategory) &&
+        currentGender !== "no_binario_unisex" &&
+        !nextGender
+      ) {
+        nextGender = "no_binario_unisex";
+        genderConfidence = Math.max(genderConfidence, 0.91);
+        genderSupport = Math.max(genderSupport, 2);
+        genderMargin = Math.max(genderMargin, 2.0);
+        reasons.push("coherence:neutral_category_forces_unisex");
+      } else if (
+        resolvedCategory &&
+        FEMALE_IMPLICIT_CATS.has(resolvedCategory) &&
+        currentGender === "masculino" &&
+        !signals.inferredGenderReasons.some((r) => r.includes("gender_male"))
+      ) {
+        nextGender = "femenino";
+        genderConfidence = Math.max(genderConfidence, 0.88);
+        genderSupport = Math.max(genderSupport, 2);
+        genderMargin = Math.max(genderMargin, 1.8);
+        reasons.push("coherence:female_category_overrides_male");
+      } else if (
+        resolvedSubcategory &&
+        FEMALE_IMPLICIT_SUBS.has(resolvedSubcategory) &&
+        currentGender === "masculino"
+      ) {
+        nextGender = "femenino";
+        genderConfidence = Math.max(genderConfidence, 0.88);
+        genderSupport = Math.max(genderSupport, 2);
+        genderMargin = Math.max(genderMargin, 1.8);
+        reasons.push("coherence:female_subcategory_overrides_male");
+      } else if (
+        resolvedSubcategory &&
+        MALE_IMPLICIT_SUBS.has(resolvedSubcategory) &&
+        currentGender === "femenino"
+      ) {
+        nextGender = "masculino";
+        genderConfidence = Math.max(genderConfidence, 0.88);
+        genderSupport = Math.max(genderSupport, 2);
+        genderMargin = Math.max(genderMargin, 1.8);
+        reasons.push("coherence:male_subcategory_overrides_female");
+      }
+
+      // When a product is "no_binario_unisex" but belongs to an implicitly gendered category
+      // (vestidos, faldas) and there are no explicit male signals, propose femenino.
+      if (
+        currentGender === "no_binario_unisex" &&
+        resolvedCategory &&
+        FEMALE_IMPLICIT_CATS.has(resolvedCategory) &&
+        nextGender === currentGender &&
+        !signals.inferredGenderReasons.some((r) => r.includes("gender_male"))
+      ) {
+        nextGender = "femenino";
+        genderConfidence = Math.max(genderConfidence, 0.85);
+        genderSupport = Math.max(genderSupport, 1);
+        genderMargin = Math.max(genderMargin, 1.5);
+        reasons.push("coherence:female_category_overrides_unisex");
+      }
+
       const categoryForGender =
         nextCategory ??
         currentCategory ??
         normalizeEnumValue(signals.inferredCategory, CATEGORY_VALUES);
       let genderMoveThreshold = currentGender ? 0.79 : 0.64;
+      // Lower threshold for moving FROM unisex: the old enrichment (temp=1) defaulted
+      // to unisex too aggressively. We want to make it easier to correct.
       if (currentGender === "no_binario_unisex" && nextGender && nextGender !== "no_binario_unisex") {
-        genderMoveThreshold = Math.max(genderMoveThreshold, 0.87);
+        genderMoveThreshold = Math.max(genderMoveThreshold, 0.82);
       }
       if (nextGender === "infantil" && currentGender && currentGender !== "infantil") {
         genderMoveThreshold = Math.max(genderMoveThreshold, 0.9);

@@ -70,14 +70,14 @@ const BEDROCK_SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY ?? "";
 const BEDROCK_SESSION_TOKEN = process.env.AWS_SESSION_TOKEN ?? "";
 const BEDROCK_TOP_K = Math.max(
   1,
-  Number(process.env.PRODUCT_ENRICHMENT_BEDROCK_TOP_K ?? 250),
+  Number(process.env.PRODUCT_ENRICHMENT_BEDROCK_TOP_K ?? 40),
 );
 const BEDROCK_TEMPERATURE_RAW = Number(
-  process.env.PRODUCT_ENRICHMENT_BEDROCK_TEMPERATURE ?? 1,
+  process.env.PRODUCT_ENRICHMENT_BEDROCK_TEMPERATURE ?? 0.3,
 );
 const BEDROCK_TEMPERATURE = Number.isFinite(BEDROCK_TEMPERATURE_RAW)
   ? BEDROCK_TEMPERATURE_RAW
-  : 1;
+  : 0.3;
 const BEDROCK_STOP_SEQUENCES = (process.env.PRODUCT_ENRICHMENT_BEDROCK_STOP_SEQUENCES
   ?? "\n\nHuman:")
   .split("||")
@@ -87,7 +87,7 @@ const BEDROCK_LATENCY =
   process.env.PRODUCT_ENRICHMENT_BEDROCK_LATENCY === "optimized" ? "optimized" : "standard";
 const MAX_RETRIES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_RETRIES ?? 3));
 const MAX_IMAGES = Math.max(1, Number(process.env.PRODUCT_ENRICHMENT_MAX_IMAGES ?? 8));
-const MAX_TOKENS = Math.max(256, Number(process.env.PRODUCT_ENRICHMENT_MAX_TOKENS ?? 1200));
+const MAX_TOKENS = Math.max(256, Number(process.env.PRODUCT_ENRICHMENT_MAX_TOKENS ?? 2000));
 const VARIANT_LIMIT = Math.max(
   1,
   Number(process.env.PRODUCT_ENRICHMENT_VARIANT_LIMIT ?? 2),

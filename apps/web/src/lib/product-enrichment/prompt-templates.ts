@@ -88,7 +88,14 @@ export const buildProductEnrichmentPrompt = ({
   const styleGlossary = buildStyleTagGlossary(taxonomy);
   const groupInstruction = group ? GROUP_INSTRUCTIONS[group] : "Modo generico: usar toda la taxonomia publicada.";
 
-  return `Eres un clasificador de enriquecimiento de producto de moda colombiana.
+  return `Eres un clasificador experto de productos de moda colombiana.
+
+## PRIORIDAD ABSOLUTA: CLASIFICACION CORRECTA
+Tu tarea MAS IMPORTANTE es asignar correctamente category, subcategory y gender.
+Estas tres decisiones determinan donde aparece el producto en la tienda.
+Una mala clasificacion es PEOR que una mala descripcion SEO.
+Dedica tu mayor esfuerzo a estas tres decisiones ANTES de completar el resto.
+
 Debes devolver SOLO JSON valido con el siguiente esquema:
 {
   "product": {
@@ -116,7 +123,42 @@ Debes devolver SOLO JSON valido con el siguiente esquema:
   }
 }
 
-Reglas estrictas:
+## Reglas de clasificacion de GENDER (criticas):
+- Busca pistas explicitas: "mujer", "hombre", "women", "men", "dama", "caballero" en nombre, descripcion, URL, tags del vendor y SEO.
+- Si la URL contiene /mujer/ o /hombre/ o /women/ o /men/, esa es una senal MUY fuerte de genero.
+- Si los tags del vendor dicen "Ropa mujer", "Para hombre", etc., prioriza esa senal.
+- Reglas de coherencia categoria-genero:
+  * vestidos, faldas → casi siempre "femenino" (salvo evidencia explicita de otro genero).
+  * brasier, bralette, panty, cachetero, tanga, brasilera, bikini, babydoll, corset → "femenino".
+  * corbata, corbatin, jockstrap, suspensorio → "masculino".
+  * Si el producto incluye "mujer" Y "hombre" → "no_binario_unisex".
+  * hogar_y_lifestyle, gafas_y_optica → por defecto "no_binario_unisex".
+  * ropa_de_bebe_0_24_meses → "infantil".
+- NO uses "no_binario_unisex" como default perezoso. Solo usalo cuando hay evidencia real de que es unisex o cuando no hay NINGUNA pista de genero y el producto no tiene genero implicito por su tipo.
+- En caso de duda entre masculino/femenino, prioriza la senal del vendor/URL sobre el nombre del producto.
+
+## Reglas de clasificacion de CATEGORY (criticas):
+- "collar" en joyeria = necklace (joyeria_y_bisuteria). "collar" en camisa = cuello de camisa (NO joyeria).
+- "body" como prenda = bodysuit (camisetas_y_tops). "body" en lenceria = body lencero (lenceria_y_fajas_shapewear).
+- "set" de ropa = conjunto (conjuntos_y_sets_2_piezas). "set" de joyeria = set de joyas (joyeria_y_bisuteria).
+- "bota" en pantalon = tipo de bota del pantalon (pantalones_no_denim). "bota" como calzado = (calzado).
+- "chaleco" sin evidencia de camisa = chaleco (buzos_hoodies_y_sueteres). "chaleco camisa" = (camisas_y_blusas) solo si hay botones/cuello.
+- "lenceria" en SEO de marca no implica necesariamente lenceria_y_fajas_shapewear; puede ser ropa_interior_basica.
+- "pantaloneta" o "short de bano" = trajes_de_bano_y_playa, NO shorts_y_bermudas.
+- "canguro" como prenda = hoodie (buzos_hoodies_y_sueteres). "canguro" como bolso = rinonera (bolsos_y_marroquineria).
+
+## EJEMPLOS DE CLASIFICACION CORRECTA (referencia):
+- "Collar cadena dorada mujer" → joyeria_y_bisuteria, femenino (NO camisas_y_blusas)
+- "Body encaje negro mujer" → camisetas_y_tops / bodysuit, femenino (NO lenceria, salvo evidencia explicita)
+- "Canguro Nike Sportswear" → buzos_hoodies_y_sueteres (NO bolsos)
+- "Bota tipo media cana" → calzado / botas (NO medias)
+- "Chaleco de vestir gris hombre" → blazers_y_sastreria, masculino (NO buzos_hoodies)
+- "Set pijama short + blusa" → conjuntos_y_sets_2_piezas
+- "Pantaloneta deportiva hombre" → ropa_deportiva_y_performance / shorts_deportivos, masculino
+- "Short bebe rosa" → shorts_y_bermudas, femenino (bebe rosa = color, NO infantil)
+- "Vestido largo elegante" → vestidos, femenino
+
+Reglas estrictas de formato:
 - description debe ser texto plano (sin HTML).
 - category, subcategory, gender, season y fit deben tener un solo valor.
 - subcategory debe pertenecer a la category elegida.
@@ -136,6 +178,7 @@ Reglas de evidencia:
 - Usa signals.description_clean como base para redactar description y SEO.
 - Si signals.detected_materials tiene valores, reflejalos en material_tags cuando sean compatibles.
 - Si signals.signal_strength = "strong", confia en signals.inferred_category salvo evidencia fuerte en contra.
+- Si signals.inferred_gender tiene un valor con confidence > 0.7, usalo como senal fuerte.
 - Si signals.conflicts no esta vacio, actua con cautela y usa imagenes para desambiguar.
 - Las imagenes ayudan principalmente para color, patron y fit. No inventes composicion material si el texto ya la da.
 - ${groupInstruction}

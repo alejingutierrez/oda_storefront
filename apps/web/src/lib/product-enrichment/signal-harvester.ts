@@ -364,12 +364,27 @@ const inferGenderSignal = (params: {
     { key: "name", text: params.nameText, weight: 2.1 },
     { key: "description", text: params.descriptionText, weight: 1.7 },
     { key: "vendor_tags", text: params.vendorTagText, weight: 1.05 },
-    // SEO signals are useful as weak hints, but should never dominate gender inference.
-    { key: "seo_tags", text: params.seoTagText, weight: 0.22 },
-    { key: "seo_title", text: params.seoTitleText, weight: 0.24 },
-    { key: "seo_description", text: params.seoDescriptionText, weight: 0.18 },
-    { key: "url", text: params.urlText, weight: 0.72 },
+    // SEO signals in Colombian fashion stores often contain explicit gender info
+    // (e.g. "Ropa mujer", "Colección hombre"). Weight raised to reflect reliability.
+    { key: "seo_tags", text: params.seoTagText, weight: 0.65 },
+    { key: "seo_title", text: params.seoTitleText, weight: 0.7 },
+    { key: "seo_description", text: params.seoDescriptionText, weight: 0.5 },
+    { key: "url", text: params.urlText, weight: 0.85 },
   ];
+
+  // Explicit gender detection from URL path segments (e.g. /mujer/, /hombre/)
+  // These are very reliable signals from the vendor's own site structure.
+  const rawUrl = params.urlText ?? "";
+  const urlGenderExplicit = (() => {
+    if (/\/(mujer|mujeres|woman|women)\//i.test(rawUrl)) return "femenino" as CanonicalGender;
+    if (/\/(hombre|hombres|man|men)\//i.test(rawUrl)) return "masculino" as CanonicalGender;
+    if (/\/(nino|nina|ninos|ninas|kids?|children|infantil|bebe)\//i.test(rawUrl)) return "infantil" as CanonicalGender;
+    if (/\/unisex\//i.test(rawUrl)) return "no_binario_unisex" as CanonicalGender;
+    return null;
+  })();
+  if (urlGenderExplicit) {
+    addScore(urlGenderExplicit, "url_path_explicit", 2.5, "ctx:explicit_url_gender_path");
+  }
 
   let hasExplicitUnisex = false;
 
@@ -382,8 +397,11 @@ const inferGenderSignal = (params: {
     const hasUnisex = hasAnyKeyword(text, UNISEX_KEYWORDS);
     const hasBebeToken = hasAnyKeyword(text, ["bebe", "bebé"]);
     const hasBabyColor = hasAnyKeyword(text, BABY_COLOR_PHRASES);
+    // Detect "bebé" as a color modifier (e.g. "rosa bebé", "azul bebé") — not an age signal
+    const bebeAsColorModifier = /beb[eé]\s+(rosa|azul|lila|celeste|mint|verde|amarillo)/i.test(text)
+      || /(rosa|azul|lila|celeste|mint|verde|amarillo)\s+beb[eé]/i.test(text);
     const hasOtherHardChild = hasAnyKeyword(text, CHILD_HARD_KEYWORDS);
-    const hasChildHard = hasOtherHardChild || (hasBebeToken && !hasBabyColor);
+    const hasChildHard = hasOtherHardChild || (hasBebeToken && !hasBabyColor && !bebeAsColorModifier);
     const hasChildSoft = hasAnyKeyword(text, CHILD_SOFT_KEYWORDS);
     const hasFemaleProduct = hasAnyKeyword(text, [
       "brasier",
@@ -467,7 +485,7 @@ const inferGenderSignal = (params: {
 
   const top = ranked[0];
   const second = ranked[1];
-  if (!top || top.score <= 0.95) {
+  if (!top || top.score <= 0.75) {
     return {
       gender: null,
       confidence: 0,
@@ -478,7 +496,7 @@ const inferGenderSignal = (params: {
   }
 
   const secondScore = second?.score ?? 0;
-  const margin = top.score / Math.max(0.2, secondScore);
+  const margin = top.score / Math.max(top.score * 0.2, 0.15, secondScore);
   let confidence =
     0.4 +
     Math.min(0.25, top.score / 8) +
@@ -499,7 +517,7 @@ const inferGenderSignal = (params: {
     };
   }
 
-  if (confidence < 0.57) {
+  if (confidence < 0.48) {
     return {
       gender: null,
       confidence: 0,
@@ -1833,10 +1851,10 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     | "seo"
     | "url";
   const CATEGORY_SOURCE_WEIGHTS: Record<CategorySource, number> = {
-    vendor_category: 5.5,
+    vendor_category: 7.5,
     description: 8.2,
     name_description: 7.2,
-    seo: 0.42,
+    seo: 2.0,
     vendor_tags: 2.8,
     name: 6.6,
     url: 1.2,
@@ -1884,7 +1902,7 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
   const topScore = rankedCategories[0]?.[1].score ?? 0;
   const conflictingSignals = rankedCategories
     .slice(1)
-    .filter(([, meta]) => meta.score >= topScore - 1 && meta.score > 0)
+    .filter(([, meta]) => meta.score >= topScore * 0.85 && meta.score > 0)
     .map(([category]) => category);
 
   const inferredSubcategory = (() => {
@@ -1988,13 +2006,25 @@ export const harvestProductSignals = (params: SignalInput): HarvestedSignals => 
     currentGender: normalizeEnumValue(params.currentGender, GENDER_VALUES),
   });
   const genderFallbackText = `${nameText} ${descText} ${vendorTagText} ${seoTextCombined} ${urlText}`;
-  let fallbackGender = normalizeEnumValue(
-    collectByRules(genderFallbackText, GENDER_KEYWORD_RULES)[0] ?? null,
-    GENDER_VALUES,
-  );
+  // Use scoring instead of first-match to avoid order-dependent bias in GENDER_KEYWORD_RULES
+  const allFallbackMatches = collectByRules(genderFallbackText, GENDER_KEYWORD_RULES);
+  let fallbackGender: string | null = null;
+  if (allFallbackMatches.length) {
+    const hitCounts = new Map<string, number>();
+    for (const match of allFallbackMatches) {
+      hitCounts.set(match, (hitCounts.get(match) ?? 0) + 1);
+    }
+    const sorted = [...hitCounts.entries()].sort((a, b) => b[1] - a[1]);
+    fallbackGender = normalizeEnumValue(sorted[0]?.[0] ?? null, GENDER_VALUES);
+  }
   // Avoid interpreting "bebé/bebe" as infant when it's clearly part of a color phrase ("azul bebé", etc.).
-  if (fallbackGender === "infantil" && hasAnyKeyword(genderFallbackText, BABY_COLOR_PHRASES)) {
-    fallbackGender = null;
+  if (fallbackGender === "infantil") {
+    const bebeIsBabyColor = hasAnyKeyword(genderFallbackText, BABY_COLOR_PHRASES);
+    const bebeIsColorMod = /(rosa|azul|lila|celeste|mint|verde|amarillo)\s+beb[eé]/i.test(genderFallbackText)
+      || /beb[eé]\s+(rosa|azul|lila|celeste|mint|verde|amarillo)/i.test(genderFallbackText);
+    if (bebeIsBabyColor || bebeIsColorMod) {
+      fallbackGender = null;
+    }
   }
   const inferredGender = genderInference.gender ?? fallbackGender;
   const inferredGenderConfidence = genderInference.gender
