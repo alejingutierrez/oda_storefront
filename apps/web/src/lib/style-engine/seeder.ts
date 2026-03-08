@@ -54,7 +54,6 @@ function baseWhere(excludeIds: string[]) {
     imageCoverUrl: { not: null },
     realStyle: { not: null },
     styleTags: { isEmpty: false },
-    status: "active",
     ...(excludeIds.length > 0 ? { id: { notIn: excludeIds } } : {}),
   } as const;
 }
