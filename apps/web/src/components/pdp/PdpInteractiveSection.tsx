@@ -7,14 +7,23 @@ import PdpVariantSelector from "@/components/pdp/PdpVariantSelector";
 import PdpPriceDisplay from "@/components/pdp/PdpPriceDisplay";
 import PdpCtaButton from "@/components/pdp/PdpCtaButton";
 import PdpShareMenu from "@/components/pdp/PdpShareMenu";
+import PdpOccasionPills from "@/components/pdp/PdpOccasionPills";
+import PdpDistinctionBadges from "@/components/pdp/PdpDistinctionBadges";
+import PdpPriceBadge from "@/components/pdp/PdpPriceBadge";
+import PdpPriceSparkline from "@/components/pdp/PdpPriceSparkline";
+import PdpAddToList from "@/components/pdp/PdpAddToList";
+import PdpLateralNav from "@/components/pdp/PdpLateralNav";
+import PdpPriceAlert from "@/components/pdp/PdpPriceAlert";
 import FavoriteToggle from "@/components/FavoriteToggle";
 import Link from "next/link";
-import type { PdpProduct } from "@/lib/pdp-data";
+import type { PdpProduct, PdpPriceInsight, PdpPriceHistory } from "@/lib/pdp-data";
 import { stripHtml } from "@/lib/utils";
 
 type Props = {
   product: PdpProduct;
   accordionContent?: ReactNode;
+  priceInsight: PdpPriceInsight;
+  priceHistory: PdpPriceHistory;
 };
 
 function formatPriceCop(amount: string | null, currency: string) {
@@ -49,6 +58,8 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 export default function PdpInteractiveSection({
   product,
   accordionContent,
+  priceInsight,
+  priceHistory,
 }: Props) {
   const { colorGroups } = product;
   const defaultColorKey = colorGroups[0]?.colorKey ?? null;
@@ -126,6 +137,16 @@ export default function PdpInteractiveSection({
         {/* Right column: Product info (sticky on desktop) */}
         <div className="mt-6 lg:mt-0">
           <div className="relative lg:sticky lg:top-[calc(var(--oda-header-h,72px)+1rem)] lg:max-h-[calc(100vh-var(--oda-header-h,72px)-2rem)] lg:overflow-y-auto lg:pr-1 oda-no-scrollbar">
+            {/* Lateral nav — desktop only */}
+            <PdpLateralNav productId={product.id} />
+
+            {/* Distinction badges */}
+            <PdpDistinctionBadges
+              realStyle={product.realStyle}
+              editorialTopPickRank={product.editorialTopPickRank}
+              editorialFavoriteRank={product.editorialFavoriteRank}
+            />
+
             {/* Brand */}
             <Link
               href={`/marca/${product.brand.slug}`}
@@ -155,6 +176,19 @@ export default function PdpInteractiveSection({
                 hasRange={!!hasRange}
                 priceChangeDirection={product.priceChangeDirection}
               />
+              <div className="mt-1.5">
+                <PdpPriceBadge insight={priceInsight} />
+              </div>
+              {priceHistory.points.length > 0 && (
+                <div className="mt-2">
+                  <PdpPriceSparkline history={priceHistory} />
+                </div>
+              )}
+              <PdpPriceAlert
+                productId={product.id}
+                currentPrice={displayPrice}
+                currency={displayCurrency}
+              />
             </div>
 
             {/* Last updated */}
@@ -169,6 +203,16 @@ export default function PdpInteractiveSection({
               <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-[color:var(--oda-ink-soft)]">
                 {displayDescription}
               </p>
+            )}
+
+            {/* Occasion pills */}
+            {product.occasionTags.length > 0 && (
+              <div className="mt-3">
+                <PdpOccasionPills
+                  occasionTags={product.occasionTags}
+                  gender={product.gender}
+                />
+              </div>
             )}
 
             {/* Availability badge */}
@@ -213,6 +257,7 @@ export default function PdpInteractiveSection({
                 productName={product.name}
                 brandName={product.brand.name}
               />
+              <PdpAddToList productId={product.id} />
             </div>
 
             {/* SEO Title before accordions (if different from product name) */}

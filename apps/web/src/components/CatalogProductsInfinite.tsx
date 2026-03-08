@@ -346,6 +346,8 @@ export default function CatalogProductsInfinite({
     return items;
   }, [items, navigationPending, optimisticSearchParams, preview]);
 
+  const displayItemIds = useMemo(() => displayItems.map((p) => p.id), [displayItems]);
+
   const knownTotalCount =
     typeof totalCount === "number" && Number.isFinite(totalCount) && totalCount >= 0 ? totalCount : null;
   const hasMore = useMemo(() => {
@@ -541,12 +543,17 @@ export default function CatalogProductsInfinite({
             </div>
           ) : (
             <ul className={[gridClassName, "list-none p-0 m-0"].join(" ")} aria-label="Productos">
-              {displayItems.map((product) => (
+              {displayItems.map((product, i) => (
                 <li key={product.id}>
                   <CatalogProductCard
                     product={product}
                     mobileAspect="original"
                     mobileCompact={mobileColumns === 2}
+                    navContext={{
+                      productIds: displayItemIds,
+                      currentIndex: i,
+                      label: "Catálogo",
+                    }}
                   />
                 </li>
               ))}

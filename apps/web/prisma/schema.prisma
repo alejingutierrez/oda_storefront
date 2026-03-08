@@ -617,6 +617,7 @@ model User {
   productCurationQueueItemsCreated  ProductCurationQueueItem[] @relation("ProductCurationQueueItemCreatedBy")
   productCurationQueueItemsApplied  ProductCurationQueueItem[] @relation("ProductCurationQueueItemAppliedBy")
   productCurationApplyRunsRequested ProductCurationApplyRun[]  @relation("ProductCurationApplyRunRequestedBy")
+  priceAlerts                       PriceAlert[]
 
   @@map("users")
 }
@@ -844,6 +845,23 @@ model UserAuditEvent {
   @@index([userId])
   @@index([action])
   @@map("user_audit_events")
+}
+
+model PriceAlert {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId    String
+  targetPrice  Decimal  @db.Decimal(12, 2)
+  currency     String   @default("COP")
+  active       Boolean  @default(true)
+  triggeredAt  DateTime?
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId, active])
+  @@map("price_alerts")
 }
 
 model Announcement {

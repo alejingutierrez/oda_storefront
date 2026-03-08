@@ -82,6 +82,9 @@ export type PdpProduct = {
   seoTitle: string | null;
   seoDescription: string | null;
   seoTags: string[];
+  editorialTopPickRank: number | null;
+  editorialFavoriteRank: number | null;
+  origin: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   brand: PdpBrand;
@@ -98,6 +101,37 @@ export type PdpRelatedProduct = {
   brandSlug: string;
   category: string | null;
   subcategory: string | null;
+  minPrice: string | null;
+  currency: string | null;
+  sourceUrl: string | null;
+};
+
+export type PdpPriceInsight = {
+  isBestPrice30d: boolean;
+  isDeepDiscount: boolean;
+  min30d: number | null;
+  max30d: number | null;
+};
+
+export type PdpPriceHistoryPoint = {
+  price: number;
+  date: string; // ISO date string (day only)
+};
+
+export type PdpPriceHistory = {
+  points: PdpPriceHistoryPoint[];
+  currentIsAllTimeLow: boolean;
+  daysCovered: number;
+};
+
+export type PdpOutfitItem = {
+  id: string;
+  name: string;
+  slug: string | null;
+  imageCoverUrl: string | null;
+  brandName: string;
+  brandSlug: string;
+  category: string | null;
   minPrice: string | null;
   currency: string | null;
   sourceUrl: string | null;
@@ -257,6 +291,9 @@ export async function getProductByBrandAndSlug(
         seoTitle: product.seoTitle,
         seoDescription: product.seoDescription,
         seoTags: product.seoTags,
+        editorialTopPickRank: product.editorialTopPickRank,
+        editorialFavoriteRank: product.editorialFavoriteRank,
+        origin: product.origin,
         createdAt: product.createdAt?.toISOString() ?? null,
         updatedAt: product.updatedAt?.toISOString() ?? null,
         brand,
@@ -400,6 +437,156 @@ export async function getRelatedProducts(
     },
     [`pdp-related-v1`, productId],
     { revalidate: PDP_REVALIDATE_SECONDS * 2, tags: [CATALOG_CACHE_TAG] },
+  );
+
+  return cached();
+}
+
+export async function getPriceInsight(
+  productId: string,
+  currentMinPrice: string | null,
+): Promise<PdpPriceInsight> {
+  if (!currentMinPrice || Number(currentMinPrice) <= 0) {
+    return { isBestPrice30d: false, isDeepDiscount: false, min30d: null, max30d: null };
+  }
+
+  const cached = unstable_cache(
+    async () => {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+      const result = await prisma.priceHistory.aggregate({
+        where: {
+          variant: { productId },
+          capturedAt: { gte: thirtyDaysAgo },
+        },
+        _min: { price: true },
+        _max: { price: true },
+      });
+
+      const min30d = result._min.price ? Number(result._min.price) : null;
+      const max30d = result._max.price ? Number(result._max.price) : null;
+      const current = Number(currentMinPrice);
+
+      const isBestPrice30d = min30d !== null && current <= min30d;
+      const isDeepDiscount =
+        max30d !== null && max30d > 0 && (max30d - current) / max30d >= 0.3;
+
+      return { isBestPrice30d, isDeepDiscount, min30d, max30d };
+    },
+    [`pdp-price-insight-v1`, productId],
+    { revalidate: 240, tags: [CATALOG_CACHE_TAG] },
+  );
+
+  return cached();
+}
+
+export async function getPriceHistory(
+  productId: string,
+  currentMinPrice: string | null,
+): Promise<PdpPriceHistory> {
+  const empty: PdpPriceHistory = { points: [], currentIsAllTimeLow: false, daysCovered: 0 };
+  if (!currentMinPrice || Number(currentMinPrice) <= 0) return empty;
+
+  const cached = unstable_cache(
+    async () => {
+      const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+      const rows: { day: Date; minPrice: unknown }[] = await prisma.$queryRaw`
+        SELECT date_trunc('day', ph."capturedAt") AS day,
+               MIN(ph.price) AS "minPrice"
+        FROM price_history ph
+        JOIN variants v ON v.id = ph."variantId"
+        WHERE v."productId" = ${productId}
+          AND ph."capturedAt" >= ${ninetyDaysAgo}
+        GROUP BY day
+        ORDER BY day
+      `;
+
+      if (rows.length < 7) return empty;
+
+      const points: PdpPriceHistoryPoint[] = rows.map((r) => ({
+        price: Number(r.minPrice),
+        date: new Date(r.day).toISOString().split("T")[0],
+      }));
+
+      const allTimeMin = Math.min(...points.map((p) => p.price));
+      const current = Number(currentMinPrice);
+      const currentIsAllTimeLow = current <= allTimeMin;
+
+      return {
+        points,
+        currentIsAllTimeLow,
+        daysCovered: points.length,
+      };
+    },
+    [`pdp-price-history-v1`, productId],
+    { revalidate: 600, tags: [CATALOG_CACHE_TAG] },
+  );
+
+  return cached();
+}
+
+export async function getOutfitSuggestions(
+  productId: string,
+  options: {
+    category: string | null;
+    gender: string | null;
+    realStyle: string | null;
+  },
+): Promise<PdpOutfitItem[]> {
+  if (!options.category) return [];
+
+  const cached = unstable_cache(
+    async () => {
+      const { getComplementaryCategories } = await import("@/lib/outfit-categories");
+      const complementGroups = getComplementaryCategories(options.category);
+      if (complementGroups.length === 0) return [];
+
+      const results: PdpOutfitItem[] = [];
+
+      for (const categories of complementGroups.slice(0, 3)) {
+        if (results.length >= 3) break;
+
+        const whereClause: Record<string, unknown> = {
+          category: { in: categories },
+          id: { not: productId },
+          hasInStock: true,
+          imageCoverUrl: { not: null },
+        };
+
+        if (options.gender) {
+          whereClause.gender = options.gender;
+        }
+        if (options.realStyle) {
+          whereClause.realStyle = options.realStyle;
+        }
+
+        const product = await prisma.product.findFirst({
+          where: whereClause,
+          include: { brand: { select: { name: true, slug: true } } },
+          orderBy: { randomSortKey: "asc" },
+        });
+
+        if (product) {
+          results.push({
+            id: product.id,
+            name: product.name,
+            slug: product.slug,
+            imageCoverUrl: product.imageCoverUrl,
+            brandName: product.brand.name,
+            brandSlug: product.brand.slug,
+            category: product.category,
+            minPrice: product.minPriceCop?.toString() ?? null,
+            currency: product.currency,
+            sourceUrl: product.sourceUrl,
+          });
+        }
+      }
+
+      return results;
+    },
+    [`pdp-outfit-v1`, productId],
+    { revalidate: 600, tags: [CATALOG_CACHE_TAG] },
   );
 
   return cached();

@@ -9,11 +9,30 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const url = new URL(req.url);
+  const productId = url.searchParams.get("productId");
+
   const lists = await prisma.userList.findMany({
     where: { userId: session.user.id },
     orderBy: { createdAt: "desc" },
     include: { _count: { select: { items: true } } },
   });
+
+  if (productId) {
+    const memberships = await prisma.userListItem.findMany({
+      where: {
+        listId: { in: lists.map((l) => l.id) },
+        productId,
+      },
+      select: { listId: true },
+    });
+    const memberSet = new Set(memberships.map((m) => m.listId));
+    const enriched = lists.map((l) => ({
+      ...l,
+      hasProduct: memberSet.has(l.id),
+    }));
+    return NextResponse.json({ lists: enriched });
+  }
 
   return NextResponse.json({ lists });
 }

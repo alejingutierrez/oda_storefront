@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import Header from "@/components/Header";
 import OdaFooter from "@/components/OdaFooter";
 import PdpLayout from "@/components/pdp/PdpLayout";
-import { getProductByBrandAndSlug, getRelatedProducts } from "@/lib/pdp-data";
+import { getProductByBrandAndSlug, getRelatedProducts, getPriceInsight, getPriceHistory, getOutfitSuggestions } from "@/lib/pdp-data";
 import { getMegaMenuData } from "@/lib/home-data";
 
 export const revalidate = 120;
@@ -76,13 +76,22 @@ export default async function PdpPage({
   ]);
   if (!product) notFound();
 
-  const relatedProducts = await getRelatedProducts(product.id, {
-    brandId: product.brand.id,
-    category: product.category,
-    gender: product.gender,
-    realStyle: product.realStyle,
-    limit: 12,
-  });
+  const [relatedProducts, priceInsight, priceHistory, outfitItems] = await Promise.all([
+    getRelatedProducts(product.id, {
+      brandId: product.brand.id,
+      category: product.category,
+      gender: product.gender,
+      realStyle: product.realStyle,
+      limit: 12,
+    }),
+    getPriceInsight(product.id, product.minPriceCop),
+    getPriceHistory(product.id, product.minPriceCop),
+    getOutfitSuggestions(product.id, {
+      category: product.category,
+      gender: product.gender,
+      realStyle: product.realStyle,
+    }),
+  ]);
 
   return (
     <main className="min-h-screen bg-[color:var(--oda-cream)]">
@@ -91,7 +100,7 @@ export default async function PdpPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(buildJsonLd(product)) }}
       />
-      <PdpLayout product={product} relatedProducts={relatedProducts} />
+      <PdpLayout product={product} relatedProducts={relatedProducts} priceInsight={priceInsight} priceHistory={priceHistory} outfitItems={outfitItems} />
       <OdaFooter />
     </main>
   );

@@ -15,6 +15,7 @@ import FavoriteToggle from "@/components/FavoriteToggle";
 import { useCompare } from "@/components/CompareProvider";
 import { logExperienceEvent } from "@/lib/experience-events";
 import { proxiedImageUrl } from "@/lib/image-proxy";
+import { savePdpNavContext, type PdpNavContext } from "@/lib/pdp-nav-context";
 
 const IMAGE_BLUR_DATA_URL =
   "data:image/gif;base64,R0lGODlhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs=";
@@ -211,10 +212,12 @@ export default function CatalogProductCard({
   product,
   mobileAspect = "original",
   mobileCompact = false,
+  navContext,
 }: {
   product: CatalogProduct;
   mobileAspect?: "original" | "square";
   mobileCompact?: boolean;
+  navContext?: PdpNavContext;
 }) {
   const compare = useCompare();
   const instanceId = useId();
@@ -1234,6 +1237,7 @@ export default function CatalogProductCard({
         target={openInNewTab ? "_blank" : undefined}
         rel={openInNewTab ? "noreferrer noopener" : undefined}
         onClick={() => {
+          if (navContext) savePdpNavContext(navContext);
           logExperienceEvent({
             type: "product_click",
             productId: product.id,

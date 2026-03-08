@@ -5,14 +5,18 @@ import PdpAccordionSection from "@/components/pdp/PdpAccordionSection";
 import PdpSpecsTable from "@/components/pdp/PdpSpecsTable";
 import PdpBrandSection from "@/components/pdp/PdpBrandSection";
 import PdpRelatedProducts from "@/components/pdp/PdpRelatedProducts";
-import type { PdpProduct, PdpRelatedProduct } from "@/lib/pdp-data";
+import PdpOutfitSuggestion from "@/components/pdp/PdpOutfitSuggestion";
+import type { PdpProduct, PdpRelatedProduct, PdpPriceInsight, PdpPriceHistory, PdpOutfitItem } from "@/lib/pdp-data";
 
 type Props = {
   product: PdpProduct;
   relatedProducts: PdpRelatedProduct[];
+  priceInsight: PdpPriceInsight;
+  priceHistory: PdpPriceHistory;
+  outfitItems: PdpOutfitItem[];
 };
 
-export default function PdpLayout({ product, relatedProducts }: Props) {
+export default function PdpLayout({ product, relatedProducts, priceInsight, priceHistory, outfitItems }: Props) {
   const specsContent = <PdpSpecsTable product={product} />;
 
   const accordions = (
@@ -37,12 +41,19 @@ export default function PdpLayout({ product, relatedProducts }: Props) {
         <PdpInteractiveSection
           product={product}
           accordionContent={accordions}
+          priceInsight={priceInsight}
+          priceHistory={priceHistory}
         />
 
         {/* Accordion details — mobile only (desktop shows in sidebar) */}
         <div className="mt-8 lg:hidden">
           {accordions}
         </div>
+
+        {/* Outfit suggestion */}
+        {outfitItems.length > 0 && (
+          <PdpOutfitSuggestion items={outfitItems} />
+        )}
 
         {/* Brand section */}
         <PdpBrandSection brand={product.brand} />

@@ -1,4 +1,4 @@
-import { Palette, Layers, Scaling, Sun, Calendar, Sparkles } from "lucide-react";
+import { Palette, Layers, Scaling, Sun, Calendar, Sparkles, MapPin } from "lucide-react";
 import type { PdpProduct } from "@/lib/pdp-data";
 import { stripHtml } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
@@ -35,6 +35,15 @@ export default function PdpSpecsTable({ product }: { product: PdpProduct }) {
         value: variantMaterials.join(", "),
       });
     }
+  }
+
+  // Origin
+  if (product.origin) {
+    rows.push({
+      icon: MapPin,
+      label: "Origen",
+      value: product.origin,
+    });
   }
 
   // Pattern
