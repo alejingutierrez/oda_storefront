@@ -5,7 +5,7 @@ import HomeBelowFold from "@/components/home/HomeBelowFold";
 import HomeHeroImmersive from "@/components/home/HomeHeroImmersive";
 import { getHeroSlides, getHomeConfig, getMegaMenuData, getRotationSeed } from "@/lib/home-data";
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const seed = getRotationSeed();

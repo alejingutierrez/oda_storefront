@@ -117,7 +117,7 @@ export default function SwipeStack({ initialItems, sessionId }: SwipeStackProps)
   );
 
   const bind = useDrag(
-    ({ active, movement: [mx], velocity: [vx], cancel }) => {
+    ({ active, movement: [mx], velocity: [vx], cancel }: { active: boolean; movement: [number, number]; velocity: [number, number]; cancel: () => void }) => {
       if (swiping) {
         cancel();
         return;
