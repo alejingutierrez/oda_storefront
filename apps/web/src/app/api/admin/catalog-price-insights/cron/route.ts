@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { type CatalogFilters, getCatalogPriceInsightsFixedPlp } from "@/lib/catalog-data";
 import { type GenderKey } from "@/lib/navigation";
 import { parsePlpPath, safeListPlpSeoPaths } from "@/lib/plp-seo/store";
-import { validateAdminRequest } from "@/lib/auth";
+import { validateCronOrAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -17,22 +17,6 @@ const parsePositiveInt = (value: string | null | undefined, fallback: number, ma
 
 const SLOT_COUNT_DEFAULT = parsePositiveInt(process.env.CATALOG_FIXED_PLP_PRECOMPUTE_SLOT_COUNT, 168, 2000);
 const MAX_PATHS_PER_RUN_DEFAULT = parsePositiveInt(process.env.CATALOG_FIXED_PLP_PRECOMPUTE_MAX_PATHS_PER_RUN, 12, 200);
-
-const isCronRequest = (req: Request) => {
-  const cronHeader = (req.headers.get("x-vercel-cron") ?? "").toLowerCase();
-  const userAgent = req.headers.get("user-agent") ?? "";
-  return (
-    cronHeader === "1" ||
-    cronHeader === "true" ||
-    userAgent.toLowerCase().includes("vercel-cron")
-  );
-};
-
-const hasAdminToken = (req: Request) => {
-  const headerToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
-  if (!headerToken) return false;
-  return Boolean(process.env.ADMIN_TOKEN && headerToken === process.env.ADMIN_TOKEN);
-};
 
 const resolveCurrentSlot = (slotCount: number) => {
   const epochHour = Math.floor(Date.now() / (60 * 60 * 1000));
@@ -71,13 +55,9 @@ const buildFiltersForPath = (path: string): CatalogFilters | null => {
 };
 
 export async function GET(req: Request) {
-  const cron = isCronRequest(req);
-  const token = hasAdminToken(req);
-  if (!cron && !token) {
-    const admin = await validateAdminRequest(req);
-    if (!admin) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
+  const auth = await validateCronOrAdmin(req);
+  if (!auth) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   const startedAt = Date.now();

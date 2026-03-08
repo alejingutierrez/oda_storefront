@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 import { discoverCatalogRefs } from "@/lib/catalog/discovery";
 import type { ProductRef } from "@/lib/catalog/types";
 import { canonicalizeCatalogProductUrl } from "@/lib/catalog/utils";
@@ -30,6 +31,7 @@ import {
 } from "@/lib/product-enrichment/openai";
 import { evaluateArchiveCandidates } from "@/lib/catalog/archive-policy";
 import { readHeartbeat } from "@/lib/redis";
+import { safeInt } from "@/lib/safe-number";
 
 type CatalogRefreshMeta = {
   lastStartedAt?: string;
@@ -71,6 +73,8 @@ type CatalogRefreshMeta = {
   } | null;
   manualReviewAutoClearedAt?: string | null;
   manualReviewAutoClearEvidence?: Record<string, unknown> | null;
+  refreshIntervalDays?: number;
+  lastChangeRate?: number;
 };
 
 const readMetadata = (metadata: unknown) =>
@@ -1034,6 +1038,7 @@ export const autoClearManualReviewByEvidence = async (options?: {
       isActive: true,
       siteUrl: { not: null },
       manualReview: true,
+      autoDisabledAt: null,
     },
     select: { id: true, name: true, metadata: true },
     orderBy: { name: "asc" },
@@ -1295,7 +1300,10 @@ export const markRefreshCompleted = async (params: {
   runDurationMs?: number;
   lastError?: string | null;
 }) => {
-  const brand = await prisma.brand.findUnique({ where: { id: params.brandId }, select: { metadata: true } });
+  const brand = await prisma.brand.findUnique({
+    where: { id: params.brandId },
+    select: { metadata: true, autoDisabledAt: true },
+  });
   if (!brand) return;
   const metadata = readMetadata(brand.metadata);
   const config = getRefreshConfig();
@@ -1303,10 +1311,28 @@ export const markRefreshCompleted = async (params: {
   const now = new Date();
   const nowIso = now.toISOString();
   const previousFailedRuns = readNonNegativeInt(refresh.consecutiveFailedRuns);
+
+  // --- Smart refresh scheduling (success path) ---
+  let smartRefreshPatch: CatalogRefreshMeta = {};
+  if (params.status === "completed") {
+    const totalItems = params.runTotalItems ?? 0;
+    const changeRate =
+      totalItems > 0
+        ? (params.newProducts + params.priceChanges + params.stockChanges) / totalItems
+        : 0;
+    const refreshIntervalDays =
+      changeRate > 0.20 ? 2 : changeRate > 0.05 ? 7 : 14;
+    smartRefreshPatch = { refreshIntervalDays, lastChangeRate: changeRate };
+  }
+
   const statusPatch: CatalogRefreshMeta =
     params.status === "completed"
       ? {
-          nextDueAt: computeNextDueAt(now, config.intervalDays, config.jitterHours),
+          nextDueAt: computeNextDueAt(
+            now,
+            smartRefreshPatch.refreshIntervalDays ?? config.intervalDays,
+            config.jitterHours,
+          ),
           consecutiveFailedRuns: 0,
           failedBackoffUntil: null,
         }
@@ -1330,6 +1356,7 @@ export const markRefreshCompleted = async (params: {
     lastCompletedAt: params.status === "completed" ? nowIso : undefined,
     lastFinishedAt: nowIso,
     ...statusPatch,
+    ...smartRefreshPatch,
     lastRunId: params.runId,
     lastStatus: params.status,
     lastNewProducts: params.newProducts,
@@ -1348,17 +1375,42 @@ export const markRefreshCompleted = async (params: {
     params.status === "failed" &&
     (previousFailedRuns + 1) >= config.autoManualReviewThreshold;
 
+  // --- Auto-disable brands with high failure rate ---
+  const autoDisableThreshold = safeInt(
+    process.env.CATALOG_REFRESH_AUTO_DISABLE_THRESHOLD,
+    { fallback: 5, min: 2 },
+  );
+  const currentFailedRuns = previousFailedRuns + 1;
+  const shouldAutoDisable =
+    params.status === "failed" &&
+    currentFailedRuns >= autoDisableThreshold &&
+    !brand.autoDisabledAt;
+
   await prisma.brand.update({
     where: { id: params.brandId },
     data: {
       metadata: nextMetadata as Prisma.InputJsonValue,
       ...(shouldAutoManualReview ? { manualReview: true } : {}),
+      ...(shouldAutoDisable
+        ? {
+            autoDisabledAt: now,
+            autoDisableReason: `auto-disabled after ${currentFailedRuns} consecutive failed catalog runs`,
+          }
+        : {}),
     },
   });
 
   if (shouldAutoManualReview) {
-    console.log(
-      `[catalog-refresh] auto_manual_review brandId=${params.brandId} consecutiveFailedRuns=${previousFailedRuns + 1} threshold=${config.autoManualReviewThreshold}`,
+    logger.info(
+      { brandId: params.brandId, consecutiveFailedRuns: previousFailedRuns + 1, threshold: config.autoManualReviewThreshold },
+      "catalog refresh: auto manual review triggered",
+    );
+  }
+
+  if (shouldAutoDisable) {
+    logger.info(
+      { brandId: params.brandId, consecutiveFailedRuns: currentFailedRuns, threshold: autoDisableThreshold },
+      "catalog refresh: brand auto-disabled due to high failure rate",
     );
   }
 };
@@ -1565,7 +1617,7 @@ const recoverCatalogRuns = async (config: ReturnType<typeof getRefreshConfig>) =
         queueEnabled,
       });
     } catch (error) {
-      console.warn("catalog.refresh.auto_recover_failed", run.id, error);
+      logger.warn({ runId: run.id, err: error }, "catalog refresh: auto recover failed");
     }
   }
 };
@@ -1678,7 +1730,7 @@ const recoverEnrichmentRuns = async (config: ReturnType<typeof getRefreshConfig>
         await enqueueEnrichmentItems(pending);
       }
     } catch (error) {
-      console.warn("catalog.refresh.enrichment_auto_recover_failed", run.id, error);
+      logger.warn({ runId: run.id, err: error }, "catalog refresh: enrichment auto recover failed");
     }
   }
 };
@@ -1718,7 +1770,7 @@ const reconcileStaleRefreshStates = async () => {
         startedAt: row.startedAt,
       });
     } catch (error) {
-      console.warn("catalog.refresh.reconcile_failed", row.brandId, row.runId, error);
+      logger.warn({ brandId: row.brandId, runId: row.runId, err: error }, "catalog refresh: reconcile failed");
     }
   }
 };
@@ -2063,7 +2115,7 @@ const autoFinalizeDormantProcessingRuns = async (options?: {
       else completed += 1;
     } catch (error) {
       errors += 1;
-      console.warn("catalog.refresh.auto_finalize_failed", run.runId, error);
+      logger.warn({ runId: run.runId, err: error }, "catalog refresh: auto finalize failed");
     }
   }
 
@@ -2606,7 +2658,7 @@ const runAggressiveTailClose = async (options: {
       tailProcessedRuns += 1;
     } catch (error) {
       errors += 1;
-      console.warn("catalog.refresh.stuck_remediation.tail_close_failed", run.runId, error);
+      logger.warn({ runId: run.runId, err: error }, "catalog refresh: stuck remediation tail close failed");
     }
   }
 
@@ -2783,10 +2835,9 @@ const runSafeFastHighProgressClose = async (options: {
       highProgressProcessedRuns += 1;
     } catch (error) {
       errors += 1;
-      console.warn(
-        "catalog.refresh.stuck_remediation.safe_fast_high_progress_failed",
-        run.runId,
-        error,
+      logger.warn(
+        { runId: run.runId, err: error },
+        "catalog refresh: stuck remediation safe fast high progress failed",
       );
     }
   }
@@ -2972,7 +3023,7 @@ export const runCatalogRefreshStuckRemediation = async (
         runIds.push(run.runId);
       } catch (error) {
         errors += 1;
-        console.warn("catalog.refresh.stuck_remediation.resume_failed", run.runId, error);
+        logger.warn({ runId: run.runId, err: error }, "catalog refresh: stuck remediation resume failed");
       }
     }
   }
@@ -3020,7 +3071,7 @@ export const runCatalogRefreshStuckRemediation = async (
         runIds.push(run.runId);
       } catch (error) {
         errors += 1;
-        console.warn("catalog.refresh.stuck_remediation.pause_failed", run.runId, error);
+        logger.warn({ runId: run.runId, err: error }, "catalog refresh: stuck remediation pause failed");
       }
     }
   }
@@ -3117,7 +3168,7 @@ export const runCatalogRefreshStuckRemediation = async (
       }
     } catch (error) {
       errors += 1;
-      console.warn("catalog.refresh.stuck_remediation.post_reconcile_failed", error);
+      logger.warn({ err: error }, "catalog refresh: stuck remediation post reconcile failed");
     }
   }
 
@@ -3260,6 +3311,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     where: {
       isActive: true,
       siteUrl: { not: null },
+      autoDisabledAt: null,
     },
     select: {
       id: true,
@@ -3474,7 +3526,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
         errors: (previous?.errors ?? 0) + 1,
         skipped: `stuck_remediation_error:${reason.slice(0, 160)}`,
       };
-      console.warn("catalog.refresh.stuck_remediation_failed", reason, error);
+      logger.warn({ reason, err: error }, "catalog refresh: stuck remediation failed");
     }
   } else if (options?.brandId) {
     stuckRemediation.skipped = "brand_scope";

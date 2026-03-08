@@ -84,12 +84,16 @@ async function getDescopeSessionFromRequest(req?: Request) {
     return getDescopeSession();
   }
 
-  // 1) If middleware already injected the session, trust it.
+  // 1) If middleware already injected the session, validate its JWT.
   const headerSession = parseDescopeSessionHeader(
     req.headers.get("x-descope-session"),
   );
-  if (headerSession) {
-    return headerSession as unknown as Awaited<ReturnType<typeof getDescopeSession>>;
+  if (headerSession?.jwt) {
+    try {
+      return await getValidationSdk().validateSession(headerSession.jwt);
+    } catch {
+      // Invalid JWT — fall through to other methods
+    }
   }
 
   // 2) Otherwise, validate the Bearer token directly.

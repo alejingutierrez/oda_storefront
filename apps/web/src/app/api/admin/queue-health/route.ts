@@ -4,14 +4,9 @@ import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { readCatalogQueueDriftSummary } from "@/lib/catalog/queue-drift";
 import { isRedisEnabled, readHeartbeat, readJsonCache, writeJsonCache } from "@/lib/redis";
+import { safeNumber } from "@/lib/safe-number";
 
 export const runtime = "nodejs";
-
-const safeNum = (value: string | undefined, fallback: number, min?: number): number => {
-  const n = Number(value);
-  const result = Number.isFinite(n) ? n : fallback;
-  return min !== undefined ? Math.max(min, result) : result;
-};
 
 const connection = { url: process.env.REDIS_URL ?? "" };
 
@@ -20,13 +15,13 @@ const queueNames = {
   enrichment: process.env.PRODUCT_ENRICHMENT_QUEUE_NAME ?? "product-enrichment",
   plpSeo: process.env.PLP_SEO_QUEUE_NAME ?? "plp-seo",
 };
-const workerNoProgressSeconds = safeNum(process.env.WORKER_NO_PROGRESS_SECONDS, 300, 60);
-const activeHungMinutes = safeNum(process.env.WORKER_ACTIVE_HUNG_MINUTES, 15, 5);
-const activeSampleLimit = safeNum(process.env.WORKER_ACTIVE_SAMPLE_LIMIT, 200, 10);
-const queueHealthCacheTtlSeconds = safeNum(process.env.ADMIN_QUEUE_HEALTH_CACHE_TTL_SECONDS, 60, 1);
+const workerNoProgressSeconds = safeNumber(process.env.WORKER_NO_PROGRESS_SECONDS, { fallback: 300, min: 60 });
+const activeHungMinutes = safeNumber(process.env.WORKER_ACTIVE_HUNG_MINUTES, { fallback: 15, min: 5 });
+const activeSampleLimit = safeNumber(process.env.WORKER_ACTIVE_SAMPLE_LIMIT, { fallback: 200, min: 10 });
+const queueHealthCacheTtlSeconds = safeNumber(process.env.ADMIN_QUEUE_HEALTH_CACHE_TTL_SECONDS, { fallback: 60, min: 1 });
 const queueHealthCacheKey = "admin:queue-health:v2";
 const throughputWindowMinutes = 5;
-const throughputSlaTargetItems5m = safeNum(process.env.CATALOG_REFRESH_SPEED_SLA_ITEMS_5M, 120, 1);
+const throughputSlaTargetItems5m = safeNumber(process.env.CATALOG_REFRESH_SPEED_SLA_ITEMS_5M, { fallback: 120, min: 1 });
 
 const readQueueCounts = async (name: string) => {
   const queue = new Queue(name, { connection });
@@ -77,8 +72,8 @@ const readActiveHang = async (name: string) => {
   }
 };
 
-const catalogMaxAttempts = safeNum(process.env.CATALOG_MAX_ATTEMPTS, 3, 1);
-const enrichmentMaxAttempts = safeNum(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS, 5, 1);
+const catalogMaxAttempts = safeNumber(process.env.CATALOG_MAX_ATTEMPTS, { fallback: 3, min: 1 });
+const enrichmentMaxAttempts = safeNumber(process.env.PRODUCT_ENRICHMENT_MAX_ATTEMPTS, { fallback: 5, min: 1 });
 
 const readDbRunnableFlags = async () => {
   const [catalogRow, enrichRow] = await Promise.all([
@@ -217,7 +212,7 @@ export async function GET(req: Request) {
     readActiveHang(queueNames.catalog),
     readActiveHang(queueNames.enrichment),
     readCatalogQueueDriftSummary({
-      sampleLimit: safeNum(process.env.CATALOG_QUEUE_DRIFT_SAMPLE_LIMIT, 500, 100),
+      sampleLimit: safeNumber(process.env.CATALOG_QUEUE_DRIFT_SAMPLE_LIMIT, { fallback: 500, min: 100 }),
       activeHungMinutes,
     }),
     readDbRunnableFlags(),

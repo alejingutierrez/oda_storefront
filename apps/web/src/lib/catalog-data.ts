@@ -18,6 +18,7 @@ import {
   type PricingSqlContext,
 } from "@/lib/catalog-query";
 import { CATALOG_MAX_VALID_PRICE } from "@/lib/catalog-price";
+import { readJsonCache, writeJsonCache } from "@/lib/redis";
 import {
   getDisplayRoundingUnitCop,
   getFxRatesToCop,
@@ -466,8 +467,23 @@ export async function getCatalogFacetsLiteWithVersion(filters: CatalogFilters): 
   facets: CatalogFacetsLite;
   taxonomyVersion: number;
 }> {
+  // ── RC-4: Redis cache layer (checked BEFORE unstable_cache) ──
+  const filterKey = buildFacetsCacheKey(filters);
+  const redisHash = Buffer.from(filterKey).toString("base64url").slice(0, 32);
+  const redisKey = `facets:lite:v1:${redisHash}`;
+
+  type FacetsResult = { facets: CatalogFacetsLite; taxonomyVersion: number };
+
+  try {
+    const redisCached = await readJsonCache<FacetsResult>(redisKey);
+    if (redisCached) return redisCached;
+  } catch {
+    // Redis failure — fall through to existing logic
+  }
+
+  // ── Existing unstable_cache logic ──
   const taxonomy = await getPublishedTaxonomyOptions();
-  const cacheKey = buildFacetsCacheKey(filters);
+  const cacheKey = filterKey;
   const cached = unstable_cache(
     async () => {
       const facets = await computeCatalogFacetsLite(filters, taxonomy);
@@ -488,7 +504,11 @@ export async function getCatalogFacetsLiteWithVersion(filters: CatalogFilters): 
 
   try {
     const result = await Promise.race([facetsPromise, timeoutFallback]);
-    if (result) return result;
+    if (result) {
+      // ── RC-4: Write result to Redis (15 min TTL) ──
+      writeJsonCache(redisKey, result, 900).catch(() => {});
+      return result;
+    }
   } catch (error) {
     console.warn("[catalog.facets-lite] compute failed, using static fallback", { error, cacheKey });
     const fallback = await getCatalogFacetsStaticWithVersion();

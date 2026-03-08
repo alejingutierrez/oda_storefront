@@ -3,27 +3,10 @@ import {
   runCatalogRefreshBatch,
   type CatalogRefreshBatchMode,
 } from "@/lib/catalog/refresh";
-import { validateAdminRequest } from "@/lib/auth";
+import { validateCronOrAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-
-const isCronRequest = (req: Request) => {
-  const cronHeader = (req.headers.get("x-vercel-cron") ?? "").toLowerCase();
-  const userAgent = req.headers.get("user-agent") ?? "";
-  return (
-    cronHeader === "1" ||
-    cronHeader === "true" ||
-    userAgent.toLowerCase().includes("vercel-cron")
-  );
-};
-
-const hasAdminToken = (req: Request) => {
-  const headerToken = req.headers.get("authorization")?.replace(/^Bearer\\s+/i, "").trim();
-  if (!headerToken) return false;
-  if (process.env.ADMIN_TOKEN && headerToken === process.env.ADMIN_TOKEN) return true;
-  return false;
-};
 
 const parseOptionalPositiveInt = (value: string | null) => {
   if (value === null || value.trim() === "") return undefined;
@@ -39,13 +22,9 @@ const parseMode = (value: string | null): CatalogRefreshBatchMode => {
 };
 
 export async function GET(req: Request) {
-  const isCron = isCronRequest(req);
-  const hasToken = hasAdminToken(req);
-  if (!isCron && !hasToken) {
-    const admin = await validateAdminRequest(req);
-    if (!admin) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
+  const auth = await validateCronOrAdmin(req);
+  if (!auth) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   try {

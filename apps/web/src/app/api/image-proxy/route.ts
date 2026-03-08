@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import dns from "node:dns";
 import { head, list, put } from "@vercel/blob";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -8,14 +9,15 @@ import {
   summarizeImageOptimization,
   type ImageOptimizationStats,
 } from "@/lib/media/optimize-before-blob";
+import { safeEnvNumber } from "@/lib/safe-number";
 
 export const runtime = "nodejs";
 
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
-const MAX_SOURCE_IMAGE_BYTES = Math.max(
-  MAX_IMAGE_BYTES,
-  Number(process.env.IMAGE_PROXY_MAX_SOURCE_IMAGE_BYTES ?? 32 * 1024 * 1024),
-);
+const MAX_SOURCE_IMAGE_BYTES = safeEnvNumber("IMAGE_PROXY_MAX_SOURCE_IMAGE_BYTES", {
+  fallback: 32 * 1024 * 1024,
+  min: MAX_IMAGE_BYTES,
+});
 const DEFAULT_TIMEOUT_MS = 12000;
 const BLOB_CACHE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 const CACHE_CONTROL = "public, s-maxage=300, stale-while-revalidate=86400";
@@ -42,6 +44,22 @@ const isPrivateIpv4 = (hostname: string) => {
   if (a === 192 && b === 168) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   return false;
+};
+
+const isPrivateAddress = (address: string): boolean => {
+  if (LOCAL_HOSTS.has(address)) return true;
+  if (isPrivateIpv4(address)) return true;
+  if (address === "::1" || address.startsWith("fe80:") || address.startsWith("fc00:") || address.startsWith("fd")) return true;
+  return false;
+};
+
+const validateResolvedAddress = async (hostname: string): Promise<boolean> => {
+  try {
+    const { address } = await dns.promises.lookup(hostname);
+    return !isPrivateAddress(address);
+  } catch {
+    return false;
+  }
 };
 
 const extractCdnCgiUrl = (value: string) => {
@@ -190,6 +208,11 @@ const cacheToBlob = async (sourceUrl: string, token: string): Promise<BlobCacheE
     resolvedCache.set(sourceUrl, entry);
     await writeJsonCache(redisCacheKey, entry, REDIS_BLOB_TTL_SECONDS);
     return entry;
+  }
+
+  const sourceHostname = new URL(sourceUrl).hostname;
+  if (!(await validateResolvedAddress(sourceHostname))) {
+    throw new Error("ssrf_blocked: hostname resolves to private address");
   }
 
   const defaultHeaders = {

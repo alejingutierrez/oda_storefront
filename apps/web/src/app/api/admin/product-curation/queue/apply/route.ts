@@ -38,36 +38,7 @@ export async function POST(req: Request) {
     const payload = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     const requestedIds = normalizeProductIds(payload.itemIds);
 
-    const where: Prisma.ProductCurationQueueItemWhereInput = {
-      status: "pending",
-      ...(requestedIds.length ? { id: { in: requestedIds } } : {}),
-    };
-
-    const items = await prisma.productCurationQueueItem.findMany({
-      where,
-      orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }],
-      select: {
-        id: true,
-        status: true,
-        orderIndex: true,
-        note: true,
-        source: true,
-        targetIdsJson: true,
-        targetCount: true,
-        changesJson: true,
-      },
-    });
-
-    if (!items.length) {
-      return NextResponse.json({
-        ok: true,
-        applied: 0,
-        failed: 0,
-        skipped: 0,
-        message: "No hay operaciones pendientes para aplicar.",
-      });
-    }
-
+    // --- Create the run first so we have a runId for the atomic claim ---
     const run = await prisma.productCurationApplyRun.create({
       data: {
         requestedItemIdsJson: requestedIds.length ? toInputJson(requestedIds) : undefined,
@@ -79,21 +50,71 @@ export async function POST(req: Request) {
     });
     runId = run.id;
 
+    // --- Atomically claim pending items with UPDATE ... RETURNING ---
+    // This prevents the race condition where concurrent requests grab the
+    // same pending items between a SELECT and a subsequent UPDATE.
+    const idFilter = requestedIds.length
+      ? Prisma.sql`AND id IN (${Prisma.join(requestedIds)})`
+      : Prisma.empty;
+
+    const items: Array<{
+      id: string;
+      status: string;
+      orderIndex: number | null;
+      note: string | null;
+      source: string | null;
+      targetIdsJson: string;
+      targetCount: number;
+      changesJson: string;
+    }> = await prisma.$queryRaw`
+      UPDATE "product_curation_queue_items"
+      SET status = 'applying',
+          "runId" = ${run.id},
+          "lastError" = NULL,
+          "updatedAt" = NOW()
+      WHERE id IN (
+        SELECT id FROM "product_curation_queue_items"
+        WHERE status = 'pending' ${idFilter}
+        ORDER BY "orderIndex" ASC NULLS LAST, "createdAt" ASC
+      )
+      RETURNING id, status, "orderIndex", note, source,
+        "targetIdsJson"::text, "targetCount", "changesJson"::text
+    `;
+
+    if (!items.length) {
+      // Nothing was claimed — mark the run as completed with zero work
+      await prisma.productCurationApplyRun.update({
+        where: { id: run.id },
+        data: {
+          status: "completed",
+          summaryJson: toInputJson({ total: 0, applied: 0, failed: 0, skipped: 0 }),
+          finishedAt: new Date(),
+        },
+      });
+      return NextResponse.json({
+        ok: true,
+        applied: 0,
+        failed: 0,
+        skipped: 0,
+        message: "No hay operaciones pendientes para aplicar.",
+      });
+    }
+
+    // Parse the JSON text columns returned by the raw query
+    const parsedItems = items.map((row) => ({
+      ...row,
+      targetIdsJson: JSON.parse(row.targetIdsJson) as unknown,
+      changesJson: JSON.parse(row.changesJson) as unknown,
+    }));
+
     const itemResults: Array<Record<string, unknown>> = [];
     let applied = 0;
     let failed = 0;
     const skipped = 0;
     let cacheDirty = false;
 
-    for (const item of items) {
-      await prisma.productCurationQueueItem.update({
-        where: { id: item.id },
-        data: {
-          status: "applying",
-          runId: run.id,
-          lastError: null,
-        },
-      });
+    for (const item of parsedItems) {
+      // Items are already in "applying" status from the atomic UPDATE above
 
       try {
         const productIds = normalizeProductIds(readArray(item.targetIdsJson));

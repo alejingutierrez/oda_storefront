@@ -25,11 +25,14 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
           cache-dependency-path: apps/web/package-lock.json
       - name: Install deps
         run: npm ci
+        working-directory: apps/web
+      - name: Test
+        run: npm test
         working-directory: apps/web
       - name: Lint
         run: npm run lint
@@ -37,3 +40,26 @@ jobs:
       - name: Build
         run: npm run build
         working-directory: apps/web
+
+  smoke:
+    needs: web
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install deps
+        run: npm ci
+        working-directory: apps/web
+      - name: Smoke test home sections
+        if: env.HOME_SMOKE_URL != ''
+        run: npm run smoke:home:core
+        working-directory: apps/web
+        env:
+          HOME_SMOKE_URL: ${{ secrets.HOME_SMOKE_URL }}

@@ -45,6 +45,8 @@ model Brand {
   openingHours          Json?
   metadata              Json?
   isActive              Boolean                @default(true)
+  autoDisabledAt        DateTime?
+  autoDisableReason     String?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   stores                Store[]

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { processBrandScrapeBatch } from "@/lib/brand-scrape-queue";
+import { validateCronOrAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -8,25 +9,9 @@ const parseNumber = (value: string | null, fallback: number) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-const isCronRequest = (req: Request) => {
-  const cronHeader = (req.headers.get("x-vercel-cron") ?? "").toLowerCase();
-  const userAgent = req.headers.get("user-agent") ?? "";
-  return (
-    cronHeader === "1" ||
-    cronHeader === "true" ||
-    userAgent.toLowerCase().includes("vercel-cron")
-  );
-};
-
-const hasAdminToken = (req: Request) => {
-  const headerToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
-  if (!headerToken) return false;
-  if (process.env.ADMIN_TOKEN && headerToken === process.env.ADMIN_TOKEN) return true;
-  return false;
-};
-
 export async function GET(req: Request) {
-  if (!isCronRequest(req) && !hasAdminToken(req)) {
+  const auth = await validateCronOrAdmin(req);
+  if (!auth) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

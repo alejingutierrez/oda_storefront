@@ -12,6 +12,7 @@ import {
   getSupportedCurrencies,
 } from "@/lib/pricing";
 import { shouldApplyMarketingRounding, toDisplayedCop } from "@/lib/price-display";
+import { safeInt } from "@/lib/safe-number";
 
 export const runtime = "nodejs";
 
@@ -38,8 +39,8 @@ export async function GET(req: Request) {
   const priceCopExpr = buildEffectiveVariantPriceCopExpr(pricing);
 
   const url = new URL(req.url);
-  const page = Math.max(1, Number(url.searchParams.get("page") ?? 1));
-  const pageSize = Math.min(30, Math.max(1, Number(url.searchParams.get("pageSize") ?? 15)));
+  const page = safeInt(url.searchParams.get("page"), { fallback: 1, min: 1 });
+  const pageSize = safeInt(url.searchParams.get("pageSize"), { fallback: 15, min: 1, max: 30 });
   const brandId = url.searchParams.get("brandId");
 
   const where = brandId ? { brandId } : {};

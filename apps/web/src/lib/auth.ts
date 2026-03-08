@@ -93,10 +93,84 @@ export async function validateAdminRequest(req?: Request) {
       role: "admin",
       sessionTokenHash: tokenHash,
     },
-    select: { id: true, email: true, role: true },
+    select: { id: true, email: true, role: true, sessionTokenCreatedAt: true },
   });
 
+  if (!user) return null;
+
+  // Enforce server-side session TTL
+  if (user.sessionTokenCreatedAt) {
+    const ttlMs = SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
+    const expiresAt = new Date(user.sessionTokenCreatedAt.getTime() + ttlMs);
+    if (new Date() > expiresAt) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { sessionTokenHash: null, sessionTokenCreatedAt: null },
+      });
+      try {
+        const cs = await cookies();
+        cs.delete(COOKIE_NAME);
+      } catch {
+        /* headers may already be sent */
+      }
+      return null;
+    }
+  }
+
   return user;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Cron / Admin authentication (for scheduled & admin API routes)    */
+/* ------------------------------------------------------------------ */
+
+export type CronOrAdminResult = {
+  source: "cron-secret" | "admin-token" | "admin-session";
+  email?: string;
+  role?: string;
+};
+
+/**
+ * Validates a request as either a Vercel cron invocation (via CRON_SECRET)
+ * or an admin user (via ADMIN_TOKEN or session cookie).
+ *
+ * Use this instead of trusting x-vercel-cron or user-agent headers.
+ */
+export async function validateCronOrAdmin(
+  req: Request,
+): Promise<CronOrAdminResult | null> {
+  const authHeader = req.headers.get("authorization");
+  const bearerToken = authHeader?.replace(/^Bearer\s+/i, "").trim() || null;
+
+  // 1. CRON_SECRET (set in Vercel dashboard, sent automatically by Vercel cron)
+  if (
+    bearerToken &&
+    process.env.CRON_SECRET &&
+    bearerToken === process.env.CRON_SECRET
+  ) {
+    return { source: "cron-secret" };
+  }
+
+  // 2. ADMIN_TOKEN (static env token used by workers / scripts)
+  if (
+    bearerToken &&
+    process.env.ADMIN_TOKEN &&
+    bearerToken === process.env.ADMIN_TOKEN
+  ) {
+    return { source: "admin-token", email: "env-admin" };
+  }
+
+  // 3. Session-based admin auth (cookie or bearer matching a DB session)
+  const admin = await validateAdminRequest(req);
+  if (admin) {
+    return {
+      source: "admin-session",
+      email: (admin as { email?: string }).email,
+      role: (admin as { role?: string }).role,
+    };
+  }
+
+  return null;
 }
 
 export async function verifyAdminPassword(email: string, password: string) {

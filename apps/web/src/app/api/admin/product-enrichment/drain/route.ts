@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Queue } from "bullmq";
-import { validateAdminRequest } from "@/lib/auth";
+import { validateCronOrAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resetQueuedItems, resetStuckItems } from "@/lib/product-enrichment/run-store";
 import { drainEnrichmentRun } from "@/lib/product-enrichment/processor";
@@ -172,16 +172,6 @@ const isCatalogRefreshAutoStartDisabledRun = (metadata: unknown) => {
   return createdBy === "catalog_refresh" && autoStartDisabled;
 };
 
-const allowCronRequest = (req: Request) => {
-  const cronHeader = req.headers.get("x-vercel-cron");
-  const userAgent = req.headers.get("user-agent") ?? "";
-  return (
-    cronHeader === "1" ||
-    cronHeader === "true" ||
-    userAgent.toLowerCase().includes("vercel-cron")
-  );
-};
-
 const resolveDrainConfig = (body: unknown) => {
   const payload =
     body && typeof body === "object" ? (body as Record<string, unknown>) : ({} as Record<string, unknown>);
@@ -217,8 +207,8 @@ const resolveDrainConfig = (body: unknown) => {
 };
 
 export async function POST(req: Request) {
-  const admin = await validateAdminRequest(req);
-  if (!admin && !allowCronRequest(req)) {
+  const auth = await validateCronOrAdmin(req);
+  if (!auth) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

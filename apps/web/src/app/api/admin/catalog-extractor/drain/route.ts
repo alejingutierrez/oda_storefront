@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { Queue } from "bullmq";
-import { validateAdminRequest } from "@/lib/auth";
+import { validateCronOrAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resetQueuedItems, resetStuckItems } from "@/lib/catalog/run-store";
 import { drainCatalogRun } from "@/lib/catalog/processor";
@@ -213,16 +213,6 @@ const evaluateCatalogWorkerGate = async (heartbeat: {
   }
 };
 
-const allowCronRequest = (req: Request) => {
-  const cronHeader = req.headers.get("x-vercel-cron");
-  const userAgent = req.headers.get("user-agent") ?? "";
-  return (
-    cronHeader === "1" ||
-    cronHeader === "true" ||
-    userAgent.toLowerCase().includes("vercel-cron")
-  );
-};
-
 const boolFromValue = (value: unknown, fallback = false) => {
   if (value === undefined || value === null || value === "") return fallback;
   if (typeof value === "boolean") return value;
@@ -265,11 +255,11 @@ const resolveDrainConfig = (body: unknown) => {
 };
 
 export async function POST(req: Request) {
-  const isCron = allowCronRequest(req);
-  const admin = await validateAdminRequest(req);
-  if (!admin && !isCron) {
+  const auth = await validateCronOrAdmin(req);
+  if (!auth) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const isCron = auth.source === "cron-secret";
 
   const body = await req.json().catch(() => null);
   const url = new URL(req.url);

@@ -3,12 +3,13 @@ import { hashBuffer } from "@/lib/catalog/utils";
 import { isRedisEnabled, readJsonCache, writeJsonCache } from "@/lib/redis";
 import { optimizeBeforeBlob } from "@/lib/media/optimize-before-blob";
 import type { ImageOptimizationStats } from "@/lib/media/optimize-before-blob";
+import { safeEnvInt, safeEnvNumber } from "@/lib/safe-number";
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
-const MAX_SOURCE_IMAGE_BYTES = Math.max(
-  MAX_IMAGE_BYTES,
-  Number(process.env.BLOB_UPLOAD_MAX_SOURCE_IMAGE_BYTES ?? 32 * 1024 * 1024),
-);
+const MAX_SOURCE_IMAGE_BYTES = safeEnvNumber("BLOB_UPLOAD_MAX_SOURCE_IMAGE_BYTES", {
+  fallback: 32 * 1024 * 1024,
+  min: MAX_IMAGE_BYTES,
+});
 const DEFAULT_TIMEOUT_MS = 45000;
 const DEFAULT_CONCURRENCY = 4;
 const REDIS_BLOB_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -166,8 +167,8 @@ export const uploadImagesToBlob = async (
     throw new Error(blobDisableReason ?? "Blob uploads disabled");
   }
 
-  const concurrency = Math.max(1, Number(process.env.BLOB_UPLOAD_CONCURRENCY ?? DEFAULT_CONCURRENCY));
-  const timeoutMs = Math.max(3000, Number(process.env.BLOB_UPLOAD_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS));
+  const concurrency = safeEnvInt("BLOB_UPLOAD_CONCURRENCY", { fallback: DEFAULT_CONCURRENCY, min: 1 });
+  const timeoutMs = safeEnvInt("BLOB_UPLOAD_TIMEOUT_MS", { fallback: DEFAULT_TIMEOUT_MS, min: 3000 });
   let cursor = 0;
   const failures: string[] = [];
 
