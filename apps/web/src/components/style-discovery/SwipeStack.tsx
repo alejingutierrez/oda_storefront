@@ -166,7 +166,7 @@ export default function SwipeStack({ initialItems, sessionId }: SwipeStackProps)
       </div>
 
       {/* Card stack */}
-      <div className="relative mx-auto mt-6 flex flex-1 items-start justify-center px-6">
+      <div className="relative mt-6 flex flex-1 items-start justify-center px-6">
         <div className="relative aspect-[3/4] w-full max-w-[340px] sm:max-w-[400px] lg:max-w-[440px]">
           {/* Background cards (stack effect) */}
           {items.slice(currentIndex + 1, currentIndex + 3).map((item, i) => (
