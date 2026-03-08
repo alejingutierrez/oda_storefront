@@ -214,6 +214,7 @@ model Product {
   listItems             UserListItem[]
   enrichmentItems       ProductEnrichmentItem[]
   taxonomyRemapReviews  TaxonomyRemapReview[]
+  styleInteractions     StyleInteraction[]
   searchVector          Unsupported("tsvector")?  @map("search_vector")
 
   @@index([brandId])
@@ -618,6 +619,8 @@ model User {
   productCurationQueueItemsApplied  ProductCurationQueueItem[] @relation("ProductCurationQueueItemAppliedBy")
   productCurationApplyRunsRequested ProductCurationApplyRun[]  @relation("ProductCurationApplyRunRequestedBy")
   priceAlerts                       PriceAlert[]
+  styleSessions                     StyleSession[]
+  styleProfile                      UserStyleProfile?
 
   @@map("users")
 }
@@ -969,4 +972,49 @@ model PlpSeoItem {
   @@index([status, updatedAt])
   @@index([genderSlug, categoryKey, subcategoryKey])
   @@map("plp_seo_items")
+}
+
+model StyleSession {
+  id           String             @id @default(uuid())
+  userId       String
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status       String             @default("active") // active, completed, abandoned
+  preferences  Json?
+  itemCount    Int                @default(20)
+  createdAt    DateTime           @default(now())
+  completedAt  DateTime?
+  interactions StyleInteraction[]
+
+  @@index([userId])
+  @@index([status, createdAt])
+  @@map("style_sessions")
+}
+
+model StyleInteraction {
+  id          String       @id @default(uuid())
+  sessionId   String
+  session     StyleSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  action      String // 'like', 'dislike', 'maybe'
+  timeSpentMs Int?
+  createdAt   DateTime     @default(now())
+
+  @@index([sessionId])
+  @@index([productId])
+  @@map("style_interactions")
+}
+
+model UserStyleProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coherenceScore Float    @default(0)
+  keywords       String[] @default([])
+  dimensions     Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@map("user_style_profiles")
 }
