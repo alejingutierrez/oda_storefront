@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import type { SwipeItem } from "@/lib/style-engine/types";
+import { proxiedImageUrl } from "@/lib/image-proxy";
 
 type SwipeCardProps = {
   product: SwipeItem;
@@ -26,8 +28,14 @@ export default function SwipeCard({
   style,
   className = "",
 }: SwipeCardProps) {
+  const [imgError, setImgError] = useState(false);
   const likeOpacity = Math.min(1, Math.max(0, offsetX / 150));
   const dislikeOpacity = Math.min(1, Math.max(0, -offsetX / 150));
+
+  const imageSrc = proxiedImageUrl(product.imageCoverUrl, {
+    productId: product.id,
+    kind: "cover",
+  });
 
   return (
     <div
@@ -36,14 +44,24 @@ export default function SwipeCard({
     >
       {/* Product image */}
       <div className="relative h-full w-full">
-        <Image
-          src={product.imageCoverUrl}
-          alt={product.name}
-          fill
-          sizes="(max-width: 640px) 340px, 440px"
-          className="object-cover"
-          priority
-        />
+        {imageSrc && !imgError ? (
+          <Image
+            src={imageSrc}
+            alt={product.name}
+            fill
+            quality={75}
+            sizes="(max-width: 640px) 340px, 440px"
+            className="object-cover"
+            priority
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-[color:var(--oda-stone)]">
+            <span className="text-xs text-[color:var(--oda-taupe)]">
+              Sin imagen
+            </span>
+          </div>
+        )}
 
         {/* Like feedback label */}
         {likeOpacity > 0 && (

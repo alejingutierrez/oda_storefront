@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import FavoriteToggle from "@/components/FavoriteToggle";
 import MatchBadge from "./MatchBadge";
 import type { ScoredProduct } from "@/lib/style-engine/types";
+import { proxiedImageUrl } from "@/lib/image-proxy";
 
 function formatPrice(amount: string | null, currency: string | null) {
   if (!amount) return null;
@@ -24,6 +26,7 @@ type Props = {
 };
 
 export default function RecommendationCard({ product }: Props) {
+  const [imgError, setImgError] = useState(false);
   const price = formatPrice(
     product.minPriceCop ?? product.maxPriceCop,
     product.currency,
@@ -33,18 +36,27 @@ export default function RecommendationCard({ product }: Props) {
     ? `/producto/${product.id}`
     : `/producto/${product.id}`;
 
+  const imageSrc = proxiedImageUrl(product.imageCoverUrl, {
+    productId: product.id,
+    kind: "cover",
+  });
+
   return (
     <div className="group relative">
       <Link href={href} className="block">
         {/* Image */}
         <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-[color:var(--oda-stone)]">
-          <Image
-            src={product.imageCoverUrl}
-            alt={product.name}
-            fill
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-            className="object-cover transition group-hover:scale-[1.03]"
-          />
+          {imageSrc && !imgError ? (
+            <Image
+              src={imageSrc}
+              alt={product.name}
+              fill
+              quality={75}
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              className="object-cover transition group-hover:scale-[1.03]"
+              onError={() => setImgError(true)}
+            />
+          ) : null}
 
           {/* Match badge */}
           <MatchBadge
