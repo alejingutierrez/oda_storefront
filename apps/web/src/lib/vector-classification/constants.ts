@@ -8,7 +8,7 @@
 // ── Embedding model ─────────────────────────────────────────────────
 export const EMBEDDING_MODEL = "amazon.titan-embed-image-v1";
 export const EMBEDDING_DIMENSIONS = 1024;
-export const EMBEDDING_BATCH_SIZE = 5; // concurrent Bedrock calls per sub-batch
+export const EMBEDDING_BATCH_SIZE = 10; // concurrent Bedrock calls per sub-batch
 export const DESCRIPTION_MAX_LENGTH = 500;
 
 // ── Reclassification thresholds ─────────────────────────────────────

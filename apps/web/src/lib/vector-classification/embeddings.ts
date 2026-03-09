@@ -208,14 +208,11 @@ export async function generateEmbeddingsForBatch(
         const text = buildEmbeddingInput(p);
         const hash = computeInputHash(text);
 
-        // Get text embedding
-        const textEmb = await getTextEmbedding(text);
-
-        // Get image embedding (if image URL exists)
-        let imageEmb: number[] | null = null;
-        if (p.imageCoverUrl) {
-          imageEmb = await getImageEmbedding(p.imageCoverUrl);
-        }
+        // Parallelize text + image embedding (they are independent)
+        const [textEmb, imageEmb] = await Promise.all([
+          getTextEmbedding(text),
+          p.imageCoverUrl ? getImageEmbedding(p.imageCoverUrl) : Promise.resolve(null),
+        ]);
 
         // Combine: average of text + image if both exist
         let combinedEmb: number[];
@@ -229,33 +226,34 @@ export async function generateEmbeddingsForBatch(
       }),
     );
 
-    // Upsert each embedding
-    for (const item of results) {
-      const textJson = JSON.stringify(item.textEmb);
-      const combinedJson = JSON.stringify(item.combinedEmb);
+    // Batch upsert all embeddings in one transaction
+    await prisma.$transaction(
+      results.map((item) => {
+        const textJson = JSON.stringify(item.textEmb);
+        const combinedJson = JSON.stringify(item.combinedEmb);
 
-      if (item.imageEmb) {
-        const imageJson = JSON.stringify(item.imageEmb);
-        await prisma.$executeRawUnsafe(
-          `INSERT INTO product_embeddings (id, "productId", text_embedding, image_embedding, combined_embedding, embedding_model, input_hash, "createdAt", "updatedAt")
-           VALUES (gen_random_uuid(), $1, $2::vector(1024), $3::vector(1024), $4::vector(1024), $5, $6, NOW(), NOW())
-           ON CONFLICT ("productId")
-           DO UPDATE SET
-             text_embedding     = $2::vector(1024),
-             image_embedding    = $3::vector(1024),
-             combined_embedding = $4::vector(1024),
-             embedding_model    = $5,
-             input_hash         = $6,
-             "updatedAt"        = NOW()`,
-          item.id,
-          textJson,
-          imageJson,
-          combinedJson,
-          EMBEDDING_MODEL,
-          item.hash,
-        );
-      } else {
-        await prisma.$executeRawUnsafe(
+        if (item.imageEmb) {
+          const imageJson = JSON.stringify(item.imageEmb);
+          return prisma.$executeRawUnsafe(
+            `INSERT INTO product_embeddings (id, "productId", text_embedding, image_embedding, combined_embedding, embedding_model, input_hash, "createdAt", "updatedAt")
+             VALUES (gen_random_uuid(), $1, $2::vector(1024), $3::vector(1024), $4::vector(1024), $5, $6, NOW(), NOW())
+             ON CONFLICT ("productId")
+             DO UPDATE SET
+               text_embedding     = $2::vector(1024),
+               image_embedding    = $3::vector(1024),
+               combined_embedding = $4::vector(1024),
+               embedding_model    = $5,
+               input_hash         = $6,
+               "updatedAt"        = NOW()`,
+            item.id,
+            textJson,
+            imageJson,
+            combinedJson,
+            EMBEDDING_MODEL,
+            item.hash,
+          );
+        }
+        return prisma.$executeRawUnsafe(
           `INSERT INTO product_embeddings (id, "productId", text_embedding, combined_embedding, embedding_model, input_hash, "createdAt", "updatedAt")
            VALUES (gen_random_uuid(), $1, $2::vector(1024), $3::vector(1024), $4, $5, NOW(), NOW())
            ON CONFLICT ("productId")
@@ -271,10 +269,10 @@ export async function generateEmbeddingsForBatch(
           EMBEDDING_MODEL,
           item.hash,
         );
-      }
+      }),
+    );
 
-      generated++;
-    }
+    generated += results.length;
   }
 
   return generated;
