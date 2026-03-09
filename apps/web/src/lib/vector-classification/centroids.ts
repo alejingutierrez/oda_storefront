@@ -2,9 +2,10 @@
  * Centroid calculation and training for vector classification.
  *
  * Computes average embeddings (centroids) from ground-truth products
- * for each subcategory and gender, along with intra-cluster quality
- * metrics. Centroids are stored in `subcategory_centroids` and
- * `gender_centroids` and used by the reclassification scanner.
+ * for each category, subcategory, and gender, along with intra-cluster
+ * quality metrics. Centroids are stored in `category_centroids`,
+ * `subcategory_centroids`, and `gender_centroids` and used by the
+ * reclassification scanner.
  */
 
 import { prisma } from "@/lib/prisma";
@@ -13,9 +14,29 @@ import {
   SMALL_SUBCATEGORY_THRESHOLD,
   SMALL_SUBCATEGORY_MIN_RATIO,
   LARGE_SUBCATEGORY_MIN_CONFIRMED,
+  SMALL_CATEGORY_THRESHOLD,
+  SMALL_CATEGORY_MIN_RATIO,
+  CATEGORY_MIN_CONFIRMED,
 } from "./constants";
 
-// ── Readiness check ─────────────────────────────────────────────────
+// ── Readiness checks ────────────────────────────────────────────────
+
+/**
+ * Determine whether a category has enough confirmed ground-truth
+ * samples to train a reliable centroid.
+ *
+ * - Small categories (< 500 total): ready when confirmed > total / 5
+ * - Large categories (>= 500 total): ready when confirmed >= 200
+ */
+export function isCategoryReady(
+  confirmedCount: number,
+  totalInCategory: number,
+): boolean {
+  if (totalInCategory < SMALL_CATEGORY_THRESHOLD) {
+    return confirmedCount > Math.floor(totalInCategory * SMALL_CATEGORY_MIN_RATIO);
+  }
+  return confirmedCount >= CATEGORY_MIN_CONFIRMED;
+}
 
 /**
  * Determine whether a subcategory has enough confirmed ground-truth
@@ -34,24 +55,173 @@ export function isSubcategoryReady(
   return confirmedCount >= LARGE_SUBCATEGORY_MIN_CONFIRMED;
 }
 
-// ── Subcategory centroid training ───────────────────────────────────
+// ── Category centroid training ──────────────────────────────────────
 
 /**
- * Train centroids for every subcategory that has active ground-truth
+ * Train centroids for every category that has active ground-truth
  * products with embeddings.
  *
  * Steps:
- * 1. Compute the average embedding per (subcategory, category) group.
- * 2. Upsert into `subcategory_centroids`.
+ * 1. Compute the average embedding per category group.
+ * 2. Upsert into `category_centroids`.
  * 3. Calculate intra-cluster distance metrics per centroid.
  * 4. Record a `VectorModelRun`.
  *
  * @returns Training result with centroid count and timing.
  */
-export async function trainSubcategoryCentroids(): Promise<TrainingResult> {
+export async function trainCategoryCentroids(): Promise<TrainingResult> {
   const startedAt = Date.now();
 
-  // Create a model run record
+  const run = await prisma.vectorModelRun.create({
+    data: {
+      modelType: "category",
+      status: "running",
+    },
+  });
+
+  try {
+    // 1. Compute centroids (AVG of embeddings per category)
+    const centroids = await prisma.$queryRawUnsafe<
+      {
+        category: string;
+        centroid: string; // vector as text
+        cnt: bigint;
+      }[]
+    >(
+      `SELECT
+         gt.category,
+         AVG(pe.combined_embedding)::text AS centroid,
+         COUNT(*) AS cnt
+       FROM ground_truth_products gt
+       JOIN product_embeddings pe ON pe."productId" = gt."productId"
+       WHERE gt."isActive" = true
+         AND pe.combined_embedding IS NOT NULL
+         AND gt.category IS NOT NULL
+       GROUP BY gt.category`,
+    );
+
+    let totalSamples = 0;
+
+    // 2. Upsert each centroid
+    for (const c of centroids) {
+      const sampleCount = Number(c.cnt);
+      totalSamples += sampleCount;
+
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO category_centroids (id, category, centroid_embedding, sample_count, last_trained_at, model_run_id, "createdAt", "updatedAt")
+         VALUES (gen_random_uuid(), $1, $2::vector(1024), $3, NOW(), $4, NOW(), NOW())
+         ON CONFLICT (category)
+         DO UPDATE SET
+           centroid_embedding  = $2::vector(1024),
+           sample_count        = $3,
+           last_trained_at     = NOW(),
+           model_run_id        = $4,
+           "updatedAt"         = NOW()`,
+        c.category,
+        c.centroid,
+        sampleCount,
+        run.id,
+      );
+    }
+
+    // 3. Calculate intra-cluster metrics for each centroid
+    for (const c of centroids) {
+      const metrics = await prisma.$queryRawUnsafe<
+        {
+          avg_dist: number | null;
+          max_dist: number | null;
+          std_dist: number | null;
+        }[]
+      >(
+        `SELECT
+           AVG(pe.combined_embedding <=> cc.centroid_embedding) AS avg_dist,
+           MAX(pe.combined_embedding <=> cc.centroid_embedding) AS max_dist,
+           STDDEV(pe.combined_embedding <=> cc.centroid_embedding) AS std_dist
+         FROM ground_truth_products gt
+         JOIN product_embeddings pe ON pe."productId" = gt."productId"
+         CROSS JOIN category_centroids cc
+         WHERE gt.category = cc.category
+           AND gt."isActive" = true
+           AND pe.combined_embedding IS NOT NULL
+           AND cc.category = $1`,
+        c.category,
+      );
+
+      const m = metrics[0];
+      if (m) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE category_centroids
+           SET avg_intra_distance = $1,
+               max_intra_distance = $2,
+               std_intra_distance = $3,
+               "updatedAt" = NOW()
+           WHERE category = $4`,
+          m.avg_dist,
+          m.max_dist,
+          m.std_dist,
+          c.category,
+        );
+      }
+    }
+
+    // 4. Complete the model run
+    const duration = Date.now() - startedAt;
+
+    await prisma.vectorModelRun.update({
+      where: { id: run.id },
+      data: {
+        status: "completed",
+        totalCentroids: centroids.length,
+        totalSamples,
+        completedAt: new Date(),
+        metrics: {
+          centroidCount: centroids.length,
+          totalSamples,
+          durationMs: duration,
+        },
+      },
+    });
+
+    return {
+      modelType: "category",
+      totalCentroids: centroids.length,
+      totalSamples,
+      metrics: {
+        centroidCount: centroids.length,
+        durationMs: duration,
+      },
+      duration,
+    };
+  } catch (error) {
+    await prisma.vectorModelRun.update({
+      where: { id: run.id },
+      data: {
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+    throw error;
+  }
+}
+
+// ── Subcategory centroid training ───────────────────────────────────
+
+/**
+ * Train centroids for subcategories that have active ground-truth
+ * products with embeddings.
+ *
+ * When `filterCategory` is provided, only trains subcategories within
+ * that category (on-demand per-category training). Without it, trains
+ * ALL subcategories (backward compatible).
+ *
+ * @param filterCategory - Optional category to restrict training to.
+ * @returns Training result with centroid count and timing.
+ */
+export async function trainSubcategoryCentroids(
+  filterCategory?: string,
+): Promise<TrainingResult> {
+  const startedAt = Date.now();
+
   const run = await prisma.vectorModelRun.create({
     data: {
       modelType: "subcategory",
@@ -61,6 +231,10 @@ export async function trainSubcategoryCentroids(): Promise<TrainingResult> {
 
   try {
     // 1. Compute centroids (AVG of embeddings per subcategory)
+    const categoryFilter = filterCategory
+      ? `AND gt.category = '${filterCategory.replace(/'/g, "''")}'`
+      : "";
+
     const centroids = await prisma.$queryRawUnsafe<
       {
         subcategory: string;
@@ -78,6 +252,7 @@ export async function trainSubcategoryCentroids(): Promise<TrainingResult> {
        JOIN product_embeddings pe ON pe."productId" = gt."productId"
        WHERE gt."isActive" = true
          AND pe.combined_embedding IS NOT NULL
+         ${categoryFilter}
        GROUP BY gt.subcategory, gt.category`,
     );
 
@@ -161,6 +336,7 @@ export async function trainSubcategoryCentroids(): Promise<TrainingResult> {
           centroidCount: centroids.length,
           totalSamples,
           durationMs: duration,
+          ...(filterCategory ? { category: filterCategory } : {}),
         },
       },
     });
@@ -172,6 +348,7 @@ export async function trainSubcategoryCentroids(): Promise<TrainingResult> {
       metrics: {
         centroidCount: centroids.length,
         durationMs: duration,
+        ...(filterCategory ? { category: filterCategory } : {}),
       },
       duration,
     };
@@ -330,12 +507,41 @@ export async function trainGenderCentroids(): Promise<TrainingResult> {
  * Fetch all trained centroids for a given model type with their
  * quality metrics.
  *
- * @param modelType - Either "subcategory" or "gender".
+ * @param modelType - "category", "subcategory", or "gender".
  * @returns Array of centroid metrics objects.
  */
 export async function getAllCentroids(
   modelType: ModelType,
 ): Promise<CentroidMetrics[]> {
+  if (modelType === "category") {
+    const rows = await prisma.$queryRawUnsafe<
+      {
+        category: string;
+        sample_count: number;
+        avg_intra_distance: number | null;
+        max_intra_distance: number | null;
+        std_intra_distance: number | null;
+        last_trained_at: Date | null;
+      }[]
+    >(
+      `SELECT category, sample_count,
+              avg_intra_distance, max_intra_distance, std_intra_distance,
+              last_trained_at
+       FROM category_centroids
+       ORDER BY category`,
+    );
+
+    return rows.map((r) => ({
+      subcategory: null,
+      category: r.category,
+      sampleCount: r.sample_count,
+      avgIntraDistance: r.avg_intra_distance,
+      maxIntraDistance: r.max_intra_distance,
+      stdIntraDistance: r.std_intra_distance,
+      lastTrainedAt: r.last_trained_at?.toISOString() ?? null,
+    }));
+  }
+
   if (modelType === "subcategory") {
     const rows = await prisma.$queryRawUnsafe<
       {

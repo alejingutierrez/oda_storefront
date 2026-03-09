@@ -6,7 +6,7 @@
  */
 
 /** Supported model types for vector classification. */
-export type ModelType = "subcategory" | "gender";
+export type ModelType = "category" | "subcategory" | "gender";
 
 /** Statistics about the embedding coverage of the product catalog. */
 export type EmbeddingStats = {
@@ -28,7 +28,7 @@ export type GroundTruthStats = {
 
 /** Quality metrics for a trained centroid. */
 export type CentroidMetrics = {
-  subcategory: string;
+  subcategory: string | null;
   category: string;
   sampleCount: number;
   avgIntraDistance: number | null;

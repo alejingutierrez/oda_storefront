@@ -1082,6 +1082,23 @@ model SubcategoryCentroid {
   @@map("subcategory_centroids")
 }
 
+model CategoryCentroid {
+  id                String                        @id @default(uuid())
+  category          String                        @unique
+  centroidEmbedding Unsupported("vector(1024)")?  @map("centroid_embedding")
+  sampleCount       Int                           @default(0) @map("sample_count")
+  avgIntraDistance   Float?                        @map("avg_intra_distance")
+  maxIntraDistance   Float?                        @map("max_intra_distance")
+  stdIntraDistance   Float?                        @map("std_intra_distance")
+  metrics           Json?
+  lastTrainedAt     DateTime?                     @map("last_trained_at")
+  modelRunId        String?                       @map("model_run_id")
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  @@map("category_centroids")
+}
+
 model GenderCentroid {
   id                String                        @id @default(uuid())
   gender            String                        @unique
@@ -1099,7 +1116,7 @@ model GenderCentroid {
 
 model VectorModelRun {
   id             String    @id @default(uuid())
-  modelType      String // "subcategory" | "gender"
+  modelType      String // "category" | "subcategory" | "gender"
   status         String    @default("running") // running | completed | failed
   totalCentroids Int?
   totalSamples   Int?
@@ -1119,7 +1136,7 @@ model VectorReclassificationSuggestion {
   id              String    @id @default(uuid())
   productId       String
   product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  modelType       String // "subcategory" | "gender"
+  modelType       String // "category" | "subcategory" | "gender"
   fromCategory    String?
   fromSubcategory String?
   fromGender      String?

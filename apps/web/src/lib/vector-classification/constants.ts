@@ -20,3 +20,8 @@ export const RECLASSIFICATION_BATCH_SIZE = 1000;
 export const SMALL_SUBCATEGORY_THRESHOLD = 200;
 export const SMALL_SUBCATEGORY_MIN_RATIO = 1 / 3; // confirmed > total/3
 export const LARGE_SUBCATEGORY_MIN_CONFIRMED = 100;
+
+// ── Category readiness ──────────────────────────────────────────────
+export const SMALL_CATEGORY_THRESHOLD = 500;
+export const SMALL_CATEGORY_MIN_RATIO = 1 / 5; // confirmed > total/5
+export const CATEGORY_MIN_CONFIRMED = 200;

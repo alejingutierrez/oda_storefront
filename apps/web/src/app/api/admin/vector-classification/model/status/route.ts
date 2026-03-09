@@ -11,21 +11,37 @@ export async function GET(req: Request) {
   }
 
   try {
-    const [subcategoryRun, genderRun, subcategoryCentroidCount, genderCentroidCount] =
-      await Promise.all([
-        prisma.vectorModelRun.findFirst({
-          where: { modelType: "subcategory" },
-          orderBy: { startedAt: "desc" },
-        }),
-        prisma.vectorModelRun.findFirst({
-          where: { modelType: "gender" },
-          orderBy: { startedAt: "desc" },
-        }),
-        prisma.subcategoryCentroid.count(),
-        prisma.genderCentroid.count(),
-      ]);
+    const [
+      categoryRun,
+      subcategoryRun,
+      genderRun,
+      categoryCentroidCount,
+      subcategoryCentroidCount,
+      genderCentroidCount,
+    ] = await Promise.all([
+      prisma.vectorModelRun.findFirst({
+        where: { modelType: "category" },
+        orderBy: { startedAt: "desc" },
+      }),
+      prisma.vectorModelRun.findFirst({
+        where: { modelType: "subcategory" },
+        orderBy: { startedAt: "desc" },
+      }),
+      prisma.vectorModelRun.findFirst({
+        where: { modelType: "gender" },
+        orderBy: { startedAt: "desc" },
+      }),
+      prisma.categoryCentroid.count(),
+      prisma.subcategoryCentroid.count(),
+      prisma.genderCentroid.count(),
+    ]);
 
     return NextResponse.json({
+      categoryModel: {
+        lastRun: categoryRun,
+        centroidCount: categoryCentroidCount,
+        totalSamples: categoryRun?.totalSamples ?? 0,
+      },
       subcategoryModel: {
         lastRun: subcategoryRun,
         centroidCount: subcategoryCentroidCount,

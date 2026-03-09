@@ -5,12 +5,12 @@ import { useCallback, useEffect, useState } from "react";
 /* ── Types ── */
 
 type SuggestionStatus = "pending" | "accepted" | "rejected";
-type ModelTypeFilter = "subcategory" | "gender" | "all";
+type ModelTypeFilter = "category" | "subcategory" | "gender" | "all";
 
 type Suggestion = {
   id: string;
   status: SuggestionStatus;
-  modelType: "subcategory" | "gender";
+  modelType: "category" | "subcategory" | "gender";
   productId: string;
   productName: string;
   brandName: string | null;
@@ -304,6 +304,7 @@ export default function SuggestionsTab() {
               {(
                 [
                   { value: "all", label: "Todos" },
+                  { value: "category", label: "Categoria" },
                   { value: "subcategory", label: "Subcategoria" },
                   { value: "gender", label: "Genero" },
                 ] as const
@@ -378,6 +379,7 @@ export default function SuggestionsTab() {
         <div className="space-y-3">
           {suggestions.map((suggestion) => {
             const busy = !!actionById[suggestion.id];
+            const isCategory = suggestion.modelType === "category";
             const isSubcat = suggestion.modelType === "subcategory";
             const showRejectInput = showRejectInputId === suggestion.id;
 
@@ -412,7 +414,13 @@ export default function SuggestionsTab() {
 
                 {/* Change diff */}
                 <div className="flex-1 space-y-1.5">
-                  {isSubcat ? (
+                  {isCategory ? (
+                    <DiffRow
+                      label="Categoria"
+                      from={suggestion.fromCategory}
+                      to={suggestion.toCategory}
+                    />
+                  ) : isSubcat ? (
                     <>
                       <DiffRow
                         label="Categoria"
@@ -495,21 +503,23 @@ export default function SuggestionsTab() {
                         </button>
                       </div>
 
-                      {/* Add to ground truth checkbox */}
-                      <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={addToGtById[suggestion.id] !== false}
-                          onChange={(e) =>
-                            setAddToGtById((prev) => ({
-                              ...prev,
-                              [suggestion.id]: e.target.checked,
-                            }))
-                          }
-                          className="rounded border-slate-300"
-                        />
-                        Agregar a ground truth
-                      </label>
+                      {/* Add to ground truth checkbox (only for subcategory suggestions) */}
+                      {!isCategory && (
+                        <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={addToGtById[suggestion.id] !== false}
+                            onChange={(e) =>
+                              setAddToGtById((prev) => ({
+                                ...prev,
+                                [suggestion.id]: e.target.checked,
+                              }))
+                            }
+                            className="rounded border-slate-300"
+                          />
+                          Agregar a ground truth
+                        </label>
+                      )}
 
                       {/* Reject note */}
                       {showRejectInput && (

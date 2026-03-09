@@ -6,7 +6,7 @@ import type { ModelType } from "@/lib/vector-classification/types";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const VALID_MODEL_TYPES: ModelType[] = ["subcategory", "gender"];
+const VALID_MODEL_TYPES: ModelType[] = ["category", "subcategory", "gender"];
 
 export async function POST(req: Request) {
   const admin = await validateAdminRequest(req);
@@ -19,12 +19,13 @@ export async function POST(req: Request) {
       modelType?: string;
       similarityThreshold?: number;
       minMargin?: number;
+      category?: string;
     } | null;
 
     const modelType = body?.modelType as ModelType | undefined;
     if (!modelType || !VALID_MODEL_TYPES.includes(modelType)) {
       return NextResponse.json(
-        { error: "modelType must be 'subcategory' or 'gender'" },
+        { error: "modelType must be 'category', 'subcategory', or 'gender'" },
         { status: 400 },
       );
     }
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
     const result = await runReclassificationScan(modelType, {
       similarityThreshold: body?.similarityThreshold,
       minMargin: body?.minMargin,
+      filterCategory: body?.category,
     });
 
     return NextResponse.json({
