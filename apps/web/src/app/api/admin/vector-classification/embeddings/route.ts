@@ -6,6 +6,7 @@ import { getEmbeddingStats } from "@/lib/vector-classification/embeddings";
 export const runtime = "nodejs";
 
 const JOB_KEY = "vector-emb-job";
+const HEARTBEAT_TTL_MS = 90_000;
 
 export async function GET(req: Request) {
   const admin = await validateAdminRequest(req);
@@ -16,27 +17,83 @@ export async function GET(req: Request) {
   try {
     const stats = await getEmbeddingStats();
 
-    // Include job status + progress from Redis
+    // Include job status + progress + extended state from Redis
     let jobStatus = "idle";
     let jobError: string | null = null;
     let lastBatchAt: string | null = null;
+    let isStale = false;
+    let startedAt: string | null = null;
+    let speed: number | null = null;
+    let chainCount: number | null = null;
+    let totalProcessed: number | null = null;
+    let log: Array<{ t: number; m: string }> = [];
+    let config = { skipImages: false };
+
     if (isRedisEnabled()) {
       try {
         const r = getRedis();
-        const [s, e, lb] = await r.mget(
+        const [
+          s, e, lb, hb, sa, sp, cc, tp, skipImg,
+        ] = await r.mget(
           `${JOB_KEY}:status`,
           `${JOB_KEY}:error`,
           `${JOB_KEY}:lastBatchAt`,
+          `${JOB_KEY}:heartbeat`,
+          `${JOB_KEY}:startedAt`,
+          `${JOB_KEY}:speed`,
+          `${JOB_KEY}:chainCount`,
+          `${JOB_KEY}:totalProcessed`,
+          `${JOB_KEY}:config:skipImages`,
         );
+
         jobStatus = s ?? "idle";
         jobError = e ?? null;
         lastBatchAt = lb ?? null;
+        startedAt = sa ?? null;
+        speed = sp != null ? Number(sp) : null;
+        chainCount = cc != null ? Number(cc) : null;
+        totalProcessed = tp != null ? Number(tp) : null;
+        config.skipImages = skipImg === "true";
+
+        // Check if job is stale (running but heartbeat expired)
+        if (jobStatus === "running") {
+          if (!hb) {
+            isStale = true;
+          } else {
+            const hbAge = Date.now() - Number(hb);
+            isStale = hbAge > HEARTBEAT_TTL_MS;
+          }
+        }
+
+        // Fetch last 20 log entries
+        const rawLog = await r.lrange(`${JOB_KEY}:log`, 0, 19);
+        log = rawLog
+          .map((entry) => {
+            try {
+              return JSON.parse(entry) as { t: number; m: string };
+            } catch {
+              return null;
+            }
+          })
+          .filter((x): x is { t: number; m: string } => x !== null);
       } catch {
         // Redis failure should not block stats
       }
     }
 
-    return NextResponse.json({ ...stats, jobStatus, jobError, lastBatchAt });
+    return NextResponse.json({
+      ...stats,
+      jobStatus,
+      jobError,
+      lastBatchAt,
+      isStale,
+      startedAt,
+      speed,
+      chainCount,
+      totalProcessed,
+      log,
+      config,
+    });
   } catch (error) {
     console.error("[vector-classification/embeddings] GET error:", error);
     return NextResponse.json(

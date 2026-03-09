@@ -1,17 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import EmbeddingJobPanel from "../EmbeddingJobPanel";
 
 /* ── Types (matching actual API responses) ── */
-
-type EmbeddingStats = {
-  total: number;
-  embedded: number;
-  missing: number;
-  stale: number;
-  jobStatus: "idle" | "running" | "stopping" | "error";
-  jobError: string | null;
-};
 
 type SubcategoryReadiness = {
   subcategory: string;
@@ -70,19 +62,9 @@ const XIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
-const Spinner = () => (
-  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-  </svg>
-);
-
 /* ── Component ── */
 
 export default function ModelTrainingTab() {
-  const [embStats, setEmbStats] = useState<EmbeddingStats | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const [subcatReadiness, setSubcatReadiness] = useState<SubcategoryReadiness[]>([]);
   const [subcatModel, setSubcatModel] = useState<ModelInfo | null>(null);
   const [genderModel, setGenderModel] = useState<ModelInfo | null>(null);
@@ -95,27 +77,6 @@ export default function ModelTrainingTab() {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loadingInit, setLoadingInit] = useState(true);
-
-  /* ── Fetch embedding stats (includes jobStatus from Redis) ── */
-  const fetchEmbeddingStats = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/vector-classification/embeddings", {
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (!res.ok) return;
-      const data = (await res.json()) as EmbeddingStats;
-      setEmbStats(data);
-
-      // Stop polling when job is no longer running
-      if (data.jobStatus !== "running" && pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    } catch {
-      // silent
-    }
-  }, []);
 
   /* ── Fetch ground truth stats / readiness ── */
   const fetchReadiness = useCallback(async () => {
@@ -168,65 +129,11 @@ export default function ModelTrainingTab() {
   /* ── Initial load ── */
   useEffect(() => {
     Promise.all([
-      fetchEmbeddingStats(),
       fetchReadiness(),
       fetchModelStatus(),
       fetchRuns(),
     ]).finally(() => setLoadingInit(false));
-  }, [fetchEmbeddingStats, fetchReadiness, fetchModelStatus, fetchRuns]);
-
-  /* ── Clean up polling on unmount ── */
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
-
-  /* ── Start polling if job already running on mount ── */
-  useEffect(() => {
-    if (embStats?.jobStatus === "running" && !pollRef.current) {
-      pollRef.current = setInterval(fetchEmbeddingStats, 20_000);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [embStats?.jobStatus]);
-
-  /* ── Start embedding job (backend self-chains) ── */
-  const handleGenerateEmbeddings = useCallback(async () => {
-    setError(null);
-    try {
-      const res = await fetch("/api/admin/vector-classification/embeddings/generate", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ batchSize: 10 }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(data?.error || "Error al generar embeddings");
-      }
-      // Refresh stats immediately, then start polling every 20s
-      await fetchEmbeddingStats();
-      if (!pollRef.current) {
-        pollRef.current = setInterval(fetchEmbeddingStats, 20_000);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al generar embeddings");
-    }
-  }, [fetchEmbeddingStats]);
-
-  /* ── Stop embedding job (server-side) ── */
-  const handleStopEmbeddings = useCallback(async () => {
-    try {
-      await fetch("/api/admin/vector-classification/embeddings/generate/stop", {
-        method: "POST",
-        credentials: "include",
-      });
-      // Refresh stats to show stopped state
-      await fetchEmbeddingStats();
-    } catch {
-      // silent
-    }
-  }, [fetchEmbeddingStats]);
+  }, [fetchReadiness, fetchModelStatus, fetchRuns]);
 
   /* ── Train model ── */
   const handleTrain = useCallback(
@@ -284,8 +191,6 @@ export default function ModelTrainingTab() {
 
   /* ── Derived ── */
   const readyCount = subcatReadiness.filter((s) => s.isReady).length;
-  const embPct = embStats && embStats.total > 0 ? Math.round((embStats.embedded / embStats.total) * 100) : 0;
-  const embJobRunning = embStats?.jobStatus === "running";
   const subcatTrained = (subcatModel?.centroidCount ?? 0) > 0;
   const genderTrained = (genderModel?.centroidCount ?? 0) > 0;
 
@@ -305,69 +210,8 @@ export default function ModelTrainingTab() {
         </p>
       )}
 
-      {/* ── Section A: Embeddings ── */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-        <h3 className="text-base font-semibold text-slate-900">Embeddings</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          Vectores de representacion para los productos del catalogo.
-        </p>
-
-        {embStats && (
-          <div className="mt-4 space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-sm font-semibold text-slate-700">
-                Embeddings: {fmt(embStats.embedded)} / {fmt(embStats.total)} productos
-              </span>
-              <span className="text-sm text-slate-500">({embPct}%)</span>
-              {embStats.stale > 0 && (
-                <span className="text-sm text-amber-600">
-                  {fmt(embStats.stale)} desactualizados
-                </span>
-              )}
-            </div>
-
-            <div className="h-2.5 w-full max-w-md overflow-hidden rounded-full bg-slate-200">
-              <div
-                className="h-full rounded-full bg-indigo-500 transition-all"
-                style={{ width: `${embPct}%` }}
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={handleGenerateEmbeddings}
-                disabled={embJobRunning}
-              >
-                {embJobRunning ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Spinner /> Generando... ({fmt(embStats?.missing ?? 0)} restantes)
-                  </span>
-                ) : embStats && embStats.missing > 0 ? (
-                  `Generar embeddings (${fmt(embStats.missing)} pendientes)`
-                ) : (
-                  "Generar embeddings"
-                )}
-              </button>
-              {embJobRunning && (
-                <button
-                  type="button"
-                  className="rounded-xl border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50"
-                  onClick={handleStopEmbeddings}
-                >
-                  Detener
-                </button>
-              )}
-            </div>
-            {embStats?.jobStatus === "error" && embStats.jobError && (
-              <p className="mt-2 text-xs text-rose-600">
-                Error del job: {embStats.jobError}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
+      {/* ── Section A: Embeddings (dedicated panel) ── */}
+      <EmbeddingJobPanel />
 
       {/* ── Section B: Subcategory Model ── */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">

@@ -5,6 +5,9 @@
  * 1024-d vectors for both text and images in the same vector space.
  * Once generated, vectors are stored in pgvector (Neon) and all
  * similarity operations happen in SQL — no further AWS dependency.
+ *
+ * Architecture: two-phase batch processing separates Bedrock compute
+ * from DB writes to avoid Neon idle-connection timeouts.
  */
 
 import { createHash } from "node:crypto";
@@ -53,6 +56,30 @@ function joinTags(tags: string[] | null | undefined): string {
   if (!tags || tags.length === 0) return "";
   return tags.join(", ");
 }
+
+// ── Types ───────────────────────────────────────────────────────────
+
+export type EmbeddingProduct = {
+  id: string;
+  name: string;
+  description: string | null;
+  imageCoverUrl: string | null;
+  styleTags: string[];
+  materialTags: string[];
+  patternTags: string[];
+  occasionTags: string[];
+  season: string | null;
+  minPriceCop: unknown;
+  brand: { name: string };
+};
+
+export type EmbeddingResult = {
+  id: string;
+  textEmb: number[];
+  imageEmb: number[] | null;
+  combinedEmb: number[];
+  hash: string;
+};
 
 // ── Public API ──────────────────────────────────────────────────────
 
@@ -137,7 +164,7 @@ async function getTextEmbedding(text: string): Promise<number[]> {
  */
 async function getImageEmbedding(imageUrl: string): Promise<number[] | null> {
   try {
-    const res = await fetch(imageUrl, { signal: AbortSignal.timeout(10_000) });
+    const res = await fetch(imageUrl, { signal: AbortSignal.timeout(5_000) });
     if (!res.ok) return null;
 
     const buffer = await res.arrayBuffer();
@@ -165,16 +192,186 @@ async function getImageEmbedding(imageUrl: string): Promise<number[] | null> {
   }
 }
 
+// ── Phase 1: Compute (Bedrock only, NO DB) ──────────────────────────
+
+/**
+ * Compute text + image embeddings for a batch of products.
+ * Pure Bedrock compute — does NOT touch the database.
+ *
+ * @param products - Product data to embed
+ * @param skipImages - If true, skip image embeddings (text-only mode)
+ */
+export async function computeEmbeddings(
+  products: EmbeddingProduct[],
+  skipImages = false,
+): Promise<EmbeddingResult[]> {
+  if (products.length === 0) return [];
+
+  const allResults: EmbeddingResult[] = [];
+
+  // Process in sub-batches with concurrency control
+  for (let i = 0; i < products.length; i += EMBEDDING_BATCH_SIZE) {
+    const batch = products.slice(i, i + EMBEDDING_BATCH_SIZE);
+
+    const results = await Promise.all(
+      batch.map(async (p) => {
+        const text = buildEmbeddingInput(p);
+        const hash = computeInputHash(text);
+
+        // Parallelize text + image embedding (they are independent)
+        const [textEmb, imageEmb] = await Promise.all([
+          getTextEmbedding(text),
+          !skipImages && p.imageCoverUrl
+            ? getImageEmbedding(p.imageCoverUrl)
+            : Promise.resolve(null),
+        ]);
+
+        // Combine: average of text + image if both exist
+        let combinedEmb: number[];
+        if (textEmb && imageEmb) {
+          combinedEmb = textEmb.map((v, idx) => (v + imageEmb[idx]) / 2);
+        } else {
+          combinedEmb = textEmb;
+        }
+
+        return { id: p.id, textEmb, imageEmb, combinedEmb, hash };
+      }),
+    );
+
+    allResults.push(...results);
+  }
+
+  return allResults;
+}
+
+// ── Phase 2: Write (DB only, NO Bedrock) ────────────────────────────
+
+/**
+ * Write embedding results to the database using a single multi-row
+ * INSERT ... ON CONFLICT upsert. Fast DB operation (~500ms for 20 rows).
+ */
+export async function writeEmbeddingsBatch(
+  results: EmbeddingResult[],
+): Promise<number> {
+  if (results.length === 0) return 0;
+
+  // Build multi-row INSERT with positional parameters
+  // Each row needs: productId, text_embedding, image_embedding, combined_embedding, embedding_model, input_hash
+  // That's 6 params per row
+  const PARAMS_PER_ROW = 6;
+  const valueClauses: string[] = [];
+  const params: unknown[] = [];
+
+  for (let i = 0; i < results.length; i++) {
+    const item = results[i];
+    const offset = i * PARAMS_PER_ROW;
+    const textJson = JSON.stringify(item.textEmb);
+    const imageJson = item.imageEmb ? JSON.stringify(item.imageEmb) : null;
+    const combinedJson = JSON.stringify(item.combinedEmb);
+
+    valueClauses.push(
+      `(gen_random_uuid(), $${offset + 1}, $${offset + 2}::vector(1024), ${
+        imageJson !== null ? `$${offset + 3}::vector(1024)` : "NULL"
+      }, $${imageJson !== null ? offset + 4 : offset + 3}::vector(1024), $${
+        imageJson !== null ? offset + 5 : offset + 4
+      }, $${imageJson !== null ? offset + 6 : offset + 5}, NOW(), NOW())`,
+    );
+
+    // Params differ based on whether image exists
+    if (imageJson !== null) {
+      params.push(item.id, textJson, imageJson, combinedJson, EMBEDDING_MODEL, item.hash);
+    } else {
+      params.push(item.id, textJson, combinedJson, EMBEDDING_MODEL, item.hash);
+    }
+  }
+
+  // Due to variable params per row (with/without image), it's simpler
+  // and more reliable to use separate queries grouped by has-image / no-image.
+  const withImage = results.filter((r) => r.imageEmb !== null);
+  const withoutImage = results.filter((r) => r.imageEmb === null);
+
+  let written = 0;
+
+  if (withImage.length > 0) {
+    const imgValueClauses: string[] = [];
+    const imgParams: unknown[] = [];
+    for (let i = 0; i < withImage.length; i++) {
+      const item = withImage[i];
+      const o = i * 6; // 6 params per row
+      imgValueClauses.push(
+        `(gen_random_uuid(), $${o + 1}, $${o + 2}::vector(1024), $${o + 3}::vector(1024), $${o + 4}::vector(1024), $${o + 5}, $${o + 6}, NOW(), NOW())`,
+      );
+      imgParams.push(
+        item.id,
+        JSON.stringify(item.textEmb),
+        JSON.stringify(item.imageEmb),
+        JSON.stringify(item.combinedEmb),
+        EMBEDDING_MODEL,
+        item.hash,
+      );
+    }
+
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO product_embeddings (id, "productId", text_embedding, image_embedding, combined_embedding, embedding_model, input_hash, "createdAt", "updatedAt")
+       VALUES ${imgValueClauses.join(",\n       ")}
+       ON CONFLICT ("productId")
+       DO UPDATE SET
+         text_embedding     = EXCLUDED.text_embedding,
+         image_embedding    = EXCLUDED.image_embedding,
+         combined_embedding = EXCLUDED.combined_embedding,
+         embedding_model    = EXCLUDED.embedding_model,
+         input_hash         = EXCLUDED.input_hash,
+         "updatedAt"        = NOW()`,
+      ...imgParams,
+    );
+    written += withImage.length;
+  }
+
+  if (withoutImage.length > 0) {
+    const txtValueClauses: string[] = [];
+    const txtParams: unknown[] = [];
+    for (let i = 0; i < withoutImage.length; i++) {
+      const item = withoutImage[i];
+      const o = i * 5; // 5 params per row (no image)
+      txtValueClauses.push(
+        `(gen_random_uuid(), $${o + 1}, $${o + 2}::vector(1024), $${o + 3}::vector(1024), $${o + 4}, $${o + 5}, NOW(), NOW())`,
+      );
+      txtParams.push(
+        item.id,
+        JSON.stringify(item.textEmb),
+        JSON.stringify(item.combinedEmb),
+        EMBEDDING_MODEL,
+        item.hash,
+      );
+    }
+
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO product_embeddings (id, "productId", text_embedding, combined_embedding, embedding_model, input_hash, "createdAt", "updatedAt")
+       VALUES ${txtValueClauses.join(",\n       ")}
+       ON CONFLICT ("productId")
+       DO UPDATE SET
+         text_embedding     = EXCLUDED.text_embedding,
+         combined_embedding = EXCLUDED.combined_embedding,
+         embedding_model    = EXCLUDED.embedding_model,
+         input_hash         = EXCLUDED.input_hash,
+         "updatedAt"        = NOW()`,
+      ...txtParams,
+    );
+    written += withoutImage.length;
+  }
+
+  return written;
+}
+
+// ── Legacy wrapper (for backward compat if needed) ──────────────────
+
 /**
  * Generate text + image embeddings for a batch of products and upsert
- * into `product_embeddings`.
- *
- * For `combined_embedding`, if both text and image are available we
- * average them (same vector space thanks to Titan Multimodal).
- * Otherwise combined = whichever is available.
+ * into `product_embeddings`. Uses two-phase processing internally.
  */
 export async function generateEmbeddingsForBatch(
   productIds: string[],
+  skipImages = false,
 ): Promise<number> {
   if (productIds.length === 0) return 0;
 
@@ -197,86 +394,8 @@ export async function generateEmbeddingsForBatch(
 
   if (products.length === 0) return 0;
 
-  let generated = 0;
-
-  // Process in sub-batches with concurrency control
-  for (let i = 0; i < products.length; i += EMBEDDING_BATCH_SIZE) {
-    const batch = products.slice(i, i + EMBEDDING_BATCH_SIZE);
-
-    const results = await Promise.all(
-      batch.map(async (p) => {
-        const text = buildEmbeddingInput(p);
-        const hash = computeInputHash(text);
-
-        // Parallelize text + image embedding (they are independent)
-        const [textEmb, imageEmb] = await Promise.all([
-          getTextEmbedding(text),
-          p.imageCoverUrl ? getImageEmbedding(p.imageCoverUrl) : Promise.resolve(null),
-        ]);
-
-        // Combine: average of text + image if both exist
-        let combinedEmb: number[];
-        if (textEmb && imageEmb) {
-          combinedEmb = textEmb.map((v, idx) => (v + imageEmb![idx]) / 2);
-        } else {
-          combinedEmb = textEmb;
-        }
-
-        return { id: p.id, textEmb, imageEmb, combinedEmb, hash };
-      }),
-    );
-
-    // Upsert embeddings concurrently (no $transaction to avoid holding a
-    // single connection open for the entire batch — Neon can time out).
-    await Promise.all(
-      results.map((item) => {
-        const textJson = JSON.stringify(item.textEmb);
-        const combinedJson = JSON.stringify(item.combinedEmb);
-
-        if (item.imageEmb) {
-          const imageJson = JSON.stringify(item.imageEmb);
-          return prisma.$executeRawUnsafe(
-            `INSERT INTO product_embeddings (id, "productId", text_embedding, image_embedding, combined_embedding, embedding_model, input_hash, "createdAt", "updatedAt")
-             VALUES (gen_random_uuid(), $1, $2::vector(1024), $3::vector(1024), $4::vector(1024), $5, $6, NOW(), NOW())
-             ON CONFLICT ("productId")
-             DO UPDATE SET
-               text_embedding     = $2::vector(1024),
-               image_embedding    = $3::vector(1024),
-               combined_embedding = $4::vector(1024),
-               embedding_model    = $5,
-               input_hash         = $6,
-               "updatedAt"        = NOW()`,
-            item.id,
-            textJson,
-            imageJson,
-            combinedJson,
-            EMBEDDING_MODEL,
-            item.hash,
-          );
-        }
-        return prisma.$executeRawUnsafe(
-          `INSERT INTO product_embeddings (id, "productId", text_embedding, combined_embedding, embedding_model, input_hash, "createdAt", "updatedAt")
-           VALUES (gen_random_uuid(), $1, $2::vector(1024), $3::vector(1024), $4, $5, NOW(), NOW())
-           ON CONFLICT ("productId")
-           DO UPDATE SET
-             text_embedding     = $2::vector(1024),
-             combined_embedding = $3::vector(1024),
-             embedding_model    = $4,
-             input_hash         = $5,
-             "updatedAt"        = NOW()`,
-          item.id,
-          textJson,
-          combinedJson,
-          EMBEDDING_MODEL,
-          item.hash,
-        );
-      }),
-    );
-
-    generated += results.length;
-  }
-
-  return generated;
+  const results = await computeEmbeddings(products, skipImages);
+  return writeEmbeddingsBatch(results);
 }
 
 /**
