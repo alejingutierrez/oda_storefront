@@ -10,9 +10,9 @@
 import { prisma } from "@/lib/prisma";
 import type { ModelType, TrainingResult, CentroidMetrics } from "./types";
 import {
-  MIN_CONFIRMED_FOR_LARGE_SUBCATEGORY,
-  MIN_CONFIRMED_FOR_SMALL_SUBCATEGORY,
-  LARGE_SUBCATEGORY_THRESHOLD,
+  SMALL_SUBCATEGORY_THRESHOLD,
+  SMALL_SUBCATEGORY_MIN_RATIO,
+  LARGE_SUBCATEGORY_MIN_CONFIRMED,
 } from "./constants";
 
 // ── Readiness check ─────────────────────────────────────────────────
@@ -21,17 +21,17 @@ import {
  * Determine whether a subcategory has enough confirmed ground-truth
  * samples to train a reliable centroid.
  *
- * - Small subcategories (< 100 total products): ready when confirmed >= min(5, total)
- * - Large subcategories (>= 100 total products): ready when confirmed >= 100
+ * - Small subcategories (< 200 total): ready when confirmed > total / 3
+ * - Large subcategories (>= 200 total): ready when confirmed >= 100
  */
 export function isSubcategoryReady(
   confirmedCount: number,
   totalInSubcategory: number,
 ): boolean {
-  if (totalInSubcategory < LARGE_SUBCATEGORY_THRESHOLD) {
-    return confirmedCount >= Math.min(MIN_CONFIRMED_FOR_SMALL_SUBCATEGORY, totalInSubcategory);
+  if (totalInSubcategory < SMALL_SUBCATEGORY_THRESHOLD) {
+    return confirmedCount > Math.floor(totalInSubcategory * SMALL_SUBCATEGORY_MIN_RATIO);
   }
-  return confirmedCount >= MIN_CONFIRMED_FOR_LARGE_SUBCATEGORY;
+  return confirmedCount >= LARGE_SUBCATEGORY_MIN_CONFIRMED;
 }
 
 // ── Subcategory centroid training ───────────────────────────────────

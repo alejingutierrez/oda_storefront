@@ -17,6 +17,6 @@ export const DEFAULT_MIN_MARGIN = 0.05;
 export const RECLASSIFICATION_BATCH_SIZE = 1000;
 
 // ── Training readiness ──────────────────────────────────────────────
-export const MIN_CONFIRMED_FOR_LARGE_SUBCATEGORY = 100;
-export const MIN_CONFIRMED_FOR_SMALL_SUBCATEGORY = 5;
-export const LARGE_SUBCATEGORY_THRESHOLD = 100;
+export const SMALL_SUBCATEGORY_THRESHOLD = 200;
+export const SMALL_SUBCATEGORY_MIN_RATIO = 1 / 3; // confirmed > total/3
+export const LARGE_SUBCATEGORY_MIN_CONFIRMED = 100;

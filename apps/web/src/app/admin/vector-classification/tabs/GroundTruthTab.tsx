@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /* ── Types ── */
 
@@ -55,13 +55,17 @@ export default function GroundTruthTab() {
   const [selectedSubcategory, setSelectedSubcategory] = useState("");
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [totalProducts, setTotalProducts] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loadingStats, setLoadingStats] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
   /* ── Fetch stats ── */
   const fetchStats = useCallback(async () => {
@@ -92,46 +96,88 @@ export default function GroundTruthTab() {
     fetchStats();
   }, [fetchStats]);
 
-  /* ── Fetch products ── */
-  const fetchProducts = useCallback(async () => {
-    if (!selectedSubcategory) {
-      setProducts([]);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setSelected(new Set());
-    try {
-      const params = new URLSearchParams({
-        subcategory: selectedSubcategory,
-        page: String(page),
-        limit: String(PAGE_LIMIT),
-      });
-      const res = await fetch(
-        `/api/admin/vector-classification/products?${params.toString()}`,
-        { credentials: "include", cache: "no-store" },
-      );
-      if (!res.ok) throw new Error("No se pudieron cargar los productos");
-      const data = (await res.json()) as {
-        products: ProductItem[];
-        total: number;
-        page: number;
-        hasMore: boolean;
-      };
-      setProducts(data.products);
-      setTotalProducts(data.total);
-      setTotalPages(Math.max(1, Math.ceil(data.total / PAGE_LIMIT)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al cargar productos");
-      setProducts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedSubcategory, page]);
+  /* ── Fetch products (page 1 = reset, page > 1 = append) ── */
+  const fetchProducts = useCallback(
+    async (pageNum: number, append: boolean) => {
+      if (!selectedSubcategory) {
+        setProducts([]);
+        return;
+      }
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+        setSelected(new Set());
+      }
+      setError(null);
+      try {
+        const params = new URLSearchParams({
+          subcategory: selectedSubcategory,
+          page: String(pageNum),
+          limit: String(PAGE_LIMIT),
+        });
+        const res = await fetch(
+          `/api/admin/vector-classification/products?${params.toString()}`,
+          { credentials: "include", cache: "no-store" },
+        );
+        if (!res.ok) throw new Error("No se pudieron cargar los productos");
+        const data = (await res.json()) as {
+          products: ProductItem[];
+          total: number;
+          page: number;
+          hasMore: boolean;
+        };
+        if (append) {
+          setProducts((prev) => [...prev, ...data.products]);
+        } else {
+          setProducts(data.products);
+        }
+        setTotalProducts(data.total);
+        setHasMore(data.hasMore);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error al cargar productos");
+        if (!append) setProducts([]);
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [selectedSubcategory],
+  );
 
+  /* ── Reset when subcategory changes ── */
   useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+    setPage(1);
+    fetchProducts(1, false);
+  }, [selectedSubcategory, fetchProducts]);
+
+  /* ── Load more when page increments ── */
+  useEffect(() => {
+    if (page > 1) {
+      fetchProducts(page, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+  /* ── Infinite scroll observer ── */
+  useEffect(() => {
+    if (observerRef.current) observerRef.current.disconnect();
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMore && !loading && !loadingMore) {
+          setPage((p) => p + 1);
+        }
+      },
+      { rootMargin: "400px" },
+    );
+
+    if (sentinelRef.current) {
+      observerRef.current.observe(sentinelRef.current);
+    }
+
+    return () => observerRef.current?.disconnect();
+  }, [hasMore, loading, loadingMore]);
 
   /* ── Current stats ── */
   const currentStats = stats?.find((s) => s.subcategory === selectedSubcategory);
@@ -176,13 +222,15 @@ export default function GroundTruthTab() {
         const payload = await res.json().catch(() => ({}));
         throw new Error(payload.error || "No se pudo confirmar");
       }
-      await Promise.all([fetchProducts(), fetchStats()]);
+      // Refresh: reload all loaded products and stats
+      setPage(1);
+      await Promise.all([fetchProducts(1, false), fetchStats()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al confirmar");
     } finally {
       setBusy(false);
     }
-  }, [selected, busy, selectedSubcategory, fetchProducts, fetchStats]);
+  }, [selected, busy, selectedSubcategory, products, currentStats, fetchProducts, fetchStats]);
 
   /* ── Unconfirm single product ── */
   const handleUnconfirm = useCallback(
@@ -196,14 +244,20 @@ export default function GroundTruthTab() {
           { method: "DELETE", credentials: "include" },
         );
         if (!res.ok) throw new Error("No se pudo desconfirmar");
-        await Promise.all([fetchProducts(), fetchStats()]);
+        // Update in place for responsiveness
+        setProducts((prev) =>
+          prev.map((p) =>
+            p.id === product.id ? { ...p, groundTruthId: null } : p,
+          ),
+        );
+        await fetchStats();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error al desconfirmar");
       } finally {
         setBusy(false);
       }
     },
-    [busy, fetchProducts, fetchStats],
+    [busy, fetchStats],
   );
 
   const unconfirmedCount = products.filter((p) => !p.groundTruthId).length;
@@ -220,10 +274,7 @@ export default function GroundTruthTab() {
               <select
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 value={selectedSubcategory}
-                onChange={(e) => {
-                  setSelectedSubcategory(e.target.value);
-                  setPage(1);
-                }}
+                onChange={(e) => setSelectedSubcategory(e.target.value)}
               >
                 <option value="">-- Seleccionar subcategoria --</option>
                 {Object.entries(grouped).map(([category, subcats]) => (
@@ -312,7 +363,7 @@ export default function GroundTruthTab() {
               )}
             </div>
             <span className="text-xs text-slate-400">
-              Pagina {page}/{totalPages} — {totalProducts} productos
+              {products.length} de {totalProducts} productos
             </span>
           </div>
 
@@ -383,29 +434,15 @@ export default function GroundTruthTab() {
             })}
           </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2">
-              <button
-                type="button"
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                disabled={page <= 1 || loading}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                Anterior
-              </button>
-              <span className="text-xs text-slate-500">
-                {page} / {totalPages}
-              </span>
-              <button
-                type="button"
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                disabled={page >= totalPages || loading}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              >
-                Siguiente
-              </button>
-            </div>
+          {/* Infinite scroll sentinel */}
+          <div ref={sentinelRef} className="h-4" />
+          {loadingMore && (
+            <p className="text-center text-sm text-slate-500">Cargando mas productos...</p>
+          )}
+          {!hasMore && products.length > 0 && (
+            <p className="text-center text-xs text-slate-400">
+              Todos los productos cargados ({products.length})
+            </p>
           )}
         </>
       )}
