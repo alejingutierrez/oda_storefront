@@ -55,14 +55,18 @@ export async function GET(req: Request) {
         totalProcessed = tp != null ? Number(tp) : null;
         config.skipImages = skipImg === "true";
 
+        // Check heartbeat liveness
+        const heartbeatAlive = hb != null && Date.now() - Number(hb) < HEARTBEAT_TTL_MS;
+
+        // Auto-recover "stopping" when no invocation is alive
+        if (jobStatus === "stopping" && !heartbeatAlive) {
+          jobStatus = "idle";
+          await r.set(`${JOB_KEY}:status`, "idle", "EX", 3600).catch(() => {});
+        }
+
         // Check if job is stale (running but heartbeat expired)
-        if (jobStatus === "running") {
-          if (!hb) {
-            isStale = true;
-          } else {
-            const hbAge = Date.now() - Number(hb);
-            isStale = hbAge > HEARTBEAT_TTL_MS;
-          }
+        if (jobStatus === "running" && !heartbeatAlive) {
+          isStale = true;
         }
 
         // Fetch last 20 log entries
