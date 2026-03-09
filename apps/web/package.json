@@ -21,7 +21,7 @@
     "blob:backfill:logos": "node scripts/backfill-brand-logos-to-blob.mjs"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.978.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1004.0",
     "@descope/nextjs-sdk": "^0.15.11",
     "@descope/sdk-mixins": "^0.15.1",
     "@prisma/adapter-pg": "^7.2.0",

@@ -18,9 +18,10 @@ export async function POST(req: Request) {
       batchSize?: number;
     } | null;
 
+    // Smaller batches since Bedrock does 1 API call per product (text + image)
     const batchSize = Math.min(
-      2000,
-      Math.max(1, Math.floor(Number(body?.batchSize) || 500)),
+      100,
+      Math.max(1, Math.floor(Number(body?.batchSize) || 25)),
     );
 
     // Find products without embeddings
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
       FROM products p
       LEFT JOIN product_embeddings pe ON pe."productId" = p.id
       WHERE pe.id IS NULL
-        AND p.status = 'active'
+        AND (p.status = 'active' OR p.status IS NULL)
         AND p."imageCoverUrl" IS NOT NULL
       LIMIT ${batchSize}
     `);
@@ -49,7 +50,7 @@ export async function POST(req: Request) {
         FROM products p
         LEFT JOIN product_embeddings pe ON pe."productId" = p.id
         WHERE pe.id IS NULL
-          AND p.status = 'active'
+          AND (p.status = 'active' OR p.status IS NULL)
           AND p."imageCoverUrl" IS NOT NULL
       `,
     );

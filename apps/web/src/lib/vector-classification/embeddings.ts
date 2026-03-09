@@ -1,29 +1,46 @@
 /**
  * Core embedding generation for vector classification.
  *
- * Builds a text representation of each product (excluding its current
- * classification to avoid circular embeddings), hashes the input for
- * staleness detection, and calls OpenAI text-embedding-3-small to
- * produce 1536-d vectors stored in `product_embeddings`.
+ * Uses Amazon Bedrock Titan Multimodal Embeddings G1 to produce
+ * 1024-d vectors for both text and images in the same vector space.
+ * Once generated, vectors are stored in pgvector (Neon) and all
+ * similarity operations happen in SQL — no further AWS dependency.
  */
 
 import { createHash } from "node:crypto";
 
+import {
+  BedrockRuntimeClient,
+  InvokeModelCommand,
+} from "@aws-sdk/client-bedrock-runtime";
 import { prisma } from "@/lib/prisma";
-import { getOpenAIClient } from "@/lib/openai";
 import type { EmbeddingStats } from "./types";
 import {
   EMBEDDING_MODEL,
+  EMBEDDING_DIMENSIONS,
   EMBEDDING_BATCH_SIZE,
   DESCRIPTION_MAX_LENGTH,
 } from "./constants";
 
+// ── Bedrock client ──────────────────────────────────────────────────
+
+let _client: BedrockRuntimeClient | null = null;
+
+function getBedrockClient(): BedrockRuntimeClient {
+  if (!_client) {
+    _client = new BedrockRuntimeClient({
+      region: process.env.AWS_REGION || "us-east-1",
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
+    });
+  }
+  return _client;
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 
-/**
- * Format price as a human-readable tier label used in the embedding
- * input so the model captures rough price positioning without raw numbers.
- */
 function priceTier(minPriceCop: number | null | undefined): string {
   if (minPriceCop == null) return "desconocido";
   if (minPriceCop < 50_000) return "bajo (<50k COP)";
@@ -32,9 +49,6 @@ function priceTier(minPriceCop: number | null | undefined): string {
   return "premium (>400k COP)";
 }
 
-/**
- * Join a string array into a comma-separated list, or return a fallback.
- */
 function joinTags(tags: string[] | null | undefined): string {
   if (!tags || tags.length === 0) return "";
   return tags.join(", ");
@@ -45,10 +59,8 @@ function joinTags(tags: string[] | null | undefined): string {
 /**
  * Build a textual representation of a product suitable for embedding.
  *
- * **Intentionally excludes** the product's current `category`, `subcategory`,
- * and `gender` fields so that the resulting vector captures intrinsic
- * properties (name, description, tags, price tier, etc.) rather than the
- * classification we are trying to predict.
+ * Intentionally excludes the product's current classification fields
+ * (category, subcategory, gender) to avoid circular embeddings.
  */
 export function buildEmbeddingInput(product: {
   name: string;
@@ -58,7 +70,7 @@ export function buildEmbeddingInput(product: {
   patternTags: string[];
   occasionTags: string[];
   season: string | null;
-  minPriceCop: unknown; // Decimal from Prisma
+  minPriceCop: unknown;
   brand: { name: string };
 }): string {
   const lines: string[] = [];
@@ -94,38 +106,85 @@ export function buildEmbeddingInput(product: {
   return lines.join("\n");
 }
 
-/**
- * Compute a SHA-256 hash of an embedding input string.
- *
- * Used to detect whether a product's data has changed since its
- * last embedding was generated (staleness check).
- */
 export function computeInputHash(input: string): string {
   return createHash("sha256").update(input).digest("hex");
 }
 
 /**
- * Generate embeddings for a batch of products and upsert into
- * `product_embeddings`.
+ * Call Bedrock Titan Multimodal to get a text embedding.
+ */
+async function getTextEmbedding(text: string): Promise<number[]> {
+  const client = getBedrockClient();
+  const response = await client.send(
+    new InvokeModelCommand({
+      modelId: EMBEDDING_MODEL,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify({
+        inputText: text,
+        embeddingConfig: { outputEmbeddingLength: EMBEDDING_DIMENSIONS },
+      }),
+    }),
+  );
+
+  const body = JSON.parse(new TextDecoder().decode(response.body));
+  return body.embedding as number[];
+}
+
+/**
+ * Call Bedrock Titan Multimodal to get an image embedding.
+ * The image is fetched from its URL and sent as base64.
+ */
+async function getImageEmbedding(imageUrl: string): Promise<number[] | null> {
+  try {
+    const res = await fetch(imageUrl, { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return null;
+
+    const buffer = await res.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+
+    // Titan Multimodal accepts JPEG/PNG up to ~2048x2048
+    const client = getBedrockClient();
+    const response = await client.send(
+      new InvokeModelCommand({
+        modelId: EMBEDDING_MODEL,
+        contentType: "application/json",
+        accept: "application/json",
+        body: JSON.stringify({
+          inputImage: base64,
+          embeddingConfig: { outputEmbeddingLength: EMBEDDING_DIMENSIONS },
+        }),
+      }),
+    );
+
+    const body = JSON.parse(new TextDecoder().decode(response.body));
+    return body.embedding as number[];
+  } catch (err) {
+    console.warn(`[embeddings] Failed to embed image ${imageUrl}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Generate text + image embeddings for a batch of products and upsert
+ * into `product_embeddings`.
  *
- * @param productIds - Product UUIDs to process.
- * @returns The number of embeddings successfully generated.
+ * For `combined_embedding`, if both text and image are available we
+ * average them (same vector space thanks to Titan Multimodal).
+ * Otherwise combined = whichever is available.
  */
 export async function generateEmbeddingsForBatch(
   productIds: string[],
 ): Promise<number> {
   if (productIds.length === 0) return 0;
 
-  // 1. Fetch products
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
     select: {
       id: true,
       name: true,
       description: true,
-      category: true,
-      subcategory: true,
-      gender: true,
+      imageCoverUrl: true,
       styleTags: true,
       materialTags: true,
       patternTags: true,
@@ -138,47 +197,81 @@ export async function generateEmbeddingsForBatch(
 
   if (products.length === 0) return 0;
 
-  // 2. Build inputs and hashes
-  const inputs: { id: string; text: string; hash: string }[] = [];
-  for (const p of products) {
-    const text = buildEmbeddingInput(p);
-    const hash = computeInputHash(text);
-    inputs.push({ id: p.id, text, hash });
-  }
-
-  // 3. Call OpenAI in sub-batches (API limit)
-  const openai = getOpenAIClient();
   let generated = 0;
 
-  for (let i = 0; i < inputs.length; i += EMBEDDING_BATCH_SIZE) {
-    const batch = inputs.slice(i, i + EMBEDDING_BATCH_SIZE);
+  // Process in sub-batches with concurrency control
+  for (let i = 0; i < products.length; i += EMBEDDING_BATCH_SIZE) {
+    const batch = products.slice(i, i + EMBEDDING_BATCH_SIZE);
 
-    const response = await openai.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: batch.map((b) => b.text),
-    });
+    const results = await Promise.all(
+      batch.map(async (p) => {
+        const text = buildEmbeddingInput(p);
+        const hash = computeInputHash(text);
 
-    // 4. Upsert each embedding
-    for (let j = 0; j < response.data.length; j++) {
-      const embedding = response.data[j];
-      const item = batch[j];
-      const vectorJson = JSON.stringify(embedding.embedding);
+        // Get text embedding
+        const textEmb = await getTextEmbedding(text);
 
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO product_embeddings (id, "productId", text_embedding, combined_embedding, embedding_model, input_hash, "createdAt", "updatedAt")
-         VALUES (gen_random_uuid(), $1, $2::vector(1536), $2::vector(1536), $3, $4, NOW(), NOW())
-         ON CONFLICT ("productId")
-         DO UPDATE SET
-           text_embedding    = $2::vector(1536),
-           combined_embedding = $2::vector(1536),
-           embedding_model   = $3,
-           input_hash        = $4,
-           "updatedAt"       = NOW()`,
-        item.id,
-        vectorJson,
-        EMBEDDING_MODEL,
-        item.hash,
-      );
+        // Get image embedding (if image URL exists)
+        let imageEmb: number[] | null = null;
+        if (p.imageCoverUrl) {
+          imageEmb = await getImageEmbedding(p.imageCoverUrl);
+        }
+
+        // Combine: average of text + image if both exist
+        let combinedEmb: number[];
+        if (textEmb && imageEmb) {
+          combinedEmb = textEmb.map((v, idx) => (v + imageEmb![idx]) / 2);
+        } else {
+          combinedEmb = textEmb;
+        }
+
+        return { id: p.id, textEmb, imageEmb, combinedEmb, hash };
+      }),
+    );
+
+    // Upsert each embedding
+    for (const item of results) {
+      const textJson = JSON.stringify(item.textEmb);
+      const combinedJson = JSON.stringify(item.combinedEmb);
+
+      if (item.imageEmb) {
+        const imageJson = JSON.stringify(item.imageEmb);
+        await prisma.$executeRawUnsafe(
+          `INSERT INTO product_embeddings (id, "productId", text_embedding, image_embedding, combined_embedding, embedding_model, input_hash, "createdAt", "updatedAt")
+           VALUES (gen_random_uuid(), $1, $2::vector(1024), $3::vector(1024), $4::vector(1024), $5, $6, NOW(), NOW())
+           ON CONFLICT ("productId")
+           DO UPDATE SET
+             text_embedding     = $2::vector(1024),
+             image_embedding    = $3::vector(1024),
+             combined_embedding = $4::vector(1024),
+             embedding_model    = $5,
+             input_hash         = $6,
+             "updatedAt"        = NOW()`,
+          item.id,
+          textJson,
+          imageJson,
+          combinedJson,
+          EMBEDDING_MODEL,
+          item.hash,
+        );
+      } else {
+        await prisma.$executeRawUnsafe(
+          `INSERT INTO product_embeddings (id, "productId", text_embedding, combined_embedding, embedding_model, input_hash, "createdAt", "updatedAt")
+           VALUES (gen_random_uuid(), $1, $2::vector(1024), $3::vector(1024), $4, $5, NOW(), NOW())
+           ON CONFLICT ("productId")
+           DO UPDATE SET
+             text_embedding     = $2::vector(1024),
+             combined_embedding = $3::vector(1024),
+             embedding_model    = $4,
+             input_hash         = $5,
+             "updatedAt"        = NOW()`,
+          item.id,
+          textJson,
+          combinedJson,
+          EMBEDDING_MODEL,
+          item.hash,
+        );
+      }
 
       generated++;
     }
@@ -189,13 +282,6 @@ export async function generateEmbeddingsForBatch(
 
 /**
  * Return high-level statistics about embedding coverage.
- *
- * - `total`    — active in-stock products
- * - `embedded` — products that have a combined_embedding
- * - `missing`  — products without any embedding
- * - `stale`    — products whose input_hash no longer matches
- *                (we approximate by counting those whose product.updatedAt
- *                is newer than the embedding's updatedAt)
  */
 export async function getEmbeddingStats(): Promise<EmbeddingStats> {
   const rows = await prisma.$queryRawUnsafe<

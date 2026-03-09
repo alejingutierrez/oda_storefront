@@ -1030,9 +1030,9 @@ model ProductEmbedding {
   id                String                        @id @default(uuid())
   productId         String                        @unique
   product           Product                       @relation(fields: [productId], references: [id], onDelete: Cascade)
-  textEmbedding     Unsupported("vector(1536)")?  @map("text_embedding")
-  imageEmbedding    Unsupported("vector(512)")?   @map("image_embedding")
-  combinedEmbedding Unsupported("vector(1536)")?  @map("combined_embedding")
+  textEmbedding     Unsupported("vector(1024)")?  @map("text_embedding")
+  imageEmbedding    Unsupported("vector(1024)")?  @map("image_embedding")
+  combinedEmbedding Unsupported("vector(1024)")?  @map("combined_embedding")
   embeddingModel    String?                       @map("embedding_model")
   inputHash         String?                       @map("input_hash")
   createdAt         DateTime                      @default(now())
@@ -1067,7 +1067,7 @@ model SubcategoryCentroid {
   id                String                        @id @default(uuid())
   subcategory       String                        @unique
   category          String
-  centroidEmbedding Unsupported("vector(1536)")?  @map("centroid_embedding")
+  centroidEmbedding Unsupported("vector(1024)")?  @map("centroid_embedding")
   sampleCount       Int                           @default(0)
   avgIntraDistance   Float?                        @map("avg_intra_distance")
   maxIntraDistance   Float?                        @map("max_intra_distance")
@@ -1085,7 +1085,7 @@ model SubcategoryCentroid {
 model GenderCentroid {
   id                String                        @id @default(uuid())
   gender            String                        @unique
-  centroidEmbedding Unsupported("vector(1536)")?  @map("centroid_embedding")
+  centroidEmbedding Unsupported("vector(1024)")?  @map("centroid_embedding")
   sampleCount       Int                           @default(0)
   avgIntraDistance   Float?                        @map("avg_intra_distance")
   metrics           Json?

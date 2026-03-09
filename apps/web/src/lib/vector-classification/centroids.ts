@@ -90,11 +90,11 @@ export async function trainSubcategoryCentroids(): Promise<TrainingResult> {
 
       await prisma.$executeRawUnsafe(
         `INSERT INTO subcategory_centroids (id, subcategory, category, centroid_embedding, sample_count, last_trained_at, model_run_id, "createdAt", "updatedAt")
-         VALUES (gen_random_uuid(), $1, $2, $3::vector(1536), $4, NOW(), $5, NOW(), NOW())
+         VALUES (gen_random_uuid(), $1, $2, $3::vector(1024), $4, NOW(), $5, NOW(), NOW())
          ON CONFLICT (subcategory)
          DO UPDATE SET
            category           = $2,
-           centroid_embedding  = $3::vector(1536),
+           centroid_embedding  = $3::vector(1024),
            sample_count        = $4,
            last_trained_at     = NOW(),
            model_run_id        = $5,
@@ -237,10 +237,10 @@ export async function trainGenderCentroids(): Promise<TrainingResult> {
 
       await prisma.$executeRawUnsafe(
         `INSERT INTO gender_centroids (id, gender, centroid_embedding, sample_count, last_trained_at, model_run_id, "createdAt", "updatedAt")
-         VALUES (gen_random_uuid(), $1, $2::vector(1536), $3, NOW(), $4, NOW(), NOW())
+         VALUES (gen_random_uuid(), $1, $2::vector(1024), $3, NOW(), $4, NOW(), NOW())
          ON CONFLICT (gender)
          DO UPDATE SET
-           centroid_embedding = $2::vector(1536),
+           centroid_embedding = $2::vector(1024),
            sample_count       = $3,
            last_trained_at    = NOW(),
            model_run_id       = $4,

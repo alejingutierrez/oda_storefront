@@ -1,15 +1,14 @@
 /**
  * Configuration constants for the vector classification system.
  *
- * Tune thresholds, batch sizes, and model parameters here
- * rather than scattering magic numbers across modules.
+ * Uses Amazon Bedrock Titan Multimodal Embeddings G1 for both
+ * text and image embeddings in the same 1024-d vector space.
  */
 
 // ── Embedding model ─────────────────────────────────────────────────
-export const EMBEDDING_MODEL = "text-embedding-3-small";
-export const EMBEDDING_DIMENSIONS = 1536;
-export const IMAGE_EMBEDDING_DIMENSIONS = 512;
-export const EMBEDDING_BATCH_SIZE = 500;
+export const EMBEDDING_MODEL = "amazon.titan-embed-image-v1";
+export const EMBEDDING_DIMENSIONS = 1024;
+export const EMBEDDING_BATCH_SIZE = 25; // concurrent Bedrock calls per sub-batch
 export const DESCRIPTION_MAX_LENGTH = 500;
 
 // ── Reclassification thresholds ─────────────────────────────────────
