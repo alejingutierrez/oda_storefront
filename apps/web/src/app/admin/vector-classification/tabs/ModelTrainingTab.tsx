@@ -80,7 +80,7 @@ const Spinner = () => (
 export default function ModelTrainingTab() {
   const [embStats, setEmbStats] = useState<EmbeddingStats | null>(null);
   const [embGenerating, setEmbGenerating] = useState(false);
-  const embPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const embAbortRef = useRef(false);
 
   const [subcatReadiness, setSubcatReadiness] = useState<SubcategoryReadiness[]>([]);
   const [subcatModel, setSubcatModel] = useState<ModelInfo | null>(null);
@@ -168,43 +168,49 @@ export default function ModelTrainingTab() {
     ]).finally(() => setLoadingInit(false));
   }, [fetchEmbeddingStats, fetchReadiness, fetchModelStatus, fetchRuns]);
 
-  /* ── Clean up polling ── */
+  /* ── Clean up on unmount ── */
   useEffect(() => {
     return () => {
-      if (embPollRef.current) clearInterval(embPollRef.current);
+      embAbortRef.current = true;
     };
   }, []);
 
-  /* ── Generate embeddings ── */
+  /* ── Generate embeddings (loop until done) ── */
   const handleGenerateEmbeddings = useCallback(async () => {
     setEmbGenerating(true);
     setError(null);
+    embAbortRef.current = false;
+
     try {
-      const res = await fetch("/api/admin/vector-classification/embeddings/generate", {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
-        throw new Error(payload.error || "Error al generar embeddings");
+      let remaining = 1; // seed to enter loop
+      while (remaining > 0 && !embAbortRef.current) {
+        const res = await fetch("/api/admin/vector-classification/embeddings/generate", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batchSize: 25 }),
+        });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          throw new Error(payload.error || "Error al generar embeddings");
+        }
+        const data = (await res.json()) as { ok: boolean; generated: number; remaining: number };
+        remaining = data.remaining;
+
+        // refresh stats in UI after each batch
+        await fetchEmbeddingStats();
       }
-      embPollRef.current = setInterval(fetchEmbeddingStats, 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al generar embeddings");
+    } finally {
       setEmbGenerating(false);
+      await fetchEmbeddingStats();
     }
   }, [fetchEmbeddingStats]);
 
-  /* ── Stop polling when done ── */
-  useEffect(() => {
-    if (embGenerating && embStats && embStats.embedded >= embStats.total && embStats.total > 0) {
-      setEmbGenerating(false);
-      if (embPollRef.current) {
-        clearInterval(embPollRef.current);
-        embPollRef.current = null;
-      }
-    }
-  }, [embGenerating, embStats]);
+  const handleStopEmbeddings = useCallback(() => {
+    embAbortRef.current = true;
+  }, []);
 
   /* ── Train model ── */
   const handleTrain = useCallback(
@@ -310,20 +316,33 @@ export default function ModelTrainingTab() {
               />
             </div>
 
-            <button
-              type="button"
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={handleGenerateEmbeddings}
-              disabled={embGenerating}
-            >
-              {embGenerating ? (
-                <span className="inline-flex items-center gap-2">
-                  <Spinner /> Generando...
-                </span>
-              ) : (
-                "Generar embeddings"
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={handleGenerateEmbeddings}
+                disabled={embGenerating}
+              >
+                {embGenerating ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Spinner /> Generando... ({fmt(embStats?.missing ?? 0)} restantes)
+                  </span>
+                ) : embStats && embStats.missing > 0 ? (
+                  `Generar embeddings (${fmt(embStats.missing)} pendientes)`
+                ) : (
+                  "Generar embeddings"
+                )}
+              </button>
+              {embGenerating && (
+                <button
+                  type="button"
+                  className="rounded-xl border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50"
+                  onClick={handleStopEmbeddings}
+                >
+                  Detener
+                </button>
               )}
-            </button>
+            </div>
           </div>
         )}
       </div>
