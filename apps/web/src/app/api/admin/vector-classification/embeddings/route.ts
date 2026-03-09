@@ -6,7 +6,7 @@ import { getEmbeddingStats } from "@/lib/vector-classification/embeddings";
 export const runtime = "nodejs";
 
 const JOB_KEY = "vector-emb-job";
-const HEARTBEAT_TTL_MS = 90_000;
+const HEARTBEAT_TTL_MS = 180_000; // Must match HEARTBEAT_TTL in generate/route.ts (180s)
 
 export async function GET(req: Request) {
   const admin = await validateAdminRequest(req);

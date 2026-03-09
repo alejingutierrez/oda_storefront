@@ -139,23 +139,59 @@ export function computeInputHash(input: string): string {
 
 /**
  * Call Bedrock Titan Multimodal to get a text embedding.
+ *
+ * Resilient: retries on throttling errors with exponential backoff.
+ * Returns null on failure instead of throwing — this prevents a single
+ * product's failure from killing the entire batch.
  */
-async function getTextEmbedding(text: string): Promise<number[]> {
+async function getTextEmbedding(text: string): Promise<number[] | null> {
   const client = getBedrockClient();
-  const response = await client.send(
-    new InvokeModelCommand({
-      modelId: EMBEDDING_MODEL,
-      contentType: "application/json",
-      accept: "application/json",
-      body: JSON.stringify({
-        inputText: text,
-        embeddingConfig: { outputEmbeddingLength: EMBEDDING_DIMENSIONS },
-      }),
-    }),
-  );
+  const MAX_RETRIES = 2;
 
-  const body = JSON.parse(new TextDecoder().decode(response.body));
-  return body.embedding as number[];
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await client.send(
+        new InvokeModelCommand({
+          modelId: EMBEDDING_MODEL,
+          contentType: "application/json",
+          accept: "application/json",
+          body: JSON.stringify({
+            inputText: text,
+            embeddingConfig: { outputEmbeddingLength: EMBEDDING_DIMENSIONS },
+          }),
+        }),
+      );
+
+      const body = JSON.parse(new TextDecoder().decode(response.body));
+      return body.embedding as number[];
+    } catch (err) {
+      const isThrottle =
+        err instanceof Error &&
+        (err.name === "ThrottlingException" ||
+          err.name === "TooManyRequestsException" ||
+          err.name === "ServiceUnavailableException" ||
+          err.message.includes("Too Many Requests") ||
+          err.message.includes("Rate exceeded") ||
+          err.message.includes("throttl"));
+
+      if (attempt < MAX_RETRIES && isThrottle) {
+        const delay = (attempt + 1) * 1000 + Math.random() * 500;
+        console.warn(
+          `[embeddings] Text embedding throttled, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_RETRIES})`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      console.warn(
+        `[embeddings] Text embedding failed after ${attempt + 1} attempts:`,
+        err instanceof Error ? err.message : err,
+      );
+      return null;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -198,6 +234,13 @@ async function getImageEmbedding(imageUrl: string): Promise<number[] | null> {
  * Compute text + image embeddings for a batch of products.
  * Pure Bedrock compute — does NOT touch the database.
  *
+ * Resilient: uses Promise.allSettled so one product's failure does not
+ * kill the entire batch. Products that fail are skipped (they remain
+ * without embeddings in DB and will be retried in the next batch).
+ *
+ * This function NEVER throws — it always returns a (possibly empty)
+ * array of successful results.
+ *
  * @param products - Product data to embed
  * @param skipImages - If true, skip image embeddings (text-only mode)
  */
@@ -213,8 +256,8 @@ export async function computeEmbeddings(
   for (let i = 0; i < products.length; i += EMBEDDING_BATCH_SIZE) {
     const batch = products.slice(i, i + EMBEDDING_BATCH_SIZE);
 
-    const results = await Promise.all(
-      batch.map(async (p) => {
+    const settled = await Promise.allSettled(
+      batch.map(async (p): Promise<EmbeddingResult | null> => {
         const text = buildEmbeddingInput(p);
         const hash = computeInputHash(text);
 
@@ -226,9 +269,15 @@ export async function computeEmbeddings(
             : Promise.resolve(null),
         ]);
 
+        // If text embedding failed, skip this product. It will be
+        // retried in a future batch since it has no row in product_embeddings.
+        if (!textEmb) {
+          return null;
+        }
+
         // Combine: average of text + image if both exist
         let combinedEmb: number[];
-        if (textEmb && imageEmb) {
+        if (imageEmb) {
           combinedEmb = textEmb.map((v, idx) => (v + imageEmb[idx]) / 2);
         } else {
           combinedEmb = textEmb;
@@ -238,7 +287,27 @@ export async function computeEmbeddings(
       }),
     );
 
-    allResults.push(...results);
+    // Collect only successful, non-null results
+    let skipped = 0;
+    for (const result of settled) {
+      if (result.status === "fulfilled" && result.value !== null) {
+        allResults.push(result.value);
+      } else {
+        skipped++;
+        if (result.status === "rejected") {
+          console.warn(
+            `[embeddings] Unexpected per-product error:`,
+            result.reason,
+          );
+        }
+      }
+    }
+
+    if (skipped > 0) {
+      console.warn(
+        `[embeddings] Sub-batch: ${skipped}/${batch.length} products skipped (will retry later)`,
+      );
+    }
   }
 
   return allResults;
