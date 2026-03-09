@@ -226,8 +226,9 @@ export async function generateEmbeddingsForBatch(
       }),
     );
 
-    // Batch upsert all embeddings in one transaction
-    await prisma.$transaction(
+    // Upsert embeddings concurrently (no $transaction to avoid holding a
+    // single connection open for the entire batch — Neon can time out).
+    await Promise.all(
       results.map((item) => {
         const textJson = JSON.stringify(item.textEmb);
         const combinedJson = JSON.stringify(item.combinedEmb);
