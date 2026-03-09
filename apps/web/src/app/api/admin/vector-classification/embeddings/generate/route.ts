@@ -7,7 +7,10 @@ import {
   computeEmbeddings,
   writeEmbeddingsBatch,
 } from "@/lib/vector-classification/embeddings";
-import type { EmbeddingProduct } from "@/lib/vector-classification/embeddings";
+import type {
+  EmbeddingProduct,
+  EmbeddingResult,
+} from "@/lib/vector-classification/embeddings";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -16,10 +19,10 @@ const JOB_KEY = "vector-emb-job";
 const JOB_TTL = 3600; // 1 hour
 const HEARTBEAT_TTL = 90; // seconds
 
-// Keep time budget conservative to avoid connection pool exhaustion.
-const TIME_BUDGET_MS = 180_000; // 3 min of 5 min maxDuration
-const BATCH_SIZE_WITH_IMAGES = 20;
-const BATCH_SIZE_TEXT_ONLY = 30;
+// Use most of the maxDuration budget — self-chain continues where we leave off.
+const TIME_BUDGET_MS = 240_000; // 4 min of 5 min maxDuration
+const BATCH_SIZE_WITH_IMAGES = 40;
+const BATCH_SIZE_TEXT_ONLY = 60;
 const MAX_RETRIES = 2;
 
 // ── Redis helpers ────────────────────────────────────────────────────
@@ -81,10 +84,12 @@ async function updateProgress(generated: number, remaining: number) {
     const r = getRedis();
     // Speed based on overall job elapsed time (not just this invocation)
     const jobStartedAt = await r.get(`${JOB_KEY}:startedAt`);
-    const totalProcessed = Number((await r.get(`${JOB_KEY}:totalProcessed`)) ?? 0) + generated;
+    const totalProcessed =
+      Number((await r.get(`${JOB_KEY}:totalProcessed`)) ?? 0) + generated;
     let speed = 0;
     if (jobStartedAt) {
-      const elapsedMin = (Date.now() - new Date(jobStartedAt).getTime()) / 60_000;
+      const elapsedMin =
+        (Date.now() - new Date(jobStartedAt).getTime()) / 60_000;
       speed = elapsedMin > 0.1 ? Math.round(totalProcessed / elapsedMin) : 0;
     }
     await r
@@ -160,6 +165,67 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ── Fetch next batch of product IDs and data ─────────────────────────
+
+async function fetchNextBatch(
+  batchSize: number,
+): Promise<EmbeddingProduct[] | "connection_error" | null> {
+  // Step 1: Find product IDs without embeddings
+  let rows: Array<{ id: string }>;
+  try {
+    rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT p.id
+      FROM products p
+      LEFT JOIN product_embeddings pe ON pe."productId" = p.id
+      WHERE pe.id IS NULL
+        AND (p.status = 'active' OR p.status IS NULL)
+        AND p."imageCoverUrl" IS NOT NULL
+      LIMIT ${batchSize}
+    `);
+  } catch (err) {
+    if (isConnectionError(err)) {
+      console.warn(
+        "[embeddings/generate] DB connection error on query:",
+        (err as Error).message,
+      );
+      return "connection_error";
+    }
+    throw err;
+  }
+
+  if (rows.length === 0) return null;
+
+  // Step 2: Fetch product data
+  try {
+    const products = await prisma.product.findMany({
+      where: { id: { in: rows.map((r) => r.id) } },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        imageCoverUrl: true,
+        styleTags: true,
+        materialTags: true,
+        patternTags: true,
+        occasionTags: true,
+        season: true,
+        minPriceCop: true,
+        brand: { select: { name: true } },
+      },
+    });
+    return products.length > 0 ? products : null;
+  } catch (err) {
+    if (isConnectionError(err)) {
+      console.warn(
+        "[embeddings/generate] DB connection error on product fetch:",
+        (err as Error).message,
+      );
+      return "connection_error";
+    }
+    throw err;
+  }
+}
+
 // ── Main handler ─────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -209,9 +275,10 @@ export async function POST(req: Request) {
     if (currentStatus === "running" && !isInternalCall) {
       const alive = await isHeartbeatAlive();
       if (!alive) {
-        console.warn("[embeddings/generate] Stale job detected, auto-recovering");
+        console.warn(
+          "[embeddings/generate] Stale job detected, auto-recovering",
+        );
         await logJobEvent("Job estancado detectado, auto-recuperando");
-        // Reset and proceed
       }
     }
 
@@ -247,7 +314,9 @@ export async function POST(req: Request) {
     await setJobState("running");
     await updateHeartbeat();
     if (!isInternalCall) {
-      await logJobEvent(`Job iniciado (${skipImages ? "solo texto" : "texto + imagen"})`);
+      await logJobEvent(
+        `Job iniciado (${skipImages ? "solo texto" : "texto + imagen"}, batch=${batchSize})`,
+      );
     } else {
       const chainNum = await incrementChainCount();
       await logJobEvent(`Self-chain #${chainNum} iniciado`);
@@ -257,50 +326,81 @@ export async function POST(req: Request) {
     let totalGenerated = 0;
     let consecutiveErrors = 0;
 
-    // ── Inner loop: process multiple batches within this invocation ──
+    // ── Pipelined loop: overlap compute and write ──────────────────
+    //
+    // While writing batch N to DB, we concurrently start computing
+    // batch N+1 via Bedrock. This hides DB write latency completely.
+    //
+    // Flow:
+    //   1. Fetch + compute batch 1
+    //   2. [Write batch 1] + [Fetch + compute batch 2]  (parallel)
+    //   3. [Write batch 2] + [Fetch + compute batch 3]  (parallel)
+    //   ...
+    //
+    // We keep a "pending write" promise that we await before the next
+    // write, so writes are sequential (avoid DB overload) but overlap
+    // with the next compute phase.
+
+    let pendingWrite: Promise<number | "connection_error"> | null = null;
+
+    // Pre-fetch the first batch of products
+    let nextProducts = await fetchNextBatch(batchSize);
+
     while (Date.now() - invocationStart < TIME_BUDGET_MS) {
-      // Update heartbeat at start of each iteration (defensive: keeps
-      // heartbeat alive even if a single batch takes close to 90s)
       await updateHeartbeat();
 
       // Check if stopped/paused between batches
       const status = await getJobStatus();
       if (status === "stopping") {
+        // Wait for any pending write before stopping
+        if (pendingWrite) {
+          const writeResult = await pendingWrite;
+          if (typeof writeResult === "number") {
+            totalGenerated += writeResult;
+            if (isRedisEnabled()) {
+              await getRedis()
+                .incrby(`${JOB_KEY}:totalProcessed`, writeResult)
+                .catch(() => {});
+            }
+          }
+          pendingWrite = null;
+        }
         await setJobState("idle");
         await logJobEvent("Job detenido por el usuario");
         break;
       }
       if (status === "paused") {
+        if (pendingWrite) {
+          const writeResult = await pendingWrite;
+          if (typeof writeResult === "number") {
+            totalGenerated += writeResult;
+            if (isRedisEnabled()) {
+              await getRedis()
+                .incrby(`${JOB_KEY}:totalProcessed`, writeResult)
+                .catch(() => {});
+            }
+          }
+          pendingWrite = null;
+        }
         await logJobEvent("Job pausado por el usuario");
         break;
       }
 
-      // ── Step 1: DB read — find products without embeddings (fast) ──
-      let rows: Array<{ id: string }>;
-      try {
-        rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-          SELECT p.id
-          FROM products p
-          LEFT JOIN product_embeddings pe ON pe."productId" = p.id
-          WHERE pe.id IS NULL
-            AND (p.status = 'active' OR p.status IS NULL)
-            AND p."imageCoverUrl" IS NOT NULL
-          LIMIT ${batchSize}
-        `);
-      } catch (err) {
-        if (isConnectionError(err)) {
-          console.warn(
-            "[embeddings/generate] DB connection error on query, will self-chain:",
-            (err as Error).message,
-          );
-          await logJobEvent("Error de conexion en query, self-chain para reconectar");
-          break;
+      // If no products to process, we're done
+      if (nextProducts === null) {
+        // Wait for any pending write
+        if (pendingWrite) {
+          const writeResult = await pendingWrite;
+          if (typeof writeResult === "number") {
+            totalGenerated += writeResult;
+            if (isRedisEnabled()) {
+              await getRedis()
+                .incrby(`${JOB_KEY}:totalProcessed`, writeResult)
+                .catch(() => {});
+            }
+          }
+          pendingWrite = null;
         }
-        throw err;
-      }
-
-      if (rows.length === 0) {
-        // All done
         await setJobState("idle");
         await logJobEvent(
           `Job completado: ${totalGenerated} embeddings en esta invocacion`,
@@ -313,43 +413,31 @@ export async function POST(req: Request) {
         });
       }
 
-      const productIds = rows.map((r) => r.id);
-
-      // ── Step 2: DB read — fetch product data (fast) ──
-      let products: EmbeddingProduct[];
-      try {
-        products = await prisma.product.findMany({
-          where: { id: { in: productIds } },
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            imageCoverUrl: true,
-            styleTags: true,
-            materialTags: true,
-            patternTags: true,
-            occasionTags: true,
-            season: true,
-            minPriceCop: true,
-            brand: { select: { name: true } },
-          },
-        });
-      } catch (err) {
-        if (isConnectionError(err)) {
-          console.warn(
-            "[embeddings/generate] DB connection error on product fetch, will self-chain:",
-            (err as Error).message,
-          );
-          await logJobEvent("Error de conexion fetcheando productos, self-chain");
-          break;
+      if (nextProducts === "connection_error") {
+        // Wait for pending write, then break to self-chain
+        if (pendingWrite) {
+          const writeResult = await pendingWrite;
+          if (typeof writeResult === "number") {
+            totalGenerated += writeResult;
+            if (isRedisEnabled()) {
+              await getRedis()
+                .incrby(`${JOB_KEY}:totalProcessed`, writeResult)
+                .catch(() => {});
+            }
+          }
+          pendingWrite = null;
         }
-        throw err;
+        await logJobEvent(
+          "Error de conexion fetcheando productos, self-chain para reconectar",
+        );
+        break;
       }
 
-      if (products.length === 0) continue;
+      const products = nextProducts;
+      const batchStart = Date.now();
 
-      // ── Step 3: Bedrock compute (slow, DB idle — that's fine now) ──
-      let batchResults;
+      // ── Compute embeddings via Bedrock (the slow step) ──
+      let batchResults: EmbeddingResult[] | null = null;
       let success = false;
 
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -359,7 +447,6 @@ export async function POST(req: Request) {
           consecutiveErrors = 0;
           break;
         } catch (err) {
-          // Bedrock errors are not connection errors, but retry anyway
           if (attempt < MAX_RETRIES) {
             console.warn(
               `[embeddings/generate] Compute error attempt ${attempt + 1}, retrying in ${(attempt + 1) * 2}s...`,
@@ -392,28 +479,63 @@ export async function POST(req: Request) {
         break;
       }
 
-      // ── Step 4: DB write (fast, single multi-row INSERT) ──
-      let batchWritten = 0;
-      try {
-        batchWritten = await writeEmbeddingsBatch(batchResults);
-      } catch (err) {
-        if (isConnectionError(err)) {
-          console.warn(
-            "[embeddings/generate] DB connection error on write, will self-chain:",
-            (err as Error).message,
+      const computeMs = Date.now() - batchStart;
+
+      // ── Await any pending write from the previous iteration ──
+      if (pendingWrite) {
+        const writeResult = await pendingWrite;
+        if (writeResult === "connection_error") {
+          await logJobEvent(
+            "Error de conexion escribiendo embeddings, self-chain",
           );
-          await logJobEvent("Error de conexion escribiendo embeddings, self-chain");
-          // Embeddings computed but not written — they'll be re-computed next time
+          // Current batchResults are lost, will be re-computed
           break;
         }
-        throw err;
+        totalGenerated += writeResult;
+        if (isRedisEnabled()) {
+          await getRedis()
+            .incrby(`${JOB_KEY}:totalProcessed`, writeResult)
+            .catch(() => {});
+        }
+        pendingWrite = null;
       }
 
-      totalGenerated += batchWritten;
+      // ── Pipeline: Start writing this batch AND pre-fetching the next ──
+      const writeStart = Date.now();
+      const currentResults = batchResults;
 
-      // Update progress + heartbeat
-      await updateHeartbeat();
-      await updateProgress(totalGenerated, -1);
+      // Launch write + next fetch concurrently
+      const [writePromise, nextBatch] = await Promise.all([
+        // Write is wrapped to catch connection errors gracefully
+        (async (): Promise<number | "connection_error"> => {
+          try {
+            return await writeEmbeddingsBatch(currentResults);
+          } catch (err) {
+            if (isConnectionError(err)) {
+              console.warn(
+                "[embeddings/generate] DB connection error on write:",
+                (err as Error).message,
+              );
+              return "connection_error";
+            }
+            throw err;
+          }
+        })(),
+        // Pre-fetch next batch concurrently with the write
+        fetchNextBatch(batchSize),
+      ]);
+
+      // The write completed inline (since we awaited Promise.all)
+      if (writePromise === "connection_error") {
+        await logJobEvent(
+          "Error de conexion escribiendo embeddings, self-chain",
+        );
+        break;
+      }
+
+      const writeMs = Date.now() - writeStart;
+      const batchWritten = writePromise;
+      totalGenerated += batchWritten;
 
       // Update totalProcessed across all chains
       if (isRedisEnabled()) {
@@ -422,7 +544,16 @@ export async function POST(req: Request) {
           .catch(() => {});
       }
 
-      await logJobEvent(`Batch completado: ${batchWritten} productos`);
+      // Update progress + heartbeat
+      await updateHeartbeat();
+      await updateProgress(totalGenerated, -1);
+
+      await logJobEvent(
+        `Batch: ${batchWritten} productos (compute ${Math.round(computeMs / 1000)}s, write ${writeMs}ms)`,
+      );
+
+      // Set up next iteration with pre-fetched products
+      nextProducts = nextBatch;
     }
 
     // Count remaining
@@ -450,12 +581,11 @@ export async function POST(req: Request) {
     const finalStatus = await getJobStatus();
     if (remaining > 0 && token && finalStatus === "running") {
       const baseUrl = getBaseUrl();
-      const selfChainToken = token; // capture for closure
-      await logJobEvent(`Self-chain disparado, ${remaining} restantes`);
+      const selfChainToken = token;
+      await logJobEvent(
+        `Self-chain disparado, ${remaining.toLocaleString()} restantes`,
+      );
 
-      // Use after() to guarantee the self-chain fetch completes after
-      // the response is sent. Without this, Vercel can kill the process
-      // before the fire-and-forget fetch's TCP connection is established.
       after(async () => {
         try {
           await fetch(
@@ -479,7 +609,6 @@ export async function POST(req: Request) {
         `Job completado: ${totalGenerated} embeddings en esta invocacion`,
       );
     } else if (finalStatus !== "running") {
-      // paused or stopping
       if (finalStatus === "stopping") {
         await setJobState("idle");
       }
@@ -489,7 +618,12 @@ export async function POST(req: Request) {
       ok: true,
       generated: totalGenerated,
       remaining,
-      jobStatus: remaining > 0 && finalStatus === "running" ? "running" : finalStatus === "paused" ? "paused" : "idle",
+      jobStatus:
+        remaining > 0 && finalStatus === "running"
+          ? "running"
+          : finalStatus === "paused"
+            ? "paused"
+            : "idle",
     });
   } catch (error) {
     console.error(
