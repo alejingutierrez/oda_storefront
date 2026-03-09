@@ -18,3 +18,17 @@ coverage
 /apps/web/node_modules
 /services/*/node_modules
 /services/*/dist
+/services/worker/logs
+
+# Playwright artifacts
+.playwright-cli
+.playwright-mcp
+/output
+
+# Claude Code local state
+.claude/worktrees
+.claude/settings.local.json
+
+# Misc temp
+*.pid
+style-discovery-swipe-test.png

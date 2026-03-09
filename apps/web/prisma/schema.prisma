@@ -215,6 +215,9 @@ model Product {
   enrichmentItems       ProductEnrichmentItem[]
   taxonomyRemapReviews  TaxonomyRemapReview[]
   styleInteractions     StyleInteraction[]
+  embedding             ProductEmbedding?
+  groundTruths          GroundTruthProduct[]
+  vectorSuggestions     VectorReclassificationSuggestion[]
   searchVector          Unsupported("tsvector")?  @map("search_vector")
 
   @@index([brandId])
@@ -621,6 +624,8 @@ model User {
   priceAlerts                       PriceAlert[]
   styleSessions                     StyleSession[]
   styleProfile                      UserStyleProfile?
+  groundTruthConfirmations          GroundTruthProduct[]               @relation("GroundTruthConfirmedBy")
+  vectorSuggestionDecisions         VectorReclassificationSuggestion[] @relation("VectorSuggestionDecisionUser")
 
   @@map("users")
 }
@@ -1017,4 +1022,126 @@ model UserStyleProfile {
 
   @@index([userId])
   @@map("user_style_profiles")
+}
+
+// ── Vector Classification System ──────────────────────────────────
+
+model ProductEmbedding {
+  id                String                        @id @default(uuid())
+  productId         String                        @unique
+  product           Product                       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  textEmbedding     Unsupported("vector(1536)")?  @map("text_embedding")
+  imageEmbedding    Unsupported("vector(512)")?   @map("image_embedding")
+  combinedEmbedding Unsupported("vector(1536)")?  @map("combined_embedding")
+  embeddingModel    String?                       @map("embedding_model")
+  inputHash         String?                       @map("input_hash")
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  @@map("product_embeddings")
+}
+
+model GroundTruthProduct {
+  id                String   @id @default(uuid())
+  productId         String
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  subcategory       String
+  category          String
+  gender            String?
+  confirmedAt       DateTime @default(now())
+  confirmedByUserId String?
+  confirmedByUser   User?    @relation("GroundTruthConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([productId, subcategory])
+  @@index([subcategory])
+  @@index([category])
+  @@index([gender])
+  @@index([confirmedByUserId])
+  @@map("ground_truth_products")
+}
+
+model SubcategoryCentroid {
+  id                String                        @id @default(uuid())
+  subcategory       String                        @unique
+  category          String
+  centroidEmbedding Unsupported("vector(1536)")?  @map("centroid_embedding")
+  sampleCount       Int                           @default(0)
+  avgIntraDistance   Float?                        @map("avg_intra_distance")
+  maxIntraDistance   Float?                        @map("max_intra_distance")
+  stdIntraDistance   Float?                        @map("std_intra_distance")
+  metrics           Json?
+  lastTrainedAt     DateTime?                     @map("last_trained_at")
+  modelRunId        String?                       @map("model_run_id")
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  @@index([category])
+  @@map("subcategory_centroids")
+}
+
+model GenderCentroid {
+  id                String                        @id @default(uuid())
+  gender            String                        @unique
+  centroidEmbedding Unsupported("vector(1536)")?  @map("centroid_embedding")
+  sampleCount       Int                           @default(0)
+  avgIntraDistance   Float?                        @map("avg_intra_distance")
+  metrics           Json?
+  lastTrainedAt     DateTime?                     @map("last_trained_at")
+  modelRunId        String?                       @map("model_run_id")
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  @@map("gender_centroids")
+}
+
+model VectorModelRun {
+  id             String    @id @default(uuid())
+  modelType      String // "subcategory" | "gender"
+  status         String    @default("running") // running | completed | failed
+  totalCentroids Int?
+  totalSamples   Int?
+  metrics        Json?
+  error          String?
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([modelType, status])
+  @@index([startedAt])
+  @@map("vector_model_runs")
+}
+
+model VectorReclassificationSuggestion {
+  id              String    @id @default(uuid())
+  productId       String
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  modelType       String // "subcategory" | "gender"
+  fromCategory    String?
+  fromSubcategory String?
+  fromGender      String?
+  toCategory      String?
+  toSubcategory   String?
+  toGender        String?
+  confidence      Float?
+  vectorDistance   Float?
+  margin          Float?
+  status          String    @default("pending") // pending | accepted | rejected
+  runId           String?
+  decidedAt       DateTime?
+  decidedByUserId String?
+  decidedByUser   User?     @relation("VectorSuggestionDecisionUser", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+  decisionNote    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([productId, status])
+  @@index([modelType, status])
+  @@index([runId])
+  @@index([decidedByUserId])
+  @@map("vector_reclassification_suggestions")
 }

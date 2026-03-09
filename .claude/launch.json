@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev", "--port", "3080"],
+      "port": 3080,
+      "cwd": "apps/web"
+    }
+  ]
+}

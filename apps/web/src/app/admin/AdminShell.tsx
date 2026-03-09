@@ -13,6 +13,7 @@ const navItems = [
   { key: "real-style-filter", label: "Filtro Real Style", href: "/admin/real-style-filter" },
   { key: "taxonomy", label: "Taxonomía", href: "/admin/taxonomy" },
   { key: "taxonomy-remap-review", label: "Remap review", href: "/admin/taxonomy-remap-review" },
+  { key: "vector-classification", label: "Clasif. Vectorial", href: "/admin/vector-classification" },
   { key: "product-enrichment", label: "Enriquecimiento", href: "/admin/product-enrichment" },
   { key: "plp-seo", label: "SEO PLP", href: "/admin/plp-seo" },
   { key: "pricing", label: "Precios (TRM)", href: "/admin/pricing" },
