@@ -2,26 +2,79 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getRedis, isRedisEnabled } from "@/lib/redis";
 import { generateEmbeddingsForBatch } from "@/lib/vector-classification/embeddings";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+const JOB_KEY = "vector-emb-job";
+const JOB_TTL = 3600; // 1 hour
+
+async function getJobStatus(): Promise<string> {
+  if (!isRedisEnabled()) return "idle";
+  try {
+    return (await getRedis().get(`${JOB_KEY}:status`)) ?? "idle";
+  } catch {
+    return "idle";
+  }
+}
+
+async function setJobState(status: string, extra?: Record<string, string>) {
+  if (!isRedisEnabled()) return;
+  try {
+    const r = getRedis();
+    await r.set(`${JOB_KEY}:status`, status, "EX", JOB_TTL);
+    if (extra) {
+      for (const [k, v] of Object.entries(extra)) {
+        await r.set(`${JOB_KEY}:${k}`, v, "EX", JOB_TTL);
+      }
+    }
+  } catch {
+    // Redis failures should not block embedding generation
+  }
+}
+
+function getBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
+}
+
 export async function POST(req: Request) {
-  const admin = await validateAdminRequest(req);
-  if (!admin) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Accept admin auth OR internal job token for self-chaining
+  const jobToken = req.headers.get("x-job-token");
+  let isInternalCall = false;
+
+  if (jobToken && isRedisEnabled()) {
+    const storedToken = await getRedis().get(`${JOB_KEY}:token`).catch(() => null);
+    if (storedToken && jobToken === storedToken) {
+      isInternalCall = true;
+    }
+  }
+
+  if (!isInternalCall) {
+    const admin = await validateAdminRequest(req);
+    if (!admin) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
   }
 
   try {
+    // Check if job was stopped
+    const currentStatus = await getJobStatus();
+    if (currentStatus === "stopping") {
+      await setJobState("idle");
+      return NextResponse.json({ ok: true, generated: 0, remaining: 0, jobStatus: "idle" });
+    }
+
     const body = (await req.json().catch(() => null)) as {
       batchSize?: number;
     } | null;
 
-    // Smaller batches since Bedrock does 1 API call per product (text + image)
     const batchSize = Math.min(
-      100,
-      Math.max(1, Math.floor(Number(body?.batchSize) || 25)),
+      50,
+      Math.max(1, Math.floor(Number(body?.batchSize) || 10)),
     );
 
     // Find products without embeddings
@@ -38,12 +91,24 @@ export async function POST(req: Request) {
     const productIds = rows.map((r) => r.id);
 
     if (productIds.length === 0) {
-      return NextResponse.json({ ok: true, generated: 0, remaining: 0 });
+      await setJobState("idle");
+      return NextResponse.json({ ok: true, generated: 0, remaining: 0, jobStatus: "idle" });
     }
+
+    // Set job as running with a token for self-chaining
+    let token: string | null = null;
+    if (isRedisEnabled()) {
+      token = await getRedis().get(`${JOB_KEY}:token`).catch(() => null);
+      if (!token) {
+        token = crypto.randomUUID();
+        await getRedis().set(`${JOB_KEY}:token`, token, "EX", JOB_TTL).catch(() => {});
+      }
+    }
+    await setJobState("running");
 
     const generated = await generateEmbeddingsForBatch(productIds);
 
-    // Count remaining products without embeddings
+    // Count remaining
     const remainingRows = await prisma.$queryRaw<Array<{ count: bigint }>>(
       Prisma.sql`
         SELECT COUNT(*) as count
@@ -56,9 +121,39 @@ export async function POST(req: Request) {
     );
     const remaining = Number(remainingRows[0]?.count ?? 0);
 
-    return NextResponse.json({ ok: true, generated, remaining });
+    // Self-chain: if more work and not stopped, trigger next batch
+    if (remaining > 0 && token) {
+      const checkStatus = await getJobStatus();
+      if (checkStatus === "running") {
+        const baseUrl = getBaseUrl();
+        fetch(`${baseUrl}/api/admin/vector-classification/embeddings/generate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-job-token": token,
+          },
+          body: JSON.stringify({ batchSize }),
+        }).catch(() => {
+          // Fire-and-forget; if it fails the job just stops and can be resumed
+        });
+      } else {
+        await setJobState("idle");
+      }
+    } else {
+      await setJobState("idle");
+    }
+
+    return NextResponse.json({
+      ok: true,
+      generated,
+      remaining,
+      jobStatus: remaining > 0 ? "running" : "idle",
+    });
   } catch (error) {
     console.error("[vector-classification/embeddings/generate] POST error:", error);
+    await setJobState("error", {
+      error: error instanceof Error ? error.message : "internal_error",
+    });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "internal_error" },
       { status: 500 },

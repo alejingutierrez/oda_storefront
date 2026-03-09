@@ -9,6 +9,8 @@ type EmbeddingStats = {
   embedded: number;
   missing: number;
   stale: number;
+  jobStatus: "idle" | "running" | "stopping" | "error";
+  jobError: string | null;
 };
 
 type SubcategoryReadiness = {
@@ -79,8 +81,7 @@ const Spinner = () => (
 
 export default function ModelTrainingTab() {
   const [embStats, setEmbStats] = useState<EmbeddingStats | null>(null);
-  const [embGenerating, setEmbGenerating] = useState(false);
-  const embAbortRef = useRef(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [subcatReadiness, setSubcatReadiness] = useState<SubcategoryReadiness[]>([]);
   const [subcatModel, setSubcatModel] = useState<ModelInfo | null>(null);
@@ -95,7 +96,7 @@ export default function ModelTrainingTab() {
   const [error, setError] = useState<string | null>(null);
   const [loadingInit, setLoadingInit] = useState(true);
 
-  /* ── Fetch embedding stats ── */
+  /* ── Fetch embedding stats (includes jobStatus from Redis) ── */
   const fetchEmbeddingStats = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/vector-classification/embeddings", {
@@ -105,6 +106,12 @@ export default function ModelTrainingTab() {
       if (!res.ok) return;
       const data = (await res.json()) as EmbeddingStats;
       setEmbStats(data);
+
+      // Stop polling when job is no longer running
+      if (data.jobStatus !== "running" && pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
     } catch {
       // silent
     }
@@ -168,48 +175,58 @@ export default function ModelTrainingTab() {
     ]).finally(() => setLoadingInit(false));
   }, [fetchEmbeddingStats, fetchReadiness, fetchModelStatus, fetchRuns]);
 
-  /* ── Clean up on unmount ── */
+  /* ── Clean up polling on unmount ── */
   useEffect(() => {
     return () => {
-      embAbortRef.current = true;
+      if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
 
-  /* ── Generate embeddings (loop until done) ── */
+  /* ── Start polling if job already running on mount ── */
+  useEffect(() => {
+    if (embStats?.jobStatus === "running" && !pollRef.current) {
+      pollRef.current = setInterval(fetchEmbeddingStats, 20_000);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embStats?.jobStatus]);
+
+  /* ── Start embedding job (backend self-chains) ── */
   const handleGenerateEmbeddings = useCallback(async () => {
-    setEmbGenerating(true);
     setError(null);
-    embAbortRef.current = false;
-
     try {
-      let remaining = 1; // seed to enter loop
-      while (remaining > 0 && !embAbortRef.current) {
-        const res = await fetch("/api/admin/vector-classification/embeddings/generate", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ batchSize: 10 }),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok) {
-          throw new Error(data?.error || "Error al generar embeddings");
-        }
-        remaining = data?.remaining ?? 0;
-
-        // refresh stats in UI after each batch
-        await fetchEmbeddingStats();
+      const res = await fetch("/api/admin/vector-classification/embeddings/generate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batchSize: 10 }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || "Error al generar embeddings");
+      }
+      // Refresh stats immediately, then start polling every 20s
+      await fetchEmbeddingStats();
+      if (!pollRef.current) {
+        pollRef.current = setInterval(fetchEmbeddingStats, 20_000);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al generar embeddings");
-    } finally {
-      setEmbGenerating(false);
-      await fetchEmbeddingStats();
     }
   }, [fetchEmbeddingStats]);
 
-  const handleStopEmbeddings = useCallback(() => {
-    embAbortRef.current = true;
-  }, []);
+  /* ── Stop embedding job (server-side) ── */
+  const handleStopEmbeddings = useCallback(async () => {
+    try {
+      await fetch("/api/admin/vector-classification/embeddings/generate/stop", {
+        method: "POST",
+        credentials: "include",
+      });
+      // Refresh stats to show stopped state
+      await fetchEmbeddingStats();
+    } catch {
+      // silent
+    }
+  }, [fetchEmbeddingStats]);
 
   /* ── Train model ── */
   const handleTrain = useCallback(
@@ -268,6 +285,7 @@ export default function ModelTrainingTab() {
   /* ── Derived ── */
   const readyCount = subcatReadiness.filter((s) => s.isReady).length;
   const embPct = embStats && embStats.total > 0 ? Math.round((embStats.embedded / embStats.total) * 100) : 0;
+  const embJobRunning = embStats?.jobStatus === "running";
   const subcatTrained = (subcatModel?.centroidCount ?? 0) > 0;
   const genderTrained = (genderModel?.centroidCount ?? 0) > 0;
 
@@ -320,9 +338,9 @@ export default function ModelTrainingTab() {
                 type="button"
                 className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={handleGenerateEmbeddings}
-                disabled={embGenerating}
+                disabled={embJobRunning}
               >
-                {embGenerating ? (
+                {embJobRunning ? (
                   <span className="inline-flex items-center gap-2">
                     <Spinner /> Generando... ({fmt(embStats?.missing ?? 0)} restantes)
                   </span>
@@ -332,7 +350,7 @@ export default function ModelTrainingTab() {
                   "Generar embeddings"
                 )}
               </button>
-              {embGenerating && (
+              {embJobRunning && (
                 <button
                   type="button"
                   className="rounded-xl border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50"
@@ -342,6 +360,11 @@ export default function ModelTrainingTab() {
                 </button>
               )}
             </div>
+            {embStats?.jobStatus === "error" && embStats.jobError && (
+              <p className="mt-2 text-xs text-rose-600">
+                Error del job: {embStats.jobError}
+              </p>
+            )}
           </div>
         )}
       </div>
