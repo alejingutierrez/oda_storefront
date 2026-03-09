@@ -161,12 +161,14 @@ export default function GroundTruthTab() {
     setBusy(true);
     setError(null);
     try {
+      const cat = currentStats?.category ?? products[0]?.category ?? "";
       const res = await fetch("/api/admin/vector-classification/ground-truth/bulk-confirm", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           subcategory: selectedSubcategory,
+          category: cat,
           productIds: Array.from(selected),
         }),
       });
