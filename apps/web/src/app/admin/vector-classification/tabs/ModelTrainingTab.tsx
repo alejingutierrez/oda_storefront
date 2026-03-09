@@ -188,14 +188,13 @@ export default function ModelTrainingTab() {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ batchSize: 25 }),
+          body: JSON.stringify({ batchSize: 10 }),
         });
+        const data = await res.json().catch(() => null);
         if (!res.ok) {
-          const payload = await res.json().catch(() => ({}));
-          throw new Error(payload.error || "Error al generar embeddings");
+          throw new Error(data?.error || "Error al generar embeddings");
         }
-        const data = (await res.json()) as { ok: boolean; generated: number; remaining: number };
-        remaining = data.remaining;
+        remaining = data?.remaining ?? 0;
 
         // refresh stats in UI after each batch
         await fetchEmbeddingStats();
