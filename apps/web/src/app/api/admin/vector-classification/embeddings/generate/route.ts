@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { Prisma } from "@prisma/client";
 import { validateAdminRequest } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -75,12 +75,18 @@ async function isHeartbeatAlive(): Promise<boolean> {
   }
 }
 
-async function updateProgress(generated: number, remaining: number, startedAt: number) {
+async function updateProgress(generated: number, remaining: number) {
   if (!isRedisEnabled()) return;
   try {
     const r = getRedis();
-    const elapsedMin = (Date.now() - startedAt) / 60_000;
-    const speed = elapsedMin > 0.1 ? Math.round(generated / elapsedMin) : 0;
+    // Speed based on overall job elapsed time (not just this invocation)
+    const jobStartedAt = await r.get(`${JOB_KEY}:startedAt`);
+    const totalProcessed = Number((await r.get(`${JOB_KEY}:totalProcessed`)) ?? 0) + generated;
+    let speed = 0;
+    if (jobStartedAt) {
+      const elapsedMin = (Date.now() - new Date(jobStartedAt).getTime()) / 60_000;
+      speed = elapsedMin > 0.1 ? Math.round(totalProcessed / elapsedMin) : 0;
+    }
     await r
       .pipeline()
       .set(`${JOB_KEY}:generated`, String(generated), "EX", JOB_TTL)
@@ -253,6 +259,10 @@ export async function POST(req: Request) {
 
     // ── Inner loop: process multiple batches within this invocation ──
     while (Date.now() - invocationStart < TIME_BUDGET_MS) {
+      // Update heartbeat at start of each iteration (defensive: keeps
+      // heartbeat alive even if a single batch takes close to 90s)
+      await updateHeartbeat();
+
       // Check if stopped/paused between batches
       const status = await getJobStatus();
       if (status === "stopping") {
@@ -403,7 +413,7 @@ export async function POST(req: Request) {
 
       // Update progress + heartbeat
       await updateHeartbeat();
-      await updateProgress(totalGenerated, -1, invocationStart);
+      await updateProgress(totalGenerated, -1);
 
       // Update totalProcessed across all chains
       if (isRedisEnabled()) {
@@ -434,25 +444,34 @@ export async function POST(req: Request) {
       remaining = 1;
     }
 
-    await updateProgress(totalGenerated, remaining, invocationStart);
+    await updateProgress(totalGenerated, remaining);
 
     // Self-chain: if more work and not stopped/paused, trigger next invocation
     const finalStatus = await getJobStatus();
     if (remaining > 0 && token && finalStatus === "running") {
       const baseUrl = getBaseUrl();
+      const selfChainToken = token; // capture for closure
       await logJobEvent(`Self-chain disparado, ${remaining} restantes`);
-      fetch(
-        `${baseUrl}/api/admin/vector-classification/embeddings/generate`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-job-token": token,
-          },
-          body: JSON.stringify({}),
-        },
-      ).catch(() => {
-        // Fire-and-forget; if it fails the job just stops and can be resumed
+
+      // Use after() to guarantee the self-chain fetch completes after
+      // the response is sent. Without this, Vercel can kill the process
+      // before the fire-and-forget fetch's TCP connection is established.
+      after(async () => {
+        try {
+          await fetch(
+            `${baseUrl}/api/admin/vector-classification/embeddings/generate`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-job-token": selfChainToken,
+              },
+              body: JSON.stringify({}),
+            },
+          );
+        } catch (err) {
+          console.warn("[embeddings/generate] Self-chain fetch failed:", err);
+        }
       });
     } else if (remaining === 0) {
       await setJobState("idle");
