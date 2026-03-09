@@ -3,14 +3,12 @@
 import { useState } from "react";
 import GroundTruthTab from "./tabs/GroundTruthTab";
 import ModelTrainingTab from "./tabs/ModelTrainingTab";
-import SuggestionsTab from "./tabs/SuggestionsTab";
 
-type TabKey = "ground-truth" | "model" | "suggestions";
+type TabKey = "ground-truth" | "model";
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "ground-truth", label: "Confirmacion" },
   { key: "model", label: "Modelo" },
-  { key: "suggestions", label: "Sugerencias" },
 ];
 
 export default function VectorClassificationPanel() {
@@ -39,7 +37,6 @@ export default function VectorClassificationPanel() {
       {/* Tab content */}
       {activeTab === "ground-truth" && <GroundTruthTab />}
       {activeTab === "model" && <ModelTrainingTab />}
-      {activeTab === "suggestions" && <SuggestionsTab />}
     </section>
   );
 }

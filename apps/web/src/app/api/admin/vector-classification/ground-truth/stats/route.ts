@@ -29,7 +29,7 @@ export async function GET(req: Request) {
     >(Prisma.sql`
       SELECT p.subcategory, p.category, COUNT(*) as total
       FROM products p
-      WHERE p.status = 'active'
+      WHERE (p.status = 'active' OR p.status IS NULL)
         AND p."imageCoverUrl" IS NOT NULL
         AND p.subcategory IS NOT NULL
       GROUP BY p.subcategory, p.category

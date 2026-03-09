@@ -60,7 +60,7 @@ export async function GET(req: Request) {
         AND gt.subcategory = ${subcategory}
         AND gt."isActive" = true
       WHERE p.subcategory = ${subcategory}
-        AND p.status = 'active'
+        AND (p.status = 'active' OR p.status IS NULL)
         AND p."imageCoverUrl" IS NOT NULL
         ${searchFilter}
       ORDER BY gt.id IS NOT NULL DESC, p.name ASC
@@ -72,7 +72,7 @@ export async function GET(req: Request) {
         SELECT COUNT(*) as total
         FROM products p
         WHERE p.subcategory = ${subcategory}
-          AND p.status = 'active'
+          AND (p.status = 'active' OR p.status IS NULL)
           AND p."imageCoverUrl" IS NOT NULL
           ${searchFilter}
       `,
