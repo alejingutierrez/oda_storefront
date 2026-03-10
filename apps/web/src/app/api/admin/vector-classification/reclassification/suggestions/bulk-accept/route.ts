@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { validateAdminRequest } from "@/lib/auth";
 import { acceptSuggestion } from "@/lib/vector-classification/reclassification";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -21,25 +22,29 @@ export async function POST(req: Request) {
 
   try {
     const body = (await req.json().catch(() => null)) as {
-      minConfidence?: number;
+      modelType?: string;
+      toSubcategory?: string;
+      search?: string;
     } | null;
-
-    const minConfidence = body?.minConfidence;
-    if (typeof minConfidence !== "number" || minConfidence < 0.5 || minConfidence > 1) {
-      return NextResponse.json(
-        { error: "minConfidence must be a number between 0.5 and 1.0" },
-        { status: 400 },
-      );
-    }
 
     const userId = resolveAdminUserId(admin) ?? "unknown";
 
-    // Find all pending suggestions with confidence >= threshold
+    // Build filter matching the GET suggestions endpoint
+    const where: Prisma.VectorReclassificationSuggestionWhereInput = {
+      status: "pending",
+      ...(body?.modelType ? { modelType: body.modelType } : {}),
+      ...(body?.toSubcategory ? { toSubcategory: body.toSubcategory } : {}),
+      ...(body?.search
+        ? {
+            product: {
+              name: { contains: body.search, mode: "insensitive" as const },
+            },
+          }
+        : {}),
+    };
+
     const suggestions = await prisma.vectorReclassificationSuggestion.findMany({
-      where: {
-        status: "pending",
-        confidence: { gte: minConfidence },
-      },
+      where,
       select: { id: true },
       orderBy: { confidence: "desc" },
     });

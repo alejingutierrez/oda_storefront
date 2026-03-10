@@ -70,6 +70,7 @@ export default function SuggestionsTab() {
   const [counts, setCounts] = useState({ pending: 0, accepted: 0, rejected: 0, total: 0 });
   const [statusFilter, setStatusFilter] = useState<SuggestionStatus | "all">("pending");
   const [modelTypeFilter, setModelTypeFilter] = useState<ModelTypeFilter>("all");
+  const [subcategoryFilter, setSubcategoryFilter] = useState("");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
@@ -81,7 +82,7 @@ export default function SuggestionsTab() {
   const [addToGtById, setAddToGtById] = useState<Record<string, boolean>>({});
   const [rejectNoteById, setRejectNoteById] = useState<Record<string, string>>({});
   const [showRejectInputId, setShowRejectInputId] = useState<string | null>(null);
-  const [bulkAccepting, setBulkAccepting] = useState<number | null>(null);
+  const [bulkAccepting, setBulkAccepting] = useState(false);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -102,6 +103,7 @@ export default function SuggestionsTab() {
         });
         if (statusFilter !== "all") params.set("status", statusFilter);
         if (modelTypeFilter !== "all") params.set("modelType", modelTypeFilter);
+        if (subcategoryFilter) params.set("toSubcategory", subcategoryFilter);
         if (search.trim()) params.set("search", search.trim());
 
         const res = await fetch(
@@ -145,7 +147,7 @@ export default function SuggestionsTab() {
         setLoadingMore(false);
       }
     },
-    [statusFilter, modelTypeFilter, search],
+    [statusFilter, modelTypeFilter, subcategoryFilter, search],
   );
 
   /* ── Reset on filter change ── */
@@ -281,43 +283,45 @@ export default function SuggestionsTab() {
     [actionById, rejectNoteById, fetchSuggestions],
   );
 
-  /* ── Bulk accept ── */
-  const handleBulkAccept = useCallback(
-    async (minConfidence: number) => {
-      if (bulkAccepting !== null) return;
-      setBulkAccepting(minConfidence);
-      setError(null);
+  /* ── Bulk accept all filtered ── */
+  const handleBulkAccept = useCallback(async () => {
+    if (bulkAccepting) return;
+    setBulkAccepting(true);
+    setError(null);
 
-      try {
-        const res = await fetch(
-          "/api/admin/vector-classification/reclassification/suggestions/bulk-accept",
-          {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ minConfidence: minConfidence / 100 }),
-          },
-        );
-        if (!res.ok) {
-          const payload = await res.json().catch(() => ({}));
-          throw new Error(payload.error || "Error en auto-aceptar");
-        }
-        const data = (await res.json()) as { accepted: number; failed: number };
-        setError(
-          data.accepted > 0
-            ? null
-            : "No se encontraron sugerencias pendientes con esa confianza",
-        );
-        setPage(1);
-        await fetchSuggestions(1, false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Error en auto-aceptar");
-      } finally {
-        setBulkAccepting(null);
+    try {
+      const bodyPayload: Record<string, string> = {};
+      if (modelTypeFilter !== "all") bodyPayload.modelType = modelTypeFilter;
+      if (subcategoryFilter) bodyPayload.toSubcategory = subcategoryFilter;
+      if (search.trim()) bodyPayload.search = search.trim();
+
+      const res = await fetch(
+        "/api/admin/vector-classification/reclassification/suggestions/bulk-accept",
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bodyPayload),
+        },
+      );
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.error || "Error en auto-aceptar");
       }
-    },
-    [bulkAccepting, fetchSuggestions],
-  );
+      const data = (await res.json()) as { accepted: number; failed: number };
+      setError(
+        data.accepted > 0
+          ? null
+          : "No se encontraron sugerencias pendientes para los filtros actuales",
+      );
+      setPage(1);
+      await fetchSuggestions(1, false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error en auto-aceptar");
+    } finally {
+      setBulkAccepting(false);
+    }
+  }, [bulkAccepting, modelTypeFilter, subcategoryFilter, search, fetchSuggestions]);
 
   /* ── Status pill buttons ── */
   const statusPills: Array<{
@@ -380,16 +384,16 @@ export default function SuggestionsTab() {
               </button>
             ))}
 
-            {/* Bulk auto-accept button */}
+            {/* Bulk auto-accept all filtered */}
             <div className="ml-2 flex items-center gap-1.5 border-l border-slate-200 pl-3">
               <button
                 type="button"
-                onClick={() => handleBulkAccept(70)}
-                disabled={bulkAccepting !== null}
+                onClick={handleBulkAccept}
+                disabled={bulkAccepting}
                 className="rounded-full border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Auto-aceptar todas las pendientes con confianza >= 70%"
+                title="Auto-aceptar todas las pendientes con los filtros actuales"
               >
-                {bulkAccepting === 70 ? "..." : "AA 70"}
+                {bulkAccepting ? "..." : "AA"}
               </button>
             </div>
           </div>
@@ -422,6 +426,16 @@ export default function SuggestionsTab() {
                 </button>
               ))}
             </div>
+
+            <input
+              className="w-40 rounded-xl border border-slate-300 px-3 py-1.5 text-sm"
+              placeholder="Subcategoria sugerida"
+              value={subcategoryFilter}
+              onChange={(e) => setSubcategoryFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") setPage(1);
+              }}
+            />
 
             <div className="flex gap-2">
               <input

@@ -18,10 +18,12 @@ export async function GET(req: Request) {
     const limit = Math.min(100, Math.max(1, Math.floor(Number(searchParams.get("limit")) || 40)));
     const search = searchParams.get("search")?.trim() || undefined;
     const brand = searchParams.get("brand")?.trim() || undefined;
+    const toSubcategory = searchParams.get("toSubcategory")?.trim() || undefined;
 
     const where = {
       status: status || undefined,
       modelType: modelType || undefined,
+      ...(toSubcategory ? { toSubcategory } : {}),
       product: {
         ...(search ? { name: { contains: search, mode: "insensitive" as const } } : {}),
         ...(brand
