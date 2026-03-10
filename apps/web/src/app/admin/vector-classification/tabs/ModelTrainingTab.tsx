@@ -48,9 +48,20 @@ type RunRecord = {
   completedAt: string | null;
 };
 
+type CentroidMetric = {
+  subcategory: string | null;
+  category: string | null;
+  sampleCount: number;
+  avgIntraDistance: number | null;
+  maxIntraDistance: number | null;
+  stdIntraDistance: number | null;
+  lastTrainedAt: string | null;
+};
+
 /* ── Helpers ── */
 
 const fmt = (n: number) => n.toLocaleString("es-CO");
+const fmtDist = (n: number | null) => (n != null ? n.toFixed(4) : "--");
 const fmtDate = (d: string | null | undefined) => {
   if (!d) return "--";
   return new Date(d).toLocaleString("es-CO");
@@ -67,6 +78,148 @@ const XIcon = () => (
   </svg>
 );
 
+const ChevronIcon = ({ open }: { open: boolean }) => (
+  <svg
+    className={`h-4 w-4 text-slate-500 transition-transform ${open ? "rotate-90" : ""}`}
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    strokeWidth={2}
+  >
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+  </svg>
+);
+
+/* ── Centroid metrics table (reusable) ── */
+
+function CentroidMetricsTable({
+  modelType,
+  centroids,
+  loading,
+  onLoad,
+}: {
+  modelType: "category" | "subcategory" | "gender";
+  centroids: CentroidMetric[];
+  loading: boolean;
+  onLoad: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const handleToggle = () => {
+    if (!open && centroids.length === 0) onLoad();
+    setOpen(!open);
+  };
+
+  const nameLabel =
+    modelType === "category" ? "Categoria" : modelType === "subcategory" ? "Subcategoria" : "Genero";
+  const nameField = (c: CentroidMetric) =>
+    modelType === "category" ? c.category : modelType === "gender" ? c.subcategory : c.subcategory;
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={handleToggle}
+        className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 hover:text-slate-700"
+      >
+        <ChevronIcon open={open} />
+        Metricas por centroide
+      </button>
+      {open && (
+        <div className="mt-2 max-h-64 overflow-auto rounded-xl border border-slate-200">
+          {loading ? (
+            <p className="px-3 py-4 text-center text-sm text-slate-400">Cargando metricas...</p>
+          ) : centroids.length === 0 ? (
+            <p className="px-3 py-4 text-center text-sm text-slate-400">Sin centroides entrenados.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 text-left">{nameLabel}</th>
+                  {modelType === "subcategory" && <th className="px-3 py-2 text-left">Categoria</th>}
+                  <th className="px-3 py-2 text-right">Muestras</th>
+                  <th className="px-3 py-2 text-right">Dist. promedio</th>
+                  <th className="px-3 py-2 text-right">Dist. max</th>
+                  <th className="px-3 py-2 text-right">Desv. std</th>
+                  <th className="px-3 py-2 text-left">Entrenado</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {centroids.map((c, i) => (
+                  <tr key={i}>
+                    <td className="px-3 py-1.5 font-medium text-slate-800">{nameField(c)}</td>
+                    {modelType === "subcategory" && (
+                      <td className="px-3 py-1.5 text-slate-600">{c.category}</td>
+                    )}
+                    <td className="px-3 py-1.5 text-right text-slate-600">{fmt(c.sampleCount)}</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-slate-600">
+                      {fmtDist(c.avgIntraDistance)}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono text-slate-600">
+                      {fmtDist(c.maxIntraDistance)}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono text-slate-600">
+                      {fmtDist(c.stdIntraDistance)}
+                    </td>
+                    <td className="px-3 py-1.5 text-slate-600">{fmtDate(c.lastTrainedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Reclassification parameters inline ── */
+
+function ReclassParams({
+  threshold,
+  margin,
+  onThresholdChange,
+  onMarginChange,
+}: {
+  threshold: number;
+  margin: number;
+  onThresholdChange: (v: number) => void;
+  onMarginChange: (v: number) => void;
+}) {
+  return (
+    <div className="mt-4 flex flex-wrap items-end gap-4">
+      <div>
+        <label className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Umbral similitud
+        </label>
+        <input
+          type="number"
+          min={0.5}
+          max={0.95}
+          step={0.05}
+          value={threshold}
+          onChange={(e) => onThresholdChange(Number(e.target.value))}
+          className="mt-1 w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
+        />
+      </div>
+      <div>
+        <label className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Margen minimo
+        </label>
+        <input
+          type="number"
+          min={0.01}
+          max={0.20}
+          step={0.01}
+          value={margin}
+          onChange={(e) => onMarginChange(Number(e.target.value))}
+          className="mt-1 w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
+        />
+      </div>
+    </div>
+  );
+}
+
 /* ── Component ── */
 
 export default function ModelTrainingTab() {
@@ -75,6 +228,8 @@ export default function ModelTrainingTab() {
   const [categoryModel, setCategoryModel] = useState<ModelInfo | null>(null);
   const [trainingCategory, setTrainingCategory] = useState(false);
   const [reclassifyingCategory, setReclassifyingCategory] = useState(false);
+  const [categoryCentroids, setCategoryCentroids] = useState<CentroidMetric[]>([]);
+  const [loadingCategoryCentroids, setLoadingCategoryCentroids] = useState(false);
 
   // Subcategory model (per-category)
   const [selectedCategory, setSelectedCategory] = useState<string>("");
@@ -82,11 +237,19 @@ export default function ModelTrainingTab() {
   const [subcatModel, setSubcatModel] = useState<ModelInfo | null>(null);
   const [trainingSubcat, setTrainingSubcat] = useState(false);
   const [reclassifyingSubcat, setReclassifyingSubcat] = useState(false);
+  const [subcatCentroids, setSubcatCentroids] = useState<CentroidMetric[]>([]);
+  const [loadingSubcatCentroids, setLoadingSubcatCentroids] = useState(false);
 
   // Gender model
   const [genderModel, setGenderModel] = useState<ModelInfo | null>(null);
   const [trainingGender, setTrainingGender] = useState(false);
   const [reclassifyingGender, setReclassifyingGender] = useState(false);
+  const [genderCentroids, setGenderCentroids] = useState<CentroidMetric[]>([]);
+  const [loadingGenderCentroids, setLoadingGenderCentroids] = useState(false);
+
+  // Reclassification params (shared)
+  const [simThreshold, setSimThreshold] = useState(0.7);
+  const [minMargin, setMinMargin] = useState(0.05);
 
   // Shared
   const [runs, setRuns] = useState<RunRecord[]>([]);
@@ -163,6 +326,39 @@ export default function ModelTrainingTab() {
     }
   }, []);
 
+  /* ── Fetch centroids by model type ── */
+  const fetchCentroids = useCallback(
+    async (modelType: "category" | "subcategory" | "gender") => {
+      const setLoading =
+        modelType === "category"
+          ? setLoadingCategoryCentroids
+          : modelType === "subcategory"
+            ? setLoadingSubcatCentroids
+            : setLoadingGenderCentroids;
+      const setCents =
+        modelType === "category"
+          ? setCategoryCentroids
+          : modelType === "subcategory"
+            ? setSubcatCentroids
+            : setGenderCentroids;
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `/api/admin/vector-classification/model/centroids?modelType=${modelType}`,
+          { credentials: "include", cache: "no-store" },
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.centroids)) setCents(data.centroids);
+      } catch {
+        // silent
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
   /* ── Initial load ── */
   useEffect(() => {
     Promise.all([
@@ -205,13 +401,15 @@ export default function ModelTrainingTab() {
         }
         await fetchModelStatus();
         await fetchRuns();
+        // Auto-refresh centroids after training
+        await fetchCentroids(modelType);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error al entrenar modelo");
       } finally {
         setTraining(false);
       }
     },
-    [fetchModelStatus, fetchRuns],
+    [fetchModelStatus, fetchRuns, fetchCentroids],
   );
 
   /* ── Run reclassification ── */
@@ -230,7 +428,12 @@ export default function ModelTrainingTab() {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ modelType, ...(category ? { category } : {}) }),
+          body: JSON.stringify({
+            modelType,
+            similarityThreshold: simThreshold,
+            minMargin,
+            ...(category ? { category } : {}),
+          }),
         });
         if (!res.ok) {
           const payload = await res.json().catch(() => ({}));
@@ -243,7 +446,7 @@ export default function ModelTrainingTab() {
         setRunning(false);
       }
     },
-    [fetchRuns],
+    [fetchRuns, simThreshold, minMargin],
   );
 
   /* ── Derived ── */
@@ -272,7 +475,21 @@ export default function ModelTrainingTab() {
       {/* ── Section A: Embeddings (dedicated panel) ── */}
       <EmbeddingJobPanel />
 
-      {/* ── Section B: Category Model ── */}
+      {/* ── Section B: Reclassification Parameters ── */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+        <h3 className="text-base font-semibold text-slate-900">Parametros de reclasificacion</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Estos umbrales aplican a todas las ejecuciones de reclasificacion. Solo se crean sugerencias cuando la similitud supera el umbral y el margen entre los 2 centroides mas cercanos es suficiente.
+        </p>
+        <ReclassParams
+          threshold={simThreshold}
+          margin={minMargin}
+          onThresholdChange={setSimThreshold}
+          onMarginChange={setMinMargin}
+        />
+      </div>
+
+      {/* ── Section C: Category Model ── */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
         <h3 className="text-base font-semibold text-slate-900">
           Modelo Categoria (Nivel 1)
@@ -346,6 +563,15 @@ export default function ModelTrainingTab() {
           </p>
         )}
 
+        {categoryTrained && (
+          <CentroidMetricsTable
+            modelType="category"
+            centroids={categoryCentroids}
+            loading={loadingCategoryCentroids}
+            onLoad={() => fetchCentroids("category")}
+          />
+        )}
+
         <div className="mt-4 flex flex-wrap gap-3">
           <button
             type="button"
@@ -368,7 +594,7 @@ export default function ModelTrainingTab() {
         </div>
       </div>
 
-      {/* ── Section C: Subcategory Model (per category, on-demand) ── */}
+      {/* ── Section D: Subcategory Model (per category, on-demand) ── */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
         <h3 className="text-base font-semibold text-slate-900">
           Modelo Subcategoria (Nivel 2 — por categoria)
@@ -459,6 +685,15 @@ export default function ModelTrainingTab() {
               </div>
             )}
 
+            {subcatTrained && (
+              <CentroidMetricsTable
+                modelType="subcategory"
+                centroids={subcatCentroids}
+                loading={loadingSubcatCentroids}
+                onLoad={() => fetchCentroids("subcategory")}
+              />
+            )}
+
             <div className="mt-4 flex flex-wrap gap-3">
               <button
                 type="button"
@@ -487,7 +722,7 @@ export default function ModelTrainingTab() {
         )}
       </div>
 
-      {/* ── Section D: Gender Model ── */}
+      {/* ── Section E: Gender Model ── */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
         <h3 className="text-base font-semibold text-slate-900">Modelo Genero</h3>
         <p className="mt-1 text-sm text-slate-500">
@@ -527,6 +762,15 @@ export default function ModelTrainingTab() {
           <p className="mt-2 text-xs text-slate-500">
             Ultimo entrenamiento: {fmtDate(genderModel.lastRun.completedAt)}
           </p>
+        )}
+
+        {genderTrained && (
+          <CentroidMetricsTable
+            modelType="gender"
+            centroids={genderCentroids}
+            loading={loadingGenderCentroids}
+            onLoad={() => fetchCentroids("gender")}
+          />
         )}
 
         <div className="mt-4 flex flex-wrap gap-3">

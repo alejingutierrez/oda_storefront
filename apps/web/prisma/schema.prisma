@@ -1068,7 +1068,7 @@ model SubcategoryCentroid {
   subcategory       String                        @unique
   category          String
   centroidEmbedding Unsupported("vector(1024)")?  @map("centroid_embedding")
-  sampleCount       Int                           @default(0)
+  sampleCount       Int                           @default(0) @map("sample_count")
   avgIntraDistance   Float?                        @map("avg_intra_distance")
   maxIntraDistance   Float?                        @map("max_intra_distance")
   stdIntraDistance   Float?                        @map("std_intra_distance")
@@ -1103,7 +1103,7 @@ model GenderCentroid {
   id                String                        @id @default(uuid())
   gender            String                        @unique
   centroidEmbedding Unsupported("vector(1024)")?  @map("centroid_embedding")
-  sampleCount       Int                           @default(0)
+  sampleCount       Int                           @default(0) @map("sample_count")
   avgIntraDistance   Float?                        @map("avg_intra_distance")
   metrics           Json?
   lastTrainedAt     DateTime?                     @map("last_trained_at")

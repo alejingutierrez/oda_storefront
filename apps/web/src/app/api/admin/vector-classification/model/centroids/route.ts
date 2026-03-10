@@ -15,9 +15,9 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const modelType = (searchParams.get("modelType") || "subcategory") as ModelType;
 
-    if (modelType !== "subcategory" && modelType !== "gender") {
+    if (modelType !== "category" && modelType !== "subcategory" && modelType !== "gender") {
       return NextResponse.json(
-        { error: "modelType must be 'subcategory' or 'gender'" },
+        { error: "modelType must be 'category', 'subcategory', or 'gender'" },
         { status: 400 },
       );
     }
