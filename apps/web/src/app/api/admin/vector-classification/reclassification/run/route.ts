@@ -40,6 +40,7 @@ export async function POST(req: Request) {
       ok: true,
       scanned: result.scanned,
       suggested: result.suggested,
+      autoConfirmed: result.autoConfirmed,
     });
   } catch (error) {
     console.error("[vector-classification/reclassification/run] POST error:", error);

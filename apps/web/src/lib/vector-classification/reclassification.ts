@@ -36,6 +36,7 @@ type ScanResult = {
   scanned: number;
   suggested: number;
   skippedExisting: number;
+  autoConfirmed: number;
   runId: string;
 };
 
@@ -101,6 +102,7 @@ export async function runReclassificationScan(
     let scanned = 0;
     let suggested = 0;
     let skippedExisting = 0;
+    let autoConfirmed = 0;
 
     if (modelType === "category") {
       const result = await scanCategories(
@@ -113,6 +115,7 @@ export async function runReclassificationScan(
       scanned = result.scanned;
       suggested = result.suggested;
       skippedExisting = result.skippedExisting;
+      autoConfirmed = result.autoConfirmed;
     } else if (modelType === "subcategory") {
       const result = await scanSubcategories(
         run.id,
@@ -125,6 +128,7 @@ export async function runReclassificationScan(
       scanned = result.scanned;
       suggested = result.suggested;
       skippedExisting = result.skippedExisting;
+      autoConfirmed = result.autoConfirmed;
     } else {
       const result = await scanGender(
         run.id,
@@ -136,6 +140,7 @@ export async function runReclassificationScan(
       scanned = result.scanned;
       suggested = result.suggested;
       skippedExisting = result.skippedExisting;
+      autoConfirmed = result.autoConfirmed;
     }
 
     // Complete the run
@@ -149,6 +154,7 @@ export async function runReclassificationScan(
           scanned,
           suggested,
           skippedExisting,
+          autoConfirmed,
           threshold,
           minMargin,
           ...(options?.filterCategory ? { category: options.filterCategory } : {}),
@@ -156,7 +162,7 @@ export async function runReclassificationScan(
       },
     });
 
-    return { scanned, suggested, skippedExisting, runId: run.id };
+    return { scanned, suggested, skippedExisting, autoConfirmed, runId: run.id };
   } catch (error) {
     await prisma.vectorModelRun.update({
       where: { id: run.id },
@@ -177,7 +183,7 @@ async function scanCategories(
   minMargin: number,
   batchSize: number,
   filterProductIds?: string[],
-): Promise<{ scanned: number; suggested: number; skippedExisting: number }> {
+): Promise<{ scanned: number; suggested: number; skippedExisting: number; autoConfirmed: number }> {
   let scanned = 0;
   let suggested = 0;
   let skippedExisting = 0;
@@ -285,7 +291,7 @@ async function scanCategories(
     if (filterProductIds && scanned >= filterProductIds.length) break;
   }
 
-  return { scanned, suggested, skippedExisting };
+  return { scanned, suggested, skippedExisting, autoConfirmed: 0 };
 }
 
 // ── Subcategory scan ────────────────────────────────────────────────
@@ -297,10 +303,11 @@ async function scanSubcategories(
   batchSize: number,
   filterProductIds?: string[],
   filterCategory?: string,
-): Promise<{ scanned: number; suggested: number; skippedExisting: number }> {
+): Promise<{ scanned: number; suggested: number; skippedExisting: number; autoConfirmed: number }> {
   let scanned = 0;
   let suggested = 0;
   let skippedExisting = 0;
+  let autoConfirmed = 0;
   let cursor: string | null = null;
 
   // Escape category for safe SQL interpolation
@@ -392,6 +399,12 @@ async function scanSubcategories(
 
     // Group by product and evaluate top-2 centroids
     const grouped = groupByProduct(distances, "productId");
+    const autoConfirmBatch: Array<{
+      productId: string;
+      subcategory: string;
+      category: string;
+      gender: string | null;
+    }> = [];
 
     for (const [productId, rows] of grouped) {
       scanned++;
@@ -404,12 +417,27 @@ async function scanSubcategories(
 
       const alreadyCorrect = nearest.centroid_subcategory === nearest.subcategory;
 
-      // Require minimum similarity for both reclassifications and confirmations
+      if (alreadyCorrect) {
+        // Auto-confirm to ground truth if confidence >= 75%
+        if (
+          similarity >= 0.75 &&
+          !gtProductIds.has(productId) &&
+          nearest.subcategory &&
+          nearest.centroid_category
+        ) {
+          autoConfirmBatch.push({
+            productId,
+            subcategory: nearest.subcategory,
+            category: nearest.centroid_category,
+            gender: nearest.gender,
+          });
+        }
+        continue;
+      }
+
+      // Reclassification: require both threshold and margin
       if (similarity < threshold) continue;
-      // Require margin only for reclassifications (not confirmations)
-      if (!alreadyCorrect && margin < minMargin) continue;
-      // Skip confirmations already in ground truth
-      if (alreadyCorrect && gtProductIds.has(productId)) continue;
+      if (margin < minMargin) continue;
 
       // Check for existing pending suggestion
       const existing = await prisma.vectorReclassificationSuggestion.findFirst({
@@ -447,11 +475,35 @@ async function scanSubcategories(
       suggested++;
     }
 
+    // Batch auto-confirm correct products to ground truth
+    if (autoConfirmBatch.length > 0) {
+      const values = autoConfirmBatch
+        .map((_, i) => {
+          const b = i * 4;
+          return `(gen_random_uuid(), $${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, NOW(), NULL, true, NOW(), NOW())`;
+        })
+        .join(", ");
+
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO ground_truth_products (id, "productId", subcategory, category, gender, "confirmedAt", "confirmedByUserId", "isActive", "createdAt", "updatedAt")
+         VALUES ${values}
+         ON CONFLICT ("productId", subcategory)
+         DO UPDATE SET
+           category          = EXCLUDED.category,
+           gender            = EXCLUDED.gender,
+           "confirmedAt"     = NOW(),
+           "isActive"        = true,
+           "updatedAt"       = NOW()`,
+        ...autoConfirmBatch.flatMap((e) => [e.productId, e.subcategory, e.category, e.gender]),
+      );
+      autoConfirmed += autoConfirmBatch.length;
+    }
+
     // If using filterProductIds, break when we've consumed them all
     if (filterProductIds && scanned >= filterProductIds.length) break;
   }
 
-  return { scanned, suggested, skippedExisting };
+  return { scanned, suggested, skippedExisting, autoConfirmed };
 }
 
 // ── Gender scan ─────────────────────────────────────────────────────
@@ -462,7 +514,7 @@ async function scanGender(
   minMargin: number,
   batchSize: number,
   filterProductIds?: string[],
-): Promise<{ scanned: number; suggested: number; skippedExisting: number }> {
+): Promise<{ scanned: number; suggested: number; skippedExisting: number; autoConfirmed: number }> {
   let scanned = 0;
   let suggested = 0;
   let skippedExisting = 0;
@@ -567,7 +619,7 @@ async function scanGender(
     if (filterProductIds && scanned >= filterProductIds.length) break;
   }
 
-  return { scanned, suggested, skippedExisting };
+  return { scanned, suggested, skippedExisting, autoConfirmed: 0 };
 }
 
 // ── Suggestion actions ──────────────────────────────────────────────
