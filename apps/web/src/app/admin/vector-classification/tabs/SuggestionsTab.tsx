@@ -335,20 +335,17 @@ export default function SuggestionsTab() {
               </button>
             ))}
 
-            {/* Bulk auto-accept buttons */}
+            {/* Bulk auto-accept button */}
             <div className="ml-2 flex items-center gap-1.5 border-l border-slate-200 pl-3">
-              {[80, 75, 70].map((pct) => (
-                <button
-                  key={pct}
-                  type="button"
-                  onClick={() => handleBulkAccept(pct)}
-                  disabled={bulkAccepting !== null}
-                  className="rounded-full border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  title={`Auto-aceptar todas las pendientes con confianza >= ${pct}%`}
-                >
-                  {bulkAccepting === pct ? "..." : `AA ${pct}`}
-                </button>
-              ))}
+              <button
+                type="button"
+                onClick={() => handleBulkAccept(70)}
+                disabled={bulkAccepting !== null}
+                className="rounded-full border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Auto-aceptar todas las pendientes con confianza >= 70%"
+              >
+                {bulkAccepting === 70 ? "..." : "AA 70"}
+              </button>
             </div>
           </div>
 
