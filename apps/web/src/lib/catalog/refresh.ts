@@ -3720,6 +3720,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       const relaxedQueueHealthy = abundantCapacity && queueWaiting <= config.continuousMaxWaiting * 2;
       if (!config.continuousRequireHealthyQueue || queueHealthy || relaxedQueueHealthy) {
         const dueIds = new Set(shuffledDueCandidates.map((brand) => brand.id));
+        const overdueThresholdMs = config.intervalDays * 24 * 60 * 60 * 1000;
         const reseedCandidates = brands
           .filter((brand) => {
             if (activeBrandIds.has(brand.id)) return false;
@@ -3730,7 +3731,15 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
             const lastOperationalAt = readRefreshLastOperationalAt(metadata);
             const lastTouchAt = lastStartedAt ?? lastOperationalAt;
             if (!lastTouchAt) return false;
-            const minGapMs = config.continuousMinGapHours * 60 * 60 * 1000;
+            // Very overdue brands (>intervalDays since last operational) use 1h gap
+            // instead of full continuousMinGapHours — they're already stale
+            const isVeryOverdue = lastOperationalAt
+              ? now.getTime() - lastOperationalAt.getTime() >= overdueThresholdMs
+              : true;
+            const effectiveGapHours = isVeryOverdue
+              ? Math.min(config.continuousMinGapHours, 1)
+              : config.continuousMinGapHours;
+            const minGapMs = effectiveGapHours * 60 * 60 * 1000;
             return now.getTime() - lastTouchAt.getTime() >= minGapMs;
           })
           .sort((a, b) => {
@@ -3766,9 +3775,15 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     continuousReseed.skippedReason = "force_mode";
   }
 
+  // When continuous reseed is active with stale brands waiting, scale selection
+  // to fill available capacity instead of being capped at maxBrands
+  const effectiveMaxBrands =
+    continuousReseed.activated && continuousReseed.candidateCount > 0
+      ? Math.max(config.maxBrands, activeRunCapacityRemaining)
+      : config.maxBrands;
   const selectionCap = options?.brandId
     ? 1
-    : Math.max(0, Math.min(config.maxBrands, activeRunCapacityRemaining));
+    : Math.max(0, Math.min(effectiveMaxBrands, activeRunCapacityRemaining));
   const selected = prioritizedCandidates.slice(0, selectionCap);
   continuousReseed.selectedCount = Math.max(
     0,
