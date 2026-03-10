@@ -36,7 +36,7 @@ export async function POST(
     await acceptSuggestion(
       id,
       userId ?? "unknown",
-      body?.addToGroundTruth ?? false,
+      body?.addToGroundTruth ?? true,
     );
 
     return NextResponse.json({ ok: true });

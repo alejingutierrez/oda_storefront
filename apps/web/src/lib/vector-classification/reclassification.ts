@@ -608,31 +608,52 @@ export async function acceptSuggestion(
     },
   });
 
-  // Optionally add to ground truth (only for subcategory-level suggestions,
-  // since GroundTruthProduct requires subcategory in its unique constraint)
-  if (
-    addToGroundTruth &&
-    suggestion.modelType === "subcategory" &&
-    suggestion.toSubcategory &&
-    suggestion.toCategory
-  ) {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO ground_truth_products (id, "productId", subcategory, category, gender, "confirmedAt", "confirmedByUserId", "isActive", "createdAt", "updatedAt")
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), $5, true, NOW(), NOW())
-       ON CONFLICT ("productId", subcategory)
-       DO UPDATE SET
-         category          = $3,
-         gender            = $4,
-         "confirmedAt"     = NOW(),
-         "confirmedByUserId" = $5,
-         "isActive"        = true,
-         "updatedAt"       = NOW()`,
-      suggestion.productId,
-      suggestion.toSubcategory,
-      suggestion.toCategory,
-      suggestion.toGender,
-      userId ?? null,
-    );
+  // Add accepted product to ground truth for model retraining.
+  // GroundTruthProduct requires category + subcategory (both NOT NULL).
+  if (addToGroundTruth) {
+    let gtCategory: string | null = null;
+    let gtSubcategory: string | null = null;
+    let gtGender: string | null = null;
+
+    if (suggestion.modelType === "subcategory") {
+      gtCategory = suggestion.toCategory;
+      gtSubcategory = suggestion.toSubcategory;
+      gtGender = suggestion.toGender;
+    } else if (suggestion.modelType === "category") {
+      // Category suggestion changes category; subcategory preserved from product
+      gtCategory = suggestion.toCategory;
+      const product = await prisma.product.findUnique({
+        where: { id: suggestion.productId },
+        select: { subcategory: true, gender: true },
+      });
+      gtSubcategory = product?.subcategory ?? null;
+      gtGender = product?.gender ?? null;
+    } else {
+      // Gender suggestion preserves category/subcategory, changes gender
+      gtCategory = suggestion.toCategory;
+      gtSubcategory = suggestion.toSubcategory;
+      gtGender = suggestion.toGender;
+    }
+
+    if (gtSubcategory && gtCategory) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO ground_truth_products (id, "productId", subcategory, category, gender, "confirmedAt", "confirmedByUserId", "isActive", "createdAt", "updatedAt")
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), $5, true, NOW(), NOW())
+         ON CONFLICT ("productId", subcategory)
+         DO UPDATE SET
+           category          = $3,
+           gender            = $4,
+           "confirmedAt"     = NOW(),
+           "confirmedByUserId" = $5,
+           "isActive"        = true,
+           "updatedAt"       = NOW()`,
+        suggestion.productId,
+        gtSubcategory,
+        gtCategory,
+        gtGender,
+        userId ?? null,
+      );
+    }
   }
 }
 

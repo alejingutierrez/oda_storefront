@@ -503,23 +503,21 @@ export default function SuggestionsTab() {
                         </button>
                       </div>
 
-                      {/* Add to ground truth checkbox (only for subcategory suggestions) */}
-                      {!isCategory && (
-                        <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={addToGtById[suggestion.id] !== false}
-                            onChange={(e) =>
-                              setAddToGtById((prev) => ({
-                                ...prev,
-                                [suggestion.id]: e.target.checked,
-                              }))
-                            }
-                            className="rounded border-slate-300"
-                          />
-                          Agregar a ground truth
-                        </label>
-                      )}
+                      {/* Add to ground truth checkbox */}
+                      <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={addToGtById[suggestion.id] !== false}
+                          onChange={(e) =>
+                            setAddToGtById((prev) => ({
+                              ...prev,
+                              [suggestion.id]: e.target.checked,
+                            }))
+                          }
+                          className="rounded border-slate-300"
+                        />
+                        Agregar a ground truth
+                      </label>
 
                       {/* Reject note */}
                       {showRejectInput && (
