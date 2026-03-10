@@ -180,11 +180,15 @@ function ReclassParams({
   margin,
   onThresholdChange,
   onMarginChange,
+  onSave,
+  saved,
 }: {
   threshold: number;
   margin: number;
   onThresholdChange: (v: number) => void;
   onMarginChange: (v: number) => void;
+  onSave: () => void;
+  saved: boolean;
 }) {
   return (
     <div className="mt-4 flex flex-wrap items-end gap-4">
@@ -216,6 +220,16 @@ function ReclassParams({
           className="mt-1 w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
         />
       </div>
+      <button
+        type="button"
+        onClick={onSave}
+        className="rounded-lg bg-slate-800 px-4 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
+      >
+        Guardar
+      </button>
+      {saved && (
+        <span className="text-xs font-medium text-emerald-600">Guardado</span>
+      )}
     </div>
   );
 }
@@ -247,9 +261,25 @@ export default function ModelTrainingTab() {
   const [genderCentroids, setGenderCentroids] = useState<CentroidMetric[]>([]);
   const [loadingGenderCentroids, setLoadingGenderCentroids] = useState(false);
 
-  // Reclassification params (shared)
-  const [simThreshold, setSimThreshold] = useState(0.7);
-  const [minMargin, setMinMargin] = useState(0.05);
+  // Reclassification params (shared, persisted in localStorage)
+  const [simThreshold, setSimThreshold] = useState(() => {
+    if (typeof window === "undefined") return 0.7;
+    const stored = localStorage.getItem("vc_simThreshold");
+    return stored ? Number(stored) : 0.7;
+  });
+  const [minMargin, setMinMargin] = useState(() => {
+    if (typeof window === "undefined") return 0.05;
+    const stored = localStorage.getItem("vc_minMargin");
+    return stored ? Number(stored) : 0.05;
+  });
+  const [paramsSaved, setParamsSaved] = useState(false);
+
+  const handleSaveParams = useCallback(() => {
+    localStorage.setItem("vc_simThreshold", String(simThreshold));
+    localStorage.setItem("vc_minMargin", String(minMargin));
+    setParamsSaved(true);
+    setTimeout(() => setParamsSaved(false), 2000);
+  }, [simThreshold, minMargin]);
 
   // Shared
   const [runs, setRuns] = useState<RunRecord[]>([]);
@@ -486,6 +516,8 @@ export default function ModelTrainingTab() {
           margin={minMargin}
           onThresholdChange={setSimThreshold}
           onMarginChange={setMinMargin}
+          onSave={handleSaveParams}
+          saved={paramsSaved}
         />
       </div>
 
