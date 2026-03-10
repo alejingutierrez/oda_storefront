@@ -252,12 +252,15 @@ async function scanCategories(
       if (similarity < threshold) continue;
       if (margin < minMargin) continue;
 
-      // Check for existing pending or rejected suggestion
+      // Skip if a pending suggestion exists or a rejected one with the same target
       const existing = await prisma.vectorReclassificationSuggestion.findFirst({
         where: {
           productId,
           modelType: "category",
-          status: { in: ["pending", "rejected"] },
+          OR: [
+            { status: "pending" },
+            { status: "rejected", toCategory: nearest.centroid_category },
+          ],
         },
       });
 
@@ -439,12 +442,15 @@ async function scanSubcategories(
       if (similarity < threshold) continue;
       if (margin < minMargin) continue;
 
-      // Check for existing pending or rejected suggestion
+      // Skip if a pending suggestion exists or a rejected one with the same target
       const existing = await prisma.vectorReclassificationSuggestion.findFirst({
         where: {
           productId,
           modelType: "subcategory",
-          status: { in: ["pending", "rejected"] },
+          OR: [
+            { status: "pending" },
+            { status: "rejected", toSubcategory: nearest.centroid_subcategory },
+          ],
         },
       });
 
@@ -576,12 +582,15 @@ async function scanGender(
       if (similarity < threshold) continue;
       if (margin < minMargin) continue;
 
-      // Check for existing pending or rejected suggestion
+      // Skip if a pending suggestion exists or a rejected one with the same target
       const existing = await prisma.vectorReclassificationSuggestion.findFirst({
         where: {
           productId,
           modelType: "gender",
-          status: { in: ["pending", "rejected"] },
+          OR: [
+            { status: "pending" },
+            { status: "rejected", toGender: nearest.centroid_gender },
+          ],
         },
       });
 
@@ -752,32 +761,6 @@ export async function rejectSuggestion(
     },
   });
 
-  // Rejection = "product is correctly classified where it is".
-  // Add current (from*) classification to ground truth so the model
-  // learns to keep it in place and future scans skip it.
-  const gtCategory = suggestion.fromCategory;
-  const gtSubcategory = suggestion.fromSubcategory;
-  const gtGender = suggestion.fromGender;
-
-  if (gtSubcategory && gtCategory) {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO ground_truth_products (id, "productId", subcategory, category, gender, "confirmedAt", "confirmedByUserId", "isActive", "createdAt", "updatedAt")
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), $5, true, NOW(), NOW())
-       ON CONFLICT ("productId", subcategory)
-       DO UPDATE SET
-         category          = $3,
-         gender            = $4,
-         "confirmedAt"     = NOW(),
-         "confirmedByUserId" = $5,
-         "isActive"        = true,
-         "updatedAt"       = NOW()`,
-      suggestion.productId,
-      gtSubcategory,
-      gtCategory,
-      gtGender,
-      userId ?? null,
-    );
-  }
 }
 
 // ── Utilities ───────────────────────────────────────────────────────
