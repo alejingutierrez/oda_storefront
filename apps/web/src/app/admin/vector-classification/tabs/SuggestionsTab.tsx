@@ -81,6 +81,7 @@ export default function SuggestionsTab() {
   const [addToGtById, setAddToGtById] = useState<Record<string, boolean>>({});
   const [rejectNoteById, setRejectNoteById] = useState<Record<string, string>>({});
   const [showRejectInputId, setShowRejectInputId] = useState<string | null>(null);
+  const [bulkAccepting, setBulkAccepting] = useState<number | null>(null);
 
   /* ── Fetch suggestions ── */
   const fetchSuggestions = useCallback(async () => {
@@ -236,6 +237,43 @@ export default function SuggestionsTab() {
     [actionById, rejectNoteById, fetchSuggestions],
   );
 
+  /* ── Bulk accept ── */
+  const handleBulkAccept = useCallback(
+    async (minConfidence: number) => {
+      if (bulkAccepting !== null) return;
+      setBulkAccepting(minConfidence);
+      setError(null);
+
+      try {
+        const res = await fetch(
+          "/api/admin/vector-classification/reclassification/suggestions/bulk-accept",
+          {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ minConfidence: minConfidence / 100 }),
+          },
+        );
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          throw new Error(payload.error || "Error en auto-aceptar");
+        }
+        const data = (await res.json()) as { accepted: number; failed: number };
+        setError(
+          data.accepted > 0
+            ? null
+            : "No se encontraron sugerencias pendientes con esa confianza",
+        );
+        await fetchSuggestions();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error en auto-aceptar");
+      } finally {
+        setBulkAccepting(null);
+      }
+    },
+    [bulkAccepting, fetchSuggestions],
+  );
+
   /* ── Status pill buttons ── */
   const statusPills: Array<{
     value: SuggestionStatus | "all";
@@ -296,6 +334,22 @@ export default function SuggestionsTab() {
                 {pill.label} ({pill.count})
               </button>
             ))}
+
+            {/* Bulk auto-accept buttons */}
+            <div className="ml-2 flex items-center gap-1.5 border-l border-slate-200 pl-3">
+              {[80, 75, 70].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => handleBulkAccept(pct)}
+                  disabled={bulkAccepting !== null}
+                  className="rounded-full border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={`Auto-aceptar todas las pendientes con confianza >= ${pct}%`}
+                >
+                  {bulkAccepting === pct ? "..." : `AA ${pct}`}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Model type + Search */}
