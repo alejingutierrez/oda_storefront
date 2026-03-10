@@ -235,7 +235,7 @@ const resolveDrainConfig = (body: unknown) => {
   const batchDefault = Number(process.env.CATALOG_DRAIN_BATCH ?? 0);
   const concurrencyDefault = Number(process.env.CATALOG_DRAIN_CONCURRENCY ?? 5);
   const maxMsDefault = Number(process.env.CATALOG_DRAIN_MAX_RUNTIME_MS ?? 20000);
-  const maxRunsDefault = Number(process.env.CATALOG_DRAIN_MAX_RUNS ?? 3);
+  const maxRunsDefault = Number(process.env.CATALOG_DRAIN_MAX_RUNS ?? 5);
   const batch = Number.isFinite(requestedBatch) ? requestedBatch : batchDefault;
   const concurrency = Number.isFinite(requestedConcurrency)
     ? requestedConcurrency

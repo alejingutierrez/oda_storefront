@@ -397,7 +397,7 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
       .toLowerCase() !== "false";
   const continuousMinGapHours = Math.max(
     1,
-    Number(process.env.CATALOG_REFRESH_CONTINUOUS_MIN_GAP_HOURS ?? 12),
+    Number(process.env.CATALOG_REFRESH_CONTINUOUS_MIN_GAP_HOURS ?? 6),
   );
   const manualReviewAutoClearEnabled =
     (process.env.CATALOG_MANUAL_REVIEW_AUTOCLEAR_ENABLED ?? "true")
