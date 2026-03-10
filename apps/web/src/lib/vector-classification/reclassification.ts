@@ -357,6 +357,16 @@ async function scanSubcategories(
       cursor = productIds[productIds.length - 1];
     }
 
+    // Batch-check which products are already confirmed in ground truth
+    const gtProductIds = new Set(
+      (
+        await prisma.groundTruthProduct.findMany({
+          where: { productId: { in: productIds }, isActive: true },
+          select: { productId: true },
+        })
+      ).map((g) => g.productId),
+    );
+
     // Compute distances to subcategory centroids for this batch
     const placeholders = productIds.map((_, i) => `$${i + 1}`).join(",");
 
@@ -392,12 +402,14 @@ async function scanSubcategories(
       const similarity = 1 - nearest.distance;
       const margin = secondNearest.distance - nearest.distance;
 
-      // Skip if current classification matches nearest centroid
-      if (nearest.centroid_subcategory === nearest.subcategory) continue;
+      const alreadyCorrect = nearest.centroid_subcategory === nearest.subcategory;
 
-      // Skip if below threshold or margin
+      // Require minimum similarity for both reclassifications and confirmations
       if (similarity < threshold) continue;
-      if (margin < minMargin) continue;
+      // Require margin only for reclassifications (not confirmations)
+      if (!alreadyCorrect && margin < minMargin) continue;
+      // Skip confirmations already in ground truth
+      if (alreadyCorrect && gtProductIds.has(productId)) continue;
 
       // Check for existing pending suggestion
       const existing = await prisma.vectorReclassificationSuggestion.findFirst({
