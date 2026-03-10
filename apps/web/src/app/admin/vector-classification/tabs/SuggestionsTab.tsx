@@ -83,6 +83,7 @@ export default function SuggestionsTab() {
   const [rejectNoteById, setRejectNoteById] = useState<Record<string, string>>({});
   const [showRejectInputId, setShowRejectInputId] = useState<string | null>(null);
   const [bulkAccepting, setBulkAccepting] = useState(false);
+  const [bulkRejecting, setBulkRejecting] = useState(false);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -323,6 +324,46 @@ export default function SuggestionsTab() {
     }
   }, [bulkAccepting, modelTypeFilter, subcategoryFilter, search, fetchSuggestions]);
 
+  /* ── Bulk reject all filtered ── */
+  const handleBulkReject = useCallback(async () => {
+    if (bulkRejecting) return;
+    setBulkRejecting(true);
+    setError(null);
+
+    try {
+      const bodyPayload: Record<string, string> = {};
+      if (modelTypeFilter !== "all") bodyPayload.modelType = modelTypeFilter;
+      if (subcategoryFilter) bodyPayload.toSubcategory = subcategoryFilter;
+      if (search.trim()) bodyPayload.search = search.trim();
+
+      const res = await fetch(
+        "/api/admin/vector-classification/reclassification/suggestions/bulk-reject",
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bodyPayload),
+        },
+      );
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.error || "Error en rechazar");
+      }
+      const data = (await res.json()) as { rejected: number; failed: number };
+      setError(
+        data.rejected > 0
+          ? null
+          : "No se encontraron sugerencias pendientes para los filtros actuales",
+      );
+      setPage(1);
+      await fetchSuggestions(1, false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error en rechazar");
+    } finally {
+      setBulkRejecting(false);
+    }
+  }, [bulkRejecting, modelTypeFilter, subcategoryFilter, search, fetchSuggestions]);
+
   /* ── Status pill buttons ── */
   const statusPills: Array<{
     value: SuggestionStatus | "all";
@@ -384,16 +425,25 @@ export default function SuggestionsTab() {
               </button>
             ))}
 
-            {/* Bulk auto-accept all filtered */}
+            {/* Bulk accept / reject all filtered */}
             <div className="ml-2 flex items-center gap-1.5 border-l border-slate-200 pl-3">
               <button
                 type="button"
                 onClick={handleBulkAccept}
-                disabled={bulkAccepting}
-                className="rounded-full border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Auto-aceptar todas las pendientes con los filtros actuales"
+                disabled={bulkAccepting || bulkRejecting}
+                className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Aceptar todas las pendientes con los filtros actuales"
               >
                 {bulkAccepting ? "..." : "AA"}
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkReject}
+                disabled={bulkAccepting || bulkRejecting}
+                className="rounded-full border border-rose-300 bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Rechazar todas las pendientes con los filtros actuales"
+              >
+                {bulkRejecting ? "..." : "RA"}
               </button>
             </div>
           </div>
