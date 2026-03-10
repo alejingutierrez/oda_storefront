@@ -160,7 +160,7 @@ const evaluateCatalogWorkerGate = async (heartbeat: {
       }
     }
 
-    const staleNoProgress = backlog > 0 && active === 0 && noRecentProgress;
+    const staleNoProgress = (backlog > 0 || active > 0) && noRecentProgress;
     if (staleNoProgress) {
       return {
         skipDrain: false,
@@ -235,7 +235,7 @@ const resolveDrainConfig = (body: unknown) => {
   const batchDefault = Number(process.env.CATALOG_DRAIN_BATCH ?? 0);
   const concurrencyDefault = Number(process.env.CATALOG_DRAIN_CONCURRENCY ?? 5);
   const maxMsDefault = Number(process.env.CATALOG_DRAIN_MAX_RUNTIME_MS ?? 20000);
-  const maxRunsDefault = Number(process.env.CATALOG_DRAIN_MAX_RUNS ?? 1);
+  const maxRunsDefault = Number(process.env.CATALOG_DRAIN_MAX_RUNS ?? 3);
   const batch = Number.isFinite(requestedBatch) ? requestedBatch : batchDefault;
   const concurrency = Number.isFinite(requestedConcurrency)
     ? requestedConcurrency
@@ -325,6 +325,26 @@ export async function POST(req: Request) {
     const heartbeat = await readHeartbeat("workers:catalog:alive");
     const gate = await evaluateCatalogWorkerGate(heartbeat);
     workerGate = gate.meta;
+    if (isCron) {
+      console.log(JSON.stringify({
+        event: "catalog_drain_decision",
+        skipDrain: gate.skipDrain,
+        reason: (gate.meta as Record<string, unknown>).reason ?? null,
+        workerOnline: heartbeat.online,
+        queueWaiting: (gate.meta as Record<string, unknown>).queue
+          ? ((gate.meta as Record<string, unknown>).queue as Record<string, unknown>).waiting ?? null
+          : null,
+        queueActive: (gate.meta as Record<string, unknown>).queue
+          ? ((gate.meta as Record<string, unknown>).queue as Record<string, unknown>).active ?? null
+          : null,
+        lastCompletedAt: (gate.meta as Record<string, unknown>).queue
+          ? ((gate.meta as Record<string, unknown>).queue as Record<string, unknown>).lastCompletedAt ?? null
+          : null,
+        noRecentProgress: (gate.meta as Record<string, unknown>).queue
+          ? ((gate.meta as Record<string, unknown>).queue as Record<string, unknown>).noRecentProgress ?? null
+          : null,
+      }));
+    }
     if (gate.skipDrain) {
       if (isCron && !dryRun) {
         microDrainBypass = true;
@@ -346,6 +366,20 @@ export async function POST(req: Request) {
   let maxRuns = resolved.maxRuns;
   const queuedStaleMs = resolved.queuedStaleMs;
   const stuckMs = resolved.stuckMs;
+
+  const isWorkerStale =
+    workerGate &&
+    typeof workerGate === "object" &&
+    "reason" in workerGate &&
+    (workerGate.reason === "worker_stale_no_progress" ||
+      workerGate.reason === "worker_offline" ||
+      workerGate.reason === "worker_queue_empty_db_runnable");
+
+  if (isWorkerStale && !microDrainBypass) {
+    concurrency = Math.max(concurrency, 10);
+    maxMs = Math.max(maxMs, 50000);
+    maxRuns = Math.max(maxRuns, 3);
+  }
 
   if (microDrainBypass) {
     const microBatchCap = Math.max(1, Number(process.env.CATALOG_DRAIN_CRON_MICRO_BATCH ?? 8));
@@ -471,6 +505,20 @@ export async function POST(req: Request) {
 
     if (brandId || requestedRunId) break;
     if (processed >= safeBatch && safeBatch !== Number.MAX_SAFE_INTEGER) break;
+  }
+
+  if (isCron) {
+    console.log(JSON.stringify({
+      event: "catalog_drain_result",
+      processed,
+      runsProcessed,
+      finalizedRuns,
+      microDrainBypass,
+      isWorkerStale,
+      concurrency: safeConcurrency,
+      maxMs: safeMaxMs,
+      elapsedMs: Date.now() - startedAt,
+    }));
   }
 
   return NextResponse.json({

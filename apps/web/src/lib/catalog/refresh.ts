@@ -204,7 +204,7 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
   const envMaxRuntimeMs = Math.max(5000, Number(process.env.CATALOG_REFRESH_MAX_RUNTIME_MS ?? 25000));
   const envBrandConcurrency = Math.max(
     1,
-    Number(process.env.CATALOG_REFRESH_BRAND_CONCURRENCY ?? 1),
+    Number(process.env.CATALOG_REFRESH_BRAND_CONCURRENCY ?? 3),
   );
   const maxBrands = Number.isFinite(overrides?.maxBrands)
     ? Math.max(1, Math.floor(Number(overrides?.maxBrands)))
@@ -3247,15 +3247,27 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   };
 
   const queueEnabled = isCatalogQueueEnabled();
+  const preBatchTimings: Record<string, number> = {};
 
+  let _t0 = Date.now();
   await recoverCatalogRuns(config);
+  preBatchTimings.recoverCatalogRuns = Date.now() - _t0;
+
+  _t0 = Date.now();
   if (!config.enrichAutoStart) {
     await pauseCatalogRefreshAutoStartDisabledRuns();
   } else {
     await resumeCatalogRefreshEnrichmentRuns();
   }
+  preBatchTimings.enrichmentRecovery = Date.now() - _t0;
+
+  _t0 = Date.now();
   await recoverEnrichmentRuns(config);
+  preBatchTimings.recoverEnrichmentRuns = Date.now() - _t0;
+
+  _t0 = Date.now();
   await reconcileStaleRefreshStates();
+  preBatchTimings.reconcileStaleRefreshStates = Date.now() - _t0;
 
   if (!options?.brandId) {
     if (!queueEnabled) {
@@ -3264,6 +3276,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       autoReconcile.skipped = "auto_reconcile_disabled";
     } else {
       autoReconcile.attempted = true;
+      _t0 = Date.now();
       try {
         const drift = await readCatalogQueueDriftSummary({
           sampleLimit: config.autoReconcileJobScanLimit,
@@ -3283,22 +3296,28 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
         const reason = error instanceof Error ? error.message : String(error);
         autoReconcile.skipped = `auto_reconcile_error:${reason.slice(0, 160)}`;
       }
+      preBatchTimings.autoReconcile = Date.now() - _t0;
     }
   } else {
     autoReconcile.skipped = "brand_scope";
   }
 
+  _t0 = Date.now();
   if (!options?.brandId) {
     autoFinalizedRuns = await autoFinalizeDormantProcessingRuns({
       limitOverride: heavyMode ? undefined : config.autoFinalizeLightLimit,
     });
   }
+  preBatchTimings.autoFinalize = Date.now() - _t0;
+
+  _t0 = Date.now();
   if (!options?.brandId) {
     operationalRetention = await runOperationalRetentionCleanup({
       retentionDays: 90,
       perTableLimit: heavyMode ? undefined : 2000,
     });
   }
+  preBatchTimings.operationalRetention = Date.now() - _t0;
 
   if (!options?.brandId && heavyMode) {
     manualReviewAutoClear = await autoClearManualReviewByEvidence({
@@ -3463,7 +3482,8 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     config.stuckRemediateEnabled &&
     (processingRunsBeforeRemediation > activeRunCap ||
       processingNoProgressGate >= config.stuckRemediateThreshold ||
-      pausedOverCapRuns > 0);
+      pausedOverCapRuns > 0 ||
+      processingNoProgressGate > 0);
   if (shouldRunStuckRemediation) {
     try {
       const result = await runCatalogRefreshStuckRemediation({
@@ -3534,13 +3554,12 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     stuckRemediation.skipped = "force_mode";
   } else if (!config.stuckRemediateEnabled) {
     stuckRemediation.skipped = "stuck_remediation_disabled";
-  } else if (processingRunsBeforeRemediation <= activeRunCap) {
-    stuckRemediation.skipped = "active_within_cap";
   } else if (
-    processingNoProgressGate < config.stuckRemediateThreshold &&
+    processingRunsBeforeRemediation <= activeRunCap &&
+    processingNoProgressGate === 0 &&
     pausedOverCapRuns <= 0
   ) {
-    stuckRemediation.skipped = "below_processing_no_progress_threshold";
+    stuckRemediation.skipped = "no_stuck_runs";
   }
 
   const runStatusCountsAfterRemediation = await prisma.catalogRun.groupBy({
@@ -3696,7 +3715,10 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
         !queueDriftDetectedForReseed &&
         queueWaiting <= config.continuousMaxWaiting &&
         processingNoProgressAfterRemediation <= config.stuckRemediateThreshold;
-      if (!config.continuousRequireHealthyQueue || queueHealthy) {
+      // When abundant capacity (>50% free), relax health gate to only check queue backlog
+      const abundantCapacity = activeRunCapacityRemaining > Math.floor(activeRunCap * 0.5);
+      const relaxedQueueHealthy = abundantCapacity && queueWaiting <= config.continuousMaxWaiting * 2;
+      if (!config.continuousRequireHealthyQueue || queueHealthy || relaxedQueueHealthy) {
         const dueIds = new Set(shuffledDueCandidates.map((brand) => brand.id));
         const reseedCandidates = brands
           .filter((brand) => {
@@ -3977,5 +3999,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     autoReconcile,
     stuckRemediation,
     continuousReseed,
+    preBatchTimings,
+    totalElapsedMs: Date.now() - startedAt,
   };
 };
