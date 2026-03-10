@@ -368,7 +368,7 @@ export default function GroundTruthTab() {
           </div>
 
           {/* Grid */}
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10">
+          <div className="grid grid-cols-3 gap-2 md:grid-cols-8">
             {products.map((product) => {
               const isConfirmed = !!product.groundTruthId;
               const isSelected = selected.has(product.id);
@@ -386,7 +386,7 @@ export default function GroundTruthTab() {
                   }}
                   disabled={busy}
                   title={`${product.name}\n${product.brandName || "Sin marca"}`}
-                  className={`group relative aspect-square overflow-hidden rounded-lg border-2 transition-all disabled:opacity-60 ${
+                  className={`group relative overflow-hidden rounded-lg border-2 transition-all disabled:opacity-60 ${
                     isConfirmed
                       ? "border-emerald-400 ring-2 ring-emerald-200"
                       : isSelected
@@ -398,11 +398,11 @@ export default function GroundTruthTab() {
                     <img
                       src={product.imageCoverUrl}
                       alt={product.name}
-                      className="h-full w-full object-cover"
+                      className="block w-full"
                       loading="lazy"
                     />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-slate-100 text-[9px] text-slate-400">
+                    <div className="flex aspect-[3/4] w-full items-center justify-center bg-slate-100 text-[9px] text-slate-400">
                       Sin img
                     </div>
                   )}
