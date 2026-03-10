@@ -252,12 +252,12 @@ async function scanCategories(
       if (similarity < threshold) continue;
       if (margin < minMargin) continue;
 
-      // Check for existing pending suggestion
+      // Check for existing pending or rejected suggestion
       const existing = await prisma.vectorReclassificationSuggestion.findFirst({
         where: {
           productId,
           modelType: "category",
-          status: "pending",
+          status: { in: ["pending", "rejected"] },
         },
       });
 
@@ -439,12 +439,12 @@ async function scanSubcategories(
       if (similarity < threshold) continue;
       if (margin < minMargin) continue;
 
-      // Check for existing pending suggestion
+      // Check for existing pending or rejected suggestion
       const existing = await prisma.vectorReclassificationSuggestion.findFirst({
         where: {
           productId,
           modelType: "subcategory",
-          status: "pending",
+          status: { in: ["pending", "rejected"] },
         },
       });
 
@@ -576,11 +576,12 @@ async function scanGender(
       if (similarity < threshold) continue;
       if (margin < minMargin) continue;
 
+      // Check for existing pending or rejected suggestion
       const existing = await prisma.vectorReclassificationSuggestion.findFirst({
         where: {
           productId,
           modelType: "gender",
-          status: "pending",
+          status: { in: ["pending", "rejected"] },
         },
       });
 
@@ -750,6 +751,33 @@ export async function rejectSuggestion(
       decisionNote: note ?? null,
     },
   });
+
+  // Rejection = "product is correctly classified where it is".
+  // Add current (from*) classification to ground truth so the model
+  // learns to keep it in place and future scans skip it.
+  const gtCategory = suggestion.fromCategory;
+  const gtSubcategory = suggestion.fromSubcategory;
+  const gtGender = suggestion.fromGender;
+
+  if (gtSubcategory && gtCategory) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO ground_truth_products (id, "productId", subcategory, category, gender, "confirmedAt", "confirmedByUserId", "isActive", "createdAt", "updatedAt")
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), $5, true, NOW(), NOW())
+       ON CONFLICT ("productId", subcategory)
+       DO UPDATE SET
+         category          = $3,
+         gender            = $4,
+         "confirmedAt"     = NOW(),
+         "confirmedByUserId" = $5,
+         "isActive"        = true,
+         "updatedAt"       = NOW()`,
+      suggestion.productId,
+      gtSubcategory,
+      gtCategory,
+      gtGender,
+      userId ?? null,
+    );
+  }
 }
 
 // ── Utilities ───────────────────────────────────────────────────────
