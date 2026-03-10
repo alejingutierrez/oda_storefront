@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /* ── Types ── */
 
@@ -73,9 +73,9 @@ export default function SuggestionsTab() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionById, setActionById] = useState<Record<string, "accept" | "reject">>({});
   const [addToGtById, setAddToGtById] = useState<Record<string, boolean>>({});
@@ -83,60 +83,104 @@ export default function SuggestionsTab() {
   const [showRejectInputId, setShowRejectInputId] = useState<string | null>(null);
   const [bulkAccepting, setBulkAccepting] = useState<number | null>(null);
 
-  /* ── Fetch suggestions ── */
-  const fetchSuggestions = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(PAGE_LIMIT),
-      });
-      if (statusFilter !== "all") params.set("status", statusFilter);
-      if (modelTypeFilter !== "all") params.set("modelType", modelTypeFilter);
-      if (search.trim()) params.set("search", search.trim());
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
-      const res = await fetch(
-        `/api/admin/vector-classification/reclassification/suggestions?${params.toString()}`,
-        { credentials: "include", cache: "no-store" },
-      );
-      if (!res.ok) throw new Error("No se pudieron cargar las sugerencias");
-      const data = (await res.json()) as ApiSuggestionsResponse;
-      const mapped: Suggestion[] = data.suggestions.map((s) => ({
-        id: s.id,
-        status: s.status,
-        modelType: s.modelType,
-        productId: s.productId,
-        productName: s.product?.name ?? "Sin nombre",
-        brandName: s.product?.brand?.name ?? null,
-        imageCoverUrl: s.product?.imageCoverUrl ?? null,
-        fromCategory: s.fromCategory,
-        fromSubcategory: s.fromSubcategory,
-        fromGender: s.fromGender,
-        toCategory: s.toCategory,
-        toSubcategory: s.toSubcategory,
-        toGender: s.toGender,
-        confidence: s.confidence,
-        distance: s.vectorDistance,
-        margin: s.margin,
-        createdAt: s.createdAt,
-      }));
-      setSuggestions(mapped);
-      const totalCount = data.counts.pending + data.counts.accepted + data.counts.rejected;
-      setCounts({ ...data.counts, total: totalCount });
-      setTotalPages(Math.max(1, Math.ceil(data.total / PAGE_LIMIT)));
-      setTotal(data.total);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al cargar sugerencias");
-      setSuggestions([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [page, statusFilter, modelTypeFilter, search]);
+  /* ── Fetch suggestions (page 1 = reset, page > 1 = append) ── */
+  const fetchSuggestions = useCallback(
+    async (pageNum: number, append: boolean) => {
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        const params = new URLSearchParams({
+          page: String(pageNum),
+          limit: String(PAGE_LIMIT),
+        });
+        if (statusFilter !== "all") params.set("status", statusFilter);
+        if (modelTypeFilter !== "all") params.set("modelType", modelTypeFilter);
+        if (search.trim()) params.set("search", search.trim());
 
+        const res = await fetch(
+          `/api/admin/vector-classification/reclassification/suggestions?${params.toString()}`,
+          { credentials: "include", cache: "no-store" },
+        );
+        if (!res.ok) throw new Error("No se pudieron cargar las sugerencias");
+        const data = (await res.json()) as ApiSuggestionsResponse;
+        const mapped: Suggestion[] = data.suggestions.map((s) => ({
+          id: s.id,
+          status: s.status,
+          modelType: s.modelType,
+          productId: s.productId,
+          productName: s.product?.name ?? "Sin nombre",
+          brandName: s.product?.brand?.name ?? null,
+          imageCoverUrl: s.product?.imageCoverUrl ?? null,
+          fromCategory: s.fromCategory,
+          fromSubcategory: s.fromSubcategory,
+          fromGender: s.fromGender,
+          toCategory: s.toCategory,
+          toSubcategory: s.toSubcategory,
+          toGender: s.toGender,
+          confidence: s.confidence,
+          distance: s.vectorDistance,
+          margin: s.margin,
+          createdAt: s.createdAt,
+        }));
+        if (append) {
+          setSuggestions((prev) => [...prev, ...mapped]);
+        } else {
+          setSuggestions(mapped);
+        }
+        const totalCount = data.counts.pending + data.counts.accepted + data.counts.rejected;
+        setCounts({ ...data.counts, total: totalCount });
+        setHasMore(data.hasMore);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error al cargar sugerencias");
+        if (!append) setSuggestions([]);
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [statusFilter, modelTypeFilter, search],
+  );
+
+  /* ── Reset on filter change ── */
   useEffect(() => {
-    fetchSuggestions();
+    setPage(1);
+    fetchSuggestions(1, false);
   }, [fetchSuggestions]);
+
+  /* ── Load more when page increments ── */
+  useEffect(() => {
+    if (page > 1) {
+      fetchSuggestions(page, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+  /* ── Infinite scroll observer ── */
+  useEffect(() => {
+    if (observerRef.current) observerRef.current.disconnect();
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMore && !loading && !loadingMore) {
+          setPage((p) => p + 1);
+        }
+      },
+      { rootMargin: "400px" },
+    );
+
+    if (sentinelRef.current) {
+      observerRef.current.observe(sentinelRef.current);
+    }
+
+    return () => observerRef.current?.disconnect();
+  }, [hasMore, loading, loadingMore]);
 
   /* ── Accept ── */
   const handleAccept = useCallback(
@@ -154,7 +198,6 @@ export default function SuggestionsTab() {
         pending: Math.max(0, prev.pending - 1),
         accepted: prev.accepted + 1,
       }));
-      setTotal((prev) => Math.max(0, prev - 1));
 
       try {
         const res = await fetch(
@@ -173,7 +216,8 @@ export default function SuggestionsTab() {
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error al aceptar sugerencia");
         // Re-fetch to restore state
-        await fetchSuggestions();
+        setPage(1);
+        await fetchSuggestions(1, false);
       } finally {
         setActionById((prev) => {
           const next = { ...prev };
@@ -201,7 +245,6 @@ export default function SuggestionsTab() {
         pending: Math.max(0, prev.pending - 1),
         rejected: prev.rejected + 1,
       }));
-      setTotal((prev) => Math.max(0, prev - 1));
 
       try {
         const res = await fetch(
@@ -219,7 +262,8 @@ export default function SuggestionsTab() {
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error al rechazar sugerencia");
-        await fetchSuggestions();
+        setPage(1);
+        await fetchSuggestions(1, false);
       } finally {
         setActionById((prev) => {
           const next = { ...prev };
@@ -264,7 +308,8 @@ export default function SuggestionsTab() {
             ? null
             : "No se encontraron sugerencias pendientes con esa confianza",
         );
-        await fetchSuggestions();
+        setPage(1);
+        await fetchSuggestions(1, false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error en auto-aceptar");
       } finally {
@@ -607,31 +652,12 @@ export default function SuggestionsTab() {
         </div>
       )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <span className="text-xs text-slate-500">
-            Pagina {page} de {totalPages} ({total} sugerencias)
-          </span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-              disabled={page <= 1 || loading}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Anterior
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-              disabled={page >= totalPages || loading}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Siguiente
-            </button>
-          </div>
-        </div>
+      {/* Infinite scroll sentinel */}
+      <div ref={sentinelRef} className="h-4" />
+
+      {/* Loading more indicator */}
+      {loadingMore && (
+        <p className="py-4 text-center text-sm text-slate-500">Cargando mas sugerencias...</p>
       )}
     </div>
   );
