@@ -229,6 +229,13 @@ async function scanCategories(
        WHERE pe."productId" IN (${placeholders})
          AND pe.combined_embedding IS NOT NULL
          AND cc.centroid_embedding IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM vector_reclassification_suggestions vrs
+           WHERE vrs."productId" = pe."productId"
+             AND vrs."modelType" = 'category'
+             AND vrs.status = 'rejected'
+             AND vrs."toCategory" = cc.category
+         )
        ORDER BY pe."productId", distance`,
       ...productIds,
     );
@@ -252,16 +259,10 @@ async function scanCategories(
       if (similarity < threshold) continue;
       if (margin < minMargin) continue;
 
-      // Skip if a pending suggestion exists or a rejected one with the same target
+      // Skip if a pending suggestion already exists (rejected targets are
+      // already excluded at SQL level via NOT EXISTS)
       const existing = await prisma.vectorReclassificationSuggestion.findFirst({
-        where: {
-          productId,
-          modelType: "category",
-          OR: [
-            { status: "pending" },
-            { status: "rejected", toCategory: nearest.centroid_category },
-          ],
-        },
+        where: { productId, modelType: "category", status: "pending" },
       });
 
       if (existing) {
@@ -396,6 +397,13 @@ async function scanSubcategories(
          AND pe.combined_embedding IS NOT NULL
          AND sc.centroid_embedding IS NOT NULL
          ${centroidCategoryCondition}
+         AND NOT EXISTS (
+           SELECT 1 FROM vector_reclassification_suggestions vrs
+           WHERE vrs."productId" = pe."productId"
+             AND vrs."modelType" = 'subcategory'
+             AND vrs.status = 'rejected'
+             AND vrs."toSubcategory" = sc.subcategory
+         )
        ORDER BY pe."productId", distance`,
       ...productIds,
     );
@@ -442,16 +450,10 @@ async function scanSubcategories(
       if (similarity < threshold) continue;
       if (margin < minMargin) continue;
 
-      // Skip if a pending suggestion exists or a rejected one with the same target
+      // Skip if a pending suggestion already exists (rejected targets are
+      // already excluded at SQL level via NOT EXISTS)
       const existing = await prisma.vectorReclassificationSuggestion.findFirst({
-        where: {
-          productId,
-          modelType: "subcategory",
-          OR: [
-            { status: "pending" },
-            { status: "rejected", toSubcategory: nearest.centroid_subcategory },
-          ],
-        },
+        where: { productId, modelType: "subcategory", status: "pending" },
       });
 
       if (existing) {
@@ -563,6 +565,13 @@ async function scanGender(
        WHERE pe."productId" IN (${placeholders})
          AND pe.combined_embedding IS NOT NULL
          AND gc.centroid_embedding IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM vector_reclassification_suggestions vrs
+           WHERE vrs."productId" = pe."productId"
+             AND vrs."modelType" = 'gender'
+             AND vrs.status = 'rejected'
+             AND vrs."toGender" = gc.gender
+         )
        ORDER BY pe."productId", distance`,
       ...productIds,
     );
@@ -582,16 +591,10 @@ async function scanGender(
       if (similarity < threshold) continue;
       if (margin < minMargin) continue;
 
-      // Skip if a pending suggestion exists or a rejected one with the same target
+      // Skip if a pending suggestion already exists (rejected targets are
+      // already excluded at SQL level via NOT EXISTS)
       const existing = await prisma.vectorReclassificationSuggestion.findFirst({
-        where: {
-          productId,
-          modelType: "gender",
-          OR: [
-            { status: "pending" },
-            { status: "rejected", toGender: nearest.centroid_gender },
-          ],
-        },
+        where: { productId, modelType: "gender", status: "pending" },
       });
 
       if (existing) {
