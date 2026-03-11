@@ -1,5 +1,5 @@
-import GroundTruthTab from "../tabs/GroundTruthTab";
+import ConfirmationSubTabs from "../tabs/ConfirmationSubTabs";
 
 export default function ConfirmationPage() {
-  return <GroundTruthTab />;
+  return <ConfirmationSubTabs />;
 }
