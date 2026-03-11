@@ -31,7 +31,7 @@ export function useGalleryScroll() {
           setPage((p) => p + 1);
         }
       },
-      { rootMargin: "400px" },
+      { rootMargin: "200px" },
     );
 
     if (sentinelRef.current) {

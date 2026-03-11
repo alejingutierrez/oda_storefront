@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import type { ReactNode } from "react";
 
 export type GalleryProduct = {
@@ -36,19 +37,23 @@ export default function GalleryGrid<T extends GalleryProduct>({
             onClick={() => onToggleSelect(product.id)}
             disabled={busy}
             title={`${product.name}\n${product.brandName || "Sin marca"}`}
-            className={`group relative overflow-hidden rounded-lg border-2 transition-all disabled:opacity-60 ${
+            className={`group relative overflow-hidden rounded-lg border-2 transition-all disabled:opacity-60 [content-visibility:auto] [contain-intrinsic-size:auto_173px] ${
               isSelected
                 ? "border-indigo-500 ring-2 ring-indigo-200"
                 : "border-transparent hover:border-slate-300"
             }`}
           >
             {product.imageCoverUrl ? (
-              <img
-                src={product.imageCoverUrl}
-                alt={product.name}
-                className="block w-full"
-                loading="lazy"
-              />
+              <div className="relative aspect-[3/4] w-full">
+                <Image
+                  src={product.imageCoverUrl}
+                  alt={product.name}
+                  fill
+                  quality={56}
+                  sizes="(min-width: 768px) 13vw, 33vw"
+                  className="object-cover"
+                />
+              </div>
             ) : (
               <div className="flex aspect-[3/4] w-full items-center justify-center bg-slate-100 text-[9px] text-slate-400">
                 Sin img
