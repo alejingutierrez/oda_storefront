@@ -376,9 +376,19 @@ export async function POST(req: Request) {
       workerGate.reason === "worker_queue_empty_db_runnable");
 
   if (isWorkerStale && !microDrainBypass) {
+    // When the worker is offline, maximize use of the Vercel function budget (maxDuration=300s).
+    // Use 240s (leaving 60s buffer for setup/teardown) instead of 50s, and process more runs.
+    const workerStaleMaxMs = Math.max(
+      50000,
+      Number(process.env.CATALOG_DRAIN_WORKER_STALE_MAX_MS ?? 240000),
+    );
+    const workerStaleMaxRuns = Math.max(
+      3,
+      Number(process.env.CATALOG_DRAIN_WORKER_STALE_MAX_RUNS ?? 20),
+    );
     concurrency = Math.max(concurrency, 10);
-    maxMs = Math.max(maxMs, 50000);
-    maxRuns = Math.max(maxRuns, 3);
+    maxMs = Math.max(maxMs, workerStaleMaxMs);
+    maxRuns = Math.max(maxRuns, workerStaleMaxRuns);
   }
 
   if (microDrainBypass) {
