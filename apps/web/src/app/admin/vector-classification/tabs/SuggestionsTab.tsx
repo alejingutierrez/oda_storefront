@@ -15,6 +15,8 @@ type Suggestion = {
   productName: string;
   brandName: string | null;
   imageCoverUrl: string | null;
+  materialTags: string[];
+  occasionTags: string[];
   fromCategory: string | null;
   fromSubcategory: string | null;
   fromGender: string | null;
@@ -28,11 +30,16 @@ type Suggestion = {
 };
 
 /** Shape returned by the API (nested product, flat pagination) */
-type ApiSuggestion = Omit<Suggestion, "productName" | "brandName" | "imageCoverUrl" | "distance"> & {
+type ApiSuggestion = Omit<
+  Suggestion,
+  "productName" | "brandName" | "imageCoverUrl" | "distance" | "materialTags" | "occasionTags"
+> & {
   product: {
     name: string;
     imageCoverUrl: string | null;
     brand: { name: string } | null;
+    materialTags: string[];
+    occasionTags: string[];
   };
   vectorDistance: number | null;
 };
@@ -71,6 +78,8 @@ export default function SuggestionsTab() {
   const [statusFilter, setStatusFilter] = useState<SuggestionStatus | "all">("pending");
   const [modelTypeFilter, setModelTypeFilter] = useState<ModelTypeFilter>("all");
   const [subcategoryFilter, setSubcategoryFilter] = useState("");
+  const [materialFilter, setMaterialFilter] = useState("");
+  const [occasionFilter, setOccasionFilter] = useState("");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
@@ -79,9 +88,7 @@ export default function SuggestionsTab() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionById, setActionById] = useState<Record<string, "accept" | "reject">>({});
-  const [addToGtById, setAddToGtById] = useState<Record<string, boolean>>({});
-  const [rejectNoteById, setRejectNoteById] = useState<Record<string, string>>({});
-  const [showRejectInputId, setShowRejectInputId] = useState<string | null>(null);
+  const [expandedImageId, setExpandedImageId] = useState<string | null>(null);
   const [bulkAccepting, setBulkAccepting] = useState(false);
   const [bulkRejecting, setBulkRejecting] = useState(false);
 
@@ -105,6 +112,8 @@ export default function SuggestionsTab() {
         if (statusFilter !== "all") params.set("status", statusFilter);
         if (modelTypeFilter !== "all") params.set("modelType", modelTypeFilter);
         if (subcategoryFilter) params.set("toSubcategory", subcategoryFilter);
+        if (materialFilter.trim()) params.set("material", materialFilter.trim());
+        if (occasionFilter.trim()) params.set("occasion", occasionFilter.trim());
         if (search.trim()) params.set("search", search.trim());
 
         const res = await fetch(
@@ -121,6 +130,8 @@ export default function SuggestionsTab() {
           productName: s.product?.name ?? "Sin nombre",
           brandName: s.product?.brand?.name ?? null,
           imageCoverUrl: s.product?.imageCoverUrl ?? null,
+          materialTags: s.product?.materialTags ?? [],
+          occasionTags: s.product?.occasionTags ?? [],
           fromCategory: s.fromCategory,
           fromSubcategory: s.fromSubcategory,
           fromGender: s.fromGender,
@@ -148,7 +159,7 @@ export default function SuggestionsTab() {
         setLoadingMore(false);
       }
     },
-    [statusFilter, modelTypeFilter, subcategoryFilter, search],
+    [statusFilter, modelTypeFilter, subcategoryFilter, materialFilter, occasionFilter, search],
   );
 
   /* ── Reset on filter change ── */
@@ -185,14 +196,12 @@ export default function SuggestionsTab() {
     return () => observerRef.current?.disconnect();
   }, [hasMore, loading, loadingMore]);
 
-  /* ── Accept ── */
+  /* ── Accept (always adds to ground truth) ── */
   const handleAccept = useCallback(
     async (suggestion: Suggestion) => {
       if (actionById[suggestion.id]) return;
       setActionById((prev) => ({ ...prev, [suggestion.id]: "accept" }));
       setError(null);
-
-      const addToGroundTruth = addToGtById[suggestion.id] !== false; // default true
 
       // Optimistic remove
       setSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
@@ -209,7 +218,7 @@ export default function SuggestionsTab() {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ addToGroundTruth }),
+            body: JSON.stringify({ addToGroundTruth: true }),
           },
         );
         if (!res.ok) {
@@ -218,7 +227,6 @@ export default function SuggestionsTab() {
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error al aceptar sugerencia");
-        // Re-fetch to restore state
         setPage(1);
         await fetchSuggestions(1, false);
       } finally {
@@ -229,17 +237,15 @@ export default function SuggestionsTab() {
         });
       }
     },
-    [actionById, addToGtById, fetchSuggestions],
+    [actionById, fetchSuggestions],
   );
 
-  /* ── Reject ── */
+  /* ── Reject (single click, no note) ── */
   const handleReject = useCallback(
     async (suggestion: Suggestion) => {
       if (actionById[suggestion.id]) return;
       setActionById((prev) => ({ ...prev, [suggestion.id]: "reject" }));
       setError(null);
-
-      const note = rejectNoteById[suggestion.id] || "";
 
       // Optimistic remove
       setSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
@@ -256,7 +262,7 @@ export default function SuggestionsTab() {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ note }),
+            body: JSON.stringify({}),
           },
         );
         if (!res.ok) {
@@ -273,15 +279,9 @@ export default function SuggestionsTab() {
           delete next[suggestion.id];
           return next;
         });
-        setShowRejectInputId(null);
-        setRejectNoteById((prev) => {
-          const next = { ...prev };
-          delete next[suggestion.id];
-          return next;
-        });
       }
     },
-    [actionById, rejectNoteById, fetchSuggestions],
+    [actionById, fetchSuggestions],
   );
 
   /* ── Bulk accept all filtered ── */
@@ -294,6 +294,8 @@ export default function SuggestionsTab() {
       const bodyPayload: Record<string, string> = {};
       if (modelTypeFilter !== "all") bodyPayload.modelType = modelTypeFilter;
       if (subcategoryFilter) bodyPayload.toSubcategory = subcategoryFilter;
+      if (materialFilter.trim()) bodyPayload.material = materialFilter.trim();
+      if (occasionFilter.trim()) bodyPayload.occasion = occasionFilter.trim();
       if (search.trim()) bodyPayload.search = search.trim();
 
       const res = await fetch(
@@ -322,7 +324,7 @@ export default function SuggestionsTab() {
     } finally {
       setBulkAccepting(false);
     }
-  }, [bulkAccepting, modelTypeFilter, subcategoryFilter, search, fetchSuggestions]);
+  }, [bulkAccepting, modelTypeFilter, subcategoryFilter, materialFilter, occasionFilter, search, fetchSuggestions]);
 
   /* ── Bulk reject all filtered ── */
   const handleBulkReject = useCallback(async () => {
@@ -334,6 +336,8 @@ export default function SuggestionsTab() {
       const bodyPayload: Record<string, string> = {};
       if (modelTypeFilter !== "all") bodyPayload.modelType = modelTypeFilter;
       if (subcategoryFilter) bodyPayload.toSubcategory = subcategoryFilter;
+      if (materialFilter.trim()) bodyPayload.material = materialFilter.trim();
+      if (occasionFilter.trim()) bodyPayload.occasion = occasionFilter.trim();
       if (search.trim()) bodyPayload.search = search.trim();
 
       const res = await fetch(
@@ -362,7 +366,7 @@ export default function SuggestionsTab() {
     } finally {
       setBulkRejecting(false);
     }
-  }, [bulkRejecting, modelTypeFilter, subcategoryFilter, search, fetchSuggestions]);
+  }, [bulkRejecting, modelTypeFilter, subcategoryFilter, materialFilter, occasionFilter, search, fetchSuggestions]);
 
   /* ── Status pill buttons ── */
   const statusPills: Array<{
@@ -448,7 +452,7 @@ export default function SuggestionsTab() {
             </div>
           </div>
 
-          {/* Model type + Search */}
+          {/* Model type + Filters + Search */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex gap-1.5">
               {(
@@ -482,6 +486,26 @@ export default function SuggestionsTab() {
               placeholder="Subcategoria sugerida"
               value={subcategoryFilter}
               onChange={(e) => setSubcategoryFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") setPage(1);
+              }}
+            />
+
+            <input
+              className="w-32 rounded-xl border border-slate-300 px-3 py-1.5 text-sm"
+              placeholder="Material"
+              value={materialFilter}
+              onChange={(e) => setMaterialFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") setPage(1);
+              }}
+            />
+
+            <input
+              className="w-32 rounded-xl border border-slate-300 px-3 py-1.5 text-sm"
+              placeholder="Ocasion"
+              value={occasionFilter}
+              onChange={(e) => setOccasionFilter(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") setPage(1);
               }}
@@ -541,166 +565,145 @@ export default function SuggestionsTab() {
             const busy = !!actionById[suggestion.id];
             const isCategory = suggestion.modelType === "category";
             const isSubcat = suggestion.modelType === "subcategory";
-            const showRejectInput = showRejectInputId === suggestion.id;
+            const isExpanded = expandedImageId === suggestion.id;
 
             return (
-              <div
-                key={suggestion.id}
-                className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center"
-              >
-                {/* Image + Name */}
-                <div className="flex shrink-0 items-center gap-3 lg:w-56">
-                  {suggestion.imageCoverUrl ? (
-                    <img
-                      src={suggestion.imageCoverUrl}
-                      alt={suggestion.productName}
-                      className="h-12 w-12 shrink-0 rounded-lg border border-slate-200 object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-[9px] text-slate-400">
-                      Sin img
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">
+              <div key={suggestion.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-3 p-3 lg:flex-row lg:items-stretch">
+                  {/* Image */}
+                  <button
+                    type="button"
+                    className="shrink-0 overflow-hidden rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    onClick={() => setExpandedImageId(isExpanded ? null : suggestion.id)}
+                    title="Click para expandir"
+                  >
+                    {suggestion.imageCoverUrl ? (
+                      <img
+                        src={suggestion.imageCoverUrl}
+                        alt={suggestion.productName}
+                        className="h-24 w-24 object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-24 w-24 items-center justify-center bg-slate-100 text-[10px] text-slate-400">
+                        Sin img
+                      </div>
+                    )}
+                  </button>
+
+                  {/* Name + Brand + Tags */}
+                  <div className="flex min-w-0 shrink-0 flex-col justify-center lg:w-64">
+                    <p className="line-clamp-2 text-sm font-semibold text-slate-900">
                       {suggestion.productName}
                     </p>
                     <p className="truncate text-xs text-slate-500">
                       {suggestion.brandName || "Sin marca"}
                     </p>
+                    {(suggestion.materialTags.length > 0 || suggestion.occasionTags.length > 0) && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {suggestion.materialTags.slice(0, 2).map((t) => (
+                          <span
+                            key={`m-${t}`}
+                            className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-600"
+                          >
+                            {t}
+                          </span>
+                        ))}
+                        {suggestion.occasionTags.slice(0, 2).map((t) => (
+                          <span
+                            key={`o-${t}`}
+                            className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-600"
+                          >
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
 
-                {/* Change diff */}
-                <div className="flex-1 space-y-1.5">
-                  {isCategory ? (
-                    <DiffRow
-                      label="Categoria"
-                      from={suggestion.fromCategory}
-                      to={suggestion.toCategory}
-                    />
-                  ) : isSubcat ? (
-                    <>
+                  {/* Change diff */}
+                  <div className="flex flex-1 flex-col justify-center space-y-1.5">
+                    {isCategory ? (
                       <DiffRow
                         label="Categoria"
                         from={suggestion.fromCategory}
                         to={suggestion.toCategory}
                       />
+                    ) : isSubcat ? (
+                      <>
+                        <DiffRow
+                          label="Categoria"
+                          from={suggestion.fromCategory}
+                          to={suggestion.toCategory}
+                        />
+                        <DiffRow
+                          label="Subcategoria"
+                          from={suggestion.fromSubcategory}
+                          to={suggestion.toSubcategory}
+                        />
+                      </>
+                    ) : (
                       <DiffRow
-                        label="Subcategoria"
-                        from={suggestion.fromSubcategory}
-                        to={suggestion.toSubcategory}
+                        label="Genero"
+                        from={suggestion.fromGender}
+                        to={suggestion.toGender}
                       />
-                    </>
-                  ) : (
-                    <DiffRow
-                      label="Genero"
-                      from={suggestion.fromGender}
-                      to={suggestion.toGender}
-                    />
-                  )}
-                </div>
+                    )}
+                  </div>
 
-                {/* Metrics */}
-                <div className="flex shrink-0 items-center gap-3 text-xs lg:w-48">
-                  <div className="space-y-0.5 text-center">
-                    <p className="text-[10px] font-semibold uppercase text-slate-400">
-                      Confianza
-                    </p>
-                    <p className="font-bold text-slate-800">
-                      {formatPercent(suggestion.confidence)}
-                    </p>
+                  {/* Metrics */}
+                  <div className="flex shrink-0 items-center gap-2 text-xs lg:w-36">
+                    <div className="space-y-0.5 text-center">
+                      <p className="text-[10px] font-semibold uppercase text-slate-400">
+                        Confianza
+                      </p>
+                      <p className="font-bold text-slate-800">
+                        {formatPercent(suggestion.confidence)}
+                      </p>
+                    </div>
+                    <div className="space-y-0.5 text-center">
+                      <p className="text-[10px] font-semibold uppercase text-slate-400">
+                        Distancia
+                      </p>
+                      <p className="font-bold text-slate-800">
+                        {formatScore(suggestion.distance)}
+                      </p>
+                    </div>
+                    <div className="space-y-0.5 text-center">
+                      <p className="text-[10px] font-semibold uppercase text-slate-400">
+                        Margen
+                      </p>
+                      <p className="font-bold text-slate-800">
+                        {formatScore(suggestion.margin)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="space-y-0.5 text-center">
-                    <p className="text-[10px] font-semibold uppercase text-slate-400">
-                      Distancia
-                    </p>
-                    <p className="font-bold text-slate-800">
-                      {formatScore(suggestion.distance)}
-                    </p>
-                  </div>
-                  <div className="space-y-0.5 text-center">
-                    <p className="text-[10px] font-semibold uppercase text-slate-400">
-                      Margen
-                    </p>
-                    <p className="font-bold text-slate-800">
-                      {formatScore(suggestion.margin)}
-                    </p>
-                  </div>
-                </div>
 
-                {/* Actions */}
-                <div className="flex shrink-0 flex-col gap-2 lg:w-44">
+                  {/* Actions: A / R square buttons */}
                   {suggestion.status === "pending" ? (
-                    <>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          className="flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-                          onClick={() => handleAccept(suggestion)}
-                          disabled={busy}
-                        >
-                          {actionById[suggestion.id] === "accept"
-                            ? "Aceptando..."
-                            : "Aceptar"}
-                        </button>
-                        <button
-                          type="button"
-                          className="flex-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
-                          onClick={() => {
-                            if (showRejectInput) {
-                              handleReject(suggestion);
-                            } else {
-                              setShowRejectInputId(suggestion.id);
-                            }
-                          }}
-                          disabled={busy}
-                        >
-                          {actionById[suggestion.id] === "reject"
-                            ? "Rechazando..."
-                            : "Rechazar"}
-                        </button>
-                      </div>
-
-                      {/* Add to ground truth checkbox */}
-                      <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={addToGtById[suggestion.id] !== false}
-                          onChange={(e) =>
-                            setAddToGtById((prev) => ({
-                              ...prev,
-                              [suggestion.id]: e.target.checked,
-                            }))
-                          }
-                          className="rounded border-slate-300"
-                        />
-                        Agregar a ground truth
-                      </label>
-
-                      {/* Reject note */}
-                      {showRejectInput && (
-                        <input
-                          className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
-                          placeholder="Nota (opcional)"
-                          value={rejectNoteById[suggestion.id] || ""}
-                          onChange={(e) =>
-                            setRejectNoteById((prev) => ({
-                              ...prev,
-                              [suggestion.id]: e.target.value,
-                            }))
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleReject(suggestion);
-                          }}
-                          autoFocus
-                        />
-                      )}
-                    </>
+                    <div className="flex shrink-0 items-stretch gap-1.5 self-stretch">
+                      <button
+                        type="button"
+                        className="flex w-14 items-center justify-center rounded-lg bg-emerald-600 text-xl font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => handleAccept(suggestion)}
+                        disabled={busy}
+                        title="Aceptar"
+                      >
+                        {actionById[suggestion.id] === "accept" ? "..." : "A"}
+                      </button>
+                      <button
+                        type="button"
+                        className="flex w-14 items-center justify-center rounded-lg bg-rose-600 text-xl font-bold text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => handleReject(suggestion)}
+                        disabled={busy}
+                        title="Rechazar"
+                      >
+                        {actionById[suggestion.id] === "reject" ? "..." : "R"}
+                      </button>
+                    </div>
                   ) : (
                     <span
-                      className={`rounded-full px-3 py-1 text-center text-xs font-semibold ${
+                      className={`shrink-0 self-center rounded-full px-3 py-1 text-center text-xs font-semibold ${
                         suggestion.status === "accepted"
                           ? "bg-emerald-100 text-emerald-700"
                           : "bg-rose-100 text-rose-700"
@@ -710,6 +713,24 @@ export default function SuggestionsTab() {
                     </span>
                   )}
                 </div>
+
+                {/* Expanded image */}
+                {isExpanded && suggestion.imageCoverUrl && (
+                  <div className="border-t border-slate-100 bg-slate-50 p-4">
+                    <button
+                      type="button"
+                      className="mx-auto block focus:outline-none"
+                      onClick={() => setExpandedImageId(null)}
+                    >
+                      <img
+                        src={suggestion.imageCoverUrl}
+                        alt={suggestion.productName}
+                        className="max-h-80 rounded-xl border border-slate-300 object-contain shadow-lg"
+                        loading="lazy"
+                      />
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}

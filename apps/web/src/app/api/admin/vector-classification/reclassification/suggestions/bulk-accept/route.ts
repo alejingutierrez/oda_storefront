@@ -25,22 +25,23 @@ export async function POST(req: Request) {
       modelType?: string;
       toSubcategory?: string;
       search?: string;
+      material?: string;
+      occasion?: string;
     } | null;
 
     const userId = resolveAdminUserId(admin) ?? "unknown";
 
     // Build filter matching the GET suggestions endpoint
+    const productWhere: Record<string, unknown> = {};
+    if (body?.search) productWhere.name = { contains: body.search, mode: "insensitive" as const };
+    if (body?.material) productWhere.materialTags = { has: body.material };
+    if (body?.occasion) productWhere.occasionTags = { has: body.occasion };
+
     const where: Prisma.VectorReclassificationSuggestionWhereInput = {
       status: "pending",
       ...(body?.modelType ? { modelType: body.modelType } : {}),
       ...(body?.toSubcategory ? { toSubcategory: body.toSubcategory } : {}),
-      ...(body?.search
-        ? {
-            product: {
-              name: { contains: body.search, mode: "insensitive" as const },
-            },
-          }
-        : {}),
+      ...(Object.keys(productWhere).length > 0 ? { product: productWhere } : {}),
     };
 
     const suggestions = await prisma.vectorReclassificationSuggestion.findMany({

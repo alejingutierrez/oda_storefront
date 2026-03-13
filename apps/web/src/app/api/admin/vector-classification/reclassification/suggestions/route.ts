@@ -19,6 +19,8 @@ export async function GET(req: Request) {
     const search = searchParams.get("search")?.trim() || undefined;
     const brand = searchParams.get("brand")?.trim() || undefined;
     const toSubcategory = searchParams.get("toSubcategory")?.trim() || undefined;
+    const material = searchParams.get("material")?.trim() || undefined;
+    const occasion = searchParams.get("occasion")?.trim() || undefined;
 
     const where = {
       status: status || undefined,
@@ -29,6 +31,8 @@ export async function GET(req: Request) {
         ...(brand
           ? { brand: { name: { contains: brand, mode: "insensitive" as const } } }
           : {}),
+        ...(material ? { materialTags: { has: material } } : {}),
+        ...(occasion ? { occasionTags: { has: occasion } } : {}),
       },
     };
 
@@ -43,6 +47,8 @@ export async function GET(req: Request) {
                 imageCoverUrl: true,
                 sourceUrl: true,
                 brand: { select: { name: true } },
+                materialTags: true,
+                occasionTags: true,
               },
             },
           },
