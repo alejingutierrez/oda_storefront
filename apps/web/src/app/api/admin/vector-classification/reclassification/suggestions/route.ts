@@ -49,6 +49,7 @@ export async function GET(req: Request) {
                 brand: { select: { name: true } },
                 materialTags: true,
                 occasionTags: true,
+                variants: { select: { images: true }, take: 20 },
               },
             },
           },

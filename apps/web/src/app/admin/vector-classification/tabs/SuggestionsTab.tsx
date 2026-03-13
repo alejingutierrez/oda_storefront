@@ -15,6 +15,7 @@ type Suggestion = {
   productName: string;
   brandName: string | null;
   imageCoverUrl: string | null;
+  allImages: string[];
   materialTags: string[];
   occasionTags: string[];
   fromCategory: string | null;
@@ -32,7 +33,7 @@ type Suggestion = {
 /** Shape returned by the API (nested product, flat pagination) */
 type ApiSuggestion = Omit<
   Suggestion,
-  "productName" | "brandName" | "imageCoverUrl" | "distance" | "materialTags" | "occasionTags"
+  "productName" | "brandName" | "imageCoverUrl" | "allImages" | "distance" | "materialTags" | "occasionTags"
 > & {
   product: {
     name: string;
@@ -40,6 +41,7 @@ type ApiSuggestion = Omit<
     brand: { name: string } | null;
     materialTags: string[];
     occasionTags: string[];
+    variants: { images: string[] }[];
   };
   vectorDistance: number | null;
 };
@@ -88,7 +90,7 @@ export default function SuggestionsTab() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionById, setActionById] = useState<Record<string, "accept" | "reject">>({});
-  const [expandedImageId, setExpandedImageId] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
   const [bulkAccepting, setBulkAccepting] = useState(false);
   const [bulkRejecting, setBulkRejecting] = useState(false);
 
@@ -122,27 +124,33 @@ export default function SuggestionsTab() {
         );
         if (!res.ok) throw new Error("No se pudieron cargar las sugerencias");
         const data = (await res.json()) as ApiSuggestionsResponse;
-        const mapped: Suggestion[] = data.suggestions.map((s) => ({
-          id: s.id,
-          status: s.status,
-          modelType: s.modelType,
-          productId: s.productId,
-          productName: s.product?.name ?? "Sin nombre",
-          brandName: s.product?.brand?.name ?? null,
-          imageCoverUrl: s.product?.imageCoverUrl ?? null,
-          materialTags: s.product?.materialTags ?? [],
-          occasionTags: s.product?.occasionTags ?? [],
-          fromCategory: s.fromCategory,
-          fromSubcategory: s.fromSubcategory,
-          fromGender: s.fromGender,
-          toCategory: s.toCategory,
-          toSubcategory: s.toSubcategory,
-          toGender: s.toGender,
-          confidence: s.confidence,
-          distance: s.vectorDistance,
-          margin: s.margin,
-          createdAt: s.createdAt,
-        }));
+        const mapped: Suggestion[] = data.suggestions.map((s) => {
+          const variantImages = (s.product?.variants ?? []).flatMap((v) => v.images);
+          const cover = s.product?.imageCoverUrl;
+          const uniqueImages = Array.from(new Set([...(cover ? [cover] : []), ...variantImages]));
+          return {
+            id: s.id,
+            status: s.status,
+            modelType: s.modelType,
+            productId: s.productId,
+            productName: s.product?.name ?? "Sin nombre",
+            brandName: s.product?.brand?.name ?? null,
+            imageCoverUrl: cover ?? null,
+            allImages: uniqueImages,
+            materialTags: s.product?.materialTags ?? [],
+            occasionTags: s.product?.occasionTags ?? [],
+            fromCategory: s.fromCategory,
+            fromSubcategory: s.fromSubcategory,
+            fromGender: s.fromGender,
+            toCategory: s.toCategory,
+            toSubcategory: s.toSubcategory,
+            toGender: s.toGender,
+            confidence: s.confidence,
+            distance: s.vectorDistance,
+            margin: s.margin,
+            createdAt: s.createdAt,
+          };
+        });
         if (append) {
           setSuggestions((prev) => [...prev, ...mapped]);
         } else {
@@ -565,7 +573,6 @@ export default function SuggestionsTab() {
             const busy = !!actionById[suggestion.id];
             const isCategory = suggestion.modelType === "category";
             const isSubcat = suggestion.modelType === "subcategory";
-            const isExpanded = expandedImageId === suggestion.id;
 
             return (
               <div key={suggestion.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -574,8 +581,12 @@ export default function SuggestionsTab() {
                   <button
                     type="button"
                     className="shrink-0 overflow-hidden rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                    onClick={() => setExpandedImageId(isExpanded ? null : suggestion.id)}
-                    title="Click para expandir"
+                    onClick={() => {
+                      if (suggestion.allImages.length > 0) {
+                        setLightbox({ images: suggestion.allImages, index: 0 });
+                      }
+                    }}
+                    title={`Ver galeria (${suggestion.allImages.length} fotos)`}
                   >
                     {suggestion.imageCoverUrl ? (
                       <img
@@ -714,23 +725,6 @@ export default function SuggestionsTab() {
                   )}
                 </div>
 
-                {/* Expanded image */}
-                {isExpanded && suggestion.imageCoverUrl && (
-                  <div className="border-t border-slate-100 bg-slate-50 p-4">
-                    <button
-                      type="button"
-                      className="mx-auto block focus:outline-none"
-                      onClick={() => setExpandedImageId(null)}
-                    >
-                      <img
-                        src={suggestion.imageCoverUrl}
-                        alt={suggestion.productName}
-                        className="max-h-80 rounded-xl border border-slate-300 object-contain shadow-lg"
-                        loading="lazy"
-                      />
-                    </button>
-                  </div>
-                )}
               </div>
             );
           })}
@@ -743,6 +737,123 @@ export default function SuggestionsTab() {
       {/* Loading more indicator */}
       {loadingMore && (
         <p className="py-4 text-center text-sm text-slate-500">Cargando mas sugerencias...</p>
+      )}
+
+      {/* Lightbox gallery */}
+      {lightbox && (
+        <ImageLightbox
+          images={lightbox.images}
+          initialIndex={lightbox.index}
+          onClose={() => setLightbox(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── ImageLightbox sub-component ── */
+
+function ImageLightbox({
+  images,
+  initialIndex,
+  onClose,
+}: {
+  images: string[];
+  initialIndex: number;
+  onClose: () => void;
+}) {
+  const [index, setIndex] = useState(initialIndex);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") setIndex((i) => Math.min(i + 1, images.length - 1));
+      if (e.key === "ArrowLeft") setIndex((i) => Math.max(i - 1, 0));
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [images.length, onClose]);
+
+  // Prevent body scroll while lightbox is open
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+      onClick={onClose}
+    >
+      {/* Close button */}
+      <button
+        type="button"
+        className="absolute right-4 top-4 z-10 rounded-full bg-white/20 p-2 text-white backdrop-blur transition hover:bg-white/40"
+        onClick={onClose}
+      >
+        <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      {/* Counter */}
+      <div className="absolute left-4 top-4 rounded-full bg-white/20 px-3 py-1 text-sm font-semibold text-white backdrop-blur">
+        {index + 1} / {images.length}
+      </div>
+
+      {/* Previous */}
+      {index > 0 && (
+        <button
+          type="button"
+          className="absolute left-4 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/20 p-3 text-white backdrop-blur transition hover:bg-white/40"
+          onClick={(e) => { e.stopPropagation(); setIndex((i) => i - 1); }}
+        >
+          <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+      )}
+
+      {/* Next */}
+      {index < images.length - 1 && (
+        <button
+          type="button"
+          className="absolute right-4 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/20 p-3 text-white backdrop-blur transition hover:bg-white/40"
+          onClick={(e) => { e.stopPropagation(); setIndex((i) => i + 1); }}
+        >
+          <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      )}
+
+      {/* Main image */}
+      <img
+        src={images[index]}
+        alt={`Foto ${index + 1} de ${images.length}`}
+        className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+
+      {/* Thumbnail strip */}
+      {images.length > 1 && (
+        <div
+          className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2 overflow-x-auto rounded-xl bg-black/50 p-2 backdrop-blur"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {images.map((src, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setIndex(i)}
+              className={`shrink-0 overflow-hidden rounded-md border-2 transition ${
+                i === index ? "border-white" : "border-transparent opacity-60 hover:opacity-100"
+              }`}
+            >
+              <img src={src} alt="" className="h-14 w-14 object-cover" loading="lazy" />
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
