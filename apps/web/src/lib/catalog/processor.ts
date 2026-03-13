@@ -289,7 +289,17 @@ export const processCatalogItemById = async (
       });
     }
 
-    return { status: "completed", created: result.created, createdVariants: result.createdVariants, timingMs: Date.now() - t0 };
+    const timingMs = Date.now() - t0;
+    console.log(JSON.stringify({
+      event: "catalog_item_processed",
+      itemId: item.id,
+      runId: run.id,
+      brandSlug: brand.slug,
+      status: "completed",
+      timingMs,
+      lastStage,
+    }));
+    return { status: "completed", created: result.created, createdVariants: result.createdVariants, timingMs };
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : String(error);
     const message = canonicalizeCatalogItemError(rawMessage, item.url);
@@ -354,7 +364,18 @@ export const processCatalogItemById = async (
       }
     }
 
-    return { status: "failed", error: message, timingMs: Date.now() - t0 };
+    const timingMs = Date.now() - t0;
+    console.log(JSON.stringify({
+      event: "catalog_item_processed",
+      itemId: item.id,
+      runId: run.id,
+      brandSlug: brand.slug,
+      status: "failed",
+      timingMs,
+      lastStage,
+      error: message.slice(0, 200),
+    }));
+    return { status: "failed", error: message, timingMs };
   }
 };
 

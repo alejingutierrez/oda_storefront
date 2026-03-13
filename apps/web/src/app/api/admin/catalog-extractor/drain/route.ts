@@ -487,11 +487,21 @@ export async function POST(req: Request) {
     const remainingBatch =
       safeBatch === Number.MAX_SAFE_INTEGER ? safeBatch : Math.max(1, safeBatch - processed);
     const remainingMs = Math.max(2000, deadline - Date.now());
+    // Cap per-run time to prevent large runs (100+ items) from hogging the entire budget.
+    // This ensures the drain cycles through many runs per invocation, completing small runs
+    // quickly while making incremental progress on large ones.
+    const perRunCapMs = Math.max(
+      5000,
+      Number(process.env.CATALOG_DRAIN_PER_RUN_CAP_MS ?? 30000),
+    );
+    const effectiveRunMs = brandId || requestedRunId
+      ? remainingMs // Single-brand drain: use full budget
+      : Math.min(remainingMs, perRunCapMs);
     lastResult = await drainCatalogRun({
       runId: currentRunId,
       batch: remainingBatch,
       concurrency: safeConcurrency,
-      maxMs: remainingMs,
+      maxMs: effectiveRunMs,
       queuedStaleMs,
       stuckMs,
     });
