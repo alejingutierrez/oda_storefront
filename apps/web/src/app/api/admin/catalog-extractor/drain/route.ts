@@ -392,7 +392,9 @@ export async function POST(req: Request) {
       1,
       Number(process.env.CATALOG_DRAIN_WORKER_STALE_CONCURRENCY ?? 3),
     );
-    concurrency = Math.max(concurrency, workerStaleConcurrency);
+    // Override (not max) — the env default CATALOG_DRAIN_CONCURRENCY may be high (e.g. 12)
+    // but when the worker is offline we must keep per-domain concurrency low.
+    concurrency = workerStaleConcurrency;
     maxMs = Math.max(maxMs, workerStaleMaxMs);
     maxRuns = Math.max(maxRuns, workerStaleMaxRuns);
   }
