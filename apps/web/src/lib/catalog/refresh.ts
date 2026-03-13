@@ -384,7 +384,7 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     0,
     Math.min(
       100,
-      Number(process.env.CATALOG_REFRESH_CONTINUOUS_TRIGGER_COVERAGE_PCT ?? 100),
+      Number(process.env.CATALOG_REFRESH_CONTINUOUS_TRIGGER_COVERAGE_PCT ?? 70),
     ),
   );
   const continuousMaxWaiting = Math.max(
@@ -533,6 +533,17 @@ export const isBrandDueForRefresh = (
   config = getRefreshConfig(),
 ) => {
   const refresh = readRefreshMeta(metadata);
+  // Operational staleness override: if the brand's last operational completion
+  // is older than the global freshness window, it is due regardless of nextDueAt.
+  // This prevents "completed stale" brands from falling through selection when
+  // their smart-scheduled nextDueAt (e.g. 14 days) exceeds the operational window.
+  const lastOperationalAt = parseDate(refresh.lastFinishedAt) ?? parseDate(refresh.lastCompletedAt);
+  if (lastOperationalAt) {
+    const operationalWindowMs = config.intervalDays * 24 * 60 * 60 * 1000;
+    if (now.getTime() - lastOperationalAt.getTime() >= operationalWindowMs) {
+      return true;
+    }
+  }
   const nextDue = parseDate(refresh.nextDueAt);
   // If nextDueAt is present, treat it as the authoritative schedule. This makes jitter effective
   // and avoids re-running brands earlier than planned.
@@ -3345,7 +3356,8 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   });
 
   const activeRunCap = config.maxActiveRuns;
-  const runStatusCountsBeforeAutoRemediation = heavyMode
+  // Run auto-remediation in both light and heavy modes to accelerate recovery.
+  const runStatusCountsBeforeAutoRemediation = !options?.brandId
     ? await prisma.catalogRun.groupBy({
         by: ["status"],
         where: { status: { in: ["processing", "paused", "blocked"] } },
@@ -3355,20 +3367,49 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
   const processingRunsBeforeAutoRemediation =
     runStatusCountsBeforeAutoRemediation.find((row) => row.status === "processing")?._count._all ?? 0;
   const autoRemediationCapacity =
-    heavyMode && (options?.brandId || !options?.force)
+    !options?.force
       ? options?.brandId
         ? config.autoRemediateMaxBrands
         : Math.max(0, activeRunCap - processingRunsBeforeAutoRemediation)
       : 0;
 
-  if (heavyMode && !options?.brandId && !options?.force && autoRemediationCapacity > 0) {
+  // In light mode, cap auto-remediation at 2 brands to avoid starving normal batch processing.
+  const autoRemediateLightCap = 2;
+  if (!options?.brandId && !options?.force && autoRemediationCapacity > 0) {
     const autoRemediationMaxBrands = Math.max(
       0,
-      Math.min(config.autoRemediateMaxBrands, autoRemediationCapacity),
+      Math.min(
+        heavyMode
+          ? config.autoRemediateMaxBrands
+          : Math.min(config.autoRemediateMaxBrands, autoRemediateLightCap),
+        autoRemediationCapacity,
+      ),
     );
+    // Compute coverage to dynamically reduce cooldown when coverage is low.
+    const autoEligibleForCooldown = brands.filter((b) => !b.manualReview).length;
+    const staleWindowForCooldown = new Date(
+      now.getTime() - config.intervalDays * 24 * 60 * 60 * 1000,
+    );
+    const freshForCooldown = brands.filter((b) => {
+      if (b.manualReview) return false;
+      const meta = readMetadata(b.metadata);
+      const opAt = readRefreshLastOperationalAt(meta);
+      return opAt ? opAt >= staleWindowForCooldown : false;
+    }).length;
+    const coverageForCooldown =
+      autoEligibleForCooldown > 0
+        ? (freshForCooldown / autoEligibleForCooldown) * 100
+        : 100;
+    const effectiveCooldownHours =
+      coverageForCooldown < 50
+        ? Math.max(1, Math.floor(config.autoRemediateCooldownHours / 4))
+        : coverageForCooldown < 80
+          ? Math.max(2, Math.floor(config.autoRemediateCooldownHours / 2))
+          : config.autoRemediateCooldownHours;
     const autoRemediationConfig = {
       ...config,
       autoRemediateMaxBrands: autoRemediationMaxBrands,
+      autoRemediateCooldownHours: effectiveCooldownHours,
     };
     autoRemediation = await autoRemediateOperationalStaleBrands({
       brands: brands.map((brand) => ({
@@ -3775,10 +3816,14 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     continuousReseed.skippedReason = "force_mode";
   }
 
-  // When continuous reseed is active with stale brands waiting, scale selection
-  // to fill available capacity instead of being capped at maxBrands
+  // Scale batch size when there's ample capacity and plenty of candidates,
+  // regardless of whether continuous reseed is active. This enables recovery
+  // from low-coverage states where many brands are operationally stale.
+  const hasCandidateSurplus = prioritizedCandidates.length > config.maxBrands;
+  const hasCapacitySurplus = activeRunCapacityRemaining > config.maxBrands;
   const effectiveMaxBrands =
-    continuousReseed.activated && continuousReseed.candidateCount > 0
+    (hasCandidateSurplus && hasCapacitySurplus) ||
+    (continuousReseed.activated && continuousReseed.candidateCount > 0)
       ? Math.max(config.maxBrands, activeRunCapacityRemaining)
       : config.maxBrands;
   const selectionCap = options?.brandId
