@@ -378,15 +378,21 @@ export async function POST(req: Request) {
   if (isWorkerStale && !microDrainBypass) {
     // When the worker is offline, maximize use of the Vercel function budget (maxDuration=300s).
     // Use 240s (leaving 60s buffer for setup/teardown) instead of 50s, and process more runs.
+    // Keep concurrency LOW (3) to avoid rate-limiting by target sites — high concurrency
+    // (10+) sends too many simultaneous requests to the same domain, causing 80%+ failure rates.
     const workerStaleMaxMs = Math.max(
       50000,
       Number(process.env.CATALOG_DRAIN_WORKER_STALE_MAX_MS ?? 240000),
     );
     const workerStaleMaxRuns = Math.max(
       3,
-      Number(process.env.CATALOG_DRAIN_WORKER_STALE_MAX_RUNS ?? 20),
+      Number(process.env.CATALOG_DRAIN_WORKER_STALE_MAX_RUNS ?? 30),
     );
-    concurrency = Math.max(concurrency, 10);
+    const workerStaleConcurrency = Math.max(
+      1,
+      Number(process.env.CATALOG_DRAIN_WORKER_STALE_CONCURRENCY ?? 3),
+    );
+    concurrency = Math.max(concurrency, workerStaleConcurrency);
     maxMs = Math.max(maxMs, workerStaleMaxMs);
     maxRuns = Math.max(maxRuns, workerStaleMaxRuns);
   }
