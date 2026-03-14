@@ -384,10 +384,12 @@ export async function POST(req: Request) {
     // Increased from 3 to 4 for +33% throughput; Shopify and most platforms handle 4 concurrent
     // requests without issues.
     // Reserve time for mini-refresh (brand selection) after drain.
-    // 150s drain + ~60s refresh + ~30s overhead + 60s safety = 300s maxDuration.
+    // 120s drain + ~60s refresh + ~20s overhead + 100s safety = 300s maxDuration.
+    // Previous budgets (180s, 150s) caused FUNCTION_INVOCATION_TIMEOUT because
+    // runCatalogRefreshBatch pre-batch operations + brand discovery can overrun.
     const workerStaleMaxMs = Math.max(
       50000,
-      Number(process.env.CATALOG_DRAIN_WORKER_STALE_MAX_MS ?? 150000),
+      Number(process.env.CATALOG_DRAIN_WORKER_STALE_MAX_MS ?? 120000),
     );
     const workerStaleMaxRuns = Math.max(
       3,
@@ -557,7 +559,7 @@ export async function POST(req: Request) {
   // Called directly (not via after()) because after() doesn't reliably execute
   // in Vercel Route Handlers.
   let miniRefreshResult: Record<string, unknown> | null = null;
-  const remainingBudgetMs = Math.max(0, 260_000 - (Date.now() - startedAt));
+  const remainingBudgetMs = Math.max(0, 230_000 - (Date.now() - startedAt));
   if (!brandId && !requestedRunId && !dryRun && !microDrainBypass && remainingBudgetMs > 30_000) {
     const refreshBudgetMs = Math.min(remainingBudgetMs - 10_000, 60_000);
     try {
