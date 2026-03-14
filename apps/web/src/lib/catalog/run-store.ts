@@ -146,13 +146,22 @@ export const resetQueuedItemsAll = async (runId: string) => {
   });
 };
 
-export const resetStuckItems = async (runId: string, olderThanMs: number) => {
-  if (!Number.isFinite(olderThanMs) || olderThanMs <= 0) return { count: 0 };
+export const resetStuckItems = async (runId: string, olderThanMs: number): Promise<number> => {
+  if (!Number.isFinite(olderThanMs) || olderThanMs <= 0) return 0;
   const cutoff = new Date(Date.now() - olderThanMs);
-  return prisma.catalogItem.updateMany({
-    where: { runId, status: "in_progress", startedAt: { lt: cutoff } },
-    data: { status: "pending", startedAt: null, updatedAt: new Date() },
-  });
+  // Increment attempts when resetting stuck items so that items which
+  // consistently hang (e.g. target site timeout causing Vercel function kill)
+  // eventually hit CATALOG_MAX_ATTEMPTS and stop being retried.
+  return prisma.$executeRaw`
+    UPDATE "catalog_items"
+    SET status = 'pending',
+        "startedAt" = NULL,
+        attempts = attempts + 1,
+        "updatedAt" = NOW()
+    WHERE "runId" = ${runId}
+      AND status = 'in_progress'
+      AND "startedAt" < ${cutoff}
+  `;
 };
 
 export const resetStuckItemsAll = async (runId: string) => {

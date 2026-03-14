@@ -249,7 +249,7 @@ const resolveDrainConfig = (body: unknown) => {
   );
   const stuckMs = Math.max(
     0,
-    Number(process.env.CATALOG_ITEM_STUCK_MINUTES ?? 30) * 60 * 1000,
+    Number(process.env.CATALOG_ITEM_STUCK_MINUTES ?? 5) * 60 * 1000,
   );
   return { batch, concurrency, maxMs, maxRuns, queuedStaleMs, stuckMs, dryRun };
 };

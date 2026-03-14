@@ -140,7 +140,7 @@ export async function POST(req: Request) {
           resetStuckItems(existing.id, effectiveStuckMs),
         ]);
         recoveredQueued = queuedReset.count;
-        recoveredInProgress = inProgressReset.count;
+        recoveredInProgress = inProgressReset;
       }
       const refill = await topUpCatalogRunQueue({
         runId: existing.id,
