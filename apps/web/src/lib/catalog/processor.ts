@@ -397,10 +397,17 @@ export const drainCatalogRun = async ({
   const safeBatch = Math.max(1, batch);
   const safeConcurrency = Math.max(1, concurrency);
 
-  while (processed < safeBatch && Date.now() - startedAt < maxMs) {
-    await resetQueuedItems(runId, queuedStaleMs);
-    await resetStuckItems(runId, stuckMs);
+  // Reset stale/stuck items once before draining — no need to repeat inside the
+  // loop since the drain window (30s) is far shorter than stale/stuck thresholds.
+  await resetQueuedItems(runId, queuedStaleMs);
+  await resetStuckItems(runId, stuckMs);
 
+  const perItemTimeoutMs = Math.max(
+    5000,
+    Number(process.env.CATALOG_DRAIN_PER_ITEM_TIMEOUT_MS ?? 15000),
+  );
+
+  while (processed < safeBatch && Date.now() - startedAt < maxMs) {
     const remaining = safeBatch - processed;
     const items = await listRunnableItems(
       runId,
@@ -409,17 +416,9 @@ export const drainCatalogRun = async ({
     );
     if (!items.length) break;
 
-    // In drain mode (fallback path), remove stale queue jobs to avoid ghost replays.
-    await Promise.allSettled(items.map((item) => removeCatalogJobByItemId(item.id)));
-
-    // Wrap each item with a timeout so a single slow/unresponsive site can't
-    // hang the entire drain batch. Without this, Promise.allSettled waits for
-    // ALL items — if one HTTP request hangs for 250s, Vercel kills the function,
-    // the lock isn't released, and subsequent cron invocations fail for ~4 minutes.
-    const perItemTimeoutMs = Math.max(
-      5000,
-      Number(process.env.CATALOG_DRAIN_PER_ITEM_TIMEOUT_MS ?? 25000),
-    );
+    // Fire-and-forget: remove stale queue jobs to avoid ghost replays.
+    // Don't await — queue cleanup should not block item processing.
+    Promise.allSettled(items.map((item) => removeCatalogJobByItemId(item.id))).catch(() => {});
     const results = await Promise.allSettled(
       items.map((item) =>
         Promise.race([
