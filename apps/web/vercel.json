@@ -15,11 +15,11 @@
       "schedule": "*/1 * * * *"
     },
     {
-      "path": "/api/admin/catalog-refresh/cron?mode=light&maxRuntimeMs=240000",
+      "path": "/api/admin/catalog-refresh/cron-light",
       "schedule": "*/5 * * * *"
     },
     {
-      "path": "/api/admin/catalog-refresh/cron?mode=heavy&maxRuntimeMs=240000",
+      "path": "/api/admin/catalog-refresh/cron-heavy",
       "schedule": "0 * * * *"
     },
     {
