@@ -438,6 +438,32 @@ export const drainCatalogRun = async ({
       ),
     );
 
+    // Immediately mark timed-out items as failed so they don't sit in 'in_progress'
+    // for stuckMs (5 min) waiting for resetStuckItems. This accelerates exhaustion
+    // from 3 × 5min = 15min per item to 3 × 25s = 75s, letting stuck runs close
+    // much faster and freeing capacity for new runs.
+    await Promise.allSettled(
+      results.map((result, i) => {
+        if (
+          result.status === "rejected" &&
+          result.reason instanceof Error &&
+          result.reason.message.startsWith("item_timeout_")
+        ) {
+          return prisma.$executeRaw`
+            UPDATE "catalog_items"
+            SET status = 'failed',
+                attempts = attempts + 1,
+                "lastError" = ${result.reason.message},
+                "lastStage" = 'timeout',
+                "updatedAt" = NOW()
+            WHERE id = ${items[i].id}
+              AND status = 'in_progress'
+          `;
+        }
+        return Promise.resolve();
+      }),
+    );
+
     let progressed = 0;
     results.forEach((result) => {
       if (result.status !== "fulfilled") {
