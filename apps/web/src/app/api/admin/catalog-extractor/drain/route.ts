@@ -398,7 +398,11 @@ export async function POST(req: Request) {
     // Override (not max) — the env default CATALOG_DRAIN_CONCURRENCY may be high (e.g. 12)
     // but when the worker is offline we must keep per-domain concurrency low.
     concurrency = workerStaleConcurrency;
-    maxMs = Math.max(maxMs, workerStaleMaxMs);
+    // Reserve time for mini-refresh (brand selection + starting new runs) at the end.
+    // Without this, the drain uses the full 240s and the mini-refresh only gets ~40s,
+    // which isn't enough for runCatalogRefreshBatch to complete its pre-batch operations.
+    const miniRefreshReserveMs = isCron && !brandId && !requestedRunId ? 100_000 : 0;
+    maxMs = Math.max(maxMs, workerStaleMaxMs - miniRefreshReserveMs);
     maxRuns = Math.max(maxRuns, workerStaleMaxRuns);
   }
 
