@@ -568,8 +568,9 @@ export async function POST(req: Request) {
         console.log(JSON.stringify({
           event: "mini_refresh_after",
           selected: result.selected,
-          started: result.started,
-          activeRuns: result.activeRuns,
+          processed: result.processed,
+          activeRunsBefore: result.activeRunsBefore,
+          activeRunCap: result.activeRunCap,
           budgetMs: refreshBudgetMs,
           totalElapsedMs: Date.now() - startedAt,
         }));
