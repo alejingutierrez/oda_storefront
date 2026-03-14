@@ -2482,10 +2482,6 @@ type AggressiveTailCloseResult = {
     runnableRemaining: number;
     updatedAt: string;
   }>;
-  // Debug fields (temporary)
-  debugTotalRuns?: number;
-  debugRunnableZeroCount?: number;
-  debugRejections?: unknown[];
 };
 
 type HighProgressCloseResult = {
@@ -2550,29 +2546,21 @@ const runAggressiveTailClose = async (options: {
   const processingRuns = await readProcessingRunProgress(progressCutoff, ["processing", "paused"], {
     runId: options.runId ?? null,
   });
-  // Three-tier candidate selection:
+  // Four-tier candidate selection:
   // Tier 1 (normal tail close): progress >= threshold, no recent completions
   // Tier 2 (zero-progress force close): 0 completed items after 60+ min
   // Tier 3 (exhausted items force close): runnable=0, all items at max attempts
+  // Tier 4 (stalled run force close): no completions in 2+ hours, regardless of runnable
   const zeroProgressWindowMs = 60 * 60 * 1000;
   const zeroProgressCutoff = new Date(Date.now() - zeroProgressWindowMs);
-  // Debug: track rejection reasons for runs with runnable=0
-  const debugRejections: Array<{ runId: string; reason: string; runnable: number; completedRecent: number; startedAt: Date | null; staleCutoff: Date }> = [];
+  const stalledRunWindowMs = 2 * 60 * 60 * 1000;
+  const stalledRunCutoff = new Date(Date.now() - stalledRunWindowMs);
   const candidates = processingRuns
     .filter((run) => {
       if (options.runId && run.runId !== options.runId) return false;
-      if (run.completedRecent > 0) {
-        if (run.runnable <= 0) debugRejections.push({ runId: run.runId, reason: "completedRecent", runnable: run.runnable, completedRecent: run.completedRecent, startedAt: run.startedAt, staleCutoff });
-        return false;
-      }
+      if (run.completedRecent > 0) return false;
       // Use startedAt (immutable) instead of updatedAt to determine staleness.
-      // The drain updates updatedAt on every processed item (even failures),
-      // which prevented tail close from ever firing. startedAt ensures we only
-      // skip genuinely new runs, not runs that are merely being drained.
-      if (run.startedAt && run.startedAt > staleCutoff) {
-        if (run.runnable <= 0) debugRejections.push({ runId: run.runId, reason: "startedAt_too_recent", runnable: run.runnable, completedRecent: run.completedRecent, startedAt: run.startedAt, staleCutoff });
-        return false;
-      }
+      if (run.startedAt && run.startedAt > staleCutoff) return false;
       const progressPct = computeRunProgressPct(run);
       // Tier 1: normal tail close for high-progress runs
       if (progressPct >= options.tailProgressPct) {
@@ -2583,31 +2571,20 @@ const runAggressiveTailClose = async (options: {
       if (run.completed <= 0 && run.startedAt && run.startedAt <= zeroProgressCutoff) {
         return true;
       }
-      // Tier 3: force close runs with no runnable items remaining.
-      // All items have exhausted their attempts (attempts >= MAX_ATTEMPTS) but
-      // may still be in "pending" status. The drain will never pick them up,
-      // and auto-complete only triggers after processing an item — so these
-      // runs are stuck forever. Force-close them to free capacity slots.
+      // Tier 3: force close runs with no runnable items remaining
       if (run.runnable <= 0) {
+        return true;
+      }
+      // Tier 4: force close runs that have been stalled for 2+ hours.
+      // These runs have items with attempts < MAX but sites are unresponsive.
+      // Without closing them, they block capacity slots indefinitely as the
+      // drain keeps failing on them. The brand will get a new run next cycle.
+      if (run.startedAt && run.startedAt <= stalledRunCutoff) {
         return true;
       }
       return false;
     })
     .slice(0, options.limit);
-  if (debugRejections.length > 0) {
-    console.log(JSON.stringify({ event: "tail_close_debug_rejections", count: debugRejections.length, sample: debugRejections.slice(0, 5) }));
-  }
-  // Debug: dump runnable distribution
-  const runnableDistribution = processingRuns.map((r) => ({
-    runId: r.runId.slice(0, 8),
-    status: r.status,
-    runnable: r.runnable,
-    completed: r.completed,
-    pending: r.pending,
-    failed: r.failed,
-    cr: r.completedRecent,
-  }));
-  console.log(JSON.stringify({ event: "tail_close_runnable_dist", total: processingRuns.length, runnableZero: processingRuns.filter((r) => r.runnable <= 0).length, sample: runnableDistribution.slice(0, 10) }));
 
   if (!candidates.length) {
     return {
@@ -2619,9 +2596,6 @@ const runAggressiveTailClose = async (options: {
       errors: 0,
       runIds: [],
       sampleTailRuns: [],
-      debugTotalRuns: processingRuns.length,
-      debugRunnableZeroCount: processingRuns.filter((r) => r.runnable <= 0).length,
-      debugRejections: debugRejections.slice(0, 5),
     };
   }
 
@@ -3026,7 +3000,6 @@ export const runCatalogRefreshStuckRemediation = async (
   let tailCandidates = 0;
   let tailProcessedRuns = 0;
   let sampleTailRuns: CatalogRefreshStuckRemediationResult["sampleTailRuns"] = [];
-  let debugTailInfo: { totalRuns?: number; runnableZero?: number; rejections?: unknown[] } | null = null;
   let highProgressCandidates = 0;
   let highProgressProcessedRuns = 0;
   let highProgressClosedRuns = 0;
@@ -3173,14 +3146,6 @@ export const runCatalogRefreshStuckRemediation = async (
     sampleTailRuns = tailClose.sampleTailRuns;
     errors += tailClose.errors;
     runIds.push(...tailClose.runIds);
-    // Propagate debug info via sampleTailRuns slot (temporary)
-    if (tailClose.debugTotalRuns !== undefined) {
-      debugTailInfo = {
-        totalRuns: tailClose.debugTotalRuns,
-        runnableZero: tailClose.debugRunnableZeroCount,
-        rejections: tailClose.debugRejections,
-      };
-    }
   } else if (strategy === "safe_fast_high_progress") {
     const highProgressClose = await runSafeFastHighProgressClose({
       dryRun,
@@ -3301,7 +3266,6 @@ export const runCatalogRefreshStuckRemediation = async (
     sampleRunIds: uniqueRunIds.slice(0, 20),
     sampleTailRuns,
     highProgressSampleRuns,
-    ...(debugTailInfo ? { debugTailInfo } : {}),
   };
 };
 
