@@ -8,6 +8,7 @@ import { drainCatalogRun } from "@/lib/catalog/processor";
 import { CATALOG_MAX_ATTEMPTS } from "@/lib/catalog/constants";
 import {
   finalizeRefreshForRun,
+  runCatalogRefreshBatch,
   runCatalogRefreshStuckRemediation,
 } from "@/lib/catalog/refresh";
 import { isCatalogQueueEnabled } from "@/lib/catalog/queue";
@@ -548,6 +549,33 @@ export async function POST(req: Request) {
     await releaseLock(drainLockHandle);
   }
 
+  // Mini-refresh: start new runs when the drain frees capacity.
+  // The Vercel cron scheduler reliably fires this drain endpoint every 1 min,
+  // but may not fire the separate refresh cron endpoint. By piggybacking the
+  // refresh selection here, the system becomes self-sustaining through a single
+  // cron job. Only runs during cron invocations (not manual/admin calls).
+  let miniRefreshResult: Record<string, unknown> | null = null;
+  const functionDeadline = startedAt + 280_000; // 300s maxDuration - 20s safety
+  if (isCron && !brandId && !requestedRunId && !dryRun && !microDrainBypass) {
+    const remainingForRefresh = functionDeadline - Date.now();
+    if (remainingForRefresh >= 30_000) {
+      try {
+        const result = await runCatalogRefreshBatch({
+          mode: "light",
+          maxRuntimeMs: Math.min(remainingForRefresh, 90_000),
+        });
+        miniRefreshResult = {
+          selected: result.selected,
+          started: result.processed,
+          activeRunsBefore: result.activeRunsBefore,
+          capacityRemaining: result.activeRunCapacityRemaining,
+        };
+      } catch (e) {
+        miniRefreshResult = { error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+  }
+
   if (isCron) {
     console.log(JSON.stringify({
       event: "catalog_drain_result",
@@ -559,6 +587,7 @@ export async function POST(req: Request) {
       concurrency: safeConcurrency,
       maxMs: safeMaxMs,
       elapsedMs: Date.now() - startedAt,
+      miniRefresh: miniRefreshResult,
     }));
   }
 
@@ -573,6 +602,7 @@ export async function POST(req: Request) {
     microDrainBypass,
     lastResult,
     workerGate,
+    miniRefresh: miniRefreshResult,
   });
 }
 
