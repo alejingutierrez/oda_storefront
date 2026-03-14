@@ -342,8 +342,8 @@ export const getRefreshConfig = (overrides?: RefreshConfigOverrides) => {
     Number(process.env.CATALOG_REFRESH_STUCK_PAUSE_OVER_CAP_TARGET ?? 48),
   );
   const stuckTailProgressPct = Math.max(
-    50,
-    Math.min(100, Number(process.env.CATALOG_REFRESH_STUCK_TAIL_PROGRESS_PCT ?? 95)),
+    0,
+    Math.min(100, Number(process.env.CATALOG_REFRESH_STUCK_TAIL_PROGRESS_PCT ?? 50)),
   );
   const stuckTailMaxRemaining = Math.max(
     0,
@@ -2543,15 +2543,31 @@ const runAggressiveTailClose = async (options: {
   const processingRuns = await readProcessingRunProgress(progressCutoff, ["processing"], {
     runId: options.runId ?? null,
   });
+  // Two-tier candidate selection:
+  // Tier 1 (normal tail close): progress >= threshold, no recent completions
+  // Tier 2 (zero-progress force close): 0 completed items after 60+ min
+  const zeroProgressWindowMs = 60 * 60 * 1000;
+  const zeroProgressCutoff = new Date(Date.now() - zeroProgressWindowMs);
   const candidates = processingRuns
     .filter((run) => {
       if (options.runId && run.runId !== options.runId) return false;
-      const progressPct = computeRunProgressPct(run);
-      if (progressPct < options.tailProgressPct) return false;
       if (run.completedRecent > 0) return false;
-      if (run.updatedAt > staleCutoff) return false;
-      if (options.tailMaxRemaining > 0 && run.runnable > options.tailMaxRemaining) return false;
-      return true;
+      // Use startedAt (immutable) instead of updatedAt to determine staleness.
+      // The drain updates updatedAt on every processed item (even failures),
+      // which prevented tail close from ever firing. startedAt ensures we only
+      // skip genuinely new runs, not runs that are merely being drained.
+      if (run.startedAt && run.startedAt > staleCutoff) return false;
+      const progressPct = computeRunProgressPct(run);
+      // Tier 1: normal tail close for high-progress runs
+      if (progressPct >= options.tailProgressPct) {
+        if (options.tailMaxRemaining > 0 && run.runnable > options.tailMaxRemaining) return false;
+        return true;
+      }
+      // Tier 2: force close runs with 0 completed items after 60+ minutes
+      if (run.completed <= 0 && run.startedAt && run.startedAt <= zeroProgressCutoff) {
+        return true;
+      }
+      return false;
     })
     .slice(0, options.limit);
 
@@ -2897,7 +2913,7 @@ export const runCatalogRefreshStuckRemediation = async (
     ? Math.max(1, Math.floor(pauseOverCapTargetRaw ?? config.stuckPauseOverCapTarget))
     : null;
   const tailProgressPct = Math.max(
-    50,
+    0,
     Math.min(100, Math.floor(options.tailProgressPct ?? config.stuckTailProgressPct)),
   );
   const tailMaxRemaining = Math.max(
