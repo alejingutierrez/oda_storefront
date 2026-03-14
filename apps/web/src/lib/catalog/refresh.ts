@@ -75,6 +75,7 @@ type CatalogRefreshMeta = {
   manualReviewAutoClearEvidence?: Record<string, unknown> | null;
   refreshIntervalDays?: number;
   lastChangeRate?: number;
+  noRefsCooldownUntil?: string | null;
 };
 
 const readMetadata = (metadata: unknown) =>
@@ -533,6 +534,12 @@ export const isBrandDueForRefresh = (
   config = getRefreshConfig(),
 ) => {
   const refresh = readRefreshMeta(metadata);
+  // No-refs cooldown: if discovery found no products recently, skip this brand
+  // to avoid wasting cron budget re-selecting it every 5 minutes.
+  const noRefsCooldownUntil = parseDate(refresh.noRefsCooldownUntil);
+  if (noRefsCooldownUntil && noRefsCooldownUntil > now) {
+    return false;
+  }
   // Operational staleness override: if the brand's last operational completion
   // is older than the global freshness window, it is due regardless of nextDueAt.
   // This prevents "completed stale" brands from falling through selection when
@@ -3957,6 +3964,20 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     );
 
     if (!sanitizedRefs.length) {
+      // Record a cooldown so this brand isn't re-selected every cron invocation,
+      // wasting budget on discovery that finds nothing. Retry after minGapHours.
+      const cooldownUntil = new Date(
+        now.getTime() + Math.max(1, config.minGapHours) * 60 * 60 * 1000,
+      );
+      const brandMeta = readMetadata(brand.metadata);
+      await prisma.brand.update({
+        where: { id: brand.id },
+        data: {
+          metadata: withRefreshMeta(brandMeta, {
+            noRefsCooldownUntil: cooldownUntil.toISOString(),
+          }) as Prisma.InputJsonValue,
+        },
+      });
       return { brandId: brand.id, status: "skipped", reason: "no_refs" };
     }
 
