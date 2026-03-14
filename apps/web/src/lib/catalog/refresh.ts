@@ -2553,7 +2553,10 @@ const runAggressiveTailClose = async (options: {
   // Tier 4 (stalled run force close): no completions in 2+ hours, regardless of runnable
   const zeroProgressWindowMs = 60 * 60 * 1000;
   const zeroProgressCutoff = new Date(Date.now() - zeroProgressWindowMs);
-  const stalledRunWindowMs = 2 * 60 * 60 * 1000;
+  const stalledRunWindowMs = Math.max(
+    30 * 60 * 1000,
+    Number(process.env.CATALOG_REFRESH_STALLED_RUN_WINDOW_MS ?? 45 * 60 * 1000),
+  );
   const stalledRunCutoff = new Date(Date.now() - stalledRunWindowMs);
   const candidates = processingRuns
     .filter((run) => {
@@ -2575,7 +2578,7 @@ const runAggressiveTailClose = async (options: {
       if (run.runnable <= 0) {
         return true;
       }
-      // Tier 4: force close runs that have been stalled for 2+ hours.
+      // Tier 4: force close runs that have been stalled for 45+ minutes.
       // These runs have items with attempts < MAX but sites are unresponsive.
       // Without closing them, they block capacity slots indefinitely as the
       // drain keeps failing on them. The brand will get a new run next cycle.
