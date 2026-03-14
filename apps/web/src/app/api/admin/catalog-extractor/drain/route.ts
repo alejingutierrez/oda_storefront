@@ -11,7 +11,7 @@ import {
   runCatalogRefreshStuckRemediation,
 } from "@/lib/catalog/refresh";
 import { isCatalogQueueEnabled } from "@/lib/catalog/queue";
-import { isRedisEnabled, readHeartbeat, tryAcquireLock } from "@/lib/redis";
+import { isRedisEnabled, readHeartbeat, acquireLock, releaseLock } from "@/lib/redis";
 
 const readBrandMetadata = (brand: { metadata?: unknown }) =>
   brand.metadata && typeof brand.metadata === "object" && !Array.isArray(brand.metadata)
@@ -429,6 +429,7 @@ export async function POST(req: Request) {
   const safeMaxRuns = Math.max(1, maxRuns);
   const deadline = startedAt + safeMaxMs;
 
+  let drainLockHandle: { key: string; token: string } | null = null;
   if (!dryRun && isCatalogQueueEnabled() && isRedisEnabled()) {
     const lockTtlMs = Math.max(5000, safeMaxMs + 5000);
     const lockScope = requestedRunId
@@ -437,8 +438,8 @@ export async function POST(req: Request) {
         ? `brand:${brandId}`
         : "all";
     const lockKey = `catalog:drain:route:lock:${lockScope}`;
-    const acquired = await tryAcquireLock(lockKey, lockTtlMs);
-    if (!acquired) {
+    drainLockHandle = await acquireLock(lockKey, lockTtlMs);
+    if (!drainLockHandle) {
       return NextResponse.json(
         {
           skipped: "drain_locked",
@@ -451,88 +452,95 @@ export async function POST(req: Request) {
     }
   }
 
-  while (
-    processed < safeBatch &&
-    runsProcessed < safeMaxRuns &&
-    Date.now() < deadline
-  ) {
-    const run = await prisma.catalogRun.findFirst({
-      where: {
-        status: "processing",
-        ...(brandId ? { brandId } : {}),
-        ...(requestedRunId ? { id: requestedRunId } : {}),
-        ...(seenRunIds.size ? { id: { notIn: Array.from(seenRunIds) } } : {}),
-      },
-      orderBy: { updatedAt: "asc" },
-    });
-    if (!run) break;
+  try {
+    while (
+      processed < safeBatch &&
+      runsProcessed < safeMaxRuns &&
+      Date.now() < deadline
+    ) {
+      const run = await prisma.catalogRun.findFirst({
+        where: {
+          status: "processing",
+          ...(brandId ? { brandId } : {}),
+          ...(requestedRunId ? { id: requestedRunId } : {}),
+          ...(seenRunIds.size ? { id: { notIn: Array.from(seenRunIds) } } : {}),
+        },
+        orderBy: { updatedAt: "asc" },
+      });
+      if (!run) break;
 
-    const currentRunId = run.id;
-    seenRunIds.add(currentRunId);
-    runsProcessed += 1;
+      const currentRunId = run.id;
+      seenRunIds.add(currentRunId);
+      runsProcessed += 1;
 
-    if (dryRun) {
+      if (dryRun) {
+        const remainingBatch =
+          safeBatch === Number.MAX_SAFE_INTEGER ? safeBatch : Math.max(1, safeBatch - processed);
+        lastResult = {
+          dryRun: true,
+          runId: currentRunId,
+          wouldDrainBatch: remainingBatch,
+          wouldDrainConcurrency: safeConcurrency,
+        };
+        if (brandId || requestedRunId) break;
+        continue;
+      }
+
+      await resetQueuedItems(currentRunId, queuedStaleMs);
+      await resetStuckItems(currentRunId, stuckMs);
       const remainingBatch =
         safeBatch === Number.MAX_SAFE_INTEGER ? safeBatch : Math.max(1, safeBatch - processed);
-      lastResult = {
-        dryRun: true,
+      const remainingMs = Math.max(2000, deadline - Date.now());
+      // Cap per-run time to prevent large runs (100+ items) from hogging the entire budget.
+      // This ensures the drain cycles through many runs per invocation, completing small runs
+      // quickly while making incremental progress on large ones.
+      const perRunCapMs = Math.max(
+        5000,
+        Number(process.env.CATALOG_DRAIN_PER_RUN_CAP_MS ?? 30000),
+      );
+      const effectiveRunMs = brandId || requestedRunId
+        ? remainingMs // Single-brand drain: use full budget
+        : Math.min(remainingMs, perRunCapMs);
+      lastResult = await drainCatalogRun({
         runId: currentRunId,
-        wouldDrainBatch: remainingBatch,
-        wouldDrainConcurrency: safeConcurrency,
-      };
-      if (brandId || requestedRunId) break;
-      continue;
-    }
-
-    await resetQueuedItems(currentRunId, queuedStaleMs);
-    await resetStuckItems(currentRunId, stuckMs);
-    const remainingBatch =
-      safeBatch === Number.MAX_SAFE_INTEGER ? safeBatch : Math.max(1, safeBatch - processed);
-    const remainingMs = Math.max(2000, deadline - Date.now());
-    // Cap per-run time to prevent large runs (100+ items) from hogging the entire budget.
-    // This ensures the drain cycles through many runs per invocation, completing small runs
-    // quickly while making incremental progress on large ones.
-    const perRunCapMs = Math.max(
-      5000,
-      Number(process.env.CATALOG_DRAIN_PER_RUN_CAP_MS ?? 30000),
-    );
-    const effectiveRunMs = brandId || requestedRunId
-      ? remainingMs // Single-brand drain: use full budget
-      : Math.min(remainingMs, perRunCapMs);
-    lastResult = await drainCatalogRun({
-      runId: currentRunId,
-      batch: remainingBatch,
-      concurrency: safeConcurrency,
-      maxMs: effectiveRunMs,
-      queuedStaleMs,
-      stuckMs,
-    });
-    const finalized = await finalizeRunIfIdle(currentRunId);
-    if (finalized.finalized) {
-      finalizedRuns += 1;
-      if (finalized.forcedClosed) forcedClosedRuns += 1;
-      forcedFailedItems += finalized.forcedFailedItems;
-    } else if (highProgressCloseEnabled) {
-      const highProgressResult = await runCatalogRefreshStuckRemediation({
-        dryRun: false,
-        strategy: "safe_fast_high_progress",
-        limit: 1,
-        highProgressMinPct,
-        highProgressMaxPending,
-        highProgressNoProgressMinutes,
-        forceTerminalizeRemaining,
-        runId: currentRunId,
-        pauseOverCapEnabled: false,
-        queueEnabled: isCatalogQueueEnabled(),
+        batch: remainingBatch,
+        concurrency: safeConcurrency,
+        maxMs: effectiveRunMs,
+        queuedStaleMs,
+        stuckMs,
       });
-      highProgressProcessedRuns += highProgressResult.highProgressProcessedRuns;
-      forcedClosedRuns += highProgressResult.highProgressClosedRuns;
-      forcedFailedItems += highProgressResult.highProgressForcedFailedItems;
-    }
-    processed += (lastResult as { processed?: number })?.processed ?? 0;
+      const finalized = await finalizeRunIfIdle(currentRunId);
+      if (finalized.finalized) {
+        finalizedRuns += 1;
+        if (finalized.forcedClosed) forcedClosedRuns += 1;
+        forcedFailedItems += finalized.forcedFailedItems;
+      } else if (highProgressCloseEnabled) {
+        const highProgressResult = await runCatalogRefreshStuckRemediation({
+          dryRun: false,
+          strategy: "safe_fast_high_progress",
+          limit: 1,
+          highProgressMinPct,
+          highProgressMaxPending,
+          highProgressNoProgressMinutes,
+          forceTerminalizeRemaining,
+          runId: currentRunId,
+          pauseOverCapEnabled: false,
+          queueEnabled: isCatalogQueueEnabled(),
+        });
+        highProgressProcessedRuns += highProgressResult.highProgressProcessedRuns;
+        forcedClosedRuns += highProgressResult.highProgressClosedRuns;
+        forcedFailedItems += highProgressResult.highProgressForcedFailedItems;
+      }
+      processed += (lastResult as { processed?: number })?.processed ?? 0;
 
-    if (brandId || requestedRunId) break;
-    if (processed >= safeBatch && safeBatch !== Number.MAX_SAFE_INTEGER) break;
+      if (brandId || requestedRunId) break;
+      if (processed >= safeBatch && safeBatch !== Number.MAX_SAFE_INTEGER) break;
+    }
+  } finally {
+    // Release the drain lock immediately so the next cron invocation can start sooner.
+    // Without this, the lock TTL (maxMs + 5s ≈ 245s) blocks subsequent invocations even
+    // when the drain finishes early, wasting 3 out of 4 cron invocations (cron runs every 1m).
+    await releaseLock(drainLockHandle);
   }
 
   if (isCron) {
