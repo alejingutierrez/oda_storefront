@@ -2597,6 +2597,17 @@ const runAggressiveTailClose = async (options: {
   if (debugRejections.length > 0) {
     console.log(JSON.stringify({ event: "tail_close_debug_rejections", count: debugRejections.length, sample: debugRejections.slice(0, 5) }));
   }
+  // Debug: dump runnable distribution
+  const runnableDistribution = processingRuns.map((r) => ({
+    runId: r.runId.slice(0, 8),
+    status: r.status,
+    runnable: r.runnable,
+    completed: r.completed,
+    pending: r.pending,
+    failed: r.failed,
+    cr: r.completedRecent,
+  }));
+  console.log(JSON.stringify({ event: "tail_close_runnable_dist", total: processingRuns.length, runnableZero: processingRuns.filter((r) => r.runnable <= 0).length, sample: runnableDistribution.slice(0, 10) }));
 
   if (!candidates.length) {
     return {
