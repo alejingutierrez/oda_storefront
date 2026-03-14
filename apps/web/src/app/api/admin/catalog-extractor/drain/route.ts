@@ -549,10 +549,12 @@ export async function POST(req: Request) {
   }
 
   // Mini-refresh: trigger the cron-light endpoint to start new runs when the
-  // drain frees capacity. Uses fire-and-forget fetch to spawn a separate
-  // serverless function with its own timeout and DB connections. The Vercel
-  // cron scheduler reliably fires this drain endpoint every 1 min but may not
-  // fire the separate refresh cron endpoint.
+  // drain frees capacity. Spawns a separate serverless function with its own
+  // timeout and DB connections. The Vercel cron scheduler reliably fires this
+  // drain endpoint every 1 min but may not fire the separate refresh cron.
+  // We AWAIT with a short timeout (5s) to ensure the request arrives at Vercel's
+  // edge — fire-and-forget doesn't work in serverless because the runtime shuts
+  // down immediately after the response is sent.
   let miniRefreshResult: Record<string, unknown> | null = null;
   if (isCron && !brandId && !requestedRunId && !dryRun && !microDrainBypass) {
     try {
@@ -561,13 +563,23 @@ export async function POST(req: Request) {
         : process.env.NEXT_PUBLIC_BASE_URL || "https://oda-moda.vercel.app";
       const token = process.env.ADMIN_TOKEN || process.env.CRON_SECRET;
       if (token) {
-        // Fire-and-forget: don't await the response. The cron-light endpoint
-        // runs as a separate serverless function with its own 300s maxDuration.
-        fetch(`${baseUrl}/api/admin/catalog-refresh/cron-light`, {
-          method: "GET",
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => {}); // Ignore network errors
-        miniRefreshResult = { triggered: true, target: `${baseUrl}/api/admin/catalog-refresh/cron-light` };
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        try {
+          const targetUrl = `${baseUrl}/api/admin/catalog-refresh/cron-light`;
+          const res = await fetch(targetUrl, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          });
+          // If we get here within 5s, the endpoint responded (unlikely for 240s batch)
+          miniRefreshResult = { triggered: true, status: res.status, target: targetUrl };
+        } catch {
+          // AbortError (timeout) is expected — the request was sent and a new lambda was spawned
+          miniRefreshResult = { triggered: true, target: `${baseUrl}/api/admin/catalog-refresh/cron-light` };
+        } finally {
+          clearTimeout(timer);
+        }
       } else {
         miniRefreshResult = { skipped: "no_auth_token" };
       }
