@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { Prisma } from "@prisma/client";
 import { Queue } from "bullmq";
 import { validateCronOrAdmin } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { drainCatalogRun } from "@/lib/catalog/processor";
 import { CATALOG_MAX_ATTEMPTS } from "@/lib/catalog/constants";
 import {
   finalizeRefreshForRun,
+  runCatalogRefreshBatch,
   runCatalogRefreshStuckRemediation,
 } from "@/lib/catalog/refresh";
 import { isCatalogQueueEnabled } from "@/lib/catalog/queue";
@@ -548,44 +549,34 @@ export async function POST(req: Request) {
     await releaseLock(drainLockHandle);
   }
 
-  // Mini-refresh: trigger the cron-light endpoint to start new runs when the
-  // drain frees capacity. Spawns a separate serverless function with its own
-  // timeout and DB connections. The Vercel cron scheduler reliably fires this
-  // drain endpoint every 1 min but may not fire the separate refresh cron.
-  // We AWAIT with a short timeout (5s) to ensure the request arrives at Vercel's
-  // edge — fire-and-forget doesn't work in serverless because the runtime shuts
-  // down immediately after the response is sent.
+  // Mini-refresh: use Next.js after() to run brand selection AFTER the drain
+  // response is sent. This extends the function lifetime beyond the response,
+  // allowing the refresh to run without blocking the cron response.
+  // The Vercel cron scheduler reliably fires the drain every 1 min but does
+  // NOT fire the separate refresh cron — this is the workaround.
   let miniRefreshResult: Record<string, unknown> | null = null;
-  if (isCron && !brandId && !requestedRunId && !dryRun && !microDrainBypass) {
-    try {
-      const baseUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.NEXT_PUBLIC_BASE_URL || "https://oda-moda.vercel.app";
-      const token = process.env.ADMIN_TOKEN || process.env.CRON_SECRET;
-      if (token) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 5000);
-        try {
-          const targetUrl = `${baseUrl}/api/admin/catalog-refresh/cron-light`;
-          const res = await fetch(targetUrl, {
-            method: "GET",
-            headers: { Authorization: `Bearer ${token}` },
-            signal: controller.signal,
-          });
-          // If we get here within 5s, the endpoint responded (unlikely for 240s batch)
-          miniRefreshResult = { triggered: true, status: res.status, target: targetUrl };
-        } catch {
-          // AbortError (timeout) is expected — the request was sent and a new lambda was spawned
-          miniRefreshResult = { triggered: true, target: `${baseUrl}/api/admin/catalog-refresh/cron-light` };
-        } finally {
-          clearTimeout(timer);
-        }
-      } else {
-        miniRefreshResult = { skipped: "no_auth_token" };
+  const remainingBudgetMs = Math.max(0, 280_000 - (Date.now() - startedAt));
+  if (isCron && !brandId && !requestedRunId && !dryRun && !microDrainBypass && remainingBudgetMs > 20_000) {
+    miniRefreshResult = { scheduled: true, budgetMs: Math.min(remainingBudgetMs - 10_000, 50_000) };
+    after(async () => {
+      try {
+        const refreshBudgetMs = Math.min(remainingBudgetMs - 10_000, 50_000);
+        const result = await runCatalogRefreshBatch({
+          mode: "light",
+          maxRuntimeMs: refreshBudgetMs,
+        });
+        console.log(JSON.stringify({
+          event: "mini_refresh_after",
+          selected: result.selected,
+          started: result.started,
+          activeRuns: result.activeRuns,
+          budgetMs: refreshBudgetMs,
+          totalElapsedMs: Date.now() - startedAt,
+        }));
+      } catch (e) {
+        console.error("mini_refresh_after_error", e instanceof Error ? e.message : String(e));
       }
-    } catch (e) {
-      miniRefreshResult = { error: e instanceof Error ? e.message : String(e) };
-    }
+    });
   }
 
   if (isCron) {
