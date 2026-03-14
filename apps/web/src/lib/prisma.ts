@@ -26,7 +26,7 @@ const pool = global.pgPool ?? new Pool({
   connectionString: databaseUrl,
   max: safeInt(process.env.PG_POOL_MAX, { fallback: 10, min: 1, max: 50 }),
   idleTimeoutMillis: safeInt(process.env.PG_IDLE_TIMEOUT_MS, { fallback: 30_000, min: 1_000 }),
-  connectionTimeoutMillis: safeInt(process.env.PG_CONNECTION_TIMEOUT_MS, { fallback: 5_000, min: 1_000 }),
+  connectionTimeoutMillis: safeInt(process.env.PG_CONNECTION_TIMEOUT_MS, { fallback: 15_000, min: 1_000 }),
 });
 const adapter = new PrismaPg(pool);
 

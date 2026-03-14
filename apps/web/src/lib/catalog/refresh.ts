@@ -3300,26 +3300,44 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
 
   const queueEnabled = isCatalogQueueEnabled();
   const preBatchTimings: Record<string, number> = {};
+  const preBatchErrors: Record<string, string> = {};
 
-  let _t0 = Date.now();
-  await recoverCatalogRuns(config);
-  preBatchTimings.recoverCatalogRuns = Date.now() - _t0;
+  // Resilient pre-batch wrapper: each operation gets a timeout and error boundary
+  // so that a single slow/failing operation doesn't crash the entire cron.
+  const PRE_BATCH_TIMEOUT_MS = 10_000;
+  const safePreBatch = async <T>(label: string, fn: () => Promise<T>, fallback: T): Promise<T> => {
+    const t = Date.now();
+    try {
+      const result = await Promise.race([
+        fn(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`pre_batch_timeout_${PRE_BATCH_TIMEOUT_MS}ms`)), PRE_BATCH_TIMEOUT_MS),
+        ),
+      ]);
+      preBatchTimings[label] = Date.now() - t;
+      return result;
+    } catch (error) {
+      preBatchTimings[label] = Date.now() - t;
+      const msg = error instanceof Error ? error.message : String(error);
+      preBatchErrors[label] = msg.slice(0, 200);
+      console.error(JSON.stringify({ event: "pre_batch_error", label, error: msg.slice(0, 200) }));
+      return fallback;
+    }
+  };
 
-  _t0 = Date.now();
-  if (!config.enrichAutoStart) {
-    await pauseCatalogRefreshAutoStartDisabledRuns();
-  } else {
-    await resumeCatalogRefreshEnrichmentRuns();
-  }
-  preBatchTimings.enrichmentRecovery = Date.now() - _t0;
+  await safePreBatch("recoverCatalogRuns", () => recoverCatalogRuns(config), undefined);
 
-  _t0 = Date.now();
-  await recoverEnrichmentRuns(config);
-  preBatchTimings.recoverEnrichmentRuns = Date.now() - _t0;
+  await safePreBatch("enrichmentRecovery", async () => {
+    if (!config.enrichAutoStart) {
+      await pauseCatalogRefreshAutoStartDisabledRuns();
+    } else {
+      await resumeCatalogRefreshEnrichmentRuns();
+    }
+  }, undefined);
 
-  _t0 = Date.now();
-  await reconcileStaleRefreshStates();
-  preBatchTimings.reconcileStaleRefreshStates = Date.now() - _t0;
+  await safePreBatch("recoverEnrichmentRuns", () => recoverEnrichmentRuns(config), undefined);
+
+  await safePreBatch("reconcileStaleRefreshStates", () => reconcileStaleRefreshStates(), undefined);
 
   if (!options?.brandId) {
     if (!queueEnabled) {
@@ -3328,48 +3346,58 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       autoReconcile.skipped = "auto_reconcile_disabled";
     } else {
       autoReconcile.attempted = true;
-      _t0 = Date.now();
       try {
-        const drift = await readCatalogQueueDriftSummary({
-          sampleLimit: config.autoReconcileJobScanLimit,
-        });
-        autoReconcile.driftDetected = drift.driftDetected;
-        if (!drift.driftDetected) {
-          autoReconcile.skipped = "drift_not_detected";
+        const drift = await safePreBatch(
+          "autoReconcile",
+          () => readCatalogQueueDriftSummary({ sampleLimit: config.autoReconcileJobScanLimit }),
+          null,
+        );
+        if (!drift) {
+          autoReconcile.skipped = preBatchErrors.autoReconcile
+            ? `auto_reconcile_error:${preBatchErrors.autoReconcile}`
+            : "auto_reconcile_timeout";
         } else {
-          autoReconcile.result = await reconcileCatalogQueue({
-            dryRun: false,
-            jobScanLimit: config.autoReconcileJobScanLimit,
-            reenqueueLimit: config.autoReconcileReenqueueLimit,
-          });
-          autoReconcile.applied = true;
+          autoReconcile.driftDetected = drift.driftDetected;
+          if (!drift.driftDetected) {
+            autoReconcile.skipped = "drift_not_detected";
+          } else {
+            autoReconcile.result = await reconcileCatalogQueue({
+              dryRun: false,
+              jobScanLimit: config.autoReconcileJobScanLimit,
+              reenqueueLimit: config.autoReconcileReenqueueLimit,
+            });
+            autoReconcile.applied = true;
+          }
         }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         autoReconcile.skipped = `auto_reconcile_error:${reason.slice(0, 160)}`;
       }
-      preBatchTimings.autoReconcile = Date.now() - _t0;
     }
   } else {
     autoReconcile.skipped = "brand_scope";
   }
 
-  _t0 = Date.now();
   if (!options?.brandId) {
-    autoFinalizedRuns = await autoFinalizeDormantProcessingRuns({
-      limitOverride: heavyMode ? undefined : config.autoFinalizeLightLimit,
-    });
+    autoFinalizedRuns = await safePreBatch(
+      "autoFinalize",
+      () => autoFinalizeDormantProcessingRuns({
+        limitOverride: heavyMode ? undefined : config.autoFinalizeLightLimit,
+      }),
+      null,
+    );
   }
-  preBatchTimings.autoFinalize = Date.now() - _t0;
 
-  _t0 = Date.now();
   if (!options?.brandId) {
-    operationalRetention = await runOperationalRetentionCleanup({
-      retentionDays: 90,
-      perTableLimit: heavyMode ? undefined : 2000,
-    });
+    operationalRetention = await safePreBatch(
+      "operationalRetention",
+      () => runOperationalRetentionCleanup({
+        retentionDays: 90,
+        perTableLimit: heavyMode ? undefined : 2000,
+      }),
+      null,
+    );
   }
-  preBatchTimings.operationalRetention = Date.now() - _t0;
 
   if (!options?.brandId && heavyMode) {
     manualReviewAutoClear = await autoClearManualReviewByEvidence({
@@ -4143,6 +4171,7 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
     stuckRemediation,
     continuousReseed,
     preBatchTimings,
+    preBatchErrors: Object.keys(preBatchErrors).length > 0 ? preBatchErrors : undefined,
     totalElapsedMs: Date.now() - startedAt,
   };
 };
