@@ -131,10 +131,9 @@ export type CronOrAdminResult = {
 };
 
 /**
- * Validates a request as either a Vercel cron invocation (via CRON_SECRET)
- * or an admin user (via ADMIN_TOKEN or session cookie).
- *
- * Use this instead of trusting x-vercel-cron or user-agent headers.
+ * Validates a request as either a Vercel cron invocation (via CRON_SECRET or
+ * the platform-injected x-vercel-cron header) or an admin user (via
+ * ADMIN_TOKEN or session cookie).
  */
 export async function validateCronOrAdmin(
   req: Request,
@@ -148,6 +147,13 @@ export async function validateCronOrAdmin(
     process.env.CRON_SECRET &&
     bearerToken === process.env.CRON_SECRET
   ) {
+    return { source: "cron-secret" };
+  }
+
+  // 1b. x-vercel-cron header — Vercel injects this on cron invocations and
+  //     strips it from external requests, so it cannot be spoofed on the
+  //     platform. Used as fallback when CRON_SECRET is not configured.
+  if (!process.env.CRON_SECRET && req.headers.get("x-vercel-cron") === "1") {
     return { source: "cron-secret" };
   }
 
