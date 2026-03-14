@@ -7,9 +7,10 @@ export const maxDuration = 300;
 
 /**
  * Dedicated lightweight cron endpoint for Vercel scheduler.
- * Hard-codes mode=light and maxRuntimeMs=240000 to avoid query-param issues
- * with Vercel Cron (the primary /cron route uses query params which may
- * not be reliably forwarded by the scheduler).
+ * Hard-codes mode=light and a conservative maxRuntimeMs to stay well within
+ * the 300s Vercel function limit. Previous 240s budget caused
+ * FUNCTION_INVOCATION_TIMEOUT because runCatalogRefreshBatch pre-batch
+ * operations can overrun the budget.
  */
 export async function GET(req: Request) {
   const auth = await validateCronOrAdmin(req);
@@ -20,7 +21,7 @@ export async function GET(req: Request) {
   try {
     const result = await runCatalogRefreshBatch({
       mode: "light",
-      maxRuntimeMs: 240_000,
+      maxRuntimeMs: 120_000,
     });
 
     return NextResponse.json({ ok: true, ...result });
