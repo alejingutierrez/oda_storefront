@@ -3957,20 +3957,48 @@ export const runCatalogRefreshBatch = async (options?: RunCatalogRefreshBatchOpt
       };
     }
 
+    const remainingBudgetMs = config.maxRuntimeMs - (Date.now() - startedAt);
+    if (remainingBudgetMs < 5000) {
+      return { brandId: brand.id, status: "skipped", reason: "runtime_budget_before_discovery" };
+    }
+
     const forceSitemap =
       options?.force || (brand.ecommercePlatform ?? "").toLowerCase() !== "vtex";
-    const { refs, platformForRun, sitemapRefs, adapterRefs } = await discoverCatalogRefs({
-      brand: {
-        id: brand.id,
-        name: brand.name,
-        slug: brand.slug,
-        siteUrl: brand.siteUrl ?? "",
-        ecommercePlatform: brand.ecommercePlatform,
-      },
-      limit: discoveryLimit,
-      forceSitemap,
-      combineSitemapAndAdapter: true,
-    });
+    const discoveryTimeoutMs = Math.max(
+      5000,
+      Number(process.env.CATALOG_REFRESH_DISCOVERY_TIMEOUT_MS ?? 30000),
+    );
+    const effectiveDiscoveryTimeout = Math.min(
+      discoveryTimeoutMs,
+      Math.max(5000, remainingBudgetMs - 2000),
+    );
+    let discoveryResult: Awaited<ReturnType<typeof discoverCatalogRefs>>;
+    try {
+      discoveryResult = await Promise.race([
+        discoverCatalogRefs({
+          brand: {
+            id: brand.id,
+            name: brand.name,
+            slug: brand.slug,
+            siteUrl: brand.siteUrl ?? "",
+            ecommercePlatform: brand.ecommercePlatform,
+          },
+          limit: discoveryLimit,
+          forceSitemap,
+          combineSitemapAndAdapter: true,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`discovery_timeout_${effectiveDiscoveryTimeout}ms`)),
+            effectiveDiscoveryTimeout,
+          ),
+        ),
+      ]);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return { brandId: brand.id, status: "skipped", reason: msg.slice(0, 200) };
+    }
+    const { refs, platformForRun, sitemapRefs, adapterRefs } = discoveryResult;
     const combinedDiscoveryRefs = dedupeRefs([...(sitemapRefs ?? []), ...(adapterRefs ?? [])]);
 
     const failedRows = await prisma.$queryRaw<{ url: string; lastError: string | null }[]>(
