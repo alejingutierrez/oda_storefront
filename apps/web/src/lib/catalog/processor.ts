@@ -315,7 +315,13 @@ export const processCatalogItemById = async (
       },
     });
 
-    const consecutiveErrors = isSoftError ? 0 : (run.consecutiveErrors ?? 0) + 1;
+    // Always increment consecutiveErrors on failure, including soft errors.
+    // Previously, soft errors (fetch failed, econnreset, etc.) reset the counter
+    // to 0, which prevented drain deprioritization (orderBy: consecutiveErrors ASC)
+    // for runs whose sites are fully down. Now, a run with a down site quickly
+    // accumulates consecutiveErrors and is processed last, freeing drain time for
+    // healthy runs. The counter still resets to 0 on any success (line 258).
+    const consecutiveErrors = (run.consecutiveErrors ?? 0) + 1;
     const limit = getCatalogConsecutiveErrorLimit();
     const allowAutoPause = process.env.CATALOG_AUTO_PAUSE_ON_ERRORS === "true";
     const shouldPause = allowAutoPause && !isSoftError && consecutiveErrors >= limit;

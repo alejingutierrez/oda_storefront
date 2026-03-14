@@ -378,8 +378,10 @@ export async function POST(req: Request) {
   if (isWorkerStale && !microDrainBypass) {
     // When the worker is offline, maximize use of the Vercel function budget (maxDuration=300s).
     // Use 240s (leaving 60s buffer for setup/teardown) instead of 50s, and process more runs.
-    // Keep concurrency LOW (3) to avoid rate-limiting by target sites — high concurrency
+    // Keep concurrency moderate (4) to avoid rate-limiting by target sites — high concurrency
     // (10+) sends too many simultaneous requests to the same domain, causing 80%+ failure rates.
+    // Increased from 3 to 4 for +33% throughput; Shopify and most platforms handle 4 concurrent
+    // requests without issues.
     const workerStaleMaxMs = Math.max(
       50000,
       Number(process.env.CATALOG_DRAIN_WORKER_STALE_MAX_MS ?? 240000),
@@ -390,7 +392,7 @@ export async function POST(req: Request) {
     );
     const workerStaleConcurrency = Math.max(
       1,
-      Number(process.env.CATALOG_DRAIN_WORKER_STALE_CONCURRENCY ?? 3),
+      Number(process.env.CATALOG_DRAIN_WORKER_STALE_CONCURRENCY ?? 4),
     );
     // Override (not max) — the env default CATALOG_DRAIN_CONCURRENCY may be high (e.g. 12)
     // but when the worker is offline we must keep per-domain concurrency low.
