@@ -1,4 +1,4 @@
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { Queue } from "bullmq";
 import { validateCronOrAdmin } from "@/lib/auth";
@@ -551,35 +551,37 @@ export async function POST(req: Request) {
     await releaseLock(drainLockHandle);
   }
 
-  // Mini-refresh: use Next.js after() to run brand selection AFTER the drain
-  // response is sent. This extends the function lifetime beyond the response,
-  // allowing the refresh to run without blocking the cron response.
+  // Mini-refresh: run brand selection INLINE after the drain completes.
   // The Vercel cron scheduler reliably fires the drain every 1 min but does
   // NOT fire the separate refresh cron — this is the workaround.
+  // Called directly (not via after()) because after() doesn't reliably execute
+  // in Vercel Route Handlers.
   let miniRefreshResult: Record<string, unknown> | null = null;
   const remainingBudgetMs = Math.max(0, 280_000 - (Date.now() - startedAt));
-  if (!brandId && !requestedRunId && !dryRun && !microDrainBypass && remainingBudgetMs > 20_000) {
-    miniRefreshResult = { scheduled: true, budgetMs: Math.min(remainingBudgetMs - 10_000, 50_000) };
-    after(async () => {
-      try {
-        const refreshBudgetMs = Math.min(remainingBudgetMs - 10_000, 50_000);
-        const result = await runCatalogRefreshBatch({
-          mode: "light",
-          maxRuntimeMs: refreshBudgetMs,
-        });
-        console.log(JSON.stringify({
-          event: "mini_refresh_after",
-          selected: result.selected,
-          processed: result.processed,
-          activeRunsBefore: result.activeRunsBefore,
-          activeRunCap: result.activeRunCap,
-          budgetMs: refreshBudgetMs,
-          totalElapsedMs: Date.now() - startedAt,
-        }));
-      } catch (e) {
-        console.error("mini_refresh_after_error", e instanceof Error ? e.message : String(e));
-      }
-    });
+  if (!brandId && !requestedRunId && !dryRun && !microDrainBypass && remainingBudgetMs > 30_000) {
+    const refreshBudgetMs = Math.min(remainingBudgetMs - 10_000, 90_000);
+    try {
+      const result = await runCatalogRefreshBatch({
+        mode: "light",
+        maxRuntimeMs: refreshBudgetMs,
+      });
+      miniRefreshResult = {
+        ok: true,
+        selected: result.selected,
+        processed: result.processed,
+        activeRunsBefore: result.activeRunsBefore,
+        activeRunCap: result.activeRunCap,
+        budgetMs: refreshBudgetMs,
+        elapsedMs: Date.now() - startedAt,
+      };
+    } catch (e) {
+      miniRefreshResult = {
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+        budgetMs: refreshBudgetMs,
+      };
+      console.error("mini_refresh_inline_error", e instanceof Error ? e.message : String(e));
+    }
   }
 
   if (isCron) {
