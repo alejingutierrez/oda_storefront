@@ -556,7 +556,7 @@ export async function POST(req: Request) {
   // NOT fire the separate refresh cron — this is the workaround.
   let miniRefreshResult: Record<string, unknown> | null = null;
   const remainingBudgetMs = Math.max(0, 280_000 - (Date.now() - startedAt));
-  if (isCron && !brandId && !requestedRunId && !dryRun && !microDrainBypass && remainingBudgetMs > 20_000) {
+  if (!brandId && !requestedRunId && !dryRun && !microDrainBypass && remainingBudgetMs > 20_000) {
     miniRefreshResult = { scheduled: true, budgetMs: Math.min(remainingBudgetMs - 10_000, 50_000) };
     after(async () => {
       try {
