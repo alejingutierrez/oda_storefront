@@ -8,7 +8,6 @@ import { drainCatalogRun } from "@/lib/catalog/processor";
 import { CATALOG_MAX_ATTEMPTS } from "@/lib/catalog/constants";
 import {
   finalizeRefreshForRun,
-  runCatalogRefreshBatch,
   runCatalogRefreshStuckRemediation,
 } from "@/lib/catalog/refresh";
 import { isCatalogQueueEnabled } from "@/lib/catalog/queue";
@@ -398,11 +397,7 @@ export async function POST(req: Request) {
     // Override (not max) — the env default CATALOG_DRAIN_CONCURRENCY may be high (e.g. 12)
     // but when the worker is offline we must keep per-domain concurrency low.
     concurrency = workerStaleConcurrency;
-    // Reserve time for mini-refresh (brand selection + starting new runs) at the end.
-    // Without this, the drain uses the full 240s and the mini-refresh only gets ~40s,
-    // which isn't enough for runCatalogRefreshBatch to complete its pre-batch operations.
-    const miniRefreshReserveMs = isCron && !brandId && !requestedRunId ? 100_000 : 0;
-    maxMs = Math.max(maxMs, workerStaleMaxMs - miniRefreshReserveMs);
+    maxMs = Math.max(maxMs, workerStaleMaxMs);
     maxRuns = Math.max(maxRuns, workerStaleMaxRuns);
   }
 
@@ -553,30 +548,31 @@ export async function POST(req: Request) {
     await releaseLock(drainLockHandle);
   }
 
-  // Mini-refresh: start new runs when the drain frees capacity.
-  // The Vercel cron scheduler reliably fires this drain endpoint every 1 min,
-  // but may not fire the separate refresh cron endpoint. By piggybacking the
-  // refresh selection here, the system becomes self-sustaining through a single
-  // cron job. Only runs during cron invocations (not manual/admin calls).
+  // Mini-refresh: trigger the cron-light endpoint to start new runs when the
+  // drain frees capacity. Uses fire-and-forget fetch to spawn a separate
+  // serverless function with its own timeout and DB connections. The Vercel
+  // cron scheduler reliably fires this drain endpoint every 1 min but may not
+  // fire the separate refresh cron endpoint.
   let miniRefreshResult: Record<string, unknown> | null = null;
-  const functionDeadline = startedAt + 280_000; // 300s maxDuration - 20s safety
   if (isCron && !brandId && !requestedRunId && !dryRun && !microDrainBypass) {
-    const remainingForRefresh = functionDeadline - Date.now();
-    if (remainingForRefresh >= 30_000) {
-      try {
-        const result = await runCatalogRefreshBatch({
-          mode: "light",
-          maxRuntimeMs: Math.min(remainingForRefresh, 90_000),
-        });
-        miniRefreshResult = {
-          selected: result.selected,
-          started: result.processed,
-          activeRunsBefore: result.activeRunsBefore,
-          capacityRemaining: result.activeRunCapacityRemaining,
-        };
-      } catch (e) {
-        miniRefreshResult = { error: e instanceof Error ? e.message : String(e) };
+    try {
+      const baseUrl = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : process.env.NEXT_PUBLIC_BASE_URL || "https://oda-moda.vercel.app";
+      const token = process.env.ADMIN_TOKEN || process.env.CRON_SECRET;
+      if (token) {
+        // Fire-and-forget: don't await the response. The cron-light endpoint
+        // runs as a separate serverless function with its own 300s maxDuration.
+        fetch(`${baseUrl}/api/admin/catalog-refresh/cron-light`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => {}); // Ignore network errors
+        miniRefreshResult = { triggered: true, target: `${baseUrl}/api/admin/catalog-refresh/cron-light` };
+      } else {
+        miniRefreshResult = { skipped: "no_auth_token" };
       }
+    } catch (e) {
+      miniRefreshResult = { error: e instanceof Error ? e.message : String(e) };
     }
   }
 
