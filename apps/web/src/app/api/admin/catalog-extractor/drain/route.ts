@@ -383,9 +383,11 @@ export async function POST(req: Request) {
     // (10+) sends too many simultaneous requests to the same domain, causing 80%+ failure rates.
     // Increased from 3 to 4 for +33% throughput; Shopify and most platforms handle 4 concurrent
     // requests without issues.
+    // Reserve time for mini-refresh (brand selection) after drain.
+    // 180s drain + ~90s refresh + ~30s overhead = 300s maxDuration.
     const workerStaleMaxMs = Math.max(
       50000,
-      Number(process.env.CATALOG_DRAIN_WORKER_STALE_MAX_MS ?? 240000),
+      Number(process.env.CATALOG_DRAIN_WORKER_STALE_MAX_MS ?? 180000),
     );
     const workerStaleMaxRuns = Math.max(
       3,
