@@ -1162,3 +1162,25 @@ model VectorReclassificationSuggestion {
   @@index([decidedByUserId])
   @@map("vector_reclassification_suggestions")
 }
+
+model TaxonomyMergeLog {
+  id                 String   @id @default(uuid())
+  mergeType          String // "subcategory" | "category"
+  sourceKeys         String[]
+  sourceCategory     String?
+  targetKey          String
+  targetCategory     String?
+  productsUpdated    Int      @default(0)
+  groundTruthUpdated Int      @default(0)
+  suggestionsUpdated Int      @default(0)
+  seoUpdated         Int      @default(0)
+  taxonomyPublished  Boolean  @default(false)
+  centroidRetrained  Boolean  @default(false)
+  status             String   @default("completed") // completed | failed | partial
+  error              String?
+  metadata           Json?
+  createdAt          DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("taxonomy_merge_logs")
+}

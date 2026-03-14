@@ -60,3 +60,71 @@ export type ReclassificationSuggestion = {
   vectorDistance: number;
   margin: number;
 };
+
+// ── Vector Map types ──────────────────────────────────────────────
+
+/** A centroid projected to 2D via UMAP. */
+export type ProjectedCentroid = {
+  id: string;
+  label: string;
+  displayLabel: string;
+  category: string;
+  menuGroup: string;
+  x: number;
+  y: number;
+  sampleCount: number;
+  avgIntraDistance: number | null;
+  maxIntraDistance: number | null;
+  stdIntraDistance: number | null;
+  lastTrainedAt: string | null;
+};
+
+/** Pairwise distance between two centroids. */
+export type DistanceEntry = {
+  a: string;
+  b: string;
+  aLabel: string;
+  bLabel: string;
+  distance: number;
+};
+
+/** Type of merge operation. */
+export type MergeType = "subcategory" | "category";
+
+/** Request to preview or execute a taxonomy merge. */
+export type MergeRequest = {
+  mergeType: MergeType;
+  sourceKeys: string[];
+  targetKey: string;
+  targetCategory?: string;
+};
+
+/** Dry-run impact preview for a merge. */
+export type MergePreviewResult = {
+  mergeType: MergeType;
+  sourceKeys: string[];
+  targetKey: string;
+  targetCategory: string | null;
+  counts: {
+    products: number;
+    groundTruth: number;
+    suggestions: number;
+    seoPages: number;
+    centroids: number;
+    subcategoriesMoved?: number;
+  };
+  warnings: string[];
+};
+
+/** Result of an executed merge. */
+export type MergeResult = {
+  ok: boolean;
+  mergeType: MergeType;
+  productsUpdated: number;
+  groundTruthUpdated: number;
+  suggestionsUpdated: number;
+  seoUpdated: number;
+  taxonomyPublished: boolean;
+  centroidRetrained: boolean;
+  error?: string;
+};

@@ -7,6 +7,7 @@ const TABS = [
   { href: "/admin/vector-classification/confirmation", label: "Confirmacion" },
   { href: "/admin/vector-classification/model", label: "Modelo" },
   { href: "/admin/vector-classification/suggestions", label: "Sugerencias" },
+  { href: "/admin/vector-classification/vector-map", label: "Mapa Vectorial" },
 ] as const;
 
 export default function TabNav() {
