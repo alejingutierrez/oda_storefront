@@ -2540,7 +2540,10 @@ const runAggressiveTailClose = async (options: {
 }): Promise<AggressiveTailCloseResult> => {
   const progressCutoff = new Date(Date.now() - options.minNoProgressMinutes * 60 * 1000);
   const staleCutoff = new Date(Date.now() - options.tailStaleMinutes * 60 * 1000);
-  const processingRuns = await readProcessingRunProgress(progressCutoff, ["processing"], {
+  // Include paused runs: the stuck remediation may pause zero-progress runs
+  // before tail close executes, making them invisible. Including paused runs
+  // lets us force-close them (terminalize items + finalize run).
+  const processingRuns = await readProcessingRunProgress(progressCutoff, ["processing", "paused"], {
     runId: options.runId ?? null,
   });
   // Two-tier candidate selection:
