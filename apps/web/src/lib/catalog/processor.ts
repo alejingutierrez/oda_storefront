@@ -412,13 +412,29 @@ export const drainCatalogRun = async ({
     // In drain mode (fallback path), remove stale queue jobs to avoid ghost replays.
     await Promise.allSettled(items.map((item) => removeCatalogJobByItemId(item.id)));
 
+    // Wrap each item with a timeout so a single slow/unresponsive site can't
+    // hang the entire drain batch. Without this, Promise.allSettled waits for
+    // ALL items — if one HTTP request hangs for 250s, Vercel kills the function,
+    // the lock isn't released, and subsequent cron invocations fail for ~4 minutes.
+    const perItemTimeoutMs = Math.max(
+      5000,
+      Number(process.env.CATALOG_DRAIN_PER_ITEM_TIMEOUT_MS ?? 25000),
+    );
     const results = await Promise.allSettled(
       items.map((item) =>
-        processCatalogItemById(item.id, {
-          allowQueueRefill: false,
-          queuedStaleMs,
-          stuckMs,
-        }),
+        Promise.race([
+          processCatalogItemById(item.id, {
+            allowQueueRefill: false,
+            queuedStaleMs,
+            stuckMs,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`item_timeout_${perItemTimeoutMs}ms`)),
+              perItemTimeoutMs,
+            ),
+          ),
+        ]),
       ),
     );
 
