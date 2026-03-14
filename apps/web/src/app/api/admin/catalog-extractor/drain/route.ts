@@ -309,13 +309,18 @@ export async function POST(req: Request) {
       .trim()
       .toLowerCase() !== "false",
   );
-  // RC-8: Early exit when no processing runs exist (saves Redis/BullMQ/Prisma probes)
+  // RC-8: Skip the heavy drain loop when no processing runs exist, but still
+  // allow miniRefresh to run (it selects and starts new brands).
+  // Previous behavior returned early here, creating a deadlock: once all runs
+  // finished, processingCount=0, drain returned early, miniRefresh never ran,
+  // no new runs started, processingCount stayed 0 forever.
+  let skipDrainLoop = false;
   if (isCron && !force && !dryRun) {
     const processingCount = await prisma.catalogRun.count({
       where: { status: "processing" },
     });
     if (processingCount === 0) {
-      return NextResponse.json({ skipped: "no_processing_runs", processingCount: 0 });
+      skipDrainLoop = true;
     }
   }
 
@@ -437,7 +442,7 @@ export async function POST(req: Request) {
   const deadline = startedAt + safeMaxMs;
 
   let drainLockHandle: { key: string; token: string } | null = null;
-  if (!dryRun && isCatalogQueueEnabled() && isRedisEnabled()) {
+  if (!skipDrainLoop && !dryRun && isCatalogQueueEnabled() && isRedisEnabled()) {
     const lockTtlMs = Math.max(5000, safeMaxMs + 5000);
     const lockScope = requestedRunId
       ? `run:${requestedRunId}`
@@ -461,6 +466,7 @@ export async function POST(req: Request) {
 
   try {
     while (
+      !skipDrainLoop &&
       processed < safeBatch &&
       runsProcessed < safeMaxRuns &&
       Date.now() < deadline
@@ -561,7 +567,7 @@ export async function POST(req: Request) {
   let miniRefreshResult: Record<string, unknown> | null = null;
   const remainingBudgetMs = Math.max(0, 230_000 - (Date.now() - startedAt));
   if (!brandId && !requestedRunId && !dryRun && !microDrainBypass && remainingBudgetMs > 30_000) {
-    const refreshBudgetMs = Math.min(remainingBudgetMs - 10_000, 60_000);
+    const refreshBudgetMs = Math.min(remainingBudgetMs - 10_000, 40_000);
     try {
       const result = await runCatalogRefreshBatch({
         mode: "light",
@@ -589,6 +595,7 @@ export async function POST(req: Request) {
   if (isCron) {
     console.log(JSON.stringify({
       event: "catalog_drain_result",
+      skipDrainLoop,
       processed,
       runsProcessed,
       finalizedRuns,
@@ -603,6 +610,7 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     dryRun,
+    skipDrainLoop,
     processed,
     runsProcessed,
     finalizedRuns,
