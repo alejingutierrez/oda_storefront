@@ -2546,9 +2546,10 @@ const runAggressiveTailClose = async (options: {
   const processingRuns = await readProcessingRunProgress(progressCutoff, ["processing", "paused"], {
     runId: options.runId ?? null,
   });
-  // Two-tier candidate selection:
+  // Three-tier candidate selection:
   // Tier 1 (normal tail close): progress >= threshold, no recent completions
   // Tier 2 (zero-progress force close): 0 completed items after 60+ min
+  // Tier 3 (exhausted items force close): runnable=0, all items at max attempts
   const zeroProgressWindowMs = 60 * 60 * 1000;
   const zeroProgressCutoff = new Date(Date.now() - zeroProgressWindowMs);
   const candidates = processingRuns
@@ -2568,6 +2569,14 @@ const runAggressiveTailClose = async (options: {
       }
       // Tier 2: force close runs with 0 completed items after 60+ minutes
       if (run.completed <= 0 && run.startedAt && run.startedAt <= zeroProgressCutoff) {
+        return true;
+      }
+      // Tier 3: force close runs with no runnable items remaining.
+      // All items have exhausted their attempts (attempts >= MAX_ATTEMPTS) but
+      // may still be in "pending" status. The drain will never pick them up,
+      // and auto-complete only triggers after processing an item — so these
+      // runs are stuck forever. Force-close them to free capacity slots.
+      if (run.runnable <= 0) {
         return true;
       }
       return false;
