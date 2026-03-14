@@ -465,7 +465,10 @@ export async function POST(req: Request) {
           ...(requestedRunId ? { id: requestedRunId } : {}),
           ...(seenRunIds.size ? { id: { notIn: Array.from(seenRunIds) } } : {}),
         },
-        orderBy: { updatedAt: "asc" },
+        // Prioritize runs with recent success (low consecutiveErrors) so the
+        // drain maximizes throughput in its limited budget window. Failing runs
+        // (high consecutiveErrors) are still processed, just at the end.
+        orderBy: [{ consecutiveErrors: "asc" }, { updatedAt: "asc" }],
       });
       if (!run) break;
 
